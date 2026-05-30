@@ -1,0 +1,79 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../storage/framework/views/*.php';
+@source '../**/*.blade.php';
+@source '../**/*.tsx';
+@source '../**/*.ts';
+
+@theme {
+    --color-primary: #F59E0B;
+    --color-primary-hover: #D97706;
+    --color-sidebar: #0F172A;
+    --color-sidebar-dark: #020617;
+    --color-bg-main: #F8FAFC;
+    --color-bg-card: #FFFFFF;
+    --color-success: #10B981;
+    --color-danger: #EF4444;
+    --color-warning: #F59E0B;
+    --color-info: #3B82F6;
+    --font-family-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+}
+
+:root {
+    --sidebar-bg: #0F172A;
+    --sidebar-text: #94A3B8;
+    --sidebar-active: #F59E0B;
+    --sidebar-active-bg: rgba(245, 158, 11, 0.12);
+    --primary: #F59E0B;
+    --primary-hover: #D97706;
+    --bg-main: #F8FAFC;
+    --bg-card: #FFFFFF;
+    --text-main: #0F172A;
+    --text-muted: #64748B;
+    --border: #E2E8F0;
+}
+
+.dark {
+    --bg-main: #0F172A;
+    --bg-card: #1E293B;
+    --text-main: #F1F5F9;
+    --text-muted: #94A3B8;
+    --border: #334155;
+    --sidebar-bg: #020617;
+}
+
+* {
+    font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+    background-color: var(--bg-main);
+    color: var(--text-main);
+    transition: background-color 200ms ease, color 200ms ease;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+@keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+}
+
+.skeleton {
+    background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+}
+
+.dark .skeleton {
+    background: linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%);
+    background-size: 200% 100%;
+}
+
+.sidebar-transition { transition: width 200ms ease, transform 200ms ease; }
+.nav-item-transition { transition: background-color 200ms ease, color 200ms ease; }
