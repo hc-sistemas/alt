@@ -18,25 +18,24 @@ class ModuloSeeder extends Seeder
         $colVerReal = Schema::hasColumn('permisos', 'puede_ver') ? 'puede_ver' : 'ver';
 
         $modulosData = [
-            ['nombre' => 'Dashboard', 'codigo' => 'dashboard', 'clave' => 'dashboard', 'icono' => 'LayoutDashboard', 'orden' => 1],
-            ['nombre' => 'Ventas', 'codigo' => 'ventas', 'clave' => 'ventas', 'icono' => 'FileText', 'orden' => 2],
-            ['nombre' => 'Compras', 'codigo' => 'compras', 'clave' => 'compras', 'icono' => 'ShoppingCart', 'orden' => 3],
-            ['nombre' => 'Inventario', 'codigo' => 'inventario', 'clave' => 'inventario', 'icono' => 'Package', 'orden' => 4],
-            ['nombre' => 'Contabilidad', 'codigo' => 'contabilidad', 'clave' => 'contabilidad', 'icono' => 'BookOpen', 'orden' => 5],
-            ['nombre' => 'Bancos', 'codigo' => 'bancos', 'clave' => 'bancos', 'icono' => 'Landmark', 'orden' => 6],
-            ['nombre' => 'RRHH', 'codigo' => 'rrhh', 'clave' => 'rrhh', 'icono' => 'Users', 'orden' => 7],
-            ['nombre' => 'Taller', 'codigo' => 'taller', 'clave' => 'taller', 'icono' => 'Wrench', 'orden' => 8],
-            ['nombre' => 'Reportes', 'codigo' => 'reportes', 'clave' => 'reportes', 'icono' => 'BarChart2', 'orden' => 9],
-            ['nombre' => 'Configuración', 'codigo' => 'configuracion', 'clave' => 'configuracion', 'icono' => 'Settings', 'orden' => 10],
-        ];
+            ['nombre' => 'Dashboard', 'clave' => 'dashboard', 'icono' => 'LayoutDashboard', 'orden' => 1],
+            ['nombre' => 'Ventas', 'clave' => 'ventas', 'icono' => 'FileText', 'orden' => 2],
+            ['nombre' => 'Compras', 'clave' => 'compras', 'icono' => 'ShoppingCart', 'orden' => 3],
+            ['nombre' => 'Inventario', 'clave' => 'inventario', 'icono' => 'Package', 'orden' => 4],
+            ['nombre' => 'Contabilidad', 'clave' => 'contabilidad', 'icono' => 'BookOpen', 'orden' => 5],
+            ['nombre' => 'Bancos', 'clave' => 'bancos', 'icono' => 'Landmark', 'orden' => 6],
+            ['nombre' => 'RRHH', 'clave' => 'rrhh', 'icono' => 'Users', 'orden' => 7],
+            ['nombre' => 'Taller', 'clave' => 'taller', 'icono' => 'Wrench', 'orden' => 8],
+            ['nombre' => 'Reportes', 'clave' => 'reportes', 'icono' => 'BarChart2', 'orden' => 9],
+            ['nombre' => 'Configuración', 'clave' => 'configuracion', 'icono' => 'Settings', 'orden' => 10],
+        ];  
 
         $creados = [];
         foreach ($modulosData as $data) {
-            if (!$tieneClave) unset($data['clave']);
-            if (!$tieneEstado) unset($data['estado']);
+                if (!$tieneEstado) unset($data['estado']);
 
-            $creados[$data['codigo']] = Modulo::firstOrCreate(
-                ['codigo' => $data['codigo']],
+            $creados[$data['clave']] = Modulo::firstOrCreate(
+                ['clave' => $data['clave']],
                 $data
             );
         }
