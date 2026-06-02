@@ -19,8 +19,8 @@ class EmpresaSeeder extends Seeder
                 'email_notificaciones' => 'admin@altamira.com',
                 'slogan' => 'Ahora las luces se ven Diferente',
                 'ambiente_sri' => 1,
-                'cod_establecimiento' => '001',
-                'cod_punto_emision' => '001',
+                'codigo_establecimiento' => '001',
+                'codigo_punto_emision' => '001',
                 'obligado_contabilidad' => true,
                 'estado' => true,
             ]
@@ -35,8 +35,8 @@ class EmpresaSeeder extends Seeder
                 'email_notificaciones' => 'import@altamira.com',
                 'slogan' => 'Solo un DJ sabe lo que otro DJ necesita',
                 'ambiente_sri' => 1,
-                'cod_establecimiento' => '001',
-                'cod_punto_emision' => '001',
+                'codigo_establecimiento' => '001',
+                'codigo_punto_emision' => '001',
                 'obligado_contabilidad' => true,
                 'estado' => true,
             ]

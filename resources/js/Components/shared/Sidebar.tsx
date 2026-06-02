@@ -30,9 +30,10 @@ const navItems: NavItem[] = [
     {
         nombre: 'Compras', clave: 'compras', icon: ShoppingCart,
         hijos: [
-            { nombre: 'Órdenes de Compra', href: '/compras/ordenes' },
-            { nombre: 'Proveedores', href: '/compras/proveedores' },
-            { nombre: 'CxP', href: '/compras/cxp' },
+            { nombre: 'Facturas de Compra', href: '/compras/facturas' },
+            { nombre: 'Proveedores',        href: '/compras/proveedores' },
+            { nombre: 'Cuentas por Pagar',  href: '/compras/cuentas-pagar' },
+            { nombre: 'Importaciones',      href: '/compras/importaciones' },
         ]
     },
     {
@@ -46,6 +47,7 @@ const navItems: NavItem[] = [
     {
         nombre: 'Contabilidad', clave: 'contabilidad', icon: BookOpen,
         hijos: [
+            { nombre: 'Ejercicios', href: '/contabilidad/ejercicios' },
             { nombre: 'Asientos', href: '/contabilidad/asientos' },
             { nombre: 'Plan de Cuentas', href: '/contabilidad/plan-cuentas' },
         ]
