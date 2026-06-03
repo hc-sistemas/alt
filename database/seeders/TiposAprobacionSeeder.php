@@ -9,7 +9,6 @@ class TiposAprobacionSeeder extends Seeder
 {
     public function run(): void
     {
-        // Schema real: id, codigo, descripcion, perfiles_autorizados, requiere_codigo, activo
         $tipos = [
             ['clave' => 'descuento_excedido', 'nombre' => 'Descuento Excedido', 'descripcion' => 'Descuento mayor al límite permitido', 'activo' => true],
             ['clave' => 'precio_bajo_costo', 'nombre' => 'Precio Bajo Costo', 'descripcion' => 'Precio menor al costo del producto', 'activo' => true],
@@ -35,4 +34,3 @@ class TiposAprobacionSeeder extends Seeder
         }
     }
 }
-
