@@ -6,7 +6,7 @@ import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Badge } from '@/Components/ui/badge'
 import ConfirmModal from '@/Components/shared/ConfirmModal'
-import { Plus, Search, Eye, Pencil, History } from 'lucide-react'
+import { Plus, Search, Eye, Pencil, History, FileSpreadsheet } from 'lucide-react'
 import { formatFecha } from '@/lib/utils'
 import type { Usuario, Perfil, PaginatedData, PageProps } from '@/types'
 
@@ -20,6 +20,20 @@ export default function UsuariosIndex() {
     const { usuarios, perfiles, filters } = usePage<Props>().props
     const [confirmToggle, setConfirmToggle] = useState<Usuario | null>(null)
     const [procesando, setProcesando] = useState(false)
+
+    async function exportarExcel() {
+        const XLSX = await import('xlsx')
+        const filas = usuarios.data.map(u => ({
+            'Nombre':  u.nombre,
+            'Email':   u.email,
+            'Perfil':  u.perfil?.nombre ?? '—',
+            'Estado':  u.estado ? 'Activo' : 'Inactivo',
+        }))
+        const ws = XLSX.utils.json_to_sheet(filas)
+        const wb = XLSX.utils.book_new()
+        XLSX.utils.book_append_sheet(wb, ws, 'Usuarios')
+        XLSX.writeFile(wb, 'usuarios.xlsx')
+    }
 
     function buscar(e: React.FormEvent<HTMLFormElement>) {
         e.preventDefault()
@@ -54,7 +68,7 @@ export default function UsuariosIndex() {
 
             <div className="p-6">
                 {/* Filtros */}
-                <div className="flex gap-3 mb-4">
+                <div className="flex items-center gap-3 mb-4 flex-wrap">
                     <form onSubmit={buscar} className="flex gap-2 flex-1">
                         <div className="relative flex-1 max-w-xs">
                             <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
@@ -67,6 +81,14 @@ export default function UsuariosIndex() {
                         </div>
                         <Button type="submit" variant="outline" size="sm">Buscar</Button>
                     </form>
+                    <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium ml-auto"
+                        style={{ background: '#16A34A', color: 'white', transition: 'background 0.2s' }}
+                        onMouseEnter={e => (e.currentTarget.style.background = '#15803D')}
+                        onMouseLeave={e => (e.currentTarget.style.background = '#16A34A')}
+                        onClick={exportarExcel}>
+                        <FileSpreadsheet className="w-4 h-4" />
+                        Excel
+                    </button>
                 </div>
 
                 {/* Tabla */}
@@ -161,10 +183,10 @@ export default function UsuariosIndex() {
                 </div>
 
                 {/* Paginación */}
-                {usuarios.meta.last_page > 1 && (
+                {usuarios.last_page > 1 && (
                     <div className="flex items-center justify-between mt-4 text-sm">
                         <p style={{ color: 'var(--text-muted)' }}>
-                            Mostrando {usuarios.meta.from}–{usuarios.meta.to} de {usuarios.meta.total}
+                            Mostrando {usuarios.from}–{usuarios.to} de {usuarios.total}
                         </p>
                         <div className="flex gap-1">
                             {usuarios.links.map((link, i) => (

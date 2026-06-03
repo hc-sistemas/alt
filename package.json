@@ -23,6 +23,7 @@
         "@hookform/resolvers": "^5.4.0",
         "@inertiajs/react": "^2.3.24",
         "@tanstack/react-table": "^8.21.3",
+        "alertifyjs": "^1.14.0",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
         "lucide-react": "^1.17.0",
@@ -30,7 +31,9 @@
         "react-dom": "^19.2.6",
         "react-hook-form": "^7.76.1",
         "recharts": "^3.8.1",
+        "sweetalert2": "^11.26.25",
         "tailwind-merge": "^3.6.0",
+        "xlsx": "^0.18.5",
         "zod": "^4.4.3",
         "zustand": "^5.0.14"
     }

@@ -14,6 +14,7 @@ class DatabaseSeeder extends Seeder
             ModuloSeeder::class,
             TiposAprobacionSeeder::class,
             UsuarioSeeder::class,
+            PersonasSeeder::class,
         ]);
     }
 }

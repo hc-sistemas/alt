@@ -2,11 +2,18 @@ import { Link, usePage } from '@inertiajs/react'
 import { useState } from 'react'
 import {
     LayoutDashboard, FileText, ShoppingCart, Package, BookOpen,
-    Landmark, Users, Wrench, BarChart2, Settings, ChevronDown,
-    ChevronLeft, ChevronRight, X
+    Landmark, Users, Wrench, BarChart2, Settings, Settings2, ClipboardList, ArrowLeftRight, ChevronDown,
+    ChevronLeft, ChevronRight, X, UserCircle
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { PageProps } from '@/types'
+
+interface NavSubgrupo {
+    nombre: string
+    icon: React.ElementType
+    clave: string
+    hijos: { nombre: string; href: string }[]
+}
 
 interface NavItem {
     nombre: string
@@ -14,6 +21,7 @@ interface NavItem {
     icon: React.ElementType
     href?: string
     hijos?: { nombre: string; href: string }[]
+    subgrupos?: NavSubgrupo[]
 }
 
 const navItems: NavItem[] = [
@@ -39,9 +47,20 @@ const navItems: NavItem[] = [
         nombre: 'Inventario', clave: 'inventario', icon: Package,
         hijos: [
             { nombre: 'Productos', href: '/inventario/productos' },
-            { nombre: 'Kárdex', href: '/inventario/kardex' },
-            { nombre: 'Bodegas', href: '/inventario/bodegas' },
-        ]
+            { nombre: 'Kárdex', href: '/inventario/kardex/saldos' },
+            { nombre: 'Traslados', href: '/inventario/traslados' },
+            { nombre: 'Activos Fijos', href: '/inventario/activos' },
+        ],
+        subgrupos: [
+            {
+                nombre: 'Configuración', clave: 'inventario-config', icon: Settings2,
+                hijos: [
+                    { nombre: 'Marcas', href: '/inventario/configuracion/marcas' },
+                    { nombre: 'Categorías', href: '/inventario/configuracion/categorias' },
+                    { nombre: 'Bodegas', href: '/inventario/configuracion/bodegas' },
+                ],
+            },
+        ],
     },
     {
         nombre: 'Contabilidad', clave: 'contabilidad', icon: BookOpen,
@@ -71,6 +90,14 @@ const navItems: NavItem[] = [
             { nombre: 'Equipos', href: '/taller/equipos' },
         ]
     },
+    {
+        nombre: 'Personas', clave: 'personas', icon: UserCircle,
+        hijos: [
+            { nombre: 'Clientes', href: '/personas/clientes' },
+            { nombre: 'Proveedores', href: '/personas/proveedores' },
+            { nombre: 'Transportistas', href: '/personas/transportistas' },
+        ]
+    },
     { nombre: 'Reportes', clave: 'reportes', icon: BarChart2, href: '/reportes' },
     {
         nombre: 'Configuración', clave: 'configuracion', icon: Settings,
@@ -91,7 +118,7 @@ interface Props {
 
 export default function Sidebar({ collapsed, onCollapse, mobileOpen, onMobileClose }: Props) {
     const { url } = usePage<PageProps>()
-    const [openSections, setOpenSections] = useState<string[]>(['configuracion'])
+    const [openSections, setOpenSections] = useState<string[]>(['configuracion', 'inventario-config'])
 
     const toggleSection = (clave: string) => {
         setOpenSections(prev =>
@@ -127,7 +154,8 @@ export default function Sidebar({ collapsed, onCollapse, mobileOpen, onMobileClo
                     const hasHijos = item.hijos && item.hijos.length > 0
                     const isItemActive = item.href
                         ? isActive(item.href)
-                        : item.hijos?.some(h => isActive(h.href)) ?? false
+                        : (item.hijos?.some(h => isActive(h.href)) ?? false) ||
+                          (item.subgrupos?.some(sg => sg.hijos.some(h => isActive(h.href))) ?? false)
 
                     return (
                         <div key={item.clave}>
@@ -194,6 +222,46 @@ export default function Sidebar({ collapsed, onCollapse, mobileOpen, onMobileClo
                                                     {hijo.nombre}
                                                 </Link>
                                             ))}
+
+                                            {/* Subgrupos anidados */}
+                                            {item.subgrupos?.map(sg => {
+                                                const isSgOpen = openSections.includes(sg.clave)
+                                                const SgIcon = sg.icon
+                                                const isSgActive = sg.hijos.some(h => isActive(h.href))
+                                                return (
+                                                    <div key={sg.clave} className="mt-1">
+                                                        <button
+                                                            onClick={() => toggleSection(sg.clave)}
+                                                            className={cn(
+                                                                'w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-xs nav-item-transition',
+                                                                isSgActive ? 'font-medium' : 'hover:text-white'
+                                                            )}
+                                                            style={isSgActive ? { color: 'var(--sidebar-active)' } : {}}
+                                                        >
+                                                            <SgIcon className="w-3.5 h-3.5 shrink-0" />
+                                                            <span className="flex-1 text-left">{sg.nombre}</span>
+                                                            <ChevronDown className={cn('w-3 h-3 transition-transform', isSgOpen && 'rotate-180')} />
+                                                        </button>
+                                                        {isSgOpen && (
+                                                            <div className="mt-0.5 ml-3 space-y-0.5 border-l border-slate-700/40 pl-2">
+                                                                {sg.hijos.map(h => (
+                                                                    <Link
+                                                                        key={h.href}
+                                                                        href={h.href}
+                                                                        className={cn(
+                                                                            'block px-2 py-1 rounded-md text-xs nav-item-transition',
+                                                                            isActive(h.href) ? 'font-medium' : 'hover:text-white'
+                                                                        )}
+                                                                        style={isActive(h.href) ? { color: 'var(--sidebar-active)' } : {}}
+                                                                    >
+                                                                        {h.nombre}
+                                                                    </Link>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )
+                                            })}
                                         </div>
                                     )}
                                 </>
