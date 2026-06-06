@@ -15,11 +15,12 @@ interface Props extends PageProps {
 }
 
 const emptyForm = {
+    identificacion: '',
     razon_social: '',
-    ruc: '',
     placa: '',
-    contacto: '',
+    email: '',
     telefono: '',
+    direccion: '',
     estado: true,
 }
 
@@ -43,11 +44,12 @@ export default function TransportistasIndex() {
     function abrirEditar(t: Transportista) {
         setEditando(t)
         setForm({
+            identificacion: t.identificacion ?? '',
             razon_social: t.razon_social,
-            ruc: t.ruc,
             placa: t.placa ?? '',
-            contacto: t.contacto ?? '',
+            email: t.email ?? '',
             telefono: t.telefono ?? '',
+            direccion: t.direccion ?? '',
             estado: t.estado,
         })
         setErrors({})
@@ -85,11 +87,12 @@ export default function TransportistasIndex() {
     async function exportarExcel() {
         const XLSX = await import('xlsx')
         const filas = transportistas.map(t => ({
-            'RUC':          t.ruc,
-            'Razón Social': t.razon_social,
-            'Teléfono':     t.telefono ?? '—',
-            'Placa':        t.placa ?? '—',
-            'Estado':       t.estado ? 'Activo' : 'Inactivo',
+            'Identificación': t.identificacion ?? '—',
+            'Razón Social':   t.razon_social,
+            'Placa':          t.placa ?? '—',
+            'Email':          t.email ?? '—',
+            'Teléfono':       t.telefono ?? '—',
+            'Estado':         t.estado ? 'Activo' : 'Inactivo',
         }))
         const ws = XLSX.utils.json_to_sheet(filas)
         const wb = XLSX.utils.book_new()
@@ -131,8 +134,8 @@ export default function TransportistasIndex() {
                             <Input
                                 value={search}
                                 onChange={e => setSearch(e.target.value)}
-                                placeholder="Razón social o RUC..."
-                                className="pl-9 w-56"
+                                placeholder="Razón social o identificación..."
+                                className="pl-9 w-64"
                             />
                         </div>
                     </div>
@@ -163,7 +166,7 @@ export default function TransportistasIndex() {
                         const filtrados = search
                             ? transportistas.filter(t =>
                                 t.razon_social.toLowerCase().includes(term) ||
-                                t.ruc.toLowerCase().includes(term)
+                                (t.identificacion ?? '').toLowerCase().includes(term)
                               )
                             : transportistas
 
@@ -171,7 +174,7 @@ export default function TransportistasIndex() {
                         <table className="w-full text-sm">
                             <thead>
                                 <tr style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
-                                    {['No', 'Razón Social', 'RUC', 'Placa', 'Contacto', 'Teléfono', 'Estado', ''].map(h => (
+                                    {['No', 'Razón Social', 'Identificación', 'Placa', 'Email', 'Teléfono', 'Estado', ''].map(h => (
                                         <th key={h} className="text-left px-4 py-3 font-medium text-xs uppercase tracking-wider whitespace-nowrap"
                                             style={{ color: 'var(--text-muted)' }}>
                                             {h}
@@ -207,13 +210,15 @@ export default function TransportistasIndex() {
                                             {t.razon_social}
                                         </td>
                                         <td className="px-4 py-3">
-                                            <span className="font-mono text-xs whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>{t.ruc}</span>
+                                            <span className="font-mono text-xs whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>
+                                                {t.identificacion ?? '—'}
+                                            </span>
                                         </td>
                                         <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-muted)' }}>
                                             {t.placa ?? '—'}
                                         </td>
                                         <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-muted)' }}>
-                                            {t.contacto ?? '—'}
+                                            {t.email ?? '—'}
                                         </td>
                                         <td className="px-4 py-3 text-xs whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>
                                             {t.telefono ?? '—'}
@@ -229,7 +234,7 @@ export default function TransportistasIndex() {
                                         </td>
                                         <td className="px-4 py-3">
                                             <div className="flex items-center justify-end gap-1">
-                                                                <Button variant="ghost" size="icon" title="Editar" onClick={() => abrirEditar(t)}>
+                                                <Button variant="ghost" size="icon" title="Editar" onClick={() => abrirEditar(t)}>
                                                     <Pencil className="w-4 h-4" />
                                                 </Button>
                                                 <Button variant="ghost" size="icon" title="Eliminar"
@@ -273,14 +278,14 @@ export default function TransportistasIndex() {
                                 {errors.razon_social && <p className="text-xs text-red-400">{errors.razon_social}</p>}
                             </div>
                             <div className="space-y-1.5">
-                                <Label>RUC *</Label>
+                                <Label>Identificación</Label>
                                 <Input
-                                    value={form.ruc}
-                                    onChange={e => setForm(f => ({ ...f, ruc: e.target.value }))}
-                                    placeholder="0999999999001"
-                                    maxLength={13}
+                                    value={form.identificacion}
+                                    onChange={e => setForm(f => ({ ...f, identificacion: e.target.value }))}
+                                    placeholder="Cédula o RUC"
+                                    maxLength={20}
                                 />
-                                {errors.ruc && <p className="text-xs text-red-400">{errors.ruc}</p>}
+                                {errors.identificacion && <p className="text-xs text-red-400">{errors.identificacion}</p>}
                             </div>
                             <div className="space-y-1.5">
                                 <Label>Placa</Label>
@@ -288,16 +293,18 @@ export default function TransportistasIndex() {
                                     value={form.placa}
                                     onChange={e => setForm(f => ({ ...f, placa: e.target.value.toUpperCase() }))}
                                     placeholder="ABC-1234"
-                                    maxLength={10}
+                                    maxLength={20}
                                 />
                             </div>
                             <div className="space-y-1.5">
-                                <Label>Contacto</Label>
+                                <Label>Email</Label>
                                 <Input
-                                    value={form.contacto}
-                                    onChange={e => setForm(f => ({ ...f, contacto: e.target.value }))}
-                                    placeholder="Nombre del contacto"
+                                    type="email"
+                                    value={form.email}
+                                    onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+                                    placeholder="contacto@empresa.com"
                                 />
+                                {errors.email && <p className="text-xs text-red-400">{errors.email}</p>}
                             </div>
                             <div className="space-y-1.5">
                                 <Label>Teléfono</Label>
@@ -308,6 +315,15 @@ export default function TransportistasIndex() {
                                     inputMode="tel"
                                 />
                                 {errors.telefono && <p className="text-xs text-red-400">{errors.telefono}</p>}
+                            </div>
+                            <div className="sm:col-span-2 space-y-1.5">
+                                <Label>Dirección</Label>
+                                <Input
+                                    value={form.direccion}
+                                    onChange={e => setForm(f => ({ ...f, direccion: e.target.value }))}
+                                    placeholder="Dirección del transportista"
+                                    maxLength={300}
+                                />
                             </div>
                         </div>
 

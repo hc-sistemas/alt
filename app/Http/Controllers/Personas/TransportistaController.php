@@ -18,36 +18,27 @@ class TransportistaController extends Controller
 
     public function index(): Response
     {
-        $empresaId = session('empresa_activa_id');
-
         return Inertia::render('Personas/Transportistas/Index', [
-            'transportistas' => Transportista::where('empresa_id', $empresaId)
-                ->orderBy('razon_social')
-                ->get(),
+            'transportistas' => Transportista::orderBy('razon_social')->get(),
         ]);
     }
 
     public function store(Request $request): RedirectResponse
     {
-        $empresaId = session('empresa_activa_id');
-
         $data = $request->validate([
-            'razon_social' => ['required', 'string', 'max:255'],
-            'ruc'          => ['required', 'string', 'regex:/^\d{10}(\d{3})?$/'],
-            'placa'        => ['nullable', 'string', 'max:10'],
-            'contacto'     => ['nullable', 'string', 'max:255'],
-            'telefono'     => ['nullable', 'regex:/^\+?[\d\s\-\(\)]+$/', 'min:7', 'max:15'],
-            'estado'       => ['boolean'],
+            'identificacion' => ['nullable', 'string', 'max:20'],
+            'razon_social'   => ['required', 'string', 'max:200'],
+            'placa'          => ['nullable', 'string', 'max:20'],
+            'email'          => ['nullable', 'email', 'max:200'],
+            'telefono'       => ['nullable', 'regex:/^\+?[\d\s\-\(\)]+$/', 'min:7', 'max:20'],
+            'direccion'      => ['nullable', 'string', 'max:300'],
+            'estado'         => ['boolean'],
         ], [
-            'ruc.regex'      => 'Ingrese una cédula (10 dígitos) o RUC (13 dígitos)',
             'telefono.min'   => 'Ingrese un teléfono válido (mínimo 7 dígitos)',
             'telefono.regex' => 'El teléfono solo puede contener números, espacios y + - ()',
         ]);
 
-        $transportista = Transportista::create([
-            ...$data,
-            'empresa_id' => $empresaId,
-        ]);
+        $transportista = Transportista::create($data);
 
         $this->auditoria->documento('crear', 'personas', 'transportistas', $transportista->id,
             "Transportista {$transportista->razon_social} creado");
@@ -58,14 +49,14 @@ class TransportistaController extends Controller
     public function update(Request $request, Transportista $transportista): RedirectResponse
     {
         $data = $request->validate([
-            'razon_social' => ['required', 'string', 'max:255'],
-            'ruc'          => ['required', 'string', 'regex:/^\d{10}(\d{3})?$/'],
-            'placa'        => ['nullable', 'string', 'max:10'],
-            'contacto'     => ['nullable', 'string', 'max:255'],
-            'telefono'     => ['nullable', 'regex:/^\+?[\d\s\-\(\)]+$/', 'min:7', 'max:15'],
-            'estado'       => ['boolean'],
+            'identificacion' => ['nullable', 'string', 'max:20'],
+            'razon_social'   => ['required', 'string', 'max:200'],
+            'placa'          => ['nullable', 'string', 'max:20'],
+            'email'          => ['nullable', 'email', 'max:200'],
+            'telefono'       => ['nullable', 'regex:/^\+?[\d\s\-\(\)]+$/', 'min:7', 'max:20'],
+            'direccion'      => ['nullable', 'string', 'max:300'],
+            'estado'         => ['boolean'],
         ], [
-            'ruc.regex'      => 'Ingrese una cédula (10 dígitos) o RUC (13 dígitos)',
             'telefono.min'   => 'Ingrese un teléfono válido (mínimo 7 dígitos)',
             'telefono.regex' => 'El teléfono solo puede contener números, espacios y + - ()',
         ]);
@@ -91,12 +82,9 @@ class TransportistaController extends Controller
 
     public function reporteLista(): HttpResponse
     {
-        $empresaId = session('empresa_activa_id');
-        $empresa   = \App\Models\Empresa::find($empresaId);
+        $empresa = \App\Models\Empresa::find(session('empresa_activa_id'));
 
-        $transportistas = Transportista::where('empresa_id', $empresaId)
-            ->orderBy('razon_social')
-            ->get();
+        $transportistas = Transportista::orderBy('razon_social')->get();
 
         $pdf = Pdf::loadView('reportes.personas.transportistas', [
             'transportistas' => $transportistas,
@@ -119,6 +107,6 @@ class TransportistaController extends Controller
             'tipo'          => 'individual',
         ]);
 
-        return $pdf->download('transportista_' . $transportista->ruc . '.pdf');
+        return $pdf->download('transportista_' . $transportista->id . '.pdf');
     }
 }

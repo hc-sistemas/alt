@@ -15,18 +15,19 @@ class Proveedor extends Model
     protected $fillable = [
         'empresa_id',
         'tipo',
-        'ruc_cedula',
-        'nombre',
-        'direccion',
-        'telefono',
+        'tipo_identificacion',
+        'identificacion',
+        'razon_social',
+        'nombre_comercial',
         'email',
+        'telefono',
+        'direccion',
         'ciudad',
         'pais',
         'divisa',
         'tiene_credito',
         'dias_credito',
         'estado',
-        'observaciones',
     ];
 
     protected function casts(): array
@@ -42,14 +43,6 @@ class Proveedor extends Model
         return $this->belongsTo(Empresa::class);
     }
 
-    public function getNombreCompletoAttribute(): string
-    {
-        if ($this->tipo === 'nacional' && $this->ruc_cedula) {
-            return "{$this->nombre} ({$this->ruc_cedula})";
-        }
-        return $this->nombre;
-    }
-
     public function scopeNacionales($query)
     {
         return $query->where('tipo', 'nacional');
@@ -63,5 +56,10 @@ class Proveedor extends Model
     public function scopeActivos($query)
     {
         return $query->where('estado', true);
+    }
+
+    public function getNombreDisplayAttribute(): string
+    {
+        return $this->nombre_comercial ?? $this->razon_social;
     }
 }

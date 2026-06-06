@@ -3,19 +3,18 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Transportista extends Model
 {
     protected $table = 'transportistas';
 
     protected $fillable = [
-        'empresa_id',
+        'identificacion',
         'razon_social',
-        'ruc',
         'placa',
-        'contacto',
+        'email',
         'telefono',
+        'direccion',
         'estado',
     ];
 
@@ -24,10 +23,5 @@ class Transportista extends Model
         return [
             'estado' => 'boolean',
         ];
-    }
-
-    public function empresa(): BelongsTo
-    {
-        return $this->belongsTo(Empresa::class);
     }
 }

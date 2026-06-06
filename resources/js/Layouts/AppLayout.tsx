@@ -1,9 +1,7 @@
-import { useState, useEffect } from 'react'
-import { usePage } from '@inertiajs/react'
+import { useState } from 'react'
 import Sidebar from '@/Components/shared/Sidebar'
 import Topbar from '@/Components/shared/Topbar'
 import { useThemeStore } from '@/Stores/themeStore'
-import type { PageProps } from '@/types'
 
 interface Props {
     children: React.ReactNode
@@ -21,17 +19,6 @@ export default function AppLayout({ children, title }: Props) {
     const [sidebarCollapsed, setSidebarCollapsed] = useState(getDefaultCollapsed)
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
     const { theme } = useThemeStore()
-    const { flash } = usePage<PageProps>().props
-    const [flashMessage, setFlashMessage] = useState(flash)
-
-    useEffect(() => {
-        if (flash.success || flash.error) {
-            setFlashMessage(flash)
-            const timer = setTimeout(() => setFlashMessage({}), 4000)
-            return () => clearTimeout(timer)
-        }
-    }, [flash])
-
     function handleCollapse(v: boolean) {
         setSidebarCollapsed(v)
         localStorage.setItem('altamira-sidebar-collapsed', String(v))
@@ -53,19 +40,6 @@ export default function AppLayout({ children, title }: Props) {
                     onMobileMenu={() => setMobileMenuOpen(true)}
                     pageTitle={title}
                 />
-
-                {/* Flash messages */}
-                {(flashMessage.success || flashMessage.error) && (
-                    <div className={`mx-4 mt-3 p-3 rounded-lg border text-sm flex items-center gap-2 ${
-                        flashMessage.success
-                            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
-                            : 'bg-red-500/10 border-red-500/30 text-red-600 dark:text-red-400'
-                    }`}>
-                        <span className="w-1.5 h-1.5 rounded-full shrink-0"
-                            style={{ background: flashMessage.success ? '#10B981' : '#EF4444' }} />
-                        {flashMessage.success || flashMessage.error}
-                    </div>
-                )}
 
                 {/* Page content */}
                 <main className="flex-1 overflow-y-auto">

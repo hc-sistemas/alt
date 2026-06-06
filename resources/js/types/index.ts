@@ -162,51 +162,54 @@ export interface ActivoFijo {
 export interface Cliente {
     id: number
     empresa_id: number
-    ruc_cedula: string
-    nombre: string
-    direccion?: string
-    telefono?: string
+    tipo_identificacion: '04' | '05' | '06' | '07'
+    identificacion: string
+    razon_social: string
+    nombre_comercial?: string
     email?: string
+    telefono?: string
+    celular?: string
+    direccion?: string
     ciudad?: string
+    provincia?: string
     pais: string
     tiene_credito: boolean
-    dias_credito?: number
-    cupo_credito?: number
-    es_agente_retencion: boolean
+    dias_credito: number
+    cupo_maximo: number
+    agente_retencion: boolean
+    es_cliente_nuevo: boolean
     estado: boolean
-    observaciones?: string
-    created_at?: string
-    updated_at?: string
+    deleted_at?: string | null
 }
 
 export interface Proveedor {
     id: number
     empresa_id: number
     tipo: 'nacional' | 'internacional'
-    ruc_cedula?: string
-    nombre: string
-    direccion?: string
-    telefono?: string
+    tipo_identificacion: '04' | '05' | '06'
+    identificacion: string
+    razon_social: string
+    nombre_comercial?: string
     email?: string
+    telefono?: string
+    direccion?: string
     ciudad?: string
     pais: string
-    divisa?: string
+    divisa: string
     tiene_credito: boolean
-    dias_credito?: number
+    dias_credito: number
     estado: boolean
-    observaciones?: string
-    created_at?: string
-    updated_at?: string
+    deleted_at?: string | null
 }
 
 export interface Transportista {
     id: number
-    empresa_id: number
+    identificacion?: string
     razon_social: string
-    ruc: string
     placa?: string
-    contacto?: string
+    email?: string
     telefono?: string
+    direccion?: string
     estado: boolean
     created_at?: string
     updated_at?: string

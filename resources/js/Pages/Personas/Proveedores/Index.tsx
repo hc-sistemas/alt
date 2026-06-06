@@ -15,6 +15,12 @@ interface Props extends PageProps {
     filters: { search?: string; tipo?: string; estado?: string }
 }
 
+const LABEL_TIPO_ID: Record<string, string> = {
+    '04': 'RUC',
+    '05': 'Ced',
+    '06': 'Pas',
+}
+
 export default function ProveedoresIndex() {
     const { proveedores, filters } = usePage<Props>().props
     const [search, setSearch] = useState(filters.search ?? '')
@@ -33,14 +39,17 @@ export default function ProveedoresIndex() {
     async function exportarExcel() {
         const XLSX = await import('xlsx')
         const filas = proveedores.data.map(p => ({
-            'RUC/Cédula': p.ruc_cedula ?? '—',
-            'Nombre':     p.nombre,
-            'Teléfono':   p.telefono ?? '—',
-            'Email':      p.email ?? '—',
-            'Ciudad':     p.ciudad ?? '—',
-            'País':       p.pais,
-            'Crédito':    p.tiene_credito ? `${p.dias_credito} días` : 'No',
-            'Estado':     p.estado ? 'Activo' : 'Inactivo',
+            'Identificación': p.identificacion,
+            'Tipo ID':        LABEL_TIPO_ID[p.tipo_identificacion] ?? p.tipo_identificacion,
+            'Razón Social':   p.razon_social,
+            'Nombre Comercial': p.nombre_comercial ?? '—',
+            'Teléfono':       p.telefono ?? '—',
+            'Email':          p.email ?? '—',
+            'Ciudad':         p.ciudad ?? '—',
+            'País':           p.pais,
+            'Divisa':         p.divisa,
+            'Crédito':        p.tiene_credito ? `${p.dias_credito} días` : 'No',
+            'Estado':         p.estado ? 'Activo' : 'Inactivo',
         }))
         const ws = XLSX.utils.json_to_sheet(filas)
         const wb = XLSX.utils.book_new()
@@ -49,7 +58,7 @@ export default function ProveedoresIndex() {
     }
 
     async function eliminar(proveedor: Proveedor) {
-        const confirmado = await confirmarEliminar(proveedor.nombre)
+        const confirmado = await confirmarEliminar(proveedor.razon_social)
         if (!confirmado) return
         router.delete(route('personas.proveedores.destroy', proveedor.id), {
             onSuccess: () => toastExito('Proveedor eliminado correctamente'),
@@ -107,8 +116,8 @@ export default function ProveedoresIndex() {
                             <Input
                                 value={search}
                                 onChange={e => setSearch(e.target.value)}
-                                placeholder="RUC o nombre..."
-                                className="pl-9 w-56"
+                                placeholder="Identificación o razón social..."
+                                className="pl-9 w-64"
                             />
                         </div>
                     </div>
@@ -154,8 +163,8 @@ export default function ProveedoresIndex() {
                             <tr style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
                                 <th className="w-10 px-2 py-2 font-medium text-center" style={{ color: 'var(--text-muted)' }}>No</th>
                                 <th className="w-24 px-2 py-2 font-medium text-left" style={{ color: 'var(--text-muted)' }}>Tipo</th>
-                                <th className="w-32 px-2 py-2 font-medium text-left" style={{ color: 'var(--text-muted)' }}>RUC/ID</th>
-                                <th className="min-w-[140px] px-2 py-2 font-medium text-left" style={{ color: 'var(--text-muted)' }}>Nombre</th>
+                                <th className="w-36 px-2 py-2 font-medium text-left" style={{ color: 'var(--text-muted)' }}>Identificación</th>
+                                <th className="min-w-[140px] px-2 py-2 font-medium text-left" style={{ color: 'var(--text-muted)' }}>Razón Social</th>
                                 <th className="w-24 px-2 py-2 font-medium text-left" style={{ color: 'var(--text-muted)' }}>País</th>
                                 <th className="w-24 px-2 py-2 font-medium text-left" style={{ color: 'var(--text-muted)' }}>Ciudad</th>
                                 <th className="w-28 px-2 py-2 font-medium text-left" style={{ color: 'var(--text-muted)' }}>Teléfono</th>
@@ -194,15 +203,22 @@ export default function ProveedoresIndex() {
                                             {proveedor.tipo === 'nacional' ? 'Nacional' : 'Intl.'}
                                         </Badge>
                                     </td>
-                                    <td className="w-32 px-2 py-2 font-mono" style={{ color: 'var(--text-muted)' }}>
-                                        {proveedor.ruc_cedula ?? '—'}
+                                    <td className="w-36 px-2 py-2">
+                                        <div className="flex items-center gap-1.5">
+                                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                                                {LABEL_TIPO_ID[proveedor.tipo_identificacion] ?? proveedor.tipo_identificacion}
+                                            </span>
+                                            <span className="font-mono" style={{ color: 'var(--text-muted)' }}>
+                                                {proveedor.identificacion}
+                                            </span>
+                                        </div>
                                     </td>
                                     <td className="px-2 py-2 font-medium" style={{ color: 'var(--text-main)', maxWidth: '180px', minWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                                        title={proveedor.nombre}>
-                                        {proveedor.nombre}
+                                        title={proveedor.razon_social}>
+                                        {proveedor.razon_social}
                                     </td>
                                     <td className="w-24 px-2 py-2" style={{ color: 'var(--text-muted)', maxWidth: '96px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                        {proveedor.tipo === 'internacional' && proveedor.divisa ? (
+                                        {proveedor.tipo === 'internacional' ? (
                                             <span>{proveedor.pais} · <span className="font-mono">{proveedor.divisa}</span></span>
                                         ) : (
                                             proveedor.pais

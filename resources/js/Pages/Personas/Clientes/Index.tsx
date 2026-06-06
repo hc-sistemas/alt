@@ -16,6 +16,13 @@ interface Props extends PageProps {
     filters: { search?: string; estado?: string }
 }
 
+const TIPO_BADGE: Record<string, string> = {
+    '04': 'RUC',
+    '05': 'CED',
+    '06': 'PAS',
+    '07': 'CF',
+}
+
 export default function ClientesIndex() {
     const { clientes, filters } = usePage<Props>().props
     const [search, setSearch] = useState(filters.search ?? '')
@@ -33,13 +40,14 @@ export default function ClientesIndex() {
     async function exportarExcel() {
         const XLSX = await import('xlsx')
         const filas = clientes.data.map(c => ({
-            'RUC/Cédula': c.ruc_cedula,
-            'Nombre':     c.nombre,
-            'Teléfono':   c.telefono ?? '—',
-            'Email':      c.email ?? '—',
-            'Ciudad':     c.ciudad ?? '—',
-            'Crédito':    c.tiene_credito ? `${c.dias_credito} días` : 'No',
-            'Estado':     c.estado ? 'Activo' : 'Inactivo',
+            'Tipo':           TIPO_BADGE[c.tipo_identificacion] ?? c.tipo_identificacion,
+            'Identificación': c.identificacion,
+            'Razón Social':   c.razon_social,
+            'Teléfono':       c.telefono ?? '—',
+            'Email':          c.email ?? '—',
+            'Ciudad':         c.ciudad ?? '—',
+            'Crédito':        c.tiene_credito ? `${c.dias_credito} días` : 'No',
+            'Estado':         c.estado ? 'Activo' : 'Inactivo',
         }))
         const ws = XLSX.utils.json_to_sheet(filas)
         const wb = XLSX.utils.book_new()
@@ -48,7 +56,7 @@ export default function ClientesIndex() {
     }
 
     async function eliminar(cliente: Cliente) {
-        const confirmado = await confirmarEliminar(cliente.nombre)
+        const confirmado = await confirmarEliminar(cliente.razon_social)
         if (!confirmado) return
         router.delete(route('personas.clientes.destroy', cliente.id), {
             onSuccess: () => toastExito('Cliente eliminado correctamente'),
@@ -83,7 +91,7 @@ export default function ClientesIndex() {
                             <Input
                                 value={search}
                                 onChange={e => setSearch(e.target.value)}
-                                placeholder="RUC/cédula o nombre..."
+                                placeholder="Identificación o razón social..."
                                 className="pl-9 w-56"
                             />
                         </div>
@@ -129,7 +137,7 @@ export default function ClientesIndex() {
                         <thead>
                             <tr style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
                                 <th className="w-10 px-2 py-2 font-medium text-center" style={{ color: 'var(--text-muted)' }}>No</th>
-                                <th className="w-32 px-2 py-2 font-medium text-left" style={{ color: 'var(--text-muted)' }}>Cédula/RUC</th>
+                                <th className="w-36 px-2 py-2 font-medium text-left" style={{ color: 'var(--text-muted)' }}>Identificación</th>
                                 <th className="min-w-[160px] px-2 py-2 font-medium text-left" style={{ color: 'var(--text-muted)' }}>Nombre / Razón Social</th>
                                 <th className="w-24 px-2 py-2 font-medium text-left" style={{ color: 'var(--text-muted)' }}>Cantón</th>
                                 <th className="px-2 py-2 font-medium text-left" style={{ color: 'var(--text-muted)' }}>Dirección</th>
@@ -165,13 +173,21 @@ export default function ClientesIndex() {
                                     <td className="w-10 px-2 py-2 text-center" style={{ color: 'var(--text-muted)' }}>
                                         {numero}
                                     </td>
-                                    <td className="w-32 px-2 py-2 font-mono" style={{ color: 'var(--text-muted)' }}>
-                                        {cliente.ruc_cedula}
+                                    <td className="w-36 px-2 py-2">
+                                        <span className="inline-flex items-center gap-1">
+                                            <span className="text-xs font-medium px-1 py-0.5 rounded"
+                                                style={{ background: 'var(--bg-main)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
+                                                {TIPO_BADGE[cliente.tipo_identificacion] ?? cliente.tipo_identificacion}
+                                            </span>
+                                            <span className="font-mono" style={{ color: 'var(--text-muted)' }}>
+                                                {cliente.identificacion}
+                                            </span>
+                                        </span>
                                     </td>
                                     <td className="px-2 py-2 font-medium" style={{ color: 'var(--text-main)', maxWidth: '200px', minWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                                        title={cliente.nombre}>
-                                        {cliente.nombre}
-                                        {cliente.es_agente_retencion && (
+                                        title={cliente.razon_social}>
+                                        {cliente.razon_social}
+                                        {cliente.agente_retencion && (
                                             <Badge variant="outline" className="ml-1 text-xs">AR</Badge>
                                         )}
                                     </td>
@@ -192,7 +208,7 @@ export default function ClientesIndex() {
                                         {cliente.tiene_credito ? (
                                             <Badge variant="secondary" className="whitespace-nowrap">
                                                 {cliente.dias_credito}d
-                                                {cliente.cupo_credito ? ` · ${formatMoneda(cliente.cupo_credito)}` : ''}
+                                                {cliente.cupo_maximo ? ` · ${formatMoneda(cliente.cupo_maximo)}` : ''}
                                             </Badge>
                                         ) : (
                                             <span style={{ color: 'var(--text-muted)' }}>—</span>
