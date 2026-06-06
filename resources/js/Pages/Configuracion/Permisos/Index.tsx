@@ -4,6 +4,7 @@ import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
 import { Input } from '@/Components/ui/input'
 import type { Perfil, Modulo, Permiso, LimiteDescuento, PageProps } from '@/types'
+import { cn } from "../../../lib/utils";
 
 interface PerfilConPermisos extends Perfil {
     permisos: Permiso[]
@@ -57,17 +58,16 @@ export default function PermisosIndex() {
 
             <div className="p-6">
                 {/* Tabs de perfiles */}
-                <div className="flex flex-wrap gap-1 mb-6 border-b pb-3"
+                <div className={cn('flex', 'flex-wrap', 'gap-1', 'mb-6', 'pb-3', 'border-b')}
                     style={{ borderColor: 'var(--border)' }}>
                     {perfiles.map(p => (
                         <button
                             key={p.id}
                             onClick={() => setPerfilActivo(p.id)}
-                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors capitalize ${
-                                perfilActivo === p.id
+                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors capitalize ${perfilActivo === p.id
                                     ? 'text-black'
                                     : 'hover:bg-slate-100 dark:hover:bg-slate-800'
-                            }`}
+                                }`}
                             style={perfilActivo === p.id ? { background: '#F59E0B' } : { color: 'var(--text-muted)' }}
                         >
                             {p.nombre.replace('_', ' ')}
@@ -76,15 +76,15 @@ export default function PermisosIndex() {
                 </div>
 
                 {/* Tabla de permisos */}
-                <div className="rounded-xl border overflow-x-auto"
+                <div className={cn('border', 'rounded-xl', 'overflow-x-auto')}
                     style={{ borderColor: 'var(--border)' }}>
-                    <table className="w-full text-sm min-w-[600px]">
+                    <table className={cn('w-full', 'min-w-150', 'text-sm')}>
                         <thead>
                             <tr style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
-                                <th className="text-left px-4 py-3 font-medium text-xs uppercase tracking-wider"
+                                <th className={cn('px-4', 'py-3', 'font-medium', 'text-xs', 'text-left', 'uppercase', 'tracking-wider')}
                                     style={{ color: 'var(--text-muted)' }}>Módulo</th>
                                 {acciones.map(a => (
-                                    <th key={a.key} className="text-center px-4 py-3 font-medium text-xs uppercase tracking-wider"
+                                    <th key={a.key} className={cn('px-4', 'py-3', 'font-medium', 'text-xs', 'text-center', 'uppercase', 'tracking-wider')}
                                         style={{ color: 'var(--text-muted)' }}>
                                         {a.label}
                                     </th>
@@ -96,22 +96,22 @@ export default function PermisosIndex() {
                                 const permiso = permisoMap.get(modulo.id)
                                 return (
                                     <tr key={modulo.id}
-                                        className="border-t hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors"
+                                        className={cn('hover:bg-slate-50', 'dark:hover:bg-slate-800/30', 'border-t', 'transition-colors')}
                                         style={{ borderColor: 'var(--border)' }}>
-                                        <td className="px-4 py-3 font-medium" style={{ color: 'var(--text-main)' }}>
+                                        <td className={cn('px-4', 'py-3', 'font-medium')} style={{ color: 'var(--text-main)' }}>
                                             {modulo.nombre}
                                         </td>
                                         {acciones.map(a => {
                                             const key = `${modulo.id}-${a.key}`
                                             const valor = permiso?.[a.key as keyof Permiso] as boolean ?? false
                                             return (
-                                                <td key={a.key} className="px-4 py-3 text-center">
+                                                <td key={a.key} className={cn('px-4', 'py-3', 'text-center')}>
                                                     <input
                                                         type="checkbox"
                                                         checked={valor}
                                                         disabled={guardando === key}
                                                         onChange={e => actualizarPermiso(modulo.id, a.key, e.target.checked)}
-                                                        className="w-4 h-4 rounded accent-amber-500 cursor-pointer"
+                                                        className={cn('rounded', 'w-4', 'h-4', 'accent-amber-500', 'cursor-pointer')}
                                                     />
                                                 </td>
                                             )
@@ -125,14 +125,14 @@ export default function PermisosIndex() {
 
                 {/* Límites de descuento */}
                 {perfil && (
-                    <div className="mt-6 rounded-xl border p-5"
+                    <div className={cn('mt-6', 'p-5', 'border', 'rounded-xl')}
                         style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
-                        <h3 className="font-semibold mb-4" style={{ color: 'var(--text-main)' }}>
+                        <h3 className={cn('mb-4', 'font-semibold')} style={{ color: 'var(--text-main)' }}>
                             Límites de descuento — {perfil.nombre.replace('_', ' ')}
                         </h3>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div className={cn('gap-4', 'grid', 'grid-cols-1', 'sm:grid-cols-3')}>
                             <div className="space-y-1.5">
-                                <label className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
+                                <label className={cn('font-medium', 'text-xs')} style={{ color: 'var(--text-muted)' }}>
                                     % máximo sin aprobación
                                 </label>
                                 <Input
@@ -144,17 +144,17 @@ export default function PermisosIndex() {
                                 />
                             </div>
                             <div className="space-y-1.5">
-                                <label className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
+                                <label className={cn('font-medium', 'text-xs')} style={{ color: 'var(--text-muted)' }}>
                                     ¿Puede aprobar descuentos?
                                 </label>
                                 <input
                                     type="checkbox"
                                     defaultChecked={perfil.limite_descuento?.[0]?.puede_aprobar ?? false}
-                                    className="w-4 h-4 rounded accent-amber-500"
+                                    className={cn('rounded', 'w-4', 'h-4', 'accent-amber-500')}
                                 />
                             </div>
                             <div className="space-y-1.5">
-                                <label className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
+                                <label className={cn('font-medium', 'text-xs')} style={{ color: 'var(--text-muted)' }}>
                                     % máximo que puede aprobar
                                 </label>
                                 <Input

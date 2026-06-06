@@ -22,3 +22,8 @@
 Homestead.json
 Homestead.yaml
 Thumbs.db
+
+# Archivos locales que no van al repo
+30052026.backup
+Sistema Altamira.pdf
+database/altamira_schema.sql

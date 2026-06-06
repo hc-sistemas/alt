@@ -28,11 +28,14 @@ class ModuloSeeder extends Seeder
             ['nombre' => 'Taller', 'clave' => 'taller', 'icono' => 'Wrench', 'orden' => 8],
             ['nombre' => 'Reportes', 'clave' => 'reportes', 'icono' => 'BarChart2', 'orden' => 9],
             ['nombre' => 'Configuración', 'clave' => 'configuracion', 'icono' => 'Settings', 'orden' => 10],
-        ];  
+        ];
 
         $creados = [];
         foreach ($modulosData as $data) {
-                if (!$tieneEstado) unset($data['estado']);
+            if (!$tieneClave)
+                unset($data['clave']);
+            if (!$tieneEstado)
+                unset($data['estado']);
 
             $creados[$data['clave']] = Modulo::firstOrCreate(
                 ['clave' => $data['clave']],
@@ -41,7 +44,8 @@ class ModuloSeeder extends Seeder
         }
 
         $perfiles = Perfil::all()->keyBy('nombre');
-        if ($perfiles->isEmpty()) return;
+        if ($perfiles->isEmpty())
+            return;
 
         $usaPuedeVer = ($colVerReal === 'puede_ver');
 
@@ -55,7 +59,9 @@ class ModuloSeeder extends Seeder
                 'contabilidad' => ['ver', 'crear', 'editar', 'eliminar', 'anular'],
                 'compras' => ['ver', 'crear', 'editar', 'eliminar', 'anular'],
                 'bancos' => ['ver', 'crear', 'editar', 'eliminar', 'anular'],
-                'ventas' => ['ver'], 'inventario' => ['ver'], 'reportes' => ['ver'],
+                'ventas' => ['ver'],
+                'inventario' => ['ver'],
+                'reportes' => ['ver'],
             ],
             'vendedor' => ['ventas' => ['ver', 'crear', 'editar'], 'inventario' => ['ver'], 'reportes' => ['ver']],
             'bodeguero' => ['inventario' => ['ver', 'crear', 'editar', 'eliminar'], 'ventas' => ['ver']],
@@ -64,7 +70,8 @@ class ModuloSeeder extends Seeder
 
         foreach ($matrizPermisos as $nombrePerfil => $permisosPerfil) {
             $perfil = $perfiles[$nombrePerfil] ?? null;
-            if (!$perfil) continue;
+            if (!$perfil)
+                continue;
 
             foreach ($creados as $codigo => $modulo) {
                 $acciones = $permisosPerfil[$codigo] ?? ($permisosPerfil['*'] ?? []);
