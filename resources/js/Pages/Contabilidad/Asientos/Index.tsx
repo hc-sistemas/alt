@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { router, usePage, Link } from '@inertiajs/react'
 import { ToastContainer } from 'react-toastify'
 import Swal from 'sweetalert2'
@@ -8,7 +8,7 @@ import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import {
     BookOpen, Plus, Search, Eye, XCircle, CheckCircle,
-    AlertTriangle, User, X, FileText, Zap, Download, Printer,
+    AlertTriangle, User, X, FileText, Zap, Download, Printer, TrendingUp,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { AsientoContable, AsientoStats, EjercicioContable, PlanCuenta, PageProps } from '@/types'
@@ -64,6 +64,18 @@ export default function AsientosIndex() {
     const [ejercicioId, setEjercicioId] = useState(filtros.ejercicio_id ?? '')
     const [fechaDesde, setFechaDesde] = useState(filtros.fecha_desde ?? '')
     const [fechaHasta, setFechaHasta] = useState(filtros.fecha_hasta ?? '')
+
+    // Modal Mayor Contable
+    const [modalMayor, setModalMayor] = useState(false)
+    const [buscarMayor, setBuscarMayor] = useState('')
+
+    const cuentasMayor = useMemo(() => {
+        const q = buscarMayor.toLowerCase().trim()
+        if (!q) return cuentas.slice(0, 30)
+        return cuentas.filter(c =>
+            c.codigo.toLowerCase().includes(q) || c.nombre.toLowerCase().includes(q)
+        ).slice(0, 25)
+    }, [buscarMayor, cuentas])
 
     // Modal nuevo asiento
     const [modalAbierto, setModalAbierto] = useState(false)
@@ -235,9 +247,8 @@ export default function AsientosIndex() {
                         </div>
                     </div>
 
-                    {/* Fila 2 — Botones debajo del título */}
-                    <div className="flex items-center gap-2 flex-wrap">
-
+                    {/* Toolbar */}
+                    <div className="flex items-center gap-2 flex-wrap mb-6">
                         {/* Nuevo asiento */}
                         {puedeCrear && (
                             <button
@@ -248,7 +259,7 @@ export default function AsientosIndex() {
                                     }
                                     setModalAbierto(true)
                                 }}
-                                className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white transition-all hover:opacity-90 hover:-translate-y-0.5"
+                                className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5"
                                 style={{ background: 'var(--primary)' }}
                             >
                                 <Plus size={15} />
@@ -256,25 +267,52 @@ export default function AsientosIndex() {
                             </button>
                         )}
 
-                        {/* Exportar Excel */}
-                        <a
-                            href={`${route('contabilidad.asientos.exportar-excel')}?ejercicio_id=${ejercicioId}&fecha_desde=${fechaDesde}&fecha_hasta=${fechaHasta}`}
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border transition-all hover:opacity-80"
-                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)' }}
-                        >
-                            <Download size={15} />
-                            Exportar .xlsx
+                        {/* Buscar */}
+                        <div className="relative">
+                            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2"
+                                    style={{ color: 'var(--text-muted)' }} />
+                            <input type="text" value={buscar}
+                                onChange={e => setBuscar(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
+                                placeholder="Número, concepto, referencia…"
+                                className="pl-9 pr-3 py-2 text-sm rounded-xl border focus:outline-none focus:ring-2 w-52 dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600"
+                                style={{ borderColor: 'var(--border)', background: 'var(--bg-card)', color: 'var(--text-main)' }} />
+                        </div>
+
+                        {/* Spacer */}
+                        <div className="flex-1" />
+
+                        {/* Libro Diario */}
+                        <a href={`${route('contabilidad.asientos.libro-diario')}?ejercicio_id=${ejercicioId}&fecha_desde=${fechaDesde}&fecha_hasta=${fechaHasta}`}
+                           target="_blank"
+                           className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90"
+                           style={{ background: '#7c3aed' }}>
+                            <BookOpen size={15} />
+                            Libro Diario
                         </a>
 
-                        {/* PDF reporte */}
-                        <a
-                            href={route('contabilidad.asientos.reporte-pdf')}
-                            target="_blank"
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border transition-all hover:opacity-80"
-                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)' }}
-                        >
-                            <Printer size={15} />
+                        {/* Mayor Contable */}
+                        <button onClick={() => setModalMayor(true)}
+                            className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90"
+                            style={{ background: '#0891b2' }}>
+                            <TrendingUp size={15} />
+                            Mayor
+                        </button>
+
+                        {/* PDF */}
+                        <a href={route('contabilidad.asientos.reporte-pdf')} target="_blank"
+                           className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90"
+                           style={{ background: '#ef4444' }}>
+                            <FileText size={15} />
                             PDF
+                        </a>
+
+                        {/* Excel */}
+                        <a href={`${route('contabilidad.asientos.exportar-excel')}?ejercicio_id=${ejercicioId}&fecha_desde=${fechaDesde}&fecha_hasta=${fechaHasta}`}
+                           className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90"
+                           style={{ background: '#16a34a' }}>
+                            <Download size={15} />
+                            Excel
                         </a>
                     </div>
                 </div>
@@ -328,23 +366,7 @@ export default function AsientosIndex() {
                 {/* Filtros */}
                 <div className={cn('space-y-3', 'p-4', 'border', 'rounded-xl')}
                     style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
-                    <div className={cn('gap-3', 'grid', 'grid-cols-1', 'md:grid-cols-3', 'lg:grid-cols-6')}>
-                        <div className={cn('relative', 'lg:col-span-2')}>
-                            <Search size={13} className={cn('top-1/2', 'left-3', 'absolute', '-translate-y-1/2')}
-                                style={{ color: 'var(--text-muted)' }} />
-                            <input
-                                type="text"
-                                value={buscar}
-                                onChange={e => setBuscar(e.target.value)}
-                                onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
-                                placeholder="Número, concepto, referencia…"
-                                className={cn('dark:bg-gray-800', 'py-2', 'pr-3', 'pl-9', 'border', 'dark:border-gray-600', 'rounded-lg', 'focus:outline-none', 'focus:ring-1', 'focus:ring-amber-500', 'w-full', 'dark:text-gray-100', 'text-sm')}
-                                style={{
-                                    borderColor: 'var(--border)', background: 'var(--bg-main)',
-                                    color: 'var(--text-main)'
-                                }}
-                            />
-                        </div>
+                    <div className={cn('gap-3', 'grid', 'grid-cols-1', 'md:grid-cols-2', 'lg:grid-cols-4')}>
                         <select value={tipo} onChange={e => setTipo(e.target.value)}
                             className={cn('dark:bg-gray-800', 'px-3', 'py-2', 'border', 'dark:border-gray-600', 'rounded-lg', 'focus:outline-none', 'dark:text-gray-100', 'text-sm')}
                             style={{
@@ -845,6 +867,84 @@ export default function AsientosIndex() {
                     fontWeight: '500', boxShadow: '0 8px 32px rgba(0,0,0,0.18)'
                 }}
             />
+
+            {/* ── Modal Mayor Contable ── */}
+            {modalMayor && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+                     style={{ background: 'rgba(0,0,0,0.6)' }}
+                     onClick={() => setModalMayor(false)}>
+                    <div className="w-full max-w-md rounded-2xl shadow-2xl overflow-hidden"
+                         style={{ background: 'var(--bg-card)' }}
+                         onClick={e => e.stopPropagation()}>
+
+                        {/* Header */}
+                        <div className="flex items-center justify-between px-4 py-3 border-b"
+                             style={{ borderColor: 'var(--border)' }}>
+                            <h3 className="font-semibold text-sm flex items-center gap-2"
+                                style={{ color: 'var(--text-main)' }}>
+                                <TrendingUp size={16} style={{ color: 'var(--primary)' }} />
+                                Mayor Contable
+                            </h3>
+                            <button onClick={() => setModalMayor(false)}
+                                    className="p-1 rounded hover:opacity-70 text-xl leading-none"
+                                    style={{ color: 'var(--text-muted)' }}>
+                                <X size={16} />
+                            </button>
+                        </div>
+
+                        {/* Buscar */}
+                        <div className="px-4 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
+                            <div className="relative">
+                                <Search size={14}
+                                    className="absolute left-3 top-1/2 -translate-y-1/2"
+                                    style={{ color: 'var(--text-muted)' }} />
+                                <input
+                                    autoFocus
+                                    type="text"
+                                    value={buscarMayor}
+                                    onChange={e => setBuscarMayor(e.target.value)}
+                                    placeholder="Buscar cuenta por código o nombre…"
+                                    className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border focus:outline-none focus:ring-2 focus:ring-cyan-400"
+                                    style={{ borderColor: 'var(--border)', background: 'var(--bg-main)', color: 'var(--text-main)' }}
+                                />
+                            </div>
+                        </div>
+
+                        {/* Lista de cuentas */}
+                        <div className="overflow-y-auto" style={{ maxHeight: '360px' }}>
+                            {cuentasMayor.map(c => (
+                                <a key={c.id}
+                                   href={`${route('contabilidad.asientos.mayor-cuenta')}?cuenta_id=${c.id}&fecha_desde=${fechaDesde}&fecha_hasta=${fechaHasta}`}
+                                   target="_blank"
+                                   className="w-full text-left px-4 py-2.5 border-b flex items-center gap-3 transition-colors hover:opacity-80"
+                                   style={{ borderColor: 'var(--border)', display: 'flex' }}
+                                   onClick={() => setModalMayor(false)}>
+                                    <span className="font-mono font-bold text-xs shrink-0"
+                                          style={{ color: 'var(--primary)' }}>
+                                        {c.codigo}
+                                    </span>
+                                    <span className="truncate text-sm"
+                                          style={{ color: 'var(--text-main)' }}>
+                                        {c.nombre}
+                                    </span>
+                                </a>
+                            ))}
+                            {cuentasMayor.length === 0 && (
+                                <div className="px-4 py-8 text-center text-sm"
+                                     style={{ color: 'var(--text-muted)' }}>
+                                    Sin resultados
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Footer */}
+                        <div className="px-4 py-2 border-t text-xs"
+                             style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
+                            Selecciona una cuenta para generar el mayor
+                        </div>
+                    </div>
+                </div>
+            )}
         </AppLayout>
     )
 }

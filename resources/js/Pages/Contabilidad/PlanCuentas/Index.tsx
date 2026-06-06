@@ -955,11 +955,12 @@ export default function PlanCuentasIndex() {
                     Colapsar
                 </Button>
 
-                <a href={route('contabilidad.plan-cuentas.exportar')}>
-                    <Button variant="outline" size="sm">
-                        <Download className="w-3.5 h-3.5" />
-                        Exportar .xlsx
-                    </Button>
+                <div className="flex-1" />
+                <a href={route('contabilidad.plan-cuentas.exportar')}
+                   className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90"
+                   style={{ background: '#16a34a' }}>
+                    <Download className="w-3.5 h-3.5" />
+                    Excel
                 </a>
             </div>
 

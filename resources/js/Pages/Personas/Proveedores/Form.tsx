@@ -26,8 +26,10 @@ export default function ProveedorForm() {
 
     const { data, setData, post, put, processing, errors } = useForm({
         tipo: proveedor?.tipo ?? 'nacional' as 'nacional' | 'internacional',
-        ruc_cedula: proveedor?.ruc_cedula ?? '',
-        nombre: proveedor?.nombre ?? '',
+        tipo_identificacion: proveedor?.tipo_identificacion ?? '',
+        identificacion: proveedor?.identificacion ?? '',
+        razon_social: proveedor?.razon_social ?? '',
+        nombre_comercial: proveedor?.nombre_comercial ?? '',
         direccion: proveedor?.direccion ?? '',
         telefono: proveedor?.telefono ?? '',
         email: proveedor?.email ?? '',
@@ -37,7 +39,6 @@ export default function ProveedorForm() {
         tiene_credito: proveedor?.tiene_credito ?? false,
         dias_credito: proveedor?.dias_credito ?? '',
         estado: proveedor?.estado ?? true,
-        observaciones: proveedor?.observaciones ?? '',
     })
 
     function submit(e: FormEvent) {
@@ -114,21 +115,29 @@ export default function ProveedorForm() {
                             <div className="space-y-1.5">
                                 <Label>RUC / Cédula *</Label>
                                 <Input
-                                    value={data.ruc_cedula}
-                                    onChange={e => setData('ruc_cedula', e.target.value)}
+                                    value={data.identificacion}
+                                    onChange={e => setData('identificacion', e.target.value)}
                                     placeholder="0999999999001"
                                     maxLength={13}
                                 />
-                                {errors.ruc_cedula && <p className="text-xs text-red-400">{errors.ruc_cedula}</p>}
+                                {errors.identificacion && <p className="text-xs text-red-400">{errors.identificacion}</p>}
                             </div>
                             <div className="space-y-1.5">
-                                <Label>Nombre / Razón social *</Label>
+                                <Label>Razón social *</Label>
                                 <Input
-                                    value={data.nombre}
-                                    onChange={e => setData('nombre', e.target.value)}
-                                    placeholder="Nombre o razón social"
+                                    value={data.razon_social}
+                                    onChange={e => setData('razon_social', e.target.value)}
+                                    placeholder="Razón social completa"
                                 />
-                                {errors.nombre && <p className="text-xs text-red-400">{errors.nombre}</p>}
+                                {errors.razon_social && <p className="text-xs text-red-400">{errors.razon_social}</p>}
+                            </div>
+                            <div className="space-y-1.5">
+                                <Label>Nombre comercial</Label>
+                                <Input
+                                    value={data.nombre_comercial}
+                                    onChange={e => setData('nombre_comercial', e.target.value)}
+                                    placeholder="Nombre comercial (opcional)"
+                                />
                             </div>
                             <div className="space-y-1.5">
                                 <Label>País</Label>
@@ -140,20 +149,28 @@ export default function ProveedorForm() {
                             <div className="space-y-1.5">
                                 <Label>Identificación (opcional)</Label>
                                 <Input
-                                    value={data.ruc_cedula}
-                                    onChange={e => setData('ruc_cedula', e.target.value)}
+                                    value={data.identificacion}
+                                    onChange={e => setData('identificacion', e.target.value)}
                                     placeholder="ID tributario extranjero"
                                     maxLength={20}
                                 />
                             </div>
                             <div className="space-y-1.5">
-                                <Label>Nombre / Razón social *</Label>
+                                <Label>Razón social *</Label>
                                 <Input
-                                    value={data.nombre}
-                                    onChange={e => setData('nombre', e.target.value)}
-                                    placeholder="Nombre o razón social"
+                                    value={data.razon_social}
+                                    onChange={e => setData('razon_social', e.target.value)}
+                                    placeholder="Razón social o nombre"
                                 />
-                                {errors.nombre && <p className="text-xs text-red-400">{errors.nombre}</p>}
+                                {errors.razon_social && <p className="text-xs text-red-400">{errors.razon_social}</p>}
+                            </div>
+                            <div className="space-y-1.5">
+                                <Label>Nombre comercial</Label>
+                                <Input
+                                    value={data.nombre_comercial}
+                                    onChange={e => setData('nombre_comercial', e.target.value)}
+                                    placeholder="Nombre comercial (opcional)"
+                                />
                             </div>
                             <div className="space-y-1.5">
                                 <Label>Ciudad *</Label>

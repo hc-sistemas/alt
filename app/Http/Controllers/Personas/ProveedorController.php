@@ -23,8 +23,9 @@ class ProveedorController extends Controller
 
         $query = Proveedor::where('empresa_id', $empresaId)
             ->when($request->search, fn($q) => $q->where(function ($q) use ($request) {
-                $q->where('ruc_cedula', 'ilike', "%{$request->search}%")
-                  ->orWhere('nombre', 'ilike', "%{$request->search}%");
+                $q->where('identificacion', 'ilike', "%{$request->search}%")
+                  ->orWhere('razon_social', 'ilike', "%{$request->search}%")
+                  ->orWhere('nombre_comercial', 'ilike', "%{$request->search}%");
             }))
             ->when($request->tipo && $request->tipo !== 'todos', fn($q) =>
                 $q->where('tipo', $request->tipo)
@@ -32,7 +33,7 @@ class ProveedorController extends Controller
             ->when($request->estado !== null && $request->estado !== '', fn($q) =>
                 $q->where('estado', $request->estado === 'activo')
             )
-            ->orderBy('nombre');
+            ->orderBy('razon_social');
 
         return Inertia::render('Personas/Proveedores/Index', [
             'proveedores' => $query->paginate(20)->withQueryString(),
@@ -61,7 +62,7 @@ class ProveedorController extends Controller
         ]);
 
         $this->auditoria->documento('crear', 'personas', 'proveedores', $proveedor->id,
-            "Proveedor {$proveedor->nombre} creado ({$proveedor->tipo})");
+            "Proveedor {$proveedor->razon_social} creado ({$proveedor->tipo})");
 
         return redirect()->route('personas.proveedores.index')
             ->with('success', 'Proveedor creado correctamente.');
@@ -85,7 +86,7 @@ class ProveedorController extends Controller
         $proveedor->update($data);
 
         $this->auditoria->documento('editar', 'personas', 'proveedores', $proveedor->id,
-            "Proveedor {$proveedor->nombre} actualizado");
+            "Proveedor {$proveedor->razon_social} actualizado");
 
         return redirect()->route('personas.proveedores.index')
             ->with('success', 'Proveedor actualizado correctamente.');
@@ -99,7 +100,7 @@ class ProveedorController extends Controller
         $proveedores = Proveedor::where('empresa_id', $empresaId)
             ->when($request->tipo && $request->tipo !== 'todos', fn($q) => $q->where('tipo', $request->tipo))
             ->when($request->estado, fn($q) => $q->where('estado', $request->estado === 'activo'))
-            ->orderBy('nombre')
+            ->orderBy('razon_social')
             ->get();
 
         $pdf = Pdf::loadView('reportes.personas.proveedores', [
@@ -128,7 +129,7 @@ class ProveedorController extends Controller
 
     public function destroy(Proveedor $proveedor): RedirectResponse
     {
-        $nombre = $proveedor->nombre;
+        $nombre = $proveedor->razon_social;
         $proveedor->delete();
 
         $this->auditoria->documento('eliminar', 'personas', 'proveedores', $proveedor->id,

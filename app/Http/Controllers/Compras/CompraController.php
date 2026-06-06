@@ -2,23 +2,33 @@
 namespace App\Http\Controllers\Compras;
 
 use App\Http\Controllers\Controller;
+use App\Exports\ComprasExport;
+use App\Models\Bodega;
 use App\Models\Compra;
 use App\Models\CompraDetalle;
 use App\Models\CuentaPagar;
+use App\Models\Empresa;
 use App\Models\Proveedor;
 use App\Models\PlanCuenta;
 use App\Models\CentroCosto;
+use App\Models\Producto;
 use App\Services\AsientoService;
+use App\Services\Contracts\InventarioServiceInterface;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
+use Maatwebsite\Excel\Facades\Excel;
 
 class CompraController extends Controller
 {
-    public function __construct(private AsientoService $asientoService) {}
+    public function __construct(
+        private AsientoService $asientoService,
+        private InventarioServiceInterface $inventario,
+    ) {}
 
     public function index(Request $request): Response
     {
@@ -57,11 +67,23 @@ class CompraController extends Controller
             ->orderBy('codigo')
             ->get(['id', 'codigo', 'nombre']);
 
+        $bodegas = Bodega::where('empresa_id', $empresaId)
+            ->where('activo', true)
+            ->orderBy('nombre')
+            ->get(['id', 'nombre', 'tipo']);
+
+        $productos = Producto::where('empresa_id', $empresaId)
+            ->where('estado', true)
+            ->orderBy('codigo')
+            ->get(['id', 'codigo', 'nombre', 'unidad', 'costo', 'iva_porcentaje']);
+
         return Inertia::render('Compras/Compras/Index', [
             'compras'     => $compras,
             'proveedores' => $proveedores,
             'centros'     => $centros,
             'cuentas'     => $cuentas,
+            'bodegas'     => $bodegas,
+            'productos'   => $productos,
             'filtros'     => $request->only(['buscar', 'estado', 'fecha_desde', 'fecha_hasta']),
             'stats' => [
                 'total'    => Compra::where('empresa_id', $empresaId)->count(),
@@ -81,6 +103,7 @@ class CompraController extends Controller
             'num_documento'              => 'required|string|max:30',
             'fecha_emision'              => 'required|date',
             'dias_credito'               => 'integer|min:0',
+            'bodega_id'                  => 'nullable|exists:bodegas,id',
             'gasto_no_deducible'         => 'boolean',
             'concepto'                   => 'nullable|string|max:500',
             'detalles'                   => 'required|array|min:1',
@@ -134,6 +157,7 @@ class CompraController extends Controller
                     'proveedor_id'        => $request->proveedor_id,
                     'centro_costo_id'     => $request->centro_costo_id,
                     'importacion_id'      => $request->importacion_id,
+                    'bodega_id'           => $request->bodega_id,
                     'tipo_documento'      => $request->tipo_documento,
                     'num_documento'       => $request->num_documento,
                     'num_autorizacion'    => $request->num_autorizacion,
@@ -162,6 +186,28 @@ class CompraController extends Controller
                         ])->toArray(),
                         ['compra_id' => $compra->id]
                     ));
+                }
+
+                // Ingreso a inventario para detalles con producto_id
+                if ($request->bodega_id) {
+                    foreach ($detalles as $d) {
+                        if (empty($d['producto_id'])) {
+                            continue;
+                        }
+                        try {
+                            $this->inventario->ingresarStock(
+                                productoId:   (int) $d['producto_id'],
+                                bodegaId:     (int) $request->bodega_id,
+                                cantidad:     (float) $d['cantidad'],
+                                costoUnitario:(float) $d['precio_unitario'],
+                                docTipo:      'compra',
+                                docId:        $compra->id,
+                                notas:        "Compra {$request->num_documento}",
+                            );
+                        } catch (\Exception) {
+                            // No bloquear la compra si falla el inventario
+                        }
+                    }
                 }
 
                 if ($request->dias_credito > 0) {
@@ -208,6 +254,14 @@ class CompraController extends Controller
         ]);
     }
 
+    public function pdfIndividual(Compra $compra): \Illuminate\Http\Response
+    {
+        $compra->load(['proveedor', 'centroCosto', 'detalles.cuenta', 'cuentaPagar', 'creadoPor']);
+        $empresa = Empresa::find(session('empresa_activa_id'));
+        $pdf = Pdf::loadView('pdf.compra', compact('compra', 'empresa'))->setPaper('a4', 'portrait');
+        return $pdf->stream('compra-' . $compra->num_documento . '-' . now()->format('Y-m-d') . '.pdf');
+    }
+
     public function anular(Request $request, Compra $compra): RedirectResponse
     {
         $request->validate([
@@ -245,5 +299,28 @@ class CompraController extends Controller
 
         return back()->with('success',
             "Compra {$compra->num_documento} anulada correctamente.");
+    }
+
+    public function pdf(Request $request): \Illuminate\Http\Response
+    {
+        $empresaId = session('empresa_activa_id');
+        $query     = Compra::with('proveedor')->where('empresa_id', $empresaId);
+        if ($request->filled('estado'))      { $query->where('estado', $request->estado); }
+        if ($request->filled('fecha_desde')) { $query->where('fecha_emision', '>=', $request->fecha_desde); }
+        if ($request->filled('fecha_hasta')) { $query->where('fecha_emision', '<=', $request->fecha_hasta); }
+        $compras = $query->orderByDesc('fecha_emision')->get();
+        $empresa = Empresa::find($empresaId);
+        $pdf = Pdf::loadView('pdf.compras', compact('compras', 'empresa'))->setPaper('a4', 'landscape');
+        return $pdf->stream('facturas-compra-' . now()->format('Y-m-d') . '.pdf');
+    }
+
+    public function excel(Request $request): \Symfony\Component\HttpFoundation\BinaryFileResponse
+    {
+        $empresaId = session('empresa_activa_id');
+        return Excel::download(
+            new ComprasExport((int) $empresaId, $request->only(['estado', 'fecha_desde', 'fecha_hasta'])),
+            'facturas-compra-' . now()->format('Y-m-d') . '.xlsx',
+            \Maatwebsite\Excel\Excel::XLSX
+        );
     }
 }

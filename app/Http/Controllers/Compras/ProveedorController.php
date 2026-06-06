@@ -2,12 +2,16 @@
 namespace App\Http\Controllers\Compras;
 
 use App\Http\Controllers\Controller;
+use App\Exports\ProveedoresExport;
+use App\Models\Empresa;
 use App\Models\Proveedor;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 use Inertia\Response;
+use Maatwebsite\Excel\Facades\Excel;
 
 class ProveedorController extends Controller
 {
@@ -122,5 +126,25 @@ class ProveedorController extends Controller
         $proveedor->update(['estado' => !$proveedor->estado]);
         $accion = $proveedor->estado ? 'activado' : 'desactivado';
         return back()->with('success', "Proveedor {$accion} correctamente.");
+    }
+
+    public function pdf(): \Illuminate\Http\Response
+    {
+        $empresaId   = session('empresa_activa_id');
+        $proveedores = Proveedor::where('empresa_id', $empresaId)->orderBy('razon_social')->get();
+        $empresa     = Empresa::find($empresaId);
+        $pdf = Pdf::loadView('pdf.proveedores', compact('proveedores', 'empresa'))
+            ->setPaper('a4', 'landscape');
+        return $pdf->stream('proveedores-' . now()->format('Y-m-d') . '.pdf');
+    }
+
+    public function excel(): \Symfony\Component\HttpFoundation\BinaryFileResponse
+    {
+        $empresaId = session('empresa_activa_id');
+        return Excel::download(
+            new ProveedoresExport((int) $empresaId),
+            'proveedores-' . now()->format('Y-m-d') . '.xlsx',
+            \Maatwebsite\Excel\Excel::XLSX
+        );
     }
 }

@@ -33,14 +33,15 @@ export default function ProveedoresIndex() {
     async function exportarExcel() {
         const XLSX = await import('xlsx')
         const filas = proveedores.data.map(p => ({
-            'RUC/Cédula': p.ruc_cedula ?? '—',
-            'Nombre':     p.nombre,
-            'Teléfono':   p.telefono ?? '—',
-            'Email':      p.email ?? '—',
-            'Ciudad':     p.ciudad ?? '—',
-            'País':       p.pais,
-            'Crédito':    p.tiene_credito ? `${p.dias_credito} días` : 'No',
-            'Estado':     p.estado ? 'Activo' : 'Inactivo',
+            'RUC/Cédula':      p.identificacion ?? '—',
+            'Razón Social':    p.razon_social,
+            'Nombre Comercial': p.nombre_comercial ?? '—',
+            'Teléfono':        p.telefono ?? '—',
+            'Email':           p.email ?? '—',
+            'Ciudad':          p.ciudad ?? '—',
+            'País':            p.pais,
+            'Crédito':         p.tiene_credito ? `${p.dias_credito} días` : 'No',
+            'Estado':          p.estado ? 'Activo' : 'Inactivo',
         }))
         const ws = XLSX.utils.json_to_sheet(filas)
         const wb = XLSX.utils.book_new()
@@ -49,7 +50,7 @@ export default function ProveedoresIndex() {
     }
 
     async function eliminar(proveedor: Proveedor) {
-        const confirmado = await confirmarEliminar(proveedor.nombre)
+        const confirmado = await confirmarEliminar(proveedor.razon_social)
         if (!confirmado) return
         router.delete(route('personas.proveedores.destroy', proveedor.id), {
             onSuccess: () => toastExito('Proveedor eliminado correctamente'),
@@ -195,11 +196,11 @@ export default function ProveedoresIndex() {
                                         </Badge>
                                     </td>
                                     <td className="w-32 px-2 py-2 font-mono" style={{ color: 'var(--text-muted)' }}>
-                                        {proveedor.ruc_cedula ?? '—'}
+                                        {proveedor.identificacion ?? '—'}
                                     </td>
                                     <td className="px-2 py-2 font-medium" style={{ color: 'var(--text-main)', maxWidth: '180px', minWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                                        title={proveedor.nombre}>
-                                        {proveedor.nombre}
+                                        title={proveedor.nombre_comercial ?? proveedor.razon_social}>
+                                        {proveedor.nombre_comercial ?? proveedor.razon_social}
                                     </td>
                                     <td className="w-24 px-2 py-2" style={{ color: 'var(--text-muted)', maxWidth: '96px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                         {proveedor.tipo === 'internacional' && proveedor.divisa ? (

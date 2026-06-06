@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { router, usePage, useForm, Head, Link } from '@inertiajs/react'
 import { toast, ToastContainer } from 'react-toastify'
 import Swal from 'sweetalert2'
@@ -8,15 +8,18 @@ import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
+import { formatFecha } from '@/utils/contabilidad'
 import {
-    Plus, Search, X, FileText, ChevronLeft, ChevronRight,
+    Plus, Search, X, FileText, Download, ChevronLeft, ChevronRight,
     Lock, Ban, Eye, ShoppingCart, CheckCircle, AlertCircle,
     DollarSign, Trash2, CreditCard,
 } from 'lucide-react'
-import type { Compra, Proveedor, CentroCosto, PlanCuenta, PageProps, PaginatedData } from '@/types'
+import type { Compra, Proveedor, CentroCosto, PlanCuenta, Bodega, PageProps, PaginatedData, Producto } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+type ProductoRow = Pick<Producto, 'id' | 'codigo' | 'nombre' | 'unidad' | 'costo' | 'iva_porcentaje'>
 
 interface CompraStats {
     total: number
@@ -37,11 +40,15 @@ interface Props extends PageProps {
     proveedores: Pick<Proveedor, 'id' | 'razon_social' | 'nombre_comercial' | 'identificacion' | 'tiene_credito' | 'dias_credito' | 'tipo'>[]
     centros: Pick<CentroCosto, 'id' | 'nombre' | 'codigo'>[]
     cuentas: Pick<PlanCuenta, 'id' | 'codigo' | 'nombre'>[]
+    bodegas: Pick<Bodega, 'id' | 'nombre' | 'tipo'>[]
+    productos: ProductoRow[]
     filtros: Filtros
     stats: CompraStats
 }
 
 interface DetalleItem {
+    producto_id: number | null
+    codigo: string
     descripcion: string
     cantidad: number | string
     precio_unitario: number | string
@@ -133,21 +140,116 @@ function StatCard({ label, value, icon: Icon, cls, valueCls }: {
 
 // ─── Fila detalle editable ────────────────────────────────────────────────────
 
+const DETALLE_COLS = '130px 1fr 70px 90px 80px 70px 80px 70px 80px 36px'
+
 interface DetalleRowProps {
     detalle: DetalleItem
     idx: number
     cuentas: Props['cuentas']
-    onChange: (idx: number, field: keyof DetalleItem, value: string | number | boolean) => void
+    productos: ProductoRow[]
+    onChange: (idx: number, field: keyof DetalleItem, value: string | number | boolean | null) => void
     onRemove: (idx: number) => void
+    onSelect: (idx: number, p: ProductoRow | null) => void
 }
 
-function DetalleRow({ detalle, idx, cuentas, onChange, onRemove }: DetalleRowProps) {
+function DetalleRow({ detalle, idx, cuentas, productos, onChange, onRemove, onSelect }: DetalleRowProps) {
     const { subtotal, iva, total } = calcDetalle(detalle)
     const inputStyle = { background: 'var(--bg-card)', color: 'var(--text-main)', borderColor: 'var(--border)' }
 
+    const [query,    setQuery]    = useState(detalle.codigo ?? '')
+    const [showDrop, setShowDrop] = useState(false)
+    const dropRef = useRef<HTMLDivElement>(null)
+
+    useEffect(() => { setQuery(detalle.codigo ?? '') }, [detalle.codigo])
+
+    const filtered = useMemo(() => {
+        if (query.length < 2) return []
+        const q = query.toLowerCase()
+        return productos.filter(p =>
+            p.codigo.toLowerCase().includes(q) || p.nombre.toLowerCase().includes(q)
+        ).slice(0, 8)
+    }, [query, productos])
+
+    function handleCodigoChange(val: string) {
+        setQuery(val)
+        onChange(idx, 'codigo', val)
+        if (detalle.producto_id) onChange(idx, 'producto_id', null)
+        setShowDrop(val.length >= 2)
+    }
+
+    function selectProducto(p: ProductoRow) {
+        onSelect(idx, p)
+        setShowDrop(false)
+    }
+
+    const vinculado = Boolean(detalle.producto_id)
+
     return (
-        <tr className="border-b text-xs" style={{ borderColor: 'var(--border)' }}>
-            <td className="px-2 py-1.5">
+        <div className="border-b text-xs"
+            style={{ display: 'grid', gridTemplateColumns: DETALLE_COLS, alignItems: 'center', borderColor: 'var(--border)' }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'rgba(245,158,11,0.03)')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+
+            {/* ── Código ── */}
+            <div className="px-1 py-1.5 relative">
+                <input
+                    className={cn(
+                        'w-full px-2 py-1 border rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500',
+                        vinculado ? 'border-green-500 dark:border-green-600' : ''
+                    )}
+                    style={inputStyle}
+                    value={query}
+                    onChange={e => handleCodigoChange(e.target.value)}
+                    onFocus={() => query.length >= 2 && setShowDrop(true)}
+                    onBlur={() => setTimeout(() => setShowDrop(false), 150)}
+                    placeholder="Buscar…"
+                />
+                {showDrop && (
+                    <div ref={dropRef}
+                        className="absolute left-0 top-full mt-0.5 z-50 w-80 max-h-52 overflow-y-auto rounded-lg border shadow-xl"
+                        style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+                        {filtered.length === 0 ? (
+                            <>
+                                <div className="px-3 py-2 text-xs" style={{ color: 'var(--text-muted)' }}>
+                                    Sin resultados en inventario
+                                </div>
+                                <button type="button"
+                                    className="w-full text-left px-3 py-2 text-xs border-t hover:opacity-80 transition-opacity"
+                                    style={{ borderColor: 'var(--border)', color: 'var(--primary)' }}
+                                    onMouseDown={() => { onChange(idx, 'codigo', query); setShowDrop(false) }}>
+                                    ✏️ Ingresar sin vincular
+                                </button>
+                            </>
+                        ) : (
+                            <>
+                                {filtered.map(p => (
+                                    <button key={p.id} type="button"
+                                        className="w-full text-left px-3 py-2 hover:opacity-80 transition-opacity border-b last:border-0"
+                                        style={{ borderColor: 'var(--border)' }}
+                                        onMouseDown={() => selectProducto(p)}>
+                                        <div className="flex items-baseline gap-1.5">
+                                            <span className="font-bold text-[10px]" style={{ color: 'var(--primary)' }}>{p.codigo}</span>
+                                            <span className="font-medium text-xs truncate" style={{ color: 'var(--text-main)' }}>{p.nombre}</span>
+                                        </div>
+                                        <div className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                                            {p.unidad} · ${Number(p.costo).toFixed(2)} · IVA {p.iva_porcentaje}%
+                                        </div>
+                                    </button>
+                                ))}
+                                <button type="button"
+                                    className="w-full text-left px-3 py-2 text-xs border-t hover:opacity-80 transition-opacity"
+                                    style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}
+                                    onMouseDown={() => { onChange(idx, 'codigo', query); setShowDrop(false) }}>
+                                    ✏️ Ingresar sin vincular
+                                </button>
+                            </>
+                        )}
+                    </div>
+                )}
+            </div>
+
+            {/* ── Descripción ── */}
+            <div className="px-2 py-1.5">
                 <input
                     className="w-full px-2 py-1 border rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500"
                     style={inputStyle}
@@ -155,63 +257,64 @@ function DetalleRow({ detalle, idx, cuentas, onChange, onRemove }: DetalleRowPro
                     onChange={e => onChange(idx, 'descripcion', e.target.value)}
                     placeholder="Descripción del bien/servicio"
                 />
-            </td>
-            <td className="px-1 py-1.5 w-20">
+            </div>
+
+            {/* ── Cantidad ── */}
+            <div className="px-1 py-1.5">
                 <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    pattern="[0-9]*"
+                    type="number" min="1" step="1" pattern="[0-9]*"
                     value={detalle.cantidad}
                     onChange={e => {
                         const val = Math.floor(Math.abs(parseInt(e.target.value) || 1))
                         onChange(idx, 'cantidad', String(val))
                     }}
-                    onKeyDown={e => {
-                        if (e.key === '.' || e.key === ',') e.preventDefault()
-                    }}
+                    onKeyDown={e => { if (e.key === '.' || e.key === ',') e.preventDefault() }}
                     className="w-full px-2 py-1 border rounded text-xs text-center focus:outline-none focus:ring-1 focus:ring-amber-500"
                     style={inputStyle}
                 />
-            </td>
-            <td className="px-1 py-1.5 w-24">
+            </div>
+
+            {/* ── P. Unitario ── */}
+            <div className="px-1 py-1.5">
                 <input type="number" step="0.0001" min={0}
                     className="w-full px-2 py-1 border rounded text-xs text-right focus:outline-none focus:ring-1 focus:ring-amber-500"
                     style={inputStyle}
                     value={detalle.precio_unitario}
                     onChange={e => onChange(idx, 'precio_unitario', e.target.value)}
                 />
-            </td>
-            <td className="px-2 py-1">
-                <div className="flex flex-col gap-0.5 items-center">
-                    <select
-                        value={detalle.descuento_pct ?? '0'}
-                        onChange={e => {
-                            const pct   = parseInt(e.target.value) || 0
-                            const base  = (parseFloat(String(detalle.cantidad)) || 0) *
-                                          (parseFloat(String(detalle.precio_unitario)) || 0)
-                            const monto = parseFloat((base * pct / 100).toFixed(2))
-                            onChange(idx, 'descuento_pct', String(pct))
-                            onChange(idx, 'descuento',     String(monto))
-                        }}
-                        className="w-16 rounded px-1 py-1 text-xs border text-center focus:outline-none focus:ring-1 focus:ring-amber-500"
-                        style={{ borderColor: 'var(--border)', background: 'var(--bg-main)', color: 'var(--text-main)' }}
-                    >
-                        <option value="0">0%</option>
-                        <option value="5">5%</option>
-                        <option value="10">10%</option>
-                        <option value="15">15%</option>
-                        <option value="20">20%</option>
-                        <option value="25">25%</option>
-                        <option value="30">30%</option>
-                        <option value="50">50%</option>
-                    </select>
-                    <span className="text-xs font-mono" style={{ color: 'var(--primary)' }}>
-                        -${parseFloat(String(detalle.descuento) || '0').toFixed(2)}
-                    </span>
-                </div>
-            </td>
-            <td className="px-1 py-1.5 w-16">
+            </div>
+
+            {/* ── Descuento ── */}
+            <div className="px-1 py-1 flex flex-col gap-0.5 items-center">
+                <select
+                    value={detalle.descuento_pct ?? '0'}
+                    onChange={e => {
+                        const pct   = parseInt(e.target.value) || 0
+                        const base  = (parseFloat(String(detalle.cantidad)) || 0) *
+                                      (parseFloat(String(detalle.precio_unitario)) || 0)
+                        const monto = parseFloat((base * pct / 100).toFixed(2))
+                        onChange(idx, 'descuento_pct', String(pct))
+                        onChange(idx, 'descuento',     String(monto))
+                    }}
+                    className="w-full rounded px-1 py-1 text-xs border text-center focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    style={{ borderColor: 'var(--border)', background: 'var(--bg-main)', color: 'var(--text-main)' }}
+                >
+                    <option value="0">0%</option>
+                    <option value="5">5%</option>
+                    <option value="10">10%</option>
+                    <option value="15">15%</option>
+                    <option value="20">20%</option>
+                    <option value="25">25%</option>
+                    <option value="30">30%</option>
+                    <option value="50">50%</option>
+                </select>
+                <span className="text-[10px] font-mono" style={{ color: 'var(--primary)' }}>
+                    -{parseFloat(String(detalle.descuento) || '0').toFixed(2)}
+                </span>
+            </div>
+
+            {/* ── IVA % ── */}
+            <div className="px-1 py-1.5">
                 <select
                     className="w-full px-1 py-1 border rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500"
                     style={inputStyle}
@@ -220,23 +323,34 @@ function DetalleRow({ detalle, idx, cuentas, onChange, onRemove }: DetalleRowPro
                     <option value={0}>0%</option>
                     <option value={15}>15%</option>
                 </select>
-            </td>
-            <td className="px-2 py-1.5 text-right font-medium w-20" style={{ color: 'var(--text-main)' }}>
+            </div>
+
+            {/* ── Subtotal ── */}
+            <div className="px-2 py-1.5 text-right font-medium tabular-nums"
+                style={{ color: 'var(--text-main)' }}>
                 {subtotal.toFixed(2)}
-            </td>
-            <td className="px-2 py-1.5 text-right w-16" style={{ color: 'var(--text-muted)' }}>
+            </div>
+
+            {/* ── IVA ── */}
+            <div className="px-2 py-1.5 text-right tabular-nums"
+                style={{ color: 'var(--text-muted)' }}>
                 {iva.toFixed(2)}
-            </td>
-            <td className="px-2 py-1.5 text-right font-bold w-20" style={{ color: 'var(--primary)' }}>
+            </div>
+
+            {/* ── Total ── */}
+            <div className="px-2 py-1.5 text-right font-bold tabular-nums"
+                style={{ color: 'var(--primary)' }}>
                 {total.toFixed(2)}
-            </td>
-            <td className="px-1 py-1.5 w-8">
-                <button onClick={() => onRemove(idx)}
+            </div>
+
+            {/* ── Eliminar ── */}
+            <div className="flex items-center justify-center">
+                <button type="button" onClick={() => onRemove(idx)}
                     className="p-1 rounded hover:bg-red-500/20 text-red-500 transition-colors">
                     <Trash2 className="w-3 h-3" />
                 </button>
-            </td>
-        </tr>
+            </div>
+        </div>
     )
 }
 
@@ -246,10 +360,12 @@ interface NuevaCompraModalProps {
     proveedores: Props['proveedores']
     centros: Props['centros']
     cuentas: Props['cuentas']
+    bodegas: Props['bodegas']
+    productos: ProductoRow[]
     onClose: () => void
 }
 
-function NuevaCompraModal({ proveedores, centros, cuentas, onClose }: NuevaCompraModalProps) {
+function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, onClose }: NuevaCompraModalProps) {
     const [tab, setTab] = useState<'datos' | 'detalle' | 'centro'>('datos')
 
     const { data, setData, post, processing, errors } = useForm<{
@@ -264,6 +380,7 @@ function NuevaCompraModal({ proveedores, centros, cuentas, onClose }: NuevaCompr
         sustento_tributario: string
         concepto: string
         centro_costo_id: string | number
+        bodega_id: string | number
         detalles: DetalleItem[]
     }>({
         proveedor_id:        '',
@@ -277,7 +394,9 @@ function NuevaCompraModal({ proveedores, centros, cuentas, onClose }: NuevaCompr
         sustento_tributario: '',
         concepto:            '',
         centro_costo_id:     '',
+        bodega_id:           '',
         detalles: [{
+            producto_id: null, codigo: '',
             descripcion: '', cantidad: 1, precio_unitario: '',
             descuento: 0, descuento_pct: '0', porcentaje_iva: 15,
             cuenta_id: '', es_activo_fijo: false,
@@ -300,7 +419,7 @@ function NuevaCompraModal({ proveedores, centros, cuentas, onClose }: NuevaCompr
         }
     }, [data.proveedor_id])
 
-    const updateDetalle = useCallback((idx: number, field: keyof DetalleItem, value: string | number | boolean) => {
+    const updateDetalle = useCallback((idx: number, field: keyof DetalleItem, value: string | number | boolean | null) => {
         setData(prev => ({
             ...prev,
             detalles: prev.detalles.map((d, i) => {
@@ -320,11 +439,30 @@ function NuevaCompraModal({ proveedores, centros, cuentas, onClose }: NuevaCompr
     const addDetalle = () => setData(prev => ({
         ...prev,
         detalles: [...prev.detalles, {
+            producto_id: null, codigo: '',
             descripcion: '', cantidad: 1, precio_unitario: '',
             descuento: 0, descuento_pct: '0', porcentaje_iva: 15,
             cuenta_id: '', es_activo_fijo: false,
         }],
     }))
+
+    const handleSelectProducto = useCallback((idx: number, p: ProductoRow | null) => {
+        setData(prev => ({
+            ...prev,
+            detalles: prev.detalles.map((d, i) => {
+                if (i !== idx) return d
+                if (!p) return { ...d, producto_id: null }
+                return {
+                    ...d,
+                    producto_id:     p.id,
+                    codigo:          p.codigo,
+                    descripcion:     p.nombre,
+                    precio_unitario: String(p.costo),
+                    porcentaje_iva:  String(p.iva_porcentaje),
+                }
+            }),
+        }))
+    }, [])
 
     const removeDetalle = (idx: number) => setData(prev => ({
         ...prev,
@@ -513,31 +651,38 @@ function NuevaCompraModal({ proveedores, centros, cuentas, onClose }: NuevaCompr
                         {/* ── Tab 2: Detalle ── */}
                         {tab === 'detalle' && (
                             <div className="space-y-4">
-                                <div className="overflow-x-auto rounded-lg border" style={{ borderColor: 'var(--border)' }}>
-                                    <table className="w-full text-xs">
-                                        <thead>
-                                            <tr className="border-b text-[10px] font-semibold uppercase tracking-wider"
-                                                style={{ borderColor: 'var(--border)', background: 'rgba(245,158,11,0.05)', color: 'var(--text-muted)' }}>
-                                                <th className="px-2 py-2 text-left">Descripción</th>
-                                                <th className="px-1 py-2 w-20 text-right">Cantidad</th>
-                                                <th className="px-1 py-2 w-24 text-right">P. Unitario</th>
-                                                <th className="px-2 py-2 w-24 text-center">Descuento</th>
-                                                <th className="px-1 py-2 w-16 text-center">IVA %</th>
-                                                <th className="px-2 py-2 w-20 text-right">Subtotal</th>
-                                                <th className="px-2 py-2 w-16 text-right">IVA</th>
-                                                <th className="px-2 py-2 w-20 text-right">Total</th>
-                                                <th className="w-8" />
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {data.detalles.map((d, idx) => (
-                                                <DetalleRow key={idx} detalle={d} idx={idx}
-                                                    cuentas={cuentas}
-                                                    onChange={updateDetalle}
-                                                    onRemove={removeDetalle} />
-                                            ))}
-                                        </tbody>
-                                    </table>
+                                <div className="rounded-lg border overflow-x-auto" style={{ borderColor: 'var(--border)' }}>
+                                    {/* Header */}
+                                    <div className="border-b text-[10px] font-semibold uppercase tracking-wider"
+                                        style={{
+                                            display: 'grid', gridTemplateColumns: DETALLE_COLS,
+                                            alignItems: 'center',
+                                            borderColor: 'var(--border)',
+                                            background: 'rgba(245,158,11,0.05)',
+                                            color: 'var(--text-muted)',
+                                        }}>
+                                        <div className="px-1 py-2">Código</div>
+                                        <div className="px-2 py-2">Descripción</div>
+                                        <div className="px-1 py-2 text-right">Cant.</div>
+                                        <div className="px-1 py-2 text-right">P. Unit.</div>
+                                        <div className="px-1 py-2 text-center">Desc.</div>
+                                        <div className="px-1 py-2 text-center">IVA%</div>
+                                        <div className="px-2 py-2 text-right">Subtotal</div>
+                                        <div className="px-2 py-2 text-right">IVA</div>
+                                        <div className="px-2 py-2 text-right">Total</div>
+                                        <div />
+                                    </div>
+                                    {/* Rows */}
+                                    <div>
+                                        {data.detalles.map((d, idx) => (
+                                            <DetalleRow key={idx} detalle={d} idx={idx}
+                                                cuentas={cuentas}
+                                                productos={productos}
+                                                onChange={updateDetalle}
+                                                onRemove={removeDetalle}
+                                                onSelect={handleSelectProducto} />
+                                        ))}
+                                    </div>
                                 </div>
 
                                 <button type="button" onClick={addDetalle}
@@ -588,7 +733,7 @@ function NuevaCompraModal({ proveedores, centros, cuentas, onClose }: NuevaCompr
                             </div>
                         )}
 
-                        {/* ── Tab 3: Centro de costo ── */}
+                        {/* ── Tab 3: Centro de costo y Bodega ── */}
                         {tab === 'centro' && (
                             <div className="space-y-4 max-w-md">
                                 <div className="space-y-1.5">
@@ -602,6 +747,22 @@ function NuevaCompraModal({ proveedores, centros, cuentas, onClose }: NuevaCompr
                                             <option key={c.id} value={c.id}>{c.codigo} — {c.nombre}</option>
                                         ))}
                                     </select>
+                                </div>
+
+                                <div className="space-y-1.5">
+                                    <Label>Bodega destino</Label>
+                                    <select value={data.bodega_id}
+                                        onChange={e => setData('bodega_id', e.target.value)}
+                                        className="w-full h-9 px-3 border rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                        style={inputStyle}>
+                                        <option value="">— Sin ingreso a inventario —</option>
+                                        {bodegas.map(b => (
+                                            <option key={b.id} value={b.id}>{b.nombre}</option>
+                                        ))}
+                                    </select>
+                                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                        Si seleccionas una bodega, los detalles con producto ingresarán al stock automáticamente.
+                                    </p>
                                 </div>
 
                                 {/* Resumen final */}
@@ -749,7 +910,7 @@ type ModalState =
     | { type: 'anular'; compra: Compra }
 
 export default function ComprasIndex() {
-    const { compras, proveedores, centros, cuentas, filtros, stats, flash } = usePage<Props>().props
+    const { compras, proveedores, centros, cuentas, bodegas, productos, filtros, stats, flash } = usePage<Props>().props
 
     const [modal, setModal] = useState<ModalState>({ type: 'none' })
     const [buscar, setBuscar]       = useState(filtros.buscar ?? '')
@@ -798,14 +959,66 @@ export default function ComprasIndex() {
                         </p>
                     </div>
                 </div>
-                <div className="flex items-center gap-2 flex-wrap">
+                {/* Toolbar */}
+                <div className="flex items-center gap-2 flex-wrap mb-6">
                     <button onClick={() => setModal({ type: 'nueva' })}
-                        className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-white transition-colors"
-                        style={{ background: 'var(--primary)' }}
-                        onMouseEnter={e => (e.currentTarget.style.background = 'var(--primary-hover)')}
-                        onMouseLeave={e => (e.currentTarget.style.background = 'var(--primary)')}>
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5"
+                        style={{ background: 'var(--primary)' }}>
                         <Plus size={15} /> Nueva Factura de Compra
                     </button>
+
+                    <div className="relative">
+                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2"
+                                style={{ color: 'var(--text-muted)' }} />
+                        <input type="text" value={buscar}
+                            onChange={e => setBuscar(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
+                            placeholder="Buscar N° doc, proveedor…"
+                            className="pl-9 pr-3 py-2 text-sm rounded-xl border focus:outline-none focus:ring-2 w-52 dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600"
+                            style={{ borderColor: 'var(--border)', background: 'var(--bg-card)', color: 'var(--text-main)' }} />
+                    </div>
+
+                    <select value={estado} onChange={e => setEstado(e.target.value)}
+                        className="py-2 px-3 text-sm rounded-xl border focus:outline-none dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600"
+                        style={inputStyle}>
+                        <option value="">Todos los estados</option>
+                        <option value="activa">Activa</option>
+                        <option value="anulada">Anulada</option>
+                    </select>
+
+                    <input type="date" value={fechaDesde} onChange={e => setFechaDesde(e.target.value)}
+                        className="py-2 px-3 text-sm rounded-xl border focus:outline-none dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600"
+                        style={inputStyle} />
+                    <input type="date" value={fechaHasta} onChange={e => setFechaHasta(e.target.value)}
+                        className="py-2 px-3 text-sm rounded-xl border focus:outline-none dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600"
+                        style={inputStyle} />
+
+                    <button onClick={aplicarFiltros}
+                        className="px-4 py-2 rounded-xl text-sm font-semibold text-white whitespace-nowrap transition-all hover:opacity-90"
+                        style={{ background: 'var(--primary)' }}>
+                        Filtrar
+                    </button>
+                    {hayFiltros && (
+                        <button onClick={limpiar}
+                            className="px-3 py-2 rounded-xl text-sm font-medium border transition-all hover:opacity-80"
+                            style={{ color: 'var(--text-muted)', borderColor: 'var(--border)' }}>
+                            Limpiar
+                        </button>
+                    )}
+
+                    <div className="flex-1" />
+
+                    <a href={`${route('compras.facturas.pdf')}?estado=${estado}&fecha_desde=${fechaDesde}&fecha_hasta=${fechaHasta}`}
+                       target="_blank"
+                       className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90"
+                       style={{ background: '#ef4444' }}>
+                        <FileText size={15} /> PDF
+                    </a>
+                    <a href={`${route('compras.facturas.excel')}?estado=${estado}&fecha_desde=${fechaDesde}&fecha_hasta=${fechaHasta}`}
+                       className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90"
+                       style={{ background: '#16a34a' }}>
+                        <Download size={15} /> Excel
+                    </a>
                 </div>
             </div>
 
@@ -823,49 +1036,6 @@ export default function ComprasIndex() {
                 <StatCard label="Con pago" value={stats.con_pago} icon={DollarSign}
                     cls="bg-amber-500/15 text-amber-600 dark:text-amber-400"
                     valueCls="text-amber-600 dark:text-amber-400" />
-            </div>
-
-            {/* Filtros */}
-            <div className="flex flex-wrap items-center gap-2 px-6 pb-4">
-                <div className="relative flex-1 min-w-48 max-w-xs">
-                    <Search className="absolute top-1/2 left-2.5 w-4 h-4 -translate-y-1/2 pointer-events-none"
-                        style={{ color: 'var(--text-muted)' }} />
-                    <Input className="pl-8 pr-8" placeholder="Buscar N° doc, proveedor…"
-                        value={buscar} onChange={e => setBuscar(e.target.value)}
-                        onKeyDown={e => e.key === 'Enter' && aplicarFiltros()} />
-                    {buscar && (
-                        <button onClick={() => setBuscar('')}
-                            className="absolute top-1/2 right-2.5 -translate-y-1/2 hover:opacity-70 transition-opacity"
-                            style={{ color: 'var(--text-muted)' }}>
-                            <X className="w-3.5 h-3.5" />
-                        </button>
-                    )}
-                </div>
-                <select value={estado} onChange={e => setEstado(e.target.value)}
-                    className="h-9 px-3 border rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
-                    style={inputStyle}>
-                    <option value="">Todos los estados</option>
-                    <option value="activa">Activa</option>
-                    <option value="anulada">Anulada</option>
-                </select>
-                <Input type="date" className="h-9 w-36" value={fechaDesde}
-                    onChange={e => setFechaDesde(e.target.value)} />
-                <Input type="date" className="h-9 w-36" value={fechaHasta}
-                    onChange={e => setFechaHasta(e.target.value)} />
-                <button onClick={aplicarFiltros}
-                    className="h-9 px-4 rounded-md text-sm font-medium text-white transition-colors"
-                    style={{ background: 'var(--primary)' }}
-                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--primary-hover)')}
-                    onMouseLeave={e => (e.currentTarget.style.background = 'var(--primary)')}>
-                    Filtrar
-                </button>
-                {hayFiltros && (
-                    <button onClick={limpiar}
-                        className="h-9 px-3 rounded-md text-sm font-medium border transition-colors hover:opacity-80"
-                        style={{ color: 'var(--text-muted)', borderColor: 'var(--border)' }}>
-                        Limpiar
-                    </button>
-                )}
             </div>
 
             {/* Tabla */}
@@ -913,7 +1083,7 @@ export default function ComprasIndex() {
                             </div>
                             <div className="col-span-1 text-center">
                                 <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                                    {c.fecha_emision ? new Date(c.fecha_emision + 'T00:00:00').toLocaleDateString('es-EC', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}
+                                    {formatFecha(c.fecha_emision)}
                                 </p>
                             </div>
                             <div className="col-span-3 min-w-0">
@@ -1009,6 +1179,8 @@ export default function ComprasIndex() {
                     proveedores={proveedores}
                     centros={centros}
                     cuentas={cuentas}
+                    bodegas={bodegas}
+                    productos={productos}
                     onClose={() => setModal({ type: 'none' })}
                 />
             )}

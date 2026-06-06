@@ -10,7 +10,7 @@ import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
 import {
     Plus, Pencil, ToggleLeft, ToggleRight, Search, X,
-    Users, Globe, Building2, AlertCircle, ShoppingCart,
+    FileText, Download, Users, Globe, Building2, AlertCircle, ShoppingCart,
 } from 'lucide-react'
 import type { Proveedor, PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
@@ -402,14 +402,36 @@ export default function ProveedoresIndex() {
                         </p>
                     </div>
                 </div>
-                <div className="flex items-center gap-2 flex-wrap">
+                {/* Toolbar */}
+                <div className="flex items-center gap-2 flex-wrap mb-6">
                     <button onClick={() => setModal({ open: true })}
-                        className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-white transition-colors"
-                        style={{ background: 'var(--primary)' }}
-                        onMouseEnter={e => (e.currentTarget.style.background = 'var(--primary-hover)')}
-                        onMouseLeave={e => (e.currentTarget.style.background = 'var(--primary)')}>
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5"
+                        style={{ background: 'var(--primary)' }}>
                         <Plus size={15} /> Nuevo Proveedor
                     </button>
+
+                    <div className="relative">
+                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2"
+                                style={{ color: 'var(--text-muted)' }} />
+                        <input type="text" value={busqueda}
+                            onChange={e => setBusqueda(e.target.value)}
+                            placeholder="Buscar por nombre, RUC, email…"
+                            className="pl-9 pr-3 py-2 text-sm rounded-xl border focus:outline-none focus:ring-2 w-52 dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600"
+                            style={{ borderColor: 'var(--border)', background: 'var(--bg-card)', color: 'var(--text-main)' }} />
+                    </div>
+
+                    <div className="flex-1" />
+
+                    <a href={route('compras.proveedores.pdf')} target="_blank"
+                       className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90"
+                       style={{ background: '#ef4444' }}>
+                        <FileText size={15} /> PDF
+                    </a>
+                    <a href={route('compras.proveedores.excel')}
+                       className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90"
+                       style={{ background: '#16a34a' }}>
+                        <Download size={15} /> Excel
+                    </a>
                 </div>
             </div>
 
@@ -427,23 +449,6 @@ export default function ProveedoresIndex() {
                 <StatCard label="Con saldo" value={stats.con_saldo} icon={AlertCircle}
                     cls="bg-orange-500/15 text-orange-600 dark:text-orange-400"
                     valueCls="text-orange-600 dark:text-orange-400" />
-            </div>
-
-            {/* Toolbar */}
-            <div className="flex flex-wrap items-center gap-2 px-6 pb-4">
-                <div className="relative flex-1 min-w-48 max-w-sm">
-                    <Search className="absolute top-1/2 left-2.5 w-4 h-4 -translate-y-1/2 pointer-events-none"
-                        style={{ color: 'var(--text-muted)' }} />
-                    <Input className="pl-8 pr-8" placeholder="Buscar por nombre, RUC, email…"
-                        value={busqueda} onChange={e => setBusqueda(e.target.value)} />
-                    {busqueda && (
-                        <button onClick={() => setBusqueda('')}
-                            className="absolute top-1/2 right-2.5 -translate-y-1/2 hover:opacity-70 transition-opacity"
-                            style={{ color: 'var(--text-muted)' }}>
-                            <X className="w-3.5 h-3.5" />
-                        </button>
-                    )}
-                </div>
             </div>
 
             {/* Tabla */}

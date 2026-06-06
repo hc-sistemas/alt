@@ -566,3 +566,122 @@ export interface AnticipoProveedor {
     asiento_id: number | null
     estado: 'pendiente' | 'cruzado'
 }
+
+// ── Bancos ────────────────────────────────────────────────────────────────────
+
+export interface BancoCaja {
+    id: number
+    empresa_id: number
+    cuenta_id: number | null
+    cuenta?: PlanCuenta
+    tipo: 'banco' | 'caja' | 'caja_chica' | 'tarjeta'
+    tipo_label?: string
+    tipo_color?: string
+    nombre: string
+    num_cuenta: string | null
+    tipo_cuenta: string | null
+    saldo_inicial: number
+    saldo_actual: number
+    estado: boolean
+}
+
+export interface MovimientoBancario {
+    id: number
+    empresa_id: number
+    banco_caja_id: number
+    banco_caja?: BancoCaja
+    tipo: 'ingreso' | 'egreso'
+    sub_tipo: string | null
+    sub_tipo_label?: string
+    fecha: string
+    monto: number
+    persona_tipo: string | null
+    persona_id: number | null
+    beneficiario: string | null
+    num_documento: string | null
+    num_cheque: string | null
+    descripcion: string | null
+    documento_tipo: string | null
+    documento_id: number | null
+    cuenta_contrapartida_id: number | null
+    asiento_id: number | null
+    conciliado: boolean
+    es_postfechado: boolean
+    anulado: boolean
+    created_at: string
+}
+
+export interface CierreCaja {
+    id: number
+    empresa_id: number
+    banco_caja_id: number
+    banco_caja?: BancoCaja
+    centro_costo_id: number | null
+    fecha: string
+    usuario_apertura_id: number | null
+    usuario_cierre_id: number | null
+    monto_inicial: number
+    total_facturado: number
+    total_cobrado: number
+    total_efectivo: number
+    total_tarjeta: number
+    total_cheque: number
+    total_transferencia: number
+    diferencia: number
+    observaciones: string | null
+    estado: 'abierto' | 'cerrado'
+    hora_apertura: string | null
+    hora_cierre: string | null
+}
+
+export interface DatafastLote {
+    id: number
+    empresa_id: number
+    banco_caja_id: number
+    banco_caja?: BancoCaja
+    numero_lote: string
+    fecha: string
+    total_vouchers: number
+    asiento_id: number | null
+    estado: 'pendiente' | 'liquidado'
+    liquidacion?: DatafastLiquidacion
+}
+
+export interface DatafastLiquidacion {
+    id: number
+    lote_id: number
+    fecha_deposito: string
+    valor_bruto: number
+    comision_datafast: number
+    retencion_iva: number
+    retencion_ir: number
+    valor_neto: number
+    banco_destino_id: number | null
+    asiento_id: number | null
+}
+
+export interface ConciliacionBancaria {
+    id: number
+    empresa_id: number
+    banco_caja_id: number
+    banco_caja?: BancoCaja
+    fecha_corte: string
+    saldo_banco: number
+    saldo_sistema: number
+    diferencia: number
+    descripcion: string | null
+    estado: 'pendiente' | 'conciliada'
+    created_at: string
+    partidas?: PartidaTransito[]
+}
+
+export interface PartidaTransito {
+    id: number
+    conciliacion_id: number
+    tipo: 'sistema' | 'banco'
+    fecha: string | null
+    descripcion: string | null
+    monto: number | null
+    movimiento_id: number | null
+    conciliada: boolean
+}

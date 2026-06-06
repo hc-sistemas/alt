@@ -348,32 +348,56 @@ function ActualizarModal({ importacion, onClose }: {
 
 // ─── Modal Liquidar ───────────────────────────────────────────────────────────
 
+interface CostoExtra { descripcion: string; monto: string }
+
 function LiquidarModal({ importacion, onClose }: {
     importacion: ImportacionRow
     onClose: () => void
 }) {
-    const { data, setData, patch, processing, errors } = useForm({
-        metodo_prorrateo:  'cantidad' as 'cantidad' | 'precio' | 'peso',
-        fecha_liquidacion: new Date().toISOString().slice(0, 10),
-    })
+    const [metodo,          setMetodo]    = useState<'cantidad' | 'precio' | 'peso'>('cantidad')
+    const [fechaLiquidacion, setFecha]   = useState(new Date().toISOString().slice(0, 10))
+    const [costos,          setCostos]   = useState<CostoExtra[]>([{ descripcion: '', monto: '' }])
+    const [processing,      setProcessing] = useState(false)
+
+    const inputStyle = { background: 'var(--bg-card)', color: 'var(--text-main)', borderColor: 'var(--border)' }
+
+    const totalCostosExtra = costos.reduce((acc, c) => acc + (parseFloat(c.monto) || 0), 0)
+    const costoTotal       = Number(importacion.costo_fob) + totalCostosExtra
+
+    function agregarCosto() {
+        setCostos(prev => [...prev, { descripcion: '', monto: '' }])
+    }
+
+    function actualizarCosto(idx: number, field: keyof CostoExtra, value: string) {
+        setCostos(prev => prev.map((c, i) => i === idx ? { ...c, [field]: value } : c))
+    }
+
+    function quitarCosto(idx: number) {
+        setCostos(prev => prev.filter((_, i) => i !== idx))
+    }
 
     function submit(e: React.FormEvent) {
         e.preventDefault()
-        patch(route('compras.importaciones.liquidar', importacion.id), {
+        const costosValidos = costos.filter(c => c.descripcion && parseFloat(c.monto) > 0)
+        setProcessing(true)
+        router.patch(route('compras.importaciones.liquidar', importacion.id), {
+            metodo_prorrateo:  metodo,
+            fecha_liquidacion: fechaLiquidacion,
+            costos_extra:      costosValidos,
+        }, {
             onSuccess: () => { notify.ok(`Importación "${importacion.nombre}" liquidada`); onClose() },
-            onError:   (errs) => notify.error('Error: ' + Object.values(errs).join(', ')),
+            onError:   (errs) => { notify.error('Error: ' + Object.values(errs).join(', ')); setProcessing(false) },
+            onFinish:  () => setProcessing(false),
         })
     }
-
-    const inputStyle = { background: 'var(--bg-card)', color: 'var(--text-main)', borderColor: 'var(--border)' }
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-            <div className="relative w-full max-w-md rounded-xl shadow-2xl"
+            <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-xl shadow-2xl"
                 style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-                <div className="flex items-center justify-between px-6 pt-5 pb-4"
-                    style={{ borderBottom: '1px solid var(--border)' }}>
+                <div className="sticky top-0 z-10 flex items-center justify-between px-6 pt-5 pb-4"
+                    style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
                     <div>
                         <h2 className="font-semibold text-base" style={{ color: 'var(--text-main)' }}>
                             Liquidar importación
@@ -387,8 +411,44 @@ function LiquidarModal({ importacion, onClose }: {
                 </div>
 
                 <form onSubmit={submit} className="p-6 space-y-4">
-                    {/* Resumen costos */}
-                    <div className="rounded-lg p-4 space-y-2"
+                    {/* Costos extra dinámicos */}
+                    <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                            <Label>Costos extra (flete, seguro, aduana…)</Label>
+                            <button type="button" onClick={agregarCosto}
+                                className="text-xs font-semibold px-2 py-1 rounded-lg transition-colors"
+                                style={{ color: 'var(--primary)', background: 'rgba(245,158,11,0.1)' }}>
+                                + Agregar
+                            </button>
+                        </div>
+                        {costos.map((c, idx) => (
+                            <div key={idx} className="flex gap-2 items-center">
+                                <input
+                                    value={c.descripcion}
+                                    onChange={e => actualizarCosto(idx, 'descripcion', e.target.value)}
+                                    placeholder="Descripción (flete, seguro…)"
+                                    className="flex-1 h-8 px-2 border rounded text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                    style={inputStyle} />
+                                <input
+                                    type="number" step="0.01" min={0}
+                                    value={c.monto}
+                                    onChange={e => actualizarCosto(idx, 'monto', e.target.value)}
+                                    placeholder="0.00"
+                                    className="w-24 h-8 px-2 border rounded text-sm text-right focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                    style={inputStyle} />
+                                {costos.length > 1 && (
+                                    <button type="button" onClick={() => quitarCosto(idx)}
+                                        className="p-1 rounded hover:text-red-500 transition-colors"
+                                        style={{ color: 'var(--text-muted)' }}>
+                                        <X className="w-3.5 h-3.5" />
+                                    </button>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Resumen de costos */}
+                    <div className="rounded-lg p-3 space-y-1.5"
                         style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)' }}>
                         <div className="flex justify-between text-sm">
                             <span style={{ color: 'var(--text-muted)' }}>Costo FOB</span>
@@ -397,23 +457,21 @@ function LiquidarModal({ importacion, onClose }: {
                             </span>
                         </div>
                         <div className="flex justify-between text-sm">
-                            <span style={{ color: 'var(--text-muted)' }}>Costos extra (compras)</span>
+                            <span style={{ color: 'var(--text-muted)' }}>Costos extra ingresados</span>
                             <span className="font-medium" style={{ color: 'var(--text-main)' }}>
-                                ${Number(importacion.total_costos_extra).toFixed(2)}
+                                ${totalCostosExtra.toFixed(2)}
                             </span>
                         </div>
-                        <div className="flex justify-between text-sm border-t pt-2" style={{ borderColor: 'rgba(245,158,11,0.3)' }}>
-                            <span className="font-bold" style={{ color: 'var(--primary)' }}>Costo total estimado</span>
-                            <span className="font-bold" style={{ color: 'var(--primary)' }}>
-                                ${(Number(importacion.costo_fob) + Number(importacion.total_costos_extra)).toFixed(2)}
-                            </span>
+                        <div className="flex justify-between text-sm font-bold border-t pt-1.5"
+                            style={{ borderColor: 'rgba(245,158,11,0.3)', color: 'var(--primary)' }}>
+                            <span>Costo total</span>
+                            <span>${costoTotal.toFixed(2)}</span>
                         </div>
                     </div>
 
                     <div className="space-y-1.5">
                         <Label>Método de prorrateo <span className="text-red-400">*</span></Label>
-                        <select value={data.metodo_prorrateo}
-                            onChange={e => setData('metodo_prorrateo', e.target.value as typeof data.metodo_prorrateo)}
+                        <select value={metodo} onChange={e => setMetodo(e.target.value as typeof metodo)}
                             className="w-full h-9 px-3 border rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
                             style={inputStyle}>
                             <option value="cantidad">Por cantidad (unidades)</option>
@@ -424,13 +482,12 @@ function LiquidarModal({ importacion, onClose }: {
 
                     <div className="space-y-1.5">
                         <Label>Fecha de liquidación <span className="text-red-400">*</span></Label>
-                        <Input type="date" value={data.fecha_liquidacion}
-                            onChange={e => setData('fecha_liquidacion', e.target.value)}
-                            error={errors.fecha_liquidacion} />
+                        <Input type="date" value={fechaLiquidacion}
+                            onChange={e => setFecha(e.target.value)} />
                     </div>
 
                     <div className="flex gap-2 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
-                        <Button type="submit" disabled={processing}>
+                        <Button type="submit" disabled={processing || totalCostosExtra <= 0}>
                             <CheckCircle2 className="w-4 h-4" /> Liquidar
                         </Button>
                         <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
@@ -480,12 +537,10 @@ export default function ImportacionesIndex() {
                         </p>
                     </div>
                 </div>
-                <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-2 flex-wrap mb-6">
                     <button onClick={() => setModal({ type: 'crear' })}
-                        className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-white transition-colors"
-                        style={{ background: 'var(--primary)' }}
-                        onMouseEnter={e => (e.currentTarget.style.background = 'var(--primary-hover)')}
-                        onMouseLeave={e => (e.currentTarget.style.background = 'var(--primary)')}>
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5"
+                        style={{ background: 'var(--primary)' }}>
                         <Plus size={15} /> Nueva Importación
                     </button>
                 </div>

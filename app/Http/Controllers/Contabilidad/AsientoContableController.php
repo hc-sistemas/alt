@@ -239,6 +239,76 @@ class AsientoContableController extends Controller
         return $pdf->stream('reporte-asientos-' . now()->format('Y-m-d') . '.pdf');
     }
 
+    public function libroDiario(Request $request): \Illuminate\Http\Response
+    {
+        $empresaId = session('empresa_activa_id');
+
+        $query = AsientoContable::with(['ejercicio', 'creadoPor', 'detalles.cuenta'])
+            ->where('empresa_id', $empresaId)
+            ->where('estado', 1);
+
+        if ($request->filled('ejercicio_id')) {
+            $query->where('ejercicio_id', $request->ejercicio_id);
+        }
+        if ($request->filled('fecha_desde')) {
+            $query->where('fecha', '>=', $request->fecha_desde);
+        }
+        if ($request->filled('fecha_hasta')) {
+            $query->where('fecha', '<=', $request->fecha_hasta);
+        }
+
+        $asientos   = $query->orderBy('fecha')->orderBy('id')->get();
+        $empresa    = Empresa::find($empresaId);
+        $totalDebe  = $asientos->sum('total_debe');
+        $totalHaber = $asientos->sum('total_haber');
+
+        $pdf = Pdf::loadView(
+            'pdf.libro-diario',
+            compact('asientos', 'empresa', 'totalDebe', 'totalHaber')
+        )->setPaper('a4', 'landscape');
+
+        return $pdf->stream('libro-diario-' . now()->format('Y-m-d') . '.pdf');
+    }
+
+    public function mayorCuenta(Request $request): \Illuminate\Http\Response
+    {
+        $empresaId = session('empresa_activa_id');
+        $request->validate(['cuenta_id' => 'required|exists:plan_cuentas,id']);
+
+        $cuenta = PlanCuenta::findOrFail($request->cuenta_id);
+
+        $detalles = \App\Models\AsientoDetalle::with(['asiento.ejercicio'])
+            ->where('cuenta_id', $request->cuenta_id)
+            ->whereHas('asiento', fn($q) =>
+                $q->where('empresa_id', $empresaId)->where('estado', 1)
+            )
+            ->orderBy('id')
+            ->get();
+
+        if ($request->filled('fecha_desde')) {
+            $detalles = $detalles->filter(fn($d) =>
+                $d->asiento?->fecha?->toDateString() >= $request->fecha_desde
+            );
+        }
+        if ($request->filled('fecha_hasta')) {
+            $detalles = $detalles->filter(fn($d) =>
+                $d->asiento?->fecha?->toDateString() <= $request->fecha_hasta
+            );
+        }
+
+        $totalDebe  = $detalles->sum('debe');
+        $totalHaber = $detalles->sum('haber');
+        $saldo      = $totalDebe - $totalHaber;
+        $empresa    = Empresa::find($empresaId);
+
+        $pdf = Pdf::loadView(
+            'pdf.mayor-cuenta',
+            compact('cuenta', 'detalles', 'totalDebe', 'totalHaber', 'saldo', 'empresa')
+        )->setPaper('a4', 'portrait');
+
+        return $pdf->stream('mayor-' . $cuenta->codigo . '-' . now()->format('Y-m-d') . '.pdf');
+    }
+
     // CORRECCIÓN 5: imprimir PDF individual
     public function imprimirPdf(AsientoContable $asiento): \Illuminate\Http\Response
     {
