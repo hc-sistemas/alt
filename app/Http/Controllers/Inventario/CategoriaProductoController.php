@@ -18,14 +18,12 @@ class CategoriaProductoController extends Controller
 
     public function index(): Response
     {
-        // Árbol completo con hijos eager loaded
         $categorias = CategoriaProducto::with('hijos')
             ->raices()
             ->orderBy('nombre')
             ->get();
 
-        // Lista plana para el selector de padre
-        $todasCategorias = CategoriaProducto::whereNull('parent_id')
+        $todasCategorias = CategoriaProducto::whereNull('categoria_padre_id')
             ->orderBy('nombre')
             ->get(['id', 'nombre']);
 
@@ -38,10 +36,9 @@ class CategoriaProductoController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $data = $request->validate([
-            'nombre'      => ['required', 'string', 'max:150'],
-            'descripcion' => ['nullable', 'string'],
-            'parent_id'   => ['nullable', 'integer', 'exists:categorias_producto,id'],
-            'activo'      => ['boolean'],
+            'nombre'             => ['required', 'string', 'max:150'],
+            'categoria_padre_id' => ['nullable', 'integer', 'exists:categorias_producto,id'],
+            'estado'             => ['boolean'],
         ]);
 
         $categoria = CategoriaProducto::create($data);
@@ -55,18 +52,16 @@ class CategoriaProductoController extends Controller
     public function update(Request $request, CategoriaProducto $categoria): RedirectResponse|JsonResponse
     {
         $data = $request->validate([
-            'nombre'      => ['required', 'string', 'max:150'],
-            'descripcion' => ['nullable', 'string'],
-            'parent_id'   => ['nullable', 'integer', 'exists:categorias_producto,id'],
-            'activo'      => ['boolean'],
+            'nombre'             => ['required', 'string', 'max:150'],
+            'categoria_padre_id' => ['nullable', 'integer', 'exists:categorias_producto,id'],
+            'estado'             => ['boolean'],
         ]);
 
-        // Prevenir ciclos: parent_id no puede ser la misma categoría ni un hijo de ella
-        if (!empty($data['parent_id'])) {
-            if ($data['parent_id'] === $categoria->id) {
+        if (!empty($data['categoria_padre_id'])) {
+            if ($data['categoria_padre_id'] === $categoria->id) {
                 return response()->json(['message' => 'Una categoría no puede ser su propio padre.'], 422);
             }
-            $esHijo = $categoria->hijos()->where('id', $data['parent_id'])->exists();
+            $esHijo = $categoria->hijos()->where('id', $data['categoria_padre_id'])->exists();
             if ($esHijo) {
                 return response()->json(['message' => 'No se puede asignar un hijo como padre (ciclo detectado).'], 422);
             }
@@ -82,7 +77,6 @@ class CategoriaProductoController extends Controller
 
     public function destroy(CategoriaProducto $categoria): RedirectResponse|JsonResponse
     {
-        // Bloquear si tiene hijos
         if ($categoria->hijos()->exists()) {
             $count = $categoria->hijos()->count();
             return response()->json([
@@ -90,7 +84,6 @@ class CategoriaProductoController extends Controller
             ], 422);
         }
 
-        // Bloquear si tiene productos asociados
         if (Schema::hasTable('productos')) {
             $total = \DB::table('productos')->where('categoria_id', $categoria->id)->count();
             if ($total > 0) {

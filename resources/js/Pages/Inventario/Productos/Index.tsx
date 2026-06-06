@@ -7,22 +7,23 @@ import { Input } from '@/Components/ui/input'
 import { Plus, Search, Pencil, Trash2, FileText, FileSpreadsheet } from 'lucide-react'
 import { confirmarEliminar } from '@/lib/swal'
 import { toastExito, toastError } from '@/lib/toast'
-import type { Marca, CategoriaProducto, Producto, PaginatedData, PageProps } from '@/types'
+import type { Producto, PaginatedData, PageProps } from '@/types'
 
 interface Props extends PageProps {
     productos: PaginatedData<Producto>
     filters: { search?: string; marca_id?: string; categoria_id?: string; tipo?: string; estado?: string }
     marcas: { id: number; nombre: string }[]
-    categorias: { id: number; nombre: string; parent_id: number | null }[]
+    categorias: { id: number; nombre: string; categoria_padre_id: number | null }[]
 }
 
 const TIPO_COLORES: Record<string, string> = {
     producto: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
     servicio: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
-    combo:    'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+    repuesto: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+    insumo:   'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400',
 }
 
-const TIPO_LABELS: Record<string, string> = { producto: 'Producto', servicio: 'Servicio', combo: 'Combo' }
+const TIPO_LABELS: Record<string, string> = { producto: 'Producto', servicio: 'Servicio', repuesto: 'Repuesto', insumo: 'Insumo' }
 
 export default function ProductosIndex() {
     const { productos, filters, marcas, categorias } = usePage<Props>().props
@@ -140,7 +141,8 @@ export default function ProductosIndex() {
                         <option value="">Todos los tipos</option>
                         <option value="producto">Producto</option>
                         <option value="servicio">Servicio</option>
-                        <option value="combo">Combo</option>
+                        <option value="repuesto">Repuesto</option>
+                        <option value="insumo">Insumo</option>
                     </select>
 
                     <select value={estado} onChange={e => setEstado(e.target.value)}

@@ -32,7 +32,7 @@ const TIPO_LABELS: Record<string, string> = {
 
 const emptyForm = {
     nombre: '', tipo: 'general', centro_costo_id: '' as string | number,
-    descripcion: '', activo: true,
+    es_virtual: false, estado: true,
 }
 
 export default function BodegasIndex() {
@@ -63,8 +63,8 @@ export default function BodegasIndex() {
             nombre: bodega.nombre,
             tipo: bodega.tipo,
             centro_costo_id: bodega.centro_costo_id ?? '',
-            descripcion: bodega.descripcion ?? '',
-            activo: bodega.activo,
+            es_virtual: bodega.es_virtual,
+            estado: bodega.estado,
         })
         setErrors({})
         setModalOpen(true)
@@ -177,11 +177,6 @@ export default function BodegasIndex() {
                                     style={{ borderColor: 'var(--border)' }}>
                                     <td className="px-4 py-3 font-medium" style={{ color: 'var(--text-main)' }}>
                                         {bodega.nombre}
-                                        {bodega.descripcion && (
-                                            <p className="text-xs font-normal mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                                                {bodega.descripcion}
-                                            </p>
-                                        )}
                                     </td>
                                     <td className="px-4 py-3">
                                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${TIPO_COLORES[bodega.tipo] ?? ''}`}>
@@ -192,8 +187,8 @@ export default function BodegasIndex() {
                                         {bodega.centro_costo?.nombre ?? '—'}
                                     </td>
                                     <td className="px-4 py-3">
-                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${bodega.activo ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}>
-                                            {bodega.activo ? 'Activo' : 'Inactivo'}
+                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${bodega.estado ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}>
+                                            {bodega.estado ? 'Activo' : 'Inactivo'}
                                         </span>
                                     </td>
                                     <td className="px-4 py-3">
@@ -237,7 +232,6 @@ export default function BodegasIndex() {
                 )}
             </div>
 
-            {/* Modal crear/editar */}
             {modalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
                     <div className="absolute inset-0 bg-black/60" onClick={cerrarModal} />
@@ -288,24 +282,23 @@ export default function BodegasIndex() {
                                     ))}
                                 </select>
                             </div>
-                            <div className="space-y-1.5">
-                                <Label>Descripción</Label>
-                                <textarea
-                                    value={form.descripcion}
-                                    onChange={e => setForm(f => ({ ...f, descripcion: e.target.value }))}
-                                    rows={2}
-                                    placeholder="Descripción opcional..."
-                                    className="flex w-full rounded-md border bg-transparent px-3 py-2 text-sm resize-none"
-                                    style={{ borderColor: 'var(--border)', color: 'var(--text-main)' }}
-                                />
+                            <div className="flex items-center gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => setForm(f => ({ ...f, es_virtual: !f.es_virtual }))}
+                                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${form.es_virtual ? 'bg-blue-500' : 'bg-slate-300 dark:bg-slate-600'}`}
+                                >
+                                    <span className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${form.es_virtual ? 'translate-x-6' : 'translate-x-1'}`} />
+                                </button>
+                                <Label>Virtual</Label>
                             </div>
                             <div className="flex items-center gap-3">
                                 <button
                                     type="button"
-                                    onClick={() => setForm(f => ({ ...f, activo: !f.activo }))}
-                                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${form.activo ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'}`}
+                                    onClick={() => setForm(f => ({ ...f, estado: !f.estado }))}
+                                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${form.estado ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'}`}
                                 >
-                                    <span className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${form.activo ? 'translate-x-6' : 'translate-x-1'}`} />
+                                    <span className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${form.estado ? 'translate-x-6' : 'translate-x-1'}`} />
                                 </button>
                                 <Label>Activa</Label>
                             </div>

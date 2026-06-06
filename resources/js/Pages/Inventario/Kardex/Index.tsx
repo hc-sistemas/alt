@@ -4,7 +4,7 @@ import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
 import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
-import { Search, Plus, ArrowUpDown } from 'lucide-react'
+import { Search, Plus } from 'lucide-react'
 import type { Producto, InventarioSaldo, InventarioMovimiento, Bodega, PaginatedData, PageProps } from '@/types'
 
 interface SaldoBodega extends InventarioSaldo {
@@ -26,37 +26,28 @@ interface Props extends PageProps {
 }
 
 const TIPO_COLORES: Record<string, string> = {
-    entrada:          'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
-    salida:           'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-    traslado_entrada: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-    traslado_salida:  'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
-    ajuste_positivo:  'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400',
-    ajuste_negativo:  'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-400',
-    reserva:          'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
-    liberacion:       'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400',
+    entrada:  'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+    salida:   'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+    traslado: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+    ajuste:   'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400',
+    reserva:  'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
 }
 
 const TIPO_LABELS: Record<string, string> = {
-    entrada: 'Entrada', salida: 'Salida',
-    traslado_entrada: 'Traslado E.', traslado_salida: 'Traslado S.',
-    ajuste_positivo: 'Ajuste +', ajuste_negativo: 'Ajuste −',
-    reserva: 'Reserva', liberacion: 'Liberación',
+    entrada: 'Entrada', salida: 'Salida', traslado: 'Traslado',
+    ajuste: 'Ajuste', reserva: 'Reserva',
 }
 
 export default function KardexIndex() {
     const { producto, movimientos, saldosPorBodega, bodegas, filters } = usePage<Props>().props
 
-    const [search, setSearch]       = useState('')
-    const [bodegaId, setBodegaId]   = useState(filters.bodega_id ?? '')
+    const [bodegaId, setBodegaId]     = useState(filters.bodega_id ?? '')
     const [fechaDesde, setFechaDesde] = useState(filters.fecha_desde ?? '')
     const [fechaHasta, setFechaHasta] = useState(filters.fecha_hasta ?? '')
-    const [tipo, setTipo]           = useState(filters.tipo ?? '')
+    const [tipo, setTipo]             = useState(filters.tipo ?? '')
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-    // Buscador de producto (cuando no hay producto seleccionado)
     const [busqueda, setBusqueda] = useState('')
-    const [resultados, setResultados] = useState<Producto[]>([])
-    const busquedaRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
     useEffect(() => {
         if (!producto) return
@@ -72,25 +63,6 @@ export default function KardexIndex() {
         }, 400)
         return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
     }, [bodegaId, fechaDesde, fechaHasta, tipo])
-
-    async function buscarProductos(q: string) {
-        if (!q.trim()) { setResultados([]); return }
-        try {
-            const res = await fetch(`/personas/clientes/search?q=${encodeURIComponent(q)}`)
-            // Use productos search — fetch directo
-        } catch { /* silent */ }
-    }
-
-    // Buscar producto directamente a través de router.get
-    function seleccionarBusqueda() {
-        if (debounceRef.current) clearTimeout(debounceRef.current)
-        debounceRef.current = setTimeout(() => {
-            router.get(route('inventario.kardex.index'), {
-                producto_id: undefined,
-                search: busqueda || undefined,
-            }, { preserveState: true, replace: true })
-        }, 400)
-    }
 
     const formatNum = (n: number | string | null | undefined) =>
         n !== null && n !== undefined ? Number(n).toFixed(4) : '—'
@@ -110,7 +82,6 @@ export default function KardexIndex() {
             />
 
             <div className="p-6 space-y-6">
-                {/* Sin producto seleccionado — buscador */}
                 {!producto ? (
                     <div className="max-w-xl">
                         <p className="text-sm mb-3" style={{ color: 'var(--text-muted)' }}>
@@ -181,13 +152,10 @@ export default function KardexIndex() {
                                             {s.bodega?.nombre ?? `Bodega #${s.bodega_id}`}
                                         </p>
                                         <p className="text-lg font-bold" style={{ color: 'var(--text-main)' }}>
-                                            {Number(s.stock_actual).toFixed(2)}
+                                            {Number(s.cantidad).toFixed(2)}
                                         </p>
                                         <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                                            Reservado: {Number(s.stock_reservado).toFixed(2)}
-                                        </p>
-                                        <p className="text-xs" style={{ color: 'var(--primary)' }}>
-                                            Disponible: {(Number(s.stock_actual) - Number(s.stock_reservado)).toFixed(2)}
+                                            Costo prom.: {formatNum(s.costo_promedio)}
                                         </p>
                                     </div>
                                 ))}
@@ -225,7 +193,7 @@ export default function KardexIndex() {
                                     <table className="w-full text-xs">
                                         <thead>
                                             <tr style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
-                                                {['Fecha', 'Tipo', 'Bodega', 'Cantidad', 'Costo Unit.', 'Stock Ant.', 'Stock Nuevo', 'Doc.', 'Usuario', 'Notas'].map(h => (
+                                                {['Fecha', 'Tipo', 'Bodega', 'Cantidad', 'Costo Unit.', 'Doc.', 'Doc. Nº', 'Usuario', 'Observación'].map(h => (
                                                     <th key={h} className="text-left px-3 py-3 font-medium text-xs uppercase tracking-wider whitespace-nowrap"
                                                         style={{ color: 'var(--text-muted)' }}>{h}</th>
                                                 ))}
@@ -234,7 +202,7 @@ export default function KardexIndex() {
                                         <tbody>
                                             {movimientos.data.length === 0 ? (
                                                 <tr>
-                                                    <td colSpan={10} className="text-center py-10 text-sm" style={{ color: 'var(--text-muted)' }}>
+                                                    <td colSpan={9} className="text-center py-10 text-sm" style={{ color: 'var(--text-muted)' }}>
                                                         No hay movimientos registrados para este producto.
                                                     </td>
                                                 </tr>
@@ -246,12 +214,12 @@ export default function KardexIndex() {
                                                         {formatFecha(m.created_at)}
                                                     </td>
                                                     <td className="px-3 py-2.5">
-                                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${TIPO_COLORES[m.tipo] ?? ''}`}>
-                                                            {TIPO_LABELS[m.tipo] ?? m.tipo}
+                                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${TIPO_COLORES[m.tipo_movimiento] ?? ''}`}>
+                                                            {TIPO_LABELS[m.tipo_movimiento] ?? m.tipo_movimiento}
                                                         </span>
                                                     </td>
                                                     <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>
-                                                        {m.bodega?.nombre ?? `#${m.bodega_id}`}
+                                                        {m.bodega_origen?.nombre ?? (m.bodega_origen_id ? `#${m.bodega_origen_id}` : '—')}
                                                     </td>
                                                     <td className="px-3 py-2.5 text-right font-mono" style={{ color: 'var(--text-main)' }}>
                                                         {Number(m.cantidad).toFixed(4)}
@@ -259,21 +227,18 @@ export default function KardexIndex() {
                                                     <td className="px-3 py-2.5 text-right font-mono" style={{ color: 'var(--text-muted)' }}>
                                                         {m.costo_unitario !== null ? Number(m.costo_unitario).toFixed(4) : '—'}
                                                     </td>
-                                                    <td className="px-3 py-2.5 text-right font-mono" style={{ color: 'var(--text-muted)' }}>
-                                                        {Number(m.stock_anterior).toFixed(4)}
-                                                    </td>
-                                                    <td className="px-3 py-2.5 text-right font-mono font-medium" style={{ color: 'var(--text-main)' }}>
-                                                        {Number(m.stock_nuevo).toFixed(4)}
+                                                    <td className="px-3 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>
+                                                        {m.documento_tipo ?? '—'}
                                                     </td>
                                                     <td className="px-3 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>
-                                                        {m.doc_tipo ? `${m.doc_tipo}/${m.doc_id}` : '—'}
+                                                        {m.documento_numero ?? (m.documento_id ? `#${m.documento_id}` : '—')}
                                                     </td>
                                                     <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>
-                                                        {m.usuario?.nombre ?? `#${m.usuario_id}`}
+                                                        {m.usuario_id ? `#${m.usuario_id}` : '—'}
                                                     </td>
                                                     <td className="px-3 py-2.5 max-w-[160px] truncate" style={{ color: 'var(--text-muted)' }}
-                                                        title={m.notas ?? ''}>
-                                                        {m.notas ?? '—'}
+                                                        title={m.observacion ?? ''}>
+                                                        {m.observacion ?? '—'}
                                                     </td>
                                                 </tr>
                                             ))}
@@ -281,7 +246,6 @@ export default function KardexIndex() {
                                     </table>
                                 </div>
 
-                                {/* Paginación */}
                                 {movimientos.last_page > 1 && (
                                     <div className="flex items-center justify-between text-sm">
                                         <p style={{ color: 'var(--text-muted)' }}>

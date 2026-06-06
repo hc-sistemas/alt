@@ -15,7 +15,7 @@ interface Props extends PageProps {
     todasCategorias: { id: number; nombre: string }[]
 }
 
-const emptyForm = { nombre: '', descripcion: '', parent_id: '' as string | number, activo: true }
+const emptyForm = { nombre: '', categoria_padre_id: '' as string | number, estado: true }
 
 export default function CategoriasIndex() {
     const { categorias, todasCategorias } = usePage<Props>().props
@@ -32,7 +32,7 @@ export default function CategoriasIndex() {
 
     function abrirCrear(parentId?: number) {
         setEditando(null)
-        setForm({ ...emptyForm, parent_id: parentId ?? '' })
+        setForm({ ...emptyForm, categoria_padre_id: parentId ?? '' })
         setErrors({})
         setModalOpen(true)
     }
@@ -41,9 +41,8 @@ export default function CategoriasIndex() {
         setEditando(cat)
         setForm({
             nombre: cat.nombre,
-            descripcion: cat.descripcion ?? '',
-            parent_id: cat.parent_id ?? '',
-            activo: cat.activo,
+            categoria_padre_id: cat.categoria_padre_id ?? '',
+            estado: cat.estado,
         })
         setErrors({})
         setModalOpen(true)
@@ -59,7 +58,7 @@ export default function CategoriasIndex() {
         setProcesando(true)
         const payload = {
             ...form,
-            parent_id: form.parent_id === '' ? null : Number(form.parent_id),
+            categoria_padre_id: form.categoria_padre_id === '' ? null : Number(form.categoria_padre_id),
         }
         const callbacks = {
             onSuccess: () => {
@@ -130,7 +129,7 @@ export default function CategoriasIndex() {
                         <table className="w-full text-sm">
                             <thead>
                                 <tr style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
-                                    {['Categoría', 'Descripción', 'Estado', ''].map(h => (
+                                    {['Categoría', 'Estado', ''].map(h => (
                                         <th key={h} className="text-left px-4 py-3 font-medium text-xs uppercase tracking-wider"
                                             style={{ color: 'var(--text-muted)' }}>{h}</th>
                                     ))}
@@ -142,7 +141,6 @@ export default function CategoriasIndex() {
                                     const tieneHijos = (cat.hijos?.length ?? 0) > 0
                                     return (
                                         <>
-                                            {/* Fila raíz */}
                                             <tr key={cat.id}
                                                 className="border-t hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
                                                 style={{ borderColor: 'var(--border)' }}>
@@ -168,12 +166,9 @@ export default function CategoriasIndex() {
                                                         </span>
                                                     </div>
                                                 </td>
-                                                <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-muted)' }}>
-                                                    {cat.descripcion ?? '—'}
-                                                </td>
                                                 <td className="px-4 py-3">
-                                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${cat.activo ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}>
-                                                        {cat.activo ? 'Activo' : 'Inactivo'}
+                                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${cat.estado ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}>
+                                                        {cat.estado ? 'Activo' : 'Inactivo'}
                                                     </span>
                                                 </td>
                                                 <td className="px-4 py-3">
@@ -194,7 +189,6 @@ export default function CategoriasIndex() {
                                                 </td>
                                             </tr>
 
-                                            {/* Subcategorías */}
                                             {isExpanded && cat.hijos?.map(hijo => (
                                                 <tr key={hijo.id}
                                                     className="border-t hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
@@ -207,12 +201,9 @@ export default function CategoriasIndex() {
                                                             </span>
                                                         </div>
                                                     </td>
-                                                    <td className="px-4 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>
-                                                        {hijo.descripcion ?? '—'}
-                                                    </td>
                                                     <td className="px-4 py-2.5">
-                                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${hijo.activo ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}>
-                                                            {hijo.activo ? 'Activo' : 'Inactivo'}
+                                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${hijo.estado ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}>
+                                                            {hijo.estado ? 'Activo' : 'Inactivo'}
                                                         </span>
                                                     </td>
                                                     <td className="px-4 py-2.5">
@@ -238,7 +229,6 @@ export default function CategoriasIndex() {
                 </div>
             </div>
 
-            {/* Modal crear/editar */}
             {modalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
                     <div className="absolute inset-0 bg-black/60" onClick={cerrarModal} />
@@ -266,8 +256,8 @@ export default function CategoriasIndex() {
                             <div className="space-y-1.5">
                                 <Label>Categoría padre</Label>
                                 <select
-                                    value={form.parent_id}
-                                    onChange={e => setForm(f => ({ ...f, parent_id: e.target.value }))}
+                                    value={form.categoria_padre_id}
+                                    onChange={e => setForm(f => ({ ...f, categoria_padre_id: e.target.value }))}
                                     className="flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
                                     style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}
                                 >
@@ -278,29 +268,18 @@ export default function CategoriasIndex() {
                                             <option key={c.id} value={c.id}>{c.nombre}</option>
                                         ))}
                                 </select>
-                                {errors.parent_id && <p className="text-xs text-red-400">{errors.parent_id}</p>}
+                                {errors.categoria_padre_id && <p className="text-xs text-red-400">{errors.categoria_padre_id}</p>}
                                 <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
                                     Máximo 2 niveles — solo se muestran categorías raíz como padres
                                 </p>
                             </div>
-                            <div className="space-y-1.5">
-                                <Label>Descripción</Label>
-                                <textarea
-                                    value={form.descripcion}
-                                    onChange={e => setForm(f => ({ ...f, descripcion: e.target.value }))}
-                                    rows={2}
-                                    placeholder="Descripción opcional..."
-                                    className="flex w-full rounded-md border bg-transparent px-3 py-2 text-sm resize-none"
-                                    style={{ borderColor: 'var(--border)', color: 'var(--text-main)' }}
-                                />
-                            </div>
                             <div className="flex items-center gap-3">
                                 <button
                                     type="button"
-                                    onClick={() => setForm(f => ({ ...f, activo: !f.activo }))}
-                                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${form.activo ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'}`}
+                                    onClick={() => setForm(f => ({ ...f, estado: !f.estado }))}
+                                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${form.estado ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'}`}
                                 >
-                                    <span className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${form.activo ? 'translate-x-6' : 'translate-x-1'}`} />
+                                    <span className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${form.estado ? 'translate-x-6' : 'translate-x-1'}`} />
                                 </button>
                                 <Label>Activa</Label>
                             </div>

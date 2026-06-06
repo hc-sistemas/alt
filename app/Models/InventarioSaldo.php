@@ -8,27 +8,14 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class InventarioSaldo extends Model
 {
     protected $table = 'inventario_saldos';
-
     public $timestamps = false;
-
-    // Permite que touch() actualice updated_at
     const UPDATED_AT = 'updated_at';
 
-    protected $fillable = [
-        'producto_id',
-        'bodega_id',
-        'stock_actual',
-        'stock_reservado',
-        'costo_promedio',
-    ];
+    protected $fillable = ['producto_id', 'bodega_id', 'cantidad', 'costo_promedio'];
 
     protected function casts(): array
     {
-        return [
-            'stock_actual'    => 'decimal:4',
-            'stock_reservado' => 'decimal:4',
-            'costo_promedio'  => 'decimal:4',
-        ];
+        return ['cantidad' => 'float', 'costo_promedio' => 'float'];
     }
 
     public function producto(): BelongsTo
@@ -39,10 +26,5 @@ class InventarioSaldo extends Model
     public function bodega(): BelongsTo
     {
         return $this->belongsTo(Bodega::class);
-    }
-
-    public function stockDisponible(): float
-    {
-        return max(0.0, (float) $this->stock_actual - (float) $this->stock_reservado);
     }
 }

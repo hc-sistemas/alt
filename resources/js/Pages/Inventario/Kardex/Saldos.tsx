@@ -5,7 +5,7 @@ import PageHeader from '@/Components/shared/PageHeader'
 import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Search, ArrowUpDown, SlidersHorizontal, FileText, FileSpreadsheet } from 'lucide-react'
-import type { InventarioSaldo, Bodega, PaginatedData, PageProps } from '@/types'
+import type { InventarioSaldo, PaginatedData, PageProps } from '@/types'
 
 interface SaldoRow extends InventarioSaldo {
     producto_codigo?: string
@@ -22,8 +22,8 @@ interface Props extends PageProps {
 export default function KardexSaldos() {
     const { saldos, bodegas, filters } = usePage<Props>().props
 
-    const [search, setSearch] = useState(filters.search ?? '')
-    const [bodegaId, setBodegaId] = useState(filters.bodega_id ?? '')
+    const [search, setSearch]         = useState(filters.search ?? '')
+    const [bodegaId, setBodegaId]     = useState(filters.bodega_id ?? '')
     const [soloCriticos, setSoloCriticos] = useState(filters.solo_criticos === '1')
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -45,17 +45,14 @@ export default function KardexSaldos() {
             const nombre     = s.producto_nombre ?? s.producto?.nombre ?? '—'
             const codigo     = s.producto_codigo ?? s.producto?.codigo ?? '—'
             const bodega     = s.bodega?.nombre ?? `Bodega #${s.bodega_id}`
-            const disponible = Math.max(0, Number(s.stock_actual) - Number(s.stock_reservado))
-            const valorTotal = Number(s.stock_actual) * Number(s.costo_promedio)
+            const valorTotal = Number(s.cantidad) * Number(s.costo_promedio)
             return {
-                'Código Producto':  codigo,
-                'Producto':         nombre,
-                'Bodega':           bodega,
-                'Stock Actual':     Number(s.stock_actual),
-                'Stock Reservado':  Number(s.stock_reservado),
-                'Disponible':       disponible,
-                'Costo Promedio':   Number(s.costo_promedio),
-                'Valor Total':      Number(valorTotal.toFixed(2)),
+                'Código Producto': codigo,
+                'Producto':        nombre,
+                'Bodega':          bodega,
+                'Cantidad':        Number(s.cantidad),
+                'Costo Promedio':  Number(s.costo_promedio),
+                'Valor Total':     Number(valorTotal.toFixed(2)),
             }
         })
         const ws = XLSX.utils.json_to_sheet(filas)
@@ -133,12 +130,11 @@ export default function KardexSaldos() {
                     </div>
                 </div>
 
-                {/* Tabla */}
                 <div className="rounded-xl border overflow-x-auto" style={{ borderColor: 'var(--border)' }}>
                     <table className="w-full text-xs">
                         <thead>
                             <tr style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
-                                {['Código', 'Producto', 'Bodega', 'Stock Actual', 'Reservado', 'Disponible', 'Costo Prom.', 'Valor Total', ''].map(h => (
+                                {['Código', 'Producto', 'Bodega', 'Cantidad', 'Costo Prom.', 'Valor Total', ''].map(h => (
                                     <th key={h} className="text-left px-3 py-3 font-medium text-xs uppercase tracking-wider whitespace-nowrap"
                                         style={{ color: 'var(--text-muted)' }}>{h}</th>
                                 ))}
@@ -147,17 +143,16 @@ export default function KardexSaldos() {
                         <tbody>
                             {saldos.data.length === 0 ? (
                                 <tr>
-                                    <td colSpan={9} className="text-center py-16 text-sm" style={{ color: 'var(--text-muted)' }}>
+                                    <td colSpan={7} className="text-center py-16 text-sm" style={{ color: 'var(--text-muted)' }}>
                                         {soloCriticos
                                             ? 'No hay productos con stock crítico.'
                                             : 'No hay saldos registrados aún.'}
                                     </td>
                                 </tr>
                             ) : saldos.data.map(saldo => {
-                                const disponible = Number(saldo.stock_actual) - Number(saldo.stock_reservado)
-                                const valorTotal = Number(saldo.stock_actual) * Number(saldo.costo_promedio)
+                                const valorTotal = Number(saldo.cantidad) * Number(saldo.costo_promedio)
                                 const esCritico = saldo.producto_stock_minimo !== undefined &&
-                                    Number(saldo.stock_actual) <= Number(saldo.producto_stock_minimo)
+                                    Number(saldo.cantidad) <= Number(saldo.producto_stock_minimo)
                                 const nombre = saldo.producto_nombre ?? saldo.producto?.nombre ?? '—'
                                 const codigo = saldo.producto_codigo ?? saldo.producto?.codigo ?? '—'
                                 const bodegaNombre = saldo.bodega?.nombre ?? `Bodega #${saldo.bodega_id}`
@@ -188,15 +183,9 @@ export default function KardexSaldos() {
                                                     </span>
                                                 )}
                                                 <span style={{ color: esCritico ? '#EF4444' : 'var(--text-main)' }}>
-                                                    {Number(saldo.stock_actual).toFixed(4)}
+                                                    {Number(saldo.cantidad).toFixed(4)}
                                                 </span>
                                             </div>
-                                        </td>
-                                        <td className="px-3 py-2.5 text-right font-mono" style={{ color: 'var(--text-muted)' }}>
-                                            {Number(saldo.stock_reservado).toFixed(4)}
-                                        </td>
-                                        <td className="px-3 py-2.5 text-right font-mono font-medium" style={{ color: 'var(--primary)' }}>
-                                            {Math.max(0, disponible).toFixed(4)}
                                         </td>
                                         <td className="px-3 py-2.5 text-right font-mono" style={{ color: 'var(--text-muted)' }}>
                                             {Number(saldo.costo_promedio).toFixed(4)}
@@ -221,7 +210,6 @@ export default function KardexSaldos() {
                     </table>
                 </div>
 
-                {/* Paginación */}
                 {saldos.last_page > 1 && (
                     <div className="flex items-center justify-between mt-4 text-sm">
                         <p style={{ color: 'var(--text-muted)' }}>

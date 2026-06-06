@@ -47,11 +47,10 @@ class BodegaController extends Controller
             'nombre'          => ['required', 'string', 'max:150'],
             'tipo'            => ['required', 'string', 'in:' . implode(',', Bodega::TIPOS)],
             'centro_costo_id' => ['nullable', 'integer', 'exists:centros_costo,id'],
-            'descripcion'     => ['nullable', 'string'],
-            'activo'          => ['boolean'],
+            'es_virtual'      => ['boolean'],
+            'estado'          => ['boolean'],
         ]);
 
-        // Validar que el centro de costo pertenezca a la misma empresa
         if (!empty($data['centro_costo_id'])) {
             $cc = CentroCosto::where('id', $data['centro_costo_id'])
                 ->where('empresa_id', $empresaId)
@@ -77,11 +76,10 @@ class BodegaController extends Controller
             'nombre'          => ['required', 'string', 'max:150'],
             'tipo'            => ['required', 'string', 'in:' . implode(',', Bodega::TIPOS)],
             'centro_costo_id' => ['nullable', 'integer', 'exists:centros_costo,id'],
-            'descripcion'     => ['nullable', 'string'],
-            'activo'          => ['boolean'],
+            'es_virtual'      => ['boolean'],
+            'estado'          => ['boolean'],
         ]);
 
-        // Validar que el centro de costo pertenezca a la misma empresa
         if (!empty($data['centro_costo_id'])) {
             $cc = CentroCosto::where('id', $data['centro_costo_id'])
                 ->where('empresa_id', $empresaId)
@@ -91,7 +89,6 @@ class BodegaController extends Controller
             }
         }
 
-        // empresa_id no puede cambiar
         $bodega->update($data);
 
         $this->auditoria->documento('editar', 'inventario', 'bodegas', $bodega->id,

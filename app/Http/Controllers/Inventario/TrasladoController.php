@@ -6,8 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Bodega;
 use App\Models\InventarioSaldo;
 use App\Models\Producto;
-use App\Models\Traslado;
-use App\Models\TrasladoItem;
+use App\Models\TrasladoBodega;
+use App\Models\TrasladoDetalle;
 use App\Services\AuditoriaService;
 use App\Services\Contracts\InventarioServiceInterface;
 use Illuminate\Http\JsonResponse;
@@ -29,19 +29,19 @@ class TrasladoController extends Controller
     {
         $empresaId = session('empresa_activa_id');
 
-        $traslados = Traslado::with(['bodegaOrigen', 'bodegaDestino', 'usuarioOrigen', 'items'])
+        $traslados = TrasladoBodega::with(['bodegaOrigen', 'bodegaDestino', 'enviadoPor', 'detalles'])
             ->where('empresa_id', $empresaId)
             ->when($request->estado, fn($q) => $q->where('estado', $request->estado))
             ->when($request->bodega_origen_id, fn($q) => $q->where('bodega_origen_id', $request->bodega_origen_id))
             ->when($request->bodega_destino_id, fn($q) => $q->where('bodega_destino_id', $request->bodega_destino_id))
-            ->when($request->fecha_desde, fn($q) => $q->where('fecha_traslado', '>=', $request->fecha_desde . ' 00:00:00'))
-            ->when($request->fecha_hasta, fn($q) => $q->where('fecha_traslado', '<=', $request->fecha_hasta . ' 23:59:59'))
+            ->when($request->fecha_desde, fn($q) => $q->where('fecha', '>=', $request->fecha_desde))
+            ->when($request->fecha_hasta, fn($q) => $q->where('fecha', '<=', $request->fecha_hasta))
             ->orderByDesc('created_at')
             ->paginate(20)
             ->withQueryString();
 
         $bodegas = Bodega::where('empresa_id', $empresaId)
-            ->where('activo', true)
+            ->where('estado', true)
             ->orderBy('nombre')
             ->get(['id', 'nombre']);
 
@@ -62,7 +62,7 @@ class TrasladoController extends Controller
                 ->orderBy('nombre')
                 ->get(['id', 'codigo', 'nombre']),
             'bodegas'   => Bodega::where('empresa_id', $empresaId)
-                ->where('activo', true)
+                ->where('estado', true)
                 ->orderBy('nombre')
                 ->get(['id', 'nombre', 'tipo']),
         ]);
@@ -73,60 +73,61 @@ class TrasladoController extends Controller
         $empresaId = session('empresa_activa_id');
 
         $data = $request->validate([
-            'bodega_origen_id'              => ['required', 'integer', 'exists:bodegas,id', 'different:bodega_destino_id'],
-            'bodega_destino_id'             => ['required', 'integer', 'exists:bodegas,id'],
-            'items'                         => ['required', 'array', 'min:1'],
-            'items.*.producto_id'           => ['required', 'integer', 'exists:productos,id'],
-            'items.*.cantidad_enviada'      => ['required', 'integer', 'min:1'],
-            'notas_origen'                  => ['nullable', 'string'],
+            'bodega_origen_id'             => ['required', 'integer', 'exists:bodegas,id', 'different:bodega_destino_id'],
+            'bodega_destino_id'            => ['required', 'integer', 'exists:bodegas,id'],
+            'detalles'                     => ['required', 'array', 'min:1'],
+            'detalles.*.producto_id'       => ['required', 'integer', 'exists:productos,id'],
+            'detalles.*.cantidad_enviada'  => ['required', 'integer', 'min:1'],
+            'observacion'                  => ['nullable', 'string'],
         ], [
             'bodega_origen_id.different' => 'La bodega origen y destino no pueden ser la misma.',
         ]);
 
-        // Verificar que ambas bodegas pertenecen a la empresa activa
-        $bodegaOrigen = Bodega::where('id', $data['bodega_origen_id'])->where('empresa_id', $empresaId)->firstOrFail();
-        $bodegaDestino = Bodega::where('id', $data['bodega_destino_id'])->where('empresa_id', $empresaId)->firstOrFail();
+        Bodega::where('id', $data['bodega_origen_id'])->where('empresa_id', $empresaId)->firstOrFail();
+        Bodega::where('id', $data['bodega_destino_id'])->where('empresa_id', $empresaId)->firstOrFail();
 
         try {
             DB::transaction(function () use ($data, $empresaId) {
-                $traslado = Traslado::create([
+                $traslado = TrasladoBodega::create([
                     'empresa_id'        => $empresaId,
                     'bodega_origen_id'  => $data['bodega_origen_id'],
                     'bodega_destino_id' => $data['bodega_destino_id'],
                     'estado'            => 'pendiente',
-                    'usuario_origen_id' => Auth::id(),
-                    'notas_origen'      => $data['notas_origen'] ?? null,
-                    'fecha_traslado'    => now(),
+                    'enviado_por'       => Auth::id(),
+                    'fecha'             => now()->toDateString(),
+                    'observacion'       => $data['observacion'] ?? null,
                 ]);
 
-                foreach ($data['items'] as $itemData) {
+                $traslado->update(['numero' => 'TRA-' . str_pad($traslado->id, 6, '0', STR_PAD_LEFT)]);
+
+                foreach ($data['detalles'] as $detalleData) {
                     $disponible = $this->inventario->getSaldoDisponible(
-                        (int) $itemData['producto_id'],
+                        (int) $detalleData['producto_id'],
                         (int) $data['bodega_origen_id']
                     );
 
-                    if ($disponible < (float) $itemData['cantidad_enviada']) {
-                        $producto = Producto::find($itemData['producto_id']);
+                    if ($disponible < (float) $detalleData['cantidad_enviada']) {
+                        $producto = Producto::find($detalleData['producto_id']);
                         throw new \Exception(
-                            "Stock insuficiente para {$producto->nombre}: disponible {$disponible}, solicitado {$itemData['cantidad_enviada']}"
+                            "Stock insuficiente para {$producto->nombre}: disponible {$disponible}, solicitado {$detalleData['cantidad_enviada']}"
                         );
                     }
 
                     $this->inventario->reservarStock(
-                        (int) $itemData['producto_id'],
+                        (int) $detalleData['producto_id'],
                         (int) $data['bodega_origen_id'],
-                        (float) $itemData['cantidad_enviada']
+                        (float) $detalleData['cantidad_enviada']
                     );
 
-                    TrasladoItem::create([
+                    TrasladoDetalle::create([
                         'traslado_id'      => $traslado->id,
-                        'producto_id'      => $itemData['producto_id'],
-                        'cantidad_enviada' => $itemData['cantidad_enviada'],
+                        'producto_id'      => $detalleData['producto_id'],
+                        'cantidad_enviada' => $detalleData['cantidad_enviada'],
                     ]);
                 }
 
-                $this->auditoria->documento('crear', 'inventario', 'traslados', $traslado->id,
-                    "Traslado #{$traslado->id} creado: bodega origen {$traslado->bodega_origen_id} → destino {$traslado->bodega_destino_id}");
+                $this->auditoria->documento('crear', 'inventario', 'traslados_bodega', $traslado->id,
+                    "Traslado {$traslado->numero} creado: bodega {$traslado->bodega_origen_id} → {$traslado->bodega_destino_id}");
             });
         } catch (\Exception $e) {
             return response()->json(['message' => $e->getMessage()], 422);
@@ -136,7 +137,7 @@ class TrasladoController extends Controller
             ->with('success', 'Traslado creado correctamente.');
     }
 
-    public function show(Traslado $traslado): Response
+    public function show(TrasladoBodega $traslado): Response
     {
         $empresaId = session('empresa_activa_id');
 
@@ -144,14 +145,14 @@ class TrasladoController extends Controller
             abort(403);
         }
 
-        $traslado->load(['bodegaOrigen', 'bodegaDestino', 'usuarioOrigen', 'usuarioDestino', 'items.producto']);
+        $traslado->load(['bodegaOrigen', 'bodegaDestino', 'enviadoPor', 'recibidoPor', 'detalles.producto']);
 
         return Inertia::render('Inventario/Traslados/Show', [
             'traslado' => $traslado,
         ]);
     }
 
-    public function confirmar(Request $request, Traslado $traslado): RedirectResponse|JsonResponse
+    public function confirmar(Request $request, TrasladoBodega $traslado): RedirectResponse|JsonResponse
     {
         $empresaId = session('empresa_activa_id');
 
@@ -164,38 +165,35 @@ class TrasladoController extends Controller
         }
 
         $request->validate([
-            'items'                      => ['array'],
-            'items.*.id'                 => ['exists:traslado_items,id'],
-            'items.*.cantidad_recibida'  => ['numeric', 'min:0'],
-            'notas_destino'              => ['nullable', 'string'],
+            'detalles'                     => ['array'],
+            'detalles.*.id'                => ['exists:traslado_detalles,id'],
+            'detalles.*.cantidad_recibida' => ['numeric', 'min:0'],
+            'observacion'                  => ['nullable', 'string'],
         ]);
 
         try {
             DB::transaction(function () use ($request, $traslado) {
-                foreach ($request->items ?? [] as $itemData) {
-                    $item = TrasladoItem::findOrFail($itemData['id']);
+                foreach ($request->detalles ?? [] as $detalleData) {
+                    $detalle = TrasladoDetalle::findOrFail($detalleData['id']);
 
-                    // Obtener costo promedio de bodega origen antes de egresar
-                    $saldo = InventarioSaldo::where('producto_id', $item->producto_id)
+                    $saldo = InventarioSaldo::where('producto_id', $detalle->producto_id)
                         ->where('bodega_id', $traslado->bodega_origen_id)
                         ->first();
                     $costoPromedio = $saldo ? (float) $saldo->costo_promedio : 0.0;
 
-                    $cantidadRecibida = (float) ($itemData['cantidad_recibida'] ?? $item->cantidad_enviada);
+                    $cantidadRecibida = (float) ($detalleData['cantidad_recibida'] ?? $detalle->cantidad_enviada);
 
-                    // Egresar de bodega origen (libera reserva + reduce stock)
                     $this->inventario->egresarStock(
-                        (int) $item->producto_id,
+                        (int) $detalle->producto_id,
                         (int) $traslado->bodega_origen_id,
-                        (float) $item->cantidad_enviada,
+                        (float) $detalle->cantidad_enviada,
                         'traslado',
                         $traslado->id
                     );
 
-                    // Ingresar en bodega destino
                     if ($cantidadRecibida > 0) {
                         $this->inventario->ingresarStock(
-                            (int) $item->producto_id,
+                            (int) $detalle->producto_id,
                             (int) $traslado->bodega_destino_id,
                             $cantidadRecibida,
                             $costoPromedio,
@@ -204,31 +202,28 @@ class TrasladoController extends Controller
                         );
                     }
 
-                    $item->update([
-                        'cantidad_recibida' => $cantidadRecibida,
-                        'notas'             => $itemData['notas'] ?? null,
-                    ]);
+                    $detalle->update(['cantidad_recibida' => $cantidadRecibida]);
                 }
 
                 $traslado->update([
-                    'estado'              => 'confirmado',
-                    'usuario_destino_id'  => Auth::id(),
-                    'fecha_confirmacion'  => now(),
-                    'notas_destino'       => $request->notas_destino,
+                    'estado'          => 'aceptado',
+                    'recibido_por'    => Auth::id(),
+                    'fecha_recepcion' => now()->toDateString(),
+                    'observacion'     => $request->observacion,
                 ]);
 
-                $this->auditoria->documento('confirmar', 'inventario', 'traslados', $traslado->id,
-                    "Traslado #{$traslado->id} confirmado por usuario " . Auth::id());
+                $this->auditoria->documento('confirmar', 'inventario', 'traslados_bodega', $traslado->id,
+                    "Traslado {$traslado->numero} aceptado por usuario " . Auth::id());
             });
         } catch (\Exception $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
         return redirect()->route('inventario.traslados.show', $traslado)
-            ->with('success', 'Traslado confirmado correctamente.');
+            ->with('success', 'Traslado aceptado correctamente.');
     }
 
-    public function anular(Request $request, Traslado $traslado): RedirectResponse|JsonResponse
+    public function anular(Request $request, TrasladoBodega $traslado): RedirectResponse|JsonResponse
     {
         $empresaId = session('empresa_activa_id');
 
@@ -246,29 +241,29 @@ class TrasladoController extends Controller
 
         try {
             DB::transaction(function () use ($request, $traslado) {
-                $traslado->load('items');
+                $traslado->load('detalles');
 
-                foreach ($traslado->items as $item) {
+                foreach ($traslado->detalles as $detalle) {
                     $this->inventario->liberarReserva(
-                        (int) $item->producto_id,
+                        (int) $detalle->producto_id,
                         (int) $traslado->bodega_origen_id,
-                        (float) $item->cantidad_enviada
+                        (float) $detalle->cantidad_enviada
                     );
                 }
 
                 $traslado->update([
-                    'estado'       => 'anulado',
-                    'notas_destino' => $request->motivo,
+                    'estado'     => 'rechazado',
+                    'observacion' => $request->motivo,
                 ]);
 
-                $this->auditoria->documento('anular', 'inventario', 'traslados', $traslado->id,
-                    "Traslado #{$traslado->id} anulado: {$request->motivo}");
+                $this->auditoria->documento('anular', 'inventario', 'traslados_bodega', $traslado->id,
+                    "Traslado {$traslado->numero} rechazado: {$request->motivo}");
             });
         } catch (\Exception $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
         return redirect()->route('inventario.traslados.index')
-            ->with('success', 'Traslado anulado correctamente.');
+            ->with('success', 'Traslado rechazado correctamente.');
     }
 }

@@ -19,10 +19,7 @@ class MarcaController extends Controller
     public function index(Request $request): Response
     {
         $query = Marca::query()
-            ->when($request->search, fn($q) => $q->where(function ($q) use ($request) {
-                $q->where('nombre', 'ilike', "%{$request->search}%")
-                  ->orWhere('descripcion', 'ilike', "%{$request->search}%");
-            }))
+            ->when($request->search, fn($q) => $q->where('nombre', 'ilike', "%{$request->search}%"))
             ->orderBy('nombre');
 
         return Inertia::render('Inventario/Configuracion/Marcas/Index', [
@@ -34,9 +31,10 @@ class MarcaController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $data = $request->validate([
-            'nombre'      => ['required', 'string', 'max:150'],
-            'descripcion' => ['nullable', 'string'],
-            'activo'      => ['boolean'],
+            'nombre' => ['required', 'string', 'max:150'],
+            'logo'   => ['nullable', 'string'],
+            'icono'  => ['nullable', 'string'],
+            'estado' => ['boolean'],
         ]);
 
         $marca = Marca::create($data);
@@ -50,9 +48,10 @@ class MarcaController extends Controller
     public function update(Request $request, Marca $marca): RedirectResponse
     {
         $data = $request->validate([
-            'nombre'      => ['required', 'string', 'max:150'],
-            'descripcion' => ['nullable', 'string'],
-            'activo'      => ['boolean'],
+            'nombre' => ['required', 'string', 'max:150'],
+            'logo'   => ['nullable', 'string'],
+            'icono'  => ['nullable', 'string'],
+            'estado' => ['boolean'],
         ]);
 
         $marca->update($data);
@@ -65,7 +64,6 @@ class MarcaController extends Controller
 
     public function destroy(Marca $marca): RedirectResponse|JsonResponse
     {
-        // Verificar productos asociados si la tabla ya existe
         if (Schema::hasTable('productos')) {
             $total = \DB::table('productos')->where('marca_id', $marca->id)->count();
             if ($total > 0) {

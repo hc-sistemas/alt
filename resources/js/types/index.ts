@@ -115,6 +115,7 @@ export interface AuthUser {
 }
 
 export interface PageProps {
+    [key: string]: unknown
     auth: { user: AuthUser | null }
     empresa_activa?: Partial<Empresa> | null
     empresas_usuario: Partial<Empresa>[]
@@ -138,27 +139,20 @@ export interface ActivoDepreciacion {
 export interface ActivoFijo {
     id: number
     empresa_id: number
-    empresa?: Empresa
-    codigo: string
+    cuenta_id: number | null
     nombre: string
     descripcion: string | null
-    categoria: string
-    ubicacion: string | null
+    codigo: string | null
     fecha_adquisicion: string
-    valor_adquisicion: number
+    costo_adquisicion: number
+    vida_util_anios: number
     valor_residual: number
-    vida_util_años: number
-    metodo_depreciacion: string
     depreciacion_acumulada: number
-    valor_libro: number
-    estado: 'activo' | 'dado_de_baja' | 'vendido'
-    cuenta_activo_id: number | null
-    cuenta_depreciacion_id: number | null
-    notas: string | null
-    depreciaciones?: ActivoDepreciacion[]
+    valor_en_libros: number
+    estado: string
     created_at: string
     updated_at: string
-    deleted_at: string | null
+    depreciaciones?: ActivoDepreciacion[]
 }
 
 export interface Cliente {
@@ -199,158 +193,150 @@ export interface Transportista {
 
 export interface Marca {
     id: number
-    empresa_id: number | null
-    empresa?: Empresa
     nombre: string
-    descripcion: string | null
-    activo: boolean
-    created_at: string
-    updated_at: string
+    logo: string | null
+    icono: string
+    estado: boolean
 }
 
 export interface CategoriaProducto {
     id: number
-    empresa_id: number | null
-    parent_id: number | null
+    nombre: string
+    categoria_padre_id: number | null
+    estado: boolean
     padre?: CategoriaProducto
     hijos?: CategoriaProducto[]
-    nombre: string
-    descripcion: string | null
-    activo: boolean
-    created_at: string
-    updated_at: string
 }
 
 export interface Bodega {
     id: number
     empresa_id: number
-    empresa?: Empresa
     centro_costo_id: number | null
-    centro_costo?: CentroCosto
     nombre: string
     tipo: 'general' | 'importacion' | 'taller' | 'reserva' | 'cuarentena'
-    descripcion: string | null
-    activo: boolean
-    created_at: string
-    updated_at: string
-}
-
-export interface TrasladoItem {
-    id: number
-    traslado_id: number
-    producto_id: number
-    producto?: Producto
-    cantidad_enviada: number
-    cantidad_recibida: number | null
-    notas: string | null
-    created_at: string
-    updated_at: string
-}
-
-export interface Traslado {
-    id: number
-    empresa_id: number
-    bodega_origen_id: number
-    bodega_origen?: Bodega
-    bodega_destino_id: number
-    bodega_destino?: Bodega
-    estado: 'pendiente' | 'confirmado' | 'anulado'
-    usuario_origen_id: number
-    usuario_origen?: Usuario
-    usuario_destino_id: number | null
-    usuario_destino?: Usuario
-    fecha_traslado: string
-    fecha_confirmacion: string | null
-    notas_origen: string | null
-    notas_destino: string | null
-    items?: TrasladoItem[]
-    created_at: string
-    updated_at: string
-}
-
-export interface InventarioSaldo {
-    id: number
-    producto_id: number
-    producto?: Producto
-    bodega_id: number
-    bodega?: Bodega
-    stock_actual: number
-    stock_reservado: number
-    costo_promedio: number
-    updated_at: string
-    stock_minimo?: number
-}
-
-export interface InventarioMovimiento {
-    id: number
-    producto_id: number
-    producto?: Producto
-    bodega_id: number
-    bodega?: Bodega
-    tipo: 'entrada' | 'salida' | 'traslado_entrada' | 'traslado_salida' |
-          'ajuste_positivo' | 'ajuste_negativo' | 'reserva' | 'liberacion'
-    doc_tipo: string | null
-    doc_id: number | null
-    cantidad: number
-    costo_unitario: number | null
-    costo_total: number | null
-    stock_anterior: number
-    stock_nuevo: number
-    usuario_id: number
-    usuario?: Usuario
-    empresa_id: number
-    notas: string | null
-    created_at: string
+    es_virtual: boolean
+    estado: boolean
+    centro_costo?: CentroCosto
 }
 
 export interface Producto {
     id: number
     empresa_id: number
-    empresa?: Empresa
     marca_id: number | null
-    marca?: Marca
     categoria_id: number | null
-    categoria?: CategoriaProducto
-    bodega_default_id: number | null
-    bodega_default?: Bodega
     codigo: string
+    codigo_externo: string | null
     nombre: string
     descripcion: string | null
-    tipo: 'producto' | 'servicio' | 'combo'
     unidad: string
+    tipo: 'producto' | 'servicio' | 'repuesto' | 'insumo'
     requiere_serie: boolean
+    costo: number
     pvp: number
     pvd: number
-    costo: number
     descuento_maximo: number
-    iva_porcentaje: number
-    ice_porcentaje: number
+    porcentaje_iva: number
+    tiene_ice: boolean
+    porcentaje_ice: number
     stock_minimo: number
-    stock_maximo: number | null
-    cuenta_inventario_id: number | null
-    cuenta_costo_id: number | null
-    cuenta_ventas_id: number | null
+    stock_maximo: number
+    cuenta_inventario: string | null
+    cuenta_costo_ventas: string | null
+    cuenta_ventas: string | null
+    ref_importacion: string | null
     estado: boolean
-    observaciones: string | null
     created_at: string
     updated_at: string
-    deleted_at: string | null
+    marca?: Marca
+    categoria?: CategoriaProducto
 }
 
 export interface ProductoSerie {
     id: number
     producto_id: number
-    producto?: Producto
     bodega_id: number
-    bodega?: Bodega
     numero_serie: string
-    estado: 'disponible' | 'vendido' | 'reservado' | 'defectuoso'
-    doc_entrada_tipo: string | null
-    doc_entrada_id: number | null
-    doc_salida_tipo: string | null
-    doc_salida_id: number | null
+    estado: 'disponible' | 'vendido' | 'reservado' | 'garantia'
+    factura_compra_id: number | null
+    factura_venta_id: number | null
     created_at: string
+    producto?: Producto
+    bodega?: Bodega
+}
+
+export interface InventarioSaldo {
+    id: number
+    producto_id: number
+    bodega_id: number
+    cantidad: number
+    costo_promedio: number
     updated_at: string
+    producto?: Producto
+    bodega?: Bodega
+}
+
+export interface InventarioMovimiento {
+    id: number
+    empresa_id: number
+    producto_id: number
+    bodega_origen_id: number | null
+    bodega_destino_id: number | null
+    tipo_movimiento: 'entrada' | 'salida' | 'traslado' | 'ajuste' | 'reserva'
+    documento_tipo: string | null
+    documento_id: number | null
+    documento_numero: string | null
+    cantidad: number
+    costo_unitario: number
+    costo_total: number
+    numero_serie: string | null
+    fecha: string
+    hora: string | null
+    usuario_id: number | null
+    observacion: string | null
+    created_at: string
+    bodega_origen?: Bodega
+    bodega_destino?: Bodega
+    producto?: Producto
+}
+
+export interface TrasladoBodega {
+    id: number
+    empresa_id: number
+    bodega_origen_id: number
+    bodega_destino_id: number
+    numero: string | null
+    fecha: string
+    estado: 'pendiente' | 'aceptado' | 'rechazado'
+    enviado_por: number | null
+    recibido_por: number | null
+    fecha_recepcion: string | null
+    observacion: string | null
+    created_at: string
+    detalles?: TrasladoDetalle[]
+    bodega_origen?: Bodega
+    bodega_destino?: Bodega
+}
+
+export interface TrasladoDetalle {
+    id: number
+    traslado_id: number
+    producto_id: number
+    numero_serie: string | null
+    cantidad_enviada: number
+    cantidad_recibida: number
+    producto?: Producto
+}
+
+export interface ListaPrecio {
+    id: number
+    empresa_id: number
+    producto_id: number
+    tipo: 'PVP' | 'PVD'
+    precio: number
+    descuento_max: number
+    vigencia_desde: string | null
+    vigencia_hasta: string | null
+    producto?: Producto
 }
 
 // ── Contabilidad ──────────────────────────────────────────────────────────────

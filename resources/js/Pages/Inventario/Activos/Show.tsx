@@ -12,12 +12,6 @@ interface Props extends PageProps {
     activo: ActivoFijo
 }
 
-const CATEGORIA_LABELS: Record<string, string> = {
-    terreno: 'Terreno', edificio: 'Edificio', vehiculo: 'Vehículo',
-    equipo_computo: 'Equipo de Cómputo', maquinaria: 'Maquinaria',
-    muebles: 'Muebles y Enseres', instalaciones: 'Instalaciones', otro: 'Otro',
-}
-
 const ESTADO_COLORES: Record<string, string> = {
     activo:       'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
     dado_de_baja: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
@@ -46,23 +40,23 @@ export default function ActivoFijoShow() {
     const { activo } = usePage<Props>().props
 
     const now = new Date()
-    const { data, setData, post, processing, errors, reset } = useForm({
+    const { data, setData, post, processing, errors } = useForm({
         periodo_año: now.getFullYear().toString(),
         periodo_mes: (now.getMonth() + 1).toString(),
     })
 
-    const valorAdq   = Number(activo.valor_adquisicion)
+    const valorAdq   = Number(activo.costo_adquisicion)
     const valorRes   = Number(activo.valor_residual)
     const depAcum    = Number(activo.depreciacion_acumulada)
-    const valorLibro = Number(activo.valor_libro)
+    const valorLibro = Number(activo.valor_en_libros)
 
     const totalDepreciable = valorAdq - valorRes
     const pctDepreciado = totalDepreciable > 0
         ? Math.min(100, (depAcum / totalDepreciable) * 100)
         : 0
 
-    const depMensual = activo.vida_util_años > 0 && totalDepreciable > 0
-        ? ((valorAdq - valorRes) / (activo.vida_util_años * 12)).toFixed(2)
+    const depMensual = activo.vida_util_anios > 0 && totalDepreciable > 0
+        ? ((valorAdq - valorRes) / (activo.vida_util_anios * 12)).toFixed(2)
         : '0.00'
 
     const puedeDepreciar = activo.estado === 'activo' && (valorLibro - valorRes) > 0
@@ -85,7 +79,7 @@ export default function ActivoFijoShow() {
                 breadcrumbs={[
                     { label: 'Inventario' },
                     { label: 'Activos Fijos', href: route('inventario.activos.index') },
-                    { label: activo.codigo },
+                    { label: activo.codigo ?? activo.id.toString() },
                 ]}
                 actions={
                     activo.estado === 'activo' ? (
@@ -102,7 +96,7 @@ export default function ActivoFijoShow() {
             <div className="p-6 space-y-6 max-w-4xl">
                 {/* Cards resumen */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <Card label="Valor de adquisición" value={fmt(valorAdq)} />
+                    <Card label="Costo de adquisición" value={fmt(valorAdq)} />
                     <Card label="Depreciación acumulada" value={fmt(depAcum)} />
                     <Card label="Valor en libros" value={fmt(valorLibro)} accent />
                 </div>
@@ -132,18 +126,16 @@ export default function ActivoFijoShow() {
                 {/* Ficha del activo */}
                 <div className="rounded-xl border p-4 grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3 text-sm"
                     style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
-                    {[
+                    {([
                         ['Estado', <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${ESTADO_COLORES[activo.estado] ?? ''}`}>
                             {activo.estado.replace('_', ' ')}
                         </span>],
-                        ['Categoría', CATEGORIA_LABELS[activo.categoria] ?? activo.categoria],
-                        ['Ubicación', activo.ubicacion ?? '—'],
                         ['Fecha adquisición', activo.fecha_adquisicion],
-                        ['Vida útil', `${activo.vida_util_años} años`],
+                        ['Vida útil', `${activo.vida_util_anios} años`],
                         ['Valor residual', `$ ${fmt(valorRes)}`],
                         ['Dep. mensual estimada', `$ ${depMensual}`],
-                        ['Método', activo.metodo_depreciacion],
-                    ].map(([label, value]) => (
+                        ['Método', 'Lineal'],
+                    ] as [string, React.ReactNode][]).map(([label, value]) => (
                         <div key={String(label)}>
                             <p className="text-xs mb-0.5" style={{ color: 'var(--text-muted)' }}>{label}</p>
                             <p className="font-medium" style={{ color: 'var(--text-main)' }}>{value}</p>

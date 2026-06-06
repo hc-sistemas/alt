@@ -23,9 +23,9 @@ class AuditoriaService
             'tabla'       => $tabla,
             'registro_id' => $registroId,
             'descripcion' => $descripcion,
-            'ip'          => Request::ip(),
+            'ip_address'  => Request::ip(),   // ← era 'ip'
             'empresa_id'  => session('empresa_activa_id'),
-            'fecha'       => now(),
+            'created_at'  => now(),           // ← era 'fecha'
         ]);
     }
 
@@ -37,7 +37,7 @@ class AuditoriaService
             'tipo'       => $tipo,
             'ip'         => Request::ip(),
             'user_agent' => Request::userAgent(),
-            'empresa_id' => $empresaId ?? session('empresa_activa_id'),
+            // empresa_id eliminado — no existe en log_sesiones
             'fecha'      => now(),
         ]);
     }

@@ -5,53 +5,30 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Producto extends Model
 {
-    use SoftDeletes;
-
     protected $table = 'productos';
 
     protected $fillable = [
-        'empresa_id',
-        'marca_id',
-        'categoria_id',
-        'bodega_default_id',
-        'codigo',
-        'nombre',
-        'descripcion',
-        'tipo',
-        'unidad',
-        'requiere_serie',
-        'pvp',
-        'pvd',
-        'costo',
-        'descuento_maximo',
-        'iva_porcentaje',
-        'ice_porcentaje',
-        'stock_minimo',
-        'stock_maximo',
-        'cuenta_inventario_id',
-        'cuenta_costo_id',
-        'cuenta_ventas_id',
-        'estado',
-        'observaciones',
+        'empresa_id', 'marca_id', 'categoria_id',
+        'codigo', 'codigo_externo', 'nombre', 'descripcion', 'unidad', 'tipo',
+        'requiere_serie', 'costo', 'pvp', 'pvd', 'descuento_maximo',
+        'porcentaje_iva', 'tiene_ice', 'porcentaje_ice',
+        'stock_minimo', 'stock_maximo',
+        'cuenta_inventario', 'cuenta_costo_ventas', 'cuenta_ventas',
+        'ref_importacion', 'estado',
     ];
 
     protected function casts(): array
     {
         return [
-            'requiere_serie'   => 'boolean',
-            'estado'           => 'boolean',
-            'pvp'              => 'decimal:4',
-            'pvd'              => 'decimal:4',
-            'costo'            => 'decimal:4',
-            'descuento_maximo' => 'decimal:2',
-            'iva_porcentaje'   => 'decimal:2',
-            'ice_porcentaje'   => 'decimal:2',
-            'stock_minimo'     => 'decimal:4',
-            'stock_maximo'     => 'decimal:4',
+            'estado'         => 'boolean',
+            'requiere_serie' => 'boolean',
+            'tiene_ice'      => 'boolean',
+            'costo'          => 'float',
+            'pvp'            => 'float',
+            'pvd'            => 'float',
         ];
     }
 
@@ -68,11 +45,6 @@ class Producto extends Model
     public function categoria(): BelongsTo
     {
         return $this->belongsTo(CategoriaProducto::class, 'categoria_id');
-    }
-
-    public function bodegaDefault(): BelongsTo
-    {
-        return $this->belongsTo(Bodega::class, 'bodega_default_id');
     }
 
     public function series(): HasMany

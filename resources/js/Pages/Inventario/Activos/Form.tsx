@@ -10,38 +10,26 @@ import type { ActivoFijo, PageProps } from '@/types'
 
 interface Props extends PageProps {
     activoFijo: ActivoFijo | null
-    categorias: string[]
-}
-
-const CATEGORIA_LABELS: Record<string, string> = {
-    terreno: 'Terreno', edificio: 'Edificio', vehiculo: 'Vehículo',
-    equipo_computo: 'Equipo de Cómputo', maquinaria: 'Maquinaria',
-    muebles: 'Muebles y Enseres', instalaciones: 'Instalaciones', otro: 'Otro',
 }
 
 export default function ActivoFijoForm() {
-    const { activoFijo, categorias } = usePage<Props>().props
+    const { activoFijo } = usePage<Props>().props
     const esEdicion = !!activoFijo
 
     const { data, setData, post, put, processing, errors } = useForm({
-        codigo:                  activoFijo?.codigo ?? '',
-        nombre:                  activoFijo?.nombre ?? '',
-        descripcion:             activoFijo?.descripcion ?? '',
-        categoria:               activoFijo?.categoria ?? '',
-        ubicacion:               activoFijo?.ubicacion ?? '',
-        fecha_adquisicion:       activoFijo?.fecha_adquisicion ?? '',
-        valor_adquisicion:       activoFijo?.valor_adquisicion?.toString() ?? '',
-        valor_residual:          activoFijo?.valor_residual?.toString() ?? '0',
-        vida_util_años:          activoFijo?.vida_util_años?.toString() ?? '',
-        cuenta_activo_id:        activoFijo?.cuenta_activo_id?.toString() ?? '',
-        cuenta_depreciacion_id:  activoFijo?.cuenta_depreciacion_id?.toString() ?? '',
-        notas:                   activoFijo?.notas ?? '',
+        codigo:            activoFijo?.codigo ?? '',
+        nombre:            activoFijo?.nombre ?? '',
+        descripcion:       activoFijo?.descripcion ?? '',
+        fecha_adquisicion: activoFijo?.fecha_adquisicion ?? '',
+        costo_adquisicion: activoFijo?.costo_adquisicion?.toString() ?? '',
+        valor_residual:    activoFijo?.valor_residual?.toString() ?? '0',
+        vida_util_anios:   activoFijo?.vida_util_anios?.toString() ?? '',
+        cuenta_id:         activoFijo?.cuenta_id?.toString() ?? '',
     })
 
-    // Depreciación mensual calculada en tiempo real
-    const valorAdq  = parseFloat(data.valor_adquisicion) || 0
-    const valorRes  = parseFloat(data.valor_residual)    || 0
-    const vidaAnios = parseInt(data.vida_util_años)      || 0
+    const valorAdq  = parseFloat(data.costo_adquisicion) || 0
+    const valorRes  = parseFloat(data.valor_residual) || 0
+    const vidaAnios = parseInt(data.vida_util_anios) || 0
     const depMensual = vidaAnios > 0 && valorAdq > valorRes
         ? ((valorAdq - valorRes) / (vidaAnios * 12)).toFixed(2)
         : null
@@ -50,9 +38,8 @@ export default function ActivoFijoForm() {
         e.preventDefault()
         const payload = {
             ...data,
-            valor_residual:         data.valor_residual || '0',
-            cuenta_activo_id:       data.cuenta_activo_id       || null,
-            cuenta_depreciacion_id: data.cuenta_depreciacion_id || null,
+            valor_residual: data.valor_residual || '0',
+            cuenta_id:      data.cuenta_id || null,
         }
 
         if (esEdicion) {
@@ -112,22 +99,6 @@ export default function ActivoFijoForm() {
                                 placeholder="Ej: Camioneta Chevrolet D-MAX 2022" />
                             {errors.nombre && <p className="text-xs text-red-400">{errors.nombre}</p>}
                         </div>
-                        <div className="space-y-1.5">
-                            <Label>Categoría *</Label>
-                            <select value={data.categoria} onChange={e => setData('categoria', e.target.value)}
-                                className={selectCls} style={selectStyle}>
-                                <option value="">Seleccionar categoría...</option>
-                                {categorias.map(c => (
-                                    <option key={c} value={c}>{CATEGORIA_LABELS[c] ?? c}</option>
-                                ))}
-                            </select>
-                            {errors.categoria && <p className="text-xs text-red-400">{errors.categoria}</p>}
-                        </div>
-                        <div className="space-y-1.5">
-                            <Label>Ubicación</Label>
-                            <Input value={data.ubicacion} onChange={e => setData('ubicacion', e.target.value)}
-                                placeholder="Bodega principal, oficina 2..." />
-                        </div>
                         <div className="sm:col-span-2 space-y-1.5">
                             <Label>Descripción</Label>
                             <textarea value={data.descripcion}
@@ -153,11 +124,11 @@ export default function ActivoFijoForm() {
                             {errors.fecha_adquisicion && <p className="text-xs text-red-400">{errors.fecha_adquisicion}</p>}
                         </div>
                         <div className="space-y-1.5">
-                            <Label>Valor de adquisición *</Label>
-                            <Input type="number" min={0} step="0.01" value={data.valor_adquisicion}
-                                onChange={e => setData('valor_adquisicion', e.target.value)}
+                            <Label>Costo de adquisición *</Label>
+                            <Input type="number" min={0} step="0.01" value={data.costo_adquisicion}
+                                onChange={e => setData('costo_adquisicion', e.target.value)}
                                 placeholder="Ej: 0.00" />
-                            {errors.valor_adquisicion && <p className="text-xs text-red-400">{errors.valor_adquisicion}</p>}
+                            {errors.costo_adquisicion && <p className="text-xs text-red-400">{errors.costo_adquisicion}</p>}
                         </div>
                         <div className="space-y-1.5">
                             <Label>Valor residual</Label>
@@ -167,10 +138,10 @@ export default function ActivoFijoForm() {
                         </div>
                         <div className="space-y-1.5">
                             <Label>Vida útil (años) *</Label>
-                            <Input type="number" min={1} max={100} value={data.vida_util_años}
-                                onChange={e => setData('vida_util_años', e.target.value)}
+                            <Input type="number" min={1} max={100} value={data.vida_util_anios}
+                                onChange={e => setData('vida_util_anios', e.target.value)}
                                 placeholder="Ej: 5" />
-                            {errors.vida_util_años && <p className="text-xs text-red-400">{errors.vida_util_años}</p>}
+                            {errors.vida_util_anios && <p className="text-xs text-red-400">{errors.vida_util_anios}</p>}
                         </div>
                         <div className="space-y-1.5">
                             <Label>Método de depreciación</Label>
@@ -179,7 +150,6 @@ export default function ActivoFijoForm() {
                             </select>
                         </div>
 
-                        {/* Helper: depreciación mensual */}
                         {depMensual !== null && (
                             <div className="sm:col-span-2 flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm"
                                 style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
@@ -202,33 +172,15 @@ export default function ActivoFijoForm() {
                     <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg text-xs mb-4"
                         style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
                         <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                        <span>Los selectores del Plan de Cuentas estarán disponibles próximamente. Puedes ingresar el ID manualmente si ya conoces la cuenta.</span>
+                        <span>Vincula este activo a una cuenta del Plan de Cuentas (ID numérico).</span>
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div className="space-y-1.5">
-                            <Label>Cuenta del activo</Label>
-                            <Input type="number" value={data.cuenta_activo_id}
-                                onChange={e => setData('cuenta_activo_id', e.target.value)}
-                                placeholder="Se completará con Plan de Cuentas" />
-                        </div>
-                        <div className="space-y-1.5">
-                            <Label>Cuenta depreciación acumulada</Label>
-                            <Input type="number" value={data.cuenta_depreciacion_id}
-                                onChange={e => setData('cuenta_depreciacion_id', e.target.value)}
-                                placeholder="Se completará con Plan de Cuentas" />
-                        </div>
+                    <div className="space-y-1.5 max-w-sm">
+                        <Label>Cuenta contable</Label>
+                        <Input type="number" value={data.cuenta_id}
+                            onChange={e => setData('cuenta_id', e.target.value)}
+                            placeholder="ID de cuenta — disponible con Plan de Cuentas" />
                     </div>
                 </section>
-
-                {/* Notas */}
-                <div className="space-y-1.5">
-                    <Label>Notas</Label>
-                    <textarea value={data.notas}
-                        onChange={e => setData('notas', e.target.value)}
-                        rows={3} placeholder="Ej: Observaciones internas..."
-                        className="flex w-full rounded-md border bg-transparent px-3 py-2 text-sm resize-none"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)' }} />
-                </div>
 
                 {/* Acciones */}
                 <div className="flex gap-3 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>

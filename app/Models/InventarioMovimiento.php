@@ -8,58 +8,32 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class InventarioMovimiento extends Model
 {
     protected $table = 'inventario_movimientos';
-
     public $timestamps = false;
-
     const CREATED_AT = 'created_at';
 
-    const TIPOS = [
-        'entrada',
-        'salida',
-        'traslado_entrada',
-        'traslado_salida',
-        'ajuste_positivo',
-        'ajuste_negativo',
-        'reserva',
-        'liberacion',
-    ];
+    const TIPOS = ['entrada', 'salida', 'traslado', 'ajuste', 'reserva'];
 
     protected $fillable = [
-        'producto_id',
-        'bodega_id',
-        'tipo',
-        'doc_tipo',
-        'doc_id',
-        'cantidad',
-        'costo_unitario',
-        'costo_total',
-        'stock_anterior',
-        'stock_nuevo',
-        'usuario_id',
-        'empresa_id',
-        'notas',
+        'empresa_id', 'producto_id',
+        'bodega_origen_id', 'bodega_destino_id',
+        'tipo_movimiento', 'documento_tipo', 'documento_id', 'documento_numero',
+        'cantidad', 'costo_unitario', 'costo_total',
+        'numero_serie', 'fecha', 'hora', 'usuario_id', 'observacion',
     ];
-
-    protected function casts(): array
-    {
-        return [
-            'cantidad'       => 'decimal:4',
-            'costo_unitario' => 'decimal:4',
-            'costo_total'    => 'decimal:4',
-            'stock_anterior' => 'decimal:4',
-            'stock_nuevo'    => 'decimal:4',
-            'created_at'     => 'datetime',
-        ];
-    }
 
     public function producto(): BelongsTo
     {
         return $this->belongsTo(Producto::class);
     }
 
-    public function bodega(): BelongsTo
+    public function bodegaOrigen(): BelongsTo
     {
-        return $this->belongsTo(Bodega::class);
+        return $this->belongsTo(Bodega::class, 'bodega_origen_id');
+    }
+
+    public function bodegaDestino(): BelongsTo
+    {
+        return $this->belongsTo(Bodega::class, 'bodega_destino_id');
     }
 
     public function usuario(): BelongsTo

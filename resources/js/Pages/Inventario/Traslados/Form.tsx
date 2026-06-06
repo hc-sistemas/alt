@@ -35,7 +35,7 @@ export default function TrasladoForm() {
     const { data, setData, post, processing, errors } = useForm({
         bodega_origen_id:  '',
         bodega_destino_id: '',
-        notas_origen:      '',
+        observacion:       '',
     })
 
     const [items, setItems] = useState<ItemForm[]>([emptyItem()])
@@ -184,9 +184,9 @@ export default function TrasladoForm() {
                     )}
 
                     <div className="space-y-1.5">
-                        <Label>Notas de origen</Label>
-                        <textarea value={data.notas_origen}
-                            onChange={e => setData('notas_origen', e.target.value)}
+                        <Label>Observaciones</Label>
+                        <textarea value={data.observacion}
+                            onChange={e => setData('observacion', e.target.value)}
                             rows={2}
                             placeholder="Ej: Reposición de bodega secundaria..."
                             className="flex w-full rounded-md border bg-transparent px-3 py-2 text-sm resize-none"

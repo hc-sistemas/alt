@@ -7,69 +7,68 @@ import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { Save, Info } from 'lucide-react'
 import { toastExito, toastError } from '@/lib/toast'
-import { cn } from '@/lib/utils'
-import type { Producto, Marca, CategoriaProducto, PageProps } from '@/types'
+import type { Producto, PageProps } from '@/types'
 
 interface Props extends PageProps {
     producto: Producto | null
     marcas: { id: number; nombre: string }[]
-    categorias: { id: number; nombre: string; parent_id: number | null }[]
+    categorias: { id: number; nombre: string; categoria_padre_id: number | null }[]
+    bodegas: { id: number; nombre: string; tipo: string }[]
+    cuentas: { id: number; codigo: string; descripcion: string }[]
 }
 
 type Tab = 'general' | 'precios' | 'inventario' | 'contabilidad'
 
 const TABS: { key: Tab; label: string }[] = [
-    { key: 'general',      label: 'General' },
-    { key: 'precios',      label: 'Precios' },
-    { key: 'inventario',   label: 'Inventario' },
+    { key: 'general', label: 'General' },
+    { key: 'precios', label: 'Precios' },
+    { key: 'inventario', label: 'Inventario' },
     { key: 'contabilidad', label: 'Contabilidad' },
 ]
 
 const TAB_FIELDS: Record<Tab, string[]> = {
-    general:      ['codigo', 'nombre', 'tipo', 'unidad', 'descripcion', 'observaciones'],
-    precios:      ['pvp', 'pvd', 'costo', 'descuento_maximo', 'iva_porcentaje', 'ice_porcentaje'],
-    inventario:   ['stock_minimo', 'stock_maximo'],
-    contabilidad: ['cuenta_inventario_id', 'cuenta_costo_id', 'cuenta_ventas_id'],
+    general: ['codigo', 'nombre', 'tipo', 'unidad', 'descripcion'],
+    precios: ['pvp', 'pvd', 'costo', 'descuento_maximo', 'porcentaje_iva', 'porcentaje_ice'],
+    inventario: ['stock_minimo', 'stock_maximo'],
+    contabilidad: ['cuenta_inventario', 'cuenta_costo_ventas', 'cuenta_ventas'],
 }
 
 export default function ProductoForm() {
-    const { producto, marcas, categorias } = usePage<Props>().props
+    const { producto, marcas, categorias, cuentas } = usePage<Props>().props
     const esEdicion = !!producto
 
     const [activeTab, setActiveTab] = useState<Tab>('general')
 
     const { data, setData, post, put, processing, errors } = useForm({
-        codigo:               producto?.codigo ?? '',
-        nombre:               producto?.nombre ?? '',
-        descripcion:          producto?.descripcion ?? '',
-        tipo:                 producto?.tipo ?? 'producto',
-        unidad:               producto?.unidad ?? 'unidad',
-        marca_id:             producto?.marca_id?.toString() ?? '',
-        categoria_id:         producto?.categoria_id?.toString() ?? '',
-        requiere_serie:       producto?.requiere_serie ?? false,
-        pvp:                  producto?.pvp?.toString() ?? '0',
-        pvd:                  producto?.pvd?.toString() ?? '0',
-        costo:                producto?.costo?.toString() ?? '0',
-        descuento_maximo:     producto?.descuento_maximo?.toString() ?? '0',
-        iva_porcentaje:       producto?.iva_porcentaje?.toString() ?? '15',
-        ice_porcentaje:       producto?.ice_porcentaje?.toString() ?? '0',
-        stock_minimo:         producto?.stock_minimo?.toString() ?? '0',
-        stock_maximo:         producto?.stock_maximo?.toString() ?? '',
-        cuenta_inventario_id: producto?.cuenta_inventario_id?.toString() ?? '',
-        cuenta_costo_id:      producto?.cuenta_costo_id?.toString() ?? '',
-        cuenta_ventas_id:     producto?.cuenta_ventas_id?.toString() ?? '',
-        estado:               producto?.estado ?? true,
-        observaciones:        producto?.observaciones ?? '',
+        codigo: producto?.codigo ?? '',
+        nombre: producto?.nombre ?? '',
+        descripcion: producto?.descripcion ?? '',
+        tipo: producto?.tipo ?? 'producto',
+        unidad: producto?.unidad ?? 'unidad',
+        marca_id: producto?.marca_id?.toString() ?? '',
+        categoria_id: producto?.categoria_id?.toString() ?? '',
+        requiere_serie: producto?.requiere_serie ?? false,
+        pvp: producto?.pvp?.toString() ?? '0',
+        pvd: producto?.pvd?.toString() ?? '0',
+        costo: producto?.costo?.toString() ?? '0',
+        descuento_maximo: producto?.descuento_maximo?.toString() ?? '0',
+        porcentaje_iva: producto?.porcentaje_iva?.toString() ?? '15',
+        porcentaje_ice: producto?.porcentaje_ice?.toString() ?? '0',
+        stock_minimo: producto ? Math.round(Number(producto.stock_minimo)).toString() : '0',
+        stock_maximo: producto?.stock_maximo ? Math.round(Number(producto.stock_maximo)).toString() : '',
+        cuenta_inventario: producto?.cuenta_inventario ?? '',
+        cuenta_costo_ventas: producto?.cuenta_costo_ventas ?? '',
+        cuenta_ventas: producto?.cuenta_ventas ?? '',
+        estado: producto?.estado ?? true,
     })
 
     function tabHasErrors(tab: Tab): boolean {
         return TAB_FIELDS[tab].some(f => !!errors[f as keyof typeof errors])
     }
 
-    // Margen calculado en tiempo real
-    const pvpNum   = parseFloat(data.pvp) || 0
+    const pvpNum = parseFloat(data.pvp) || 0
     const costoNum = parseFloat(data.costo) || 0
-    const margen   = pvpNum > 0 && costoNum > 0
+    const margen = pvpNum > 0 && costoNum > 0
         ? ((pvpNum - costoNum) / pvpNum * 100).toFixed(2)
         : null
 
@@ -78,12 +77,13 @@ export default function ProductoForm() {
 
         const payload = {
             ...data,
-            marca_id:             data.marca_id || null,
-            categoria_id:         data.categoria_id || null,
-            stock_maximo:         data.stock_maximo || null,
-            cuenta_inventario_id: data.cuenta_inventario_id || null,
-            cuenta_costo_id:      data.cuenta_costo_id || null,
-            cuenta_ventas_id:     data.cuenta_ventas_id || null,
+            marca_id: data.marca_id || null,
+            categoria_id: data.categoria_id || null,
+            stock_minimo: Math.round(Number(data.stock_minimo)),
+            stock_maximo: data.stock_maximo ? Math.round(Number(data.stock_maximo)) : null,
+            cuenta_inventario: data.cuenta_inventario || null,
+            cuenta_costo_ventas: data.cuenta_costo_ventas || null,
+            cuenta_ventas: data.cuenta_ventas || null,
         }
 
         if (esEdicion) {
@@ -172,13 +172,14 @@ export default function ProductoForm() {
                                     <Label>Tipo *</Label>
                                     <select
                                         value={data.tipo}
-                                        onChange={e => setData('tipo', e.target.value as 'producto' | 'servicio' | 'combo')}
+                                        onChange={e => setData('tipo', e.target.value as 'producto' | 'servicio' | 'repuesto' | 'insumo')}
                                         className="flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
                                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}
                                     >
                                         <option value="producto">Producto</option>
                                         <option value="servicio">Servicio</option>
-                                        <option value="combo">Combo</option>
+                                        <option value="repuesto">Repuesto</option>
+                                        <option value="insumo">Insumo</option>
                                     </select>
                                     {errors.tipo && <p className="text-xs text-red-400">{errors.tipo}</p>}
                                 </div>
@@ -258,18 +259,6 @@ export default function ProductoForm() {
                                     <Label>Producto activo</Label>
                                 </div>
                             </div>
-
-                            <div className="space-y-1.5">
-                                <Label>Observaciones</Label>
-                                <textarea
-                                    value={data.observaciones}
-                                    onChange={e => setData('observaciones', e.target.value)}
-                                    rows={2}
-                                    placeholder="Notas internas..."
-                                    className="flex w-full rounded-md border bg-transparent px-3 py-2 text-sm resize-none"
-                                    style={{ borderColor: 'var(--border)', color: 'var(--text-main)' }}
-                                />
-                            </div>
                         </>
                     )}
 
@@ -320,23 +309,23 @@ export default function ProductoForm() {
                                 </div>
                                 <div className="space-y-1.5">
                                     <Label>IVA (%)</Label>
-                                    <select value={data.iva_porcentaje}
-                                        onChange={e => setData('iva_porcentaje', e.target.value)}
+                                    <select value={data.porcentaje_iva}
+                                        onChange={e => setData('porcentaje_iva', e.target.value)}
                                         className="flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
                                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
                                         <option value="0">0%</option>
                                         <option value="5">5%</option>
                                         <option value="15">15%</option>
                                     </select>
-                                    {errors.iva_porcentaje && <p className="text-xs text-red-400">{errors.iva_porcentaje}</p>}
+                                    {errors.porcentaje_iva && <p className="text-xs text-red-400">{errors.porcentaje_iva}</p>}
                                 </div>
                                 <div className="space-y-1.5">
                                     <Label>ICE (%)</Label>
                                     <Input type="number" min={0} step="0.01"
-                                        value={data.ice_porcentaje}
-                                        onChange={e => setData('ice_porcentaje', e.target.value)}
+                                        value={data.porcentaje_ice}
+                                        onChange={e => setData('porcentaje_ice', e.target.value)}
                                         placeholder="Ej: 0.00" />
-                                    {errors.ice_porcentaje && <p className="text-xs text-red-400">{errors.ice_porcentaje}</p>}
+                                    {errors.porcentaje_ice && <p className="text-xs text-red-400">{errors.porcentaje_ice}</p>}
                                 </div>
                             </div>
                         </>
@@ -354,9 +343,7 @@ export default function ProductoForm() {
                                 <div className="space-y-1.5">
                                     <Label>Stock mínimo</Label>
                                     <Input
-                                        type="number"
-                                        step="1"
-                                        min="0"
+                                        type="number" step="1" min="0"
                                         value={data.stock_minimo}
                                         onKeyDown={e => ['.', ','].includes(e.key) && e.preventDefault()}
                                         onChange={e => {
@@ -369,9 +356,7 @@ export default function ProductoForm() {
                                 <div className="space-y-1.5">
                                     <Label>Stock máximo (opcional)</Label>
                                     <Input
-                                        type="number"
-                                        step="1"
-                                        min="0"
+                                        type="number" step="1" min="0"
                                         value={data.stock_maximo}
                                         onKeyDown={e => ['.', ','].includes(e.key) && e.preventDefault()}
                                         onChange={e => {
@@ -387,36 +372,59 @@ export default function ProductoForm() {
 
                     {/* ── Pestaña: Contabilidad ── */}
                     {activeTab === 'contabilidad' && (
-                        <>
-                            <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg text-xs"
-                                style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
-                                <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                                <span>Los selectores del Plan de Cuentas estarán disponibles próximamente. Puedes ingresar el ID manualmente si ya conoces la cuenta.</span>
+                        <div className="grid grid-cols-1 gap-4">
+                            <div className="space-y-1.5">
+                                <Label>Cuenta de Inventario</Label>
+                                <select
+                                    value={data.cuenta_inventario ?? ''}
+                                    onChange={e => setData('cuenta_inventario', e.target.value)}
+                                    className="flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
+                                    style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}
+                                >
+                                    <option value="">— Sin cuenta asignada —</option>
+                                    {cuentas.map(c => (
+                                        <option key={c.id} value={c.codigo}>
+                                            {c.codigo} — {c.descripcion}
+                                        </option>
+                                    ))}
+                                </select>
+                                {errors.cuenta_inventario && <p className="text-xs text-red-400">{errors.cuenta_inventario}</p>}
                             </div>
-                            <div className="grid grid-cols-1 gap-4">
-                                <div className="space-y-1.5">
-                                    <Label>Cuenta de Inventario</Label>
-                                    <Input type="number"
-                                        value={data.cuenta_inventario_id}
-                                        onChange={e => setData('cuenta_inventario_id', e.target.value)}
-                                        placeholder="Ej: 1141 — disponible con el Plan de Cuentas" />
-                                </div>
-                                <div className="space-y-1.5">
-                                    <Label>Cuenta Costo de Ventas</Label>
-                                    <Input type="number"
-                                        value={data.cuenta_costo_id}
-                                        onChange={e => setData('cuenta_costo_id', e.target.value)}
-                                        placeholder="Ej: 5101 — disponible con el Plan de Cuentas" />
-                                </div>
-                                <div className="space-y-1.5">
-                                    <Label>Cuenta de Ventas</Label>
-                                    <Input type="number"
-                                        value={data.cuenta_ventas_id}
-                                        onChange={e => setData('cuenta_ventas_id', e.target.value)}
-                                        placeholder="Ej: 4101 — disponible con el Plan de Cuentas" />
-                                </div>
+                            <div className="space-y-1.5">
+                                <Label>Cuenta Costo de Ventas</Label>
+                                <select
+                                    value={data.cuenta_costo_ventas ?? ''}
+                                    onChange={e => setData('cuenta_costo_ventas', e.target.value)}
+                                    className="flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
+                                    style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}
+                                >
+                                    <option value="">— Sin cuenta asignada —</option>
+                                    {cuentas.map(c => (
+                                        <option key={c.id} value={c.codigo}>
+                                            {c.codigo} — {c.descripcion}
+                                        </option>
+                                    ))}
+                                </select>
+                                {errors.cuenta_costo_ventas && <p className="text-xs text-red-400">{errors.cuenta_costo_ventas}</p>}
                             </div>
-                        </>
+                            <div className="space-y-1.5">
+                                <Label>Cuenta de Ventas</Label>
+                                <select
+                                    value={data.cuenta_ventas ?? ''}
+                                    onChange={e => setData('cuenta_ventas', e.target.value)}
+                                    className="flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
+                                    style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}
+                                >
+                                    <option value="">— Sin cuenta asignada —</option>
+                                    {cuentas.map(c => (
+                                        <option key={c.id} value={c.codigo}>
+                                            {c.codigo} — {c.descripcion}
+                                        </option>
+                                    ))}
+                                </select>
+                                {errors.cuenta_ventas && <p className="text-xs text-red-400">{errors.cuenta_ventas}</p>}
+                            </div>
+                        </div>
                     )}
                 </div>
 

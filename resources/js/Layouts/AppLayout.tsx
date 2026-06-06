@@ -57,25 +57,6 @@ export default function AppLayout({ children, title, suppressFlash }: Props) {
                     pageTitle={title}
                 />
 
-                {/* Flash messages inline (para páginas sin ToastContainer propio) */}
-                {!suppressFlash && (flashMessage.success || flashMessage.error || flashMessage.warning) && (
-                    <div className={`mx-4 mt-3 p-3 rounded-lg border text-sm flex items-center gap-2 ${
-                        flashMessage.success
-                            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
-                            : flashMessage.warning
-                                ? 'bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400'
-                                : 'bg-red-500/10 border-red-500/30 text-red-600 dark:text-red-400'
-                    }`}>
-                        <span className="w-1.5 h-1.5 rounded-full shrink-0"
-                            style={{
-                                background: flashMessage.success ? '#10B981'
-                                    : flashMessage.warning ? '#F59E0B'
-                                    : '#EF4444'
-                            }} />
-                        {flashMessage.success || flashMessage.warning || flashMessage.error}
-                    </div>
-                )}
-
                 {/* Page content */}
                 <main className="flex-1 overflow-y-auto">
                     {children}

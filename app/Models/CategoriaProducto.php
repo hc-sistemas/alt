@@ -9,44 +9,32 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class CategoriaProducto extends Model
 {
     protected $table = 'categorias_producto';
+    public $timestamps = false;
 
-    protected $fillable = [
-        'empresa_id',
-        'parent_id',
-        'nombre',
-        'descripcion',
-        'activo',
-    ];
+    protected $fillable = ['nombre', 'categoria_padre_id', 'estado'];
 
     protected function casts(): array
     {
-        return [
-            'activo' => 'boolean',
-        ];
-    }
-
-    public function empresa(): BelongsTo
-    {
-        return $this->belongsTo(Empresa::class);
+        return ['estado' => 'boolean'];
     }
 
     public function padre(): BelongsTo
     {
-        return $this->belongsTo(self::class, 'parent_id');
+        return $this->belongsTo(CategoriaProducto::class, 'categoria_padre_id');
     }
 
     public function hijos(): HasMany
     {
-        return $this->hasMany(self::class, 'parent_id');
+        return $this->hasMany(CategoriaProducto::class, 'categoria_padre_id');
     }
 
     public function scopeRaices($query)
     {
-        return $query->whereNull('parent_id');
+        return $query->whereNull('categoria_padre_id');
     }
 
     public function scopeActivas($query)
     {
-        return $query->where('activo', true);
+        return $query->where('estado', true);
     }
 }

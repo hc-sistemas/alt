@@ -11,21 +11,14 @@ import type { ActivoFijo, PaginatedData, PageProps } from '@/types'
 
 interface Props extends PageProps {
     activos: PaginatedData<ActivoFijo>
-    categorias: string[]
     estados: string[]
-    filters: { search?: string; categoria?: string; estado?: string }
-}
-
-const CATEGORIA_LABELS: Record<string, string> = {
-    terreno: 'Terreno', edificio: 'Edificio', vehiculo: 'Vehículo',
-    equipo_computo: 'Eq. Cómputo', maquinaria: 'Maquinaria',
-    muebles: 'Muebles', instalaciones: 'Instalaciones', otro: 'Otro',
+    filters: { search?: string; estado?: string }
 }
 
 const ESTADO_COLORES: Record<string, string> = {
-    activo:        'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
-    dado_de_baja:  'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-    vendido:       'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400',
+    activo:       'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+    dado_de_baja: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+    vendido:      'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400',
 }
 
 const ESTADO_LABELS: Record<string, string> = {
@@ -37,36 +30,33 @@ function fmt(v: number | string) {
 }
 
 export default function ActivosIndex() {
-    const { activos, categorias, estados, filters } = usePage<Props>().props
+    const { activos, estados, filters } = usePage<Props>().props
 
-    const [search, setSearch]       = useState(filters.search ?? '')
-    const [categoria, setCategoria] = useState(filters.categoria ?? '')
-    const [estado, setEstado]       = useState(filters.estado ?? '')
+    const [search, setSearch] = useState(filters.search ?? '')
+    const [estado, setEstado] = useState(filters.estado ?? '')
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
     useEffect(() => {
         if (debounceRef.current) clearTimeout(debounceRef.current)
         debounceRef.current = setTimeout(() => {
             router.get(route('inventario.activos.index'), {
-                search:    search || undefined,
-                categoria: categoria || undefined,
-                estado:    estado || undefined,
+                search: search || undefined,
+                estado: estado || undefined,
             }, { preserveState: true, replace: true })
         }, 400)
         return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
-    }, [search, categoria, estado])
+    }, [search, estado])
 
     async function exportarExcel() {
         const XLSX = await import('xlsx')
         const filas = activos.data.map(a => ({
-            'Código':                  a.codigo,
-            'Nombre':                  a.nombre,
-            'Categoría':               CATEGORIA_LABELS[a.categoria] ?? a.categoria,
-            'Fecha Adquisición':       a.fecha_adquisicion,
-            'Valor Adquisición':       Number(a.valor_adquisicion),
-            'Depreciación Acumulada':  Number(a.depreciacion_acumulada),
-            'Valor Libro':             Number(a.valor_libro),
-            'Estado':                  a.estado,
+            'Código':                 a.codigo,
+            'Nombre':                 a.nombre,
+            'Fecha Adquisición':      a.fecha_adquisicion,
+            'Costo Adquisición':      Number(a.costo_adquisicion),
+            'Depreciación Acumulada': Number(a.depreciacion_acumulada),
+            'Valor en Libros':        Number(a.valor_en_libros),
+            'Estado':                 ESTADO_LABELS[a.estado] ?? a.estado,
         }))
         const ws = XLSX.utils.json_to_sheet(filas)
         const wb = XLSX.utils.book_new()
@@ -108,7 +98,6 @@ export default function ActivosIndex() {
             />
 
             <div className="p-6">
-                {/* Barra de filtros */}
                 <div className="flex items-center gap-3 mb-4 flex-wrap">
                     <Link href={route('inventario.activos.create')}>
                         <Button>
@@ -126,15 +115,6 @@ export default function ActivosIndex() {
                             className="pl-9 w-52"
                         />
                     </div>
-
-                    <select value={categoria} onChange={e => setCategoria(e.target.value)}
-                        className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
-                        <option value="">Todas las categorías</option>
-                        {categorias.map(c => (
-                            <option key={c} value={c}>{CATEGORIA_LABELS[c] ?? c}</option>
-                        ))}
-                    </select>
 
                     <select value={estado} onChange={e => setEstado(e.target.value)}
                         className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm"
@@ -165,12 +145,11 @@ export default function ActivosIndex() {
                     </div>
                 </div>
 
-                {/* Tabla */}
                 <div className="rounded-xl border overflow-x-auto" style={{ borderColor: 'var(--border)' }}>
                     <table className="w-full text-xs">
                         <thead>
                             <tr style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
-                                {['Código', 'Nombre', 'Categoría', 'Fecha Adq.', 'Valor Adq.', 'Dep. Acumulada', 'Valor Libro', 'Estado', ''].map(h => (
+                                {['Código', 'Nombre', 'Fecha Adq.', 'Costo Adq.', 'Dep. Acumulada', 'Valor Libros', 'Estado', ''].map(h => (
                                     <th key={h} className="text-left px-3 py-3 font-medium text-xs uppercase tracking-wider whitespace-nowrap"
                                         style={{ color: 'var(--text-muted)' }}>{h}</th>
                                 ))}
@@ -179,7 +158,7 @@ export default function ActivosIndex() {
                         <tbody>
                             {activos.data.length === 0 ? (
                                 <tr>
-                                    <td colSpan={9} className="text-center py-16" style={{ color: 'var(--text-muted)' }}>
+                                    <td colSpan={8} className="text-center py-16" style={{ color: 'var(--text-muted)' }}>
                                         <p className="font-medium text-sm" style={{ color: 'var(--text-main)' }}>
                                             No hay activos registrados
                                         </p>
@@ -187,8 +166,8 @@ export default function ActivosIndex() {
                                     </td>
                                 </tr>
                             ) : activos.data.map(activo => {
-                                const totalDepreciable = Number(activo.valor_adquisicion) - Number(activo.valor_residual)
-                                const totDepreciado = totalDepreciable > 0 && Number(activo.valor_libro) <= Number(activo.valor_residual)
+                                const totalDepreciable = Number(activo.costo_adquisicion) - Number(activo.valor_residual)
+                                const totDepreciado = totalDepreciable > 0 && Number(activo.valor_en_libros) <= Number(activo.valor_residual)
                                 return (
                                     <tr key={activo.id}
                                         className={`border-t transition-colors ${totDepreciado ? 'bg-amber-50/40 dark:bg-amber-900/10' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'}`}
@@ -196,25 +175,22 @@ export default function ActivosIndex() {
                                         <td className="px-3 py-2.5 font-mono font-medium" style={{ color: 'var(--text-muted)' }}>
                                             {activo.codigo}
                                         </td>
-                                        <td className="px-3 py-2.5 max-w-[180px] truncate font-medium" style={{ color: 'var(--text-main)' }}
+                                        <td className="px-3 py-2.5 max-w-[200px] truncate font-medium" style={{ color: 'var(--text-main)' }}
                                             title={activo.nombre}>
                                             {activo.nombre}
-                                        </td>
-                                        <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>
-                                            {CATEGORIA_LABELS[activo.categoria] ?? activo.categoria}
                                         </td>
                                         <td className="px-3 py-2.5 whitespace-nowrap font-mono" style={{ color: 'var(--text-muted)' }}>
                                             {activo.fecha_adquisicion}
                                         </td>
                                         <td className="px-3 py-2.5 text-right font-mono" style={{ color: 'var(--text-main)' }}>
-                                            {fmt(activo.valor_adquisicion)}
+                                            {fmt(activo.costo_adquisicion)}
                                         </td>
                                         <td className="px-3 py-2.5 text-right font-mono" style={{ color: 'var(--text-muted)' }}>
                                             {fmt(activo.depreciacion_acumulada)}
                                         </td>
                                         <td className="px-3 py-2.5 text-right font-mono font-semibold"
                                             style={{ color: totDepreciado ? '#F59E0B' : 'var(--text-main)' }}>
-                                            {fmt(activo.valor_libro)}
+                                            {fmt(activo.valor_en_libros)}
                                         </td>
                                         <td className="px-3 py-2.5">
                                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${ESTADO_COLORES[activo.estado] ?? ''}`}>
@@ -246,7 +222,6 @@ export default function ActivosIndex() {
                     </table>
                 </div>
 
-                {/* Paginación */}
                 {activos.last_page > 1 && (
                     <div className="flex items-center justify-between mt-4 text-sm">
                         <p style={{ color: 'var(--text-muted)' }}>

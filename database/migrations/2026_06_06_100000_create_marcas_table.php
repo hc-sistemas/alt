@@ -11,14 +11,10 @@ return new class extends Migration
         if (!Schema::hasTable('marcas')) {
             Schema::create('marcas', function (Blueprint $table) {
                 $table->id();
-                $table->foreignId('empresa_id')->nullable()->constrained('empresas')->cascadeOnDelete();
-                $table->string('nombre', 150);
-                $table->text('descripcion')->nullable();
-                $table->boolean('activo')->default(true);
-                $table->timestamps();
-
-                // Índice único por empresa (cuando empresa_id no es null)
-                $table->index(['empresa_id', 'nombre']);
+                $table->string('nombre', 100)->unique();
+                $table->string('logo', 500)->nullable();
+                $table->string('icono', 50)->default('fa-volume-high');
+                $table->boolean('estado')->default(true);
             });
         }
     }
