@@ -3,11 +3,14 @@ import { usePage } from '@inertiajs/react'
 import Sidebar from '@/Components/shared/Sidebar'
 import Topbar from '@/Components/shared/Topbar'
 import { useThemeStore } from '@/Stores/themeStore'
+import { ToastContainer } from 'react-toastify'
+import 'react-toastify/dist/ReactToastify.css'
 import type { PageProps } from '@/types'
 
 interface Props {
     children: React.ReactNode
     title?: string
+    suppressFlash?: boolean
 }
 
 function getDefaultCollapsed(): boolean {
@@ -17,7 +20,7 @@ function getDefaultCollapsed(): boolean {
     return window.innerWidth < 1024
 }
 
-export default function AppLayout({ children, title }: Props) {
+export default function AppLayout({ children, title, suppressFlash }: Props) {
     const [sidebarCollapsed, setSidebarCollapsed] = useState(getDefaultCollapsed)
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
     const { theme } = useThemeStore()
@@ -25,7 +28,7 @@ export default function AppLayout({ children, title }: Props) {
     const [flashMessage, setFlashMessage] = useState(flash)
 
     useEffect(() => {
-        if (flash.success || flash.error) {
+        if (flash.success || flash.error || flash.warning) {
             setFlashMessage(flash)
             const timer = setTimeout(() => setFlashMessage({}), 4000)
             return () => clearTimeout(timer)
@@ -54,24 +57,24 @@ export default function AppLayout({ children, title }: Props) {
                     pageTitle={title}
                 />
 
-                {/* Flash messages */}
-                {(flashMessage.success || flashMessage.error) && (
-                    <div className={`mx-4 mt-3 p-3 rounded-lg border text-sm flex items-center gap-2 ${
-                        flashMessage.success
-                            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
-                            : 'bg-red-500/10 border-red-500/30 text-red-600 dark:text-red-400'
-                    }`}>
-                        <span className="w-1.5 h-1.5 rounded-full shrink-0"
-                            style={{ background: flashMessage.success ? '#10B981' : '#EF4444' }} />
-                        {flashMessage.success || flashMessage.error}
-                    </div>
-                )}
-
                 {/* Page content */}
                 <main className="flex-1 overflow-y-auto">
                     {children}
                 </main>
             </div>
+
+            {/* Toast notifications globales (suprimido cuando la página tiene su propio TC) */}
+            {!suppressFlash && (
+                <ToastContainer
+                    position="top-right"
+                    autoClose={4000}
+                    hideProgressBar={false}
+                    newestOnTop
+                    closeOnClick
+                    pauseOnHover
+                    theme={theme === 'dark' ? 'dark' : 'colored'}
+                />
+            )}
         </div>
     )
 }

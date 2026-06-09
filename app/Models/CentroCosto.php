@@ -31,4 +31,9 @@ class CentroCosto extends Model
     {
         return $this->hasMany(Usuario::class);
     }
+
+    public function scopeActivos($query)
+    {
+        return $query->where('estado', true);
+    }
 }
