@@ -175,8 +175,7 @@ export default function ActivoFijoShow() {
                                 <Label>Mes</Label>
                                 <select value={data.periodo_mes}
                                     onChange={e => setData('periodo_mes', e.target.value)}
-                                    className="flex h-9 rounded-md border bg-transparent px-3 py-1 text-sm w-40"
-                                    style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-main)' }}>
+                                    className="input-field w-40">
                                     {MESES.slice(1).map((m, i) => (
                                         <option key={i + 1} value={i + 1}>{m}</option>
                                     ))}

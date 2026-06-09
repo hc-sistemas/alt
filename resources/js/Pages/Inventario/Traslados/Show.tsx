@@ -233,8 +233,7 @@ export default function TrasladoShow() {
                                 onChange={e => setData('observacion', e.target.value)}
                                 rows={2}
                                 placeholder="Observaciones de la recepción..."
-                                className="flex w-full rounded-md border bg-transparent px-3 py-2 text-sm resize-none"
-                                style={{ borderColor: 'var(--border)', color: 'var(--text-main)' }}
+                                className="input-field"
                             />
                         </div>
                         <div className="flex gap-3">
@@ -281,7 +280,7 @@ export default function TrasladoShow() {
                                 autoFocus
                             />
                         </div>
-                        <div className="flex gap-3 pt-1">
+                        <div className="modal-footer">
                             <Button onClick={anular} loading={anulando}
                                 style={{ background: '#EF4444', color: 'white' }}>
                                 Confirmar rechazo

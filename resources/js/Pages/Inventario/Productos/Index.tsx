@@ -124,21 +124,21 @@ export default function ProductosIndex() {
                     </div>
 
                     <select value={marcaId} onChange={e => setMarcaId(e.target.value)}
-                        className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm"
+                        className="input-field"
                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
                         <option value="">Todas las marcas</option>
                         {marcas.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}
                     </select>
 
                     <select value={catId} onChange={e => setCatId(e.target.value)}
-                        className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm"
+                        className="input-field"
                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
                         <option value="">Todas las categorías</option>
                         {categorias.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
                     </select>
 
                     <select value={tipo} onChange={e => setTipo(e.target.value)}
-                        className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm"
+                        className="input-field"
                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
                         <option value="">Todos los tipos</option>
                         <option value="producto">Producto</option>
@@ -148,7 +148,7 @@ export default function ProductosIndex() {
                     </select>
 
                     <select value={estado} onChange={e => setEstado(e.target.value)}
-                        className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm"
+                        className="input-field"
                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
                         <option value="">Todos los estados</option>
                         <option value="activo">Activos</option>

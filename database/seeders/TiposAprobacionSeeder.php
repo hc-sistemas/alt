@@ -11,7 +11,6 @@ class TiposAprobacionSeeder extends Seeder
     {
         $tipos = [
             ['clave' => 'descuento_excedido', 'nombre' => 'Descuento Excedido', 'descripcion' => 'Descuento mayor al límite permitido', 'activo' => true],
-            ['clave' => 'precio_bajo_costo', 'nombre' => 'Precio Bajo Costo', 'descripcion' => 'Precio menor al costo del producto', 'activo' => true],
             ['clave' => 'anulacion_factura', 'nombre' => 'Anulación de Factura', 'descripcion' => 'Anulación de factura emitida', 'activo' => true],
             ['clave' => 'anulacion_nota_credito', 'nombre' => 'Anulación Nota de Crédito', 'descripcion' => 'Anulación de nota de crédito', 'activo' => true],
             ['clave' => 'modificacion_precio_base', 'nombre' => 'Modificación Precio Base', 'descripcion' => 'Cambio en precio base de producto', 'activo' => true],

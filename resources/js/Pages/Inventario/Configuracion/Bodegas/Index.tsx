@@ -145,7 +145,7 @@ export default function BodegasIndex() {
                         <select
                             value={tipoFiltro}
                             onChange={e => aplicarFiltro(e.target.value)}
-                            className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm"
+                            className="input-field"
                             style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}
                         >
                             <option value="">Todos</option>
@@ -241,7 +241,7 @@ export default function BodegasIndex() {
                             <h3 className="text-base font-semibold" style={{ color: 'var(--text-main)' }}>
                                 {editando ? 'Editar bodega' : 'Nueva bodega'}
                             </h3>
-                            <button onClick={cerrarModal} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700">
+                            <button onClick={cerrarModal} className="modal-close">
                                 <X className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
                             </button>
                         </div>
@@ -261,7 +261,7 @@ export default function BodegasIndex() {
                                 <select
                                     value={form.tipo}
                                     onChange={e => setForm(f => ({ ...f, tipo: e.target.value }))}
-                                    className="flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
+                                    className="input-field"
                                     style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}
                                 >
                                     {tipos.map(t => <option key={t} value={t}>{TIPO_LABELS[t] ?? t}</option>)}
@@ -273,7 +273,7 @@ export default function BodegasIndex() {
                                 <select
                                     value={form.centro_costo_id}
                                     onChange={e => setForm(f => ({ ...f, centro_costo_id: e.target.value }))}
-                                    className="flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
+                                    className="input-field"
                                     style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}
                                 >
                                     <option value="">Sin centro de costo</option>
@@ -304,7 +304,7 @@ export default function BodegasIndex() {
                             </div>
                         </div>
 
-                        <div className="flex gap-3 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
+                        <div className="modal-footer">
                             <Button onClick={guardar} loading={procesando}>
                                 <Save className="w-4 h-4" />
                                 {editando ? 'Guardar cambios' : 'Crear bodega'}

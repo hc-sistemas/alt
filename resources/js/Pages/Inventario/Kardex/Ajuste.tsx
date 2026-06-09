@@ -126,7 +126,7 @@ export default function KardexAjuste() {
                     <select
                         value={data.bodega_id}
                         onChange={e => setData('bodega_id', e.target.value)}
-                        className="flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
+                        className="input-field"
                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}
                     >
                         <option value="">Seleccionar bodega...</option>
@@ -233,7 +233,7 @@ export default function KardexAjuste() {
                         onChange={e => setData('motivo', e.target.value)}
                         rows={3}
                         placeholder="Ej: Conteo físico, mercadería dañada, ajuste de sistema..."
-                        className="flex w-full rounded-md border bg-transparent px-3 py-2 text-sm resize-none"
+                        className="input-field"
                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)' }}
                     />
                     {errors.motivo && <p className="text-xs text-red-400">{errors.motivo}</p>}

@@ -188,7 +188,7 @@ export default function ProductoForm() {
                                     <select
                                         value={data.unidad}
                                         onChange={e => setData('unidad', e.target.value)}
-                                        className="flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
+                                        className="input-field"
                                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}
                                     >
                                         {['unidad', 'par', 'caja', 'metro', 'hora', 'kit'].map(u => (
@@ -201,7 +201,7 @@ export default function ProductoForm() {
                                     <select
                                         value={data.marca_id}
                                         onChange={e => setData('marca_id', e.target.value)}
-                                        className="flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
+                                        className="input-field"
                                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}
                                     >
                                         <option value="">Sin marca</option>
@@ -213,7 +213,7 @@ export default function ProductoForm() {
                                     <select
                                         value={data.categoria_id}
                                         onChange={e => setData('categoria_id', e.target.value)}
-                                        className="flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
+                                        className="input-field"
                                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}
                                     >
                                         <option value="">Sin categoría</option>
@@ -229,7 +229,7 @@ export default function ProductoForm() {
                                     onChange={e => setData('descripcion', e.target.value)}
                                     rows={2}
                                     placeholder="Ej: Descripción del producto..."
-                                    className="flex w-full rounded-md border bg-transparent px-3 py-2 text-sm resize-none"
+                                    className="input-field"
                                     style={{ borderColor: 'var(--border)', color: 'var(--text-main)' }}
                                 />
                             </div>

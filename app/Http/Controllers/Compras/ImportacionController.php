@@ -3,11 +3,13 @@ namespace App\Http\Controllers\Compras;
 
 use App\Http\Controllers\Controller;
 use App\Models\Importacion;
+use App\Models\InventarioSaldo;
 use App\Models\Proveedor;
 use App\Models\Compra;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -110,8 +112,11 @@ class ImportacionController extends Controller
         }
 
         $request->validate([
-            'metodo_prorrateo'  => 'required|in:cantidad,precio,peso',
-            'fecha_liquidacion' => 'required|date',
+            'metodo_prorrateo'           => 'required|in:cantidad,precio,peso',
+            'fecha_liquidacion'          => 'required|date',
+            'costos_extra'               => 'nullable|array',
+            'costos_extra.*.descripcion' => 'required_with:costos_extra|string|max:200',
+            'costos_extra.*.monto'       => 'required_with:costos_extra|numeric|min:0',
         ]);
 
         $compras = Compra::where('importacion_id', $importacion->id)
@@ -122,18 +127,61 @@ class ImportacionController extends Controller
                 'No hay compras asociadas a esta importación para prorratear.');
         }
 
-        $totalCostosExtra = $compras->sum('total');
+        $totalCostosExtra = (float) collect($request->input('costos_extra', []))
+            ->sum(fn($c) => (float) ($c['monto'] ?? 0));
+
+        if ($totalCostosExtra <= 0) {
+            return back()->with('error',
+                'Debe ingresar al menos un costo extra con monto mayor a 0.');
+        }
+
+        $metodo = $request->input('metodo_prorrateo');
+
+        $bases = $compras->map(fn($compra) => match ($metodo) {
+            'cantidad' => (float) $compra->detalles->sum('cantidad'),
+            'peso'     => (float) $compra->detalles->sum('peso_total'),
+            default    => (float) $compra->total,
+        });
+
+        $baseTotal = (float) $bases->sum();
+
+        DB::transaction(function () use ($compras, $bases, $baseTotal, $totalCostosExtra) {
+            if ($baseTotal <= 0) return;
+
+            $compras->each(function ($compra, $idx) use ($bases, $baseTotal, $totalCostosExtra) {
+                $proporcion    = $bases[$idx] / $baseTotal;
+                $costoAsignado = $totalCostosExtra * $proporcion;
+
+                foreach ($compra->detalles as $detalle) {
+                    if (!$detalle->producto_id || $detalle->cantidad <= 0) continue;
+
+                    $cantidadTotal = (float) $compra->detalles->sum('cantidad');
+                    if ($cantidadTotal <= 0) continue;
+
+                    $costoPorUnitario = ($costoAsignado * ($detalle->cantidad / $cantidadTotal))
+                        / $detalle->cantidad;
+
+                    $saldo = InventarioSaldo::where('producto_id', $detalle->producto_id)->first();
+                    if ($saldo && $saldo->cantidad > 0) {
+                        $saldo->increment('costo_promedio', round($costoPorUnitario, 4));
+                    }
+                }
+            });
+        });
+
+        $costoFob   = (float) $importacion->costo_fob;
+        $costoTotal = $costoFob + $totalCostosExtra;
 
         $importacion->update([
-            'metodo_prorrateo'  => $request->metodo_prorrateo,
-            'total_costos_extra'=> $totalCostosExtra,
-            'costo_total'       => $importacion->costo_fob + $totalCostosExtra,
-            'fecha_liquidacion' => $request->fecha_liquidacion,
-            'estado'            => 'liquidada',
+            'metodo_prorrateo'   => $metodo,
+            'total_costos_extra' => $totalCostosExtra,
+            'costo_total'        => $costoTotal,
+            'fecha_liquidacion'  => $request->input('fecha_liquidacion'),
+            'estado'             => 'liquidada',
         ]);
 
         return back()->with('success',
             "Importación {$importacion->nombre} liquidada. " .
-            "Costo total: $" . number_format($importacion->costo_total, 2));
+            'Costo total: $' . number_format($costoTotal, 2));
     }
 }

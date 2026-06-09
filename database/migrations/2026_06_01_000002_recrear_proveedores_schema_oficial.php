@@ -8,6 +8,11 @@ return new class extends Migration
 {
     public function up(): void
     {
+        // Si la tabla ya tiene el schema correcto (tipo_identificacion existe), no recrear
+        if (Schema::hasTable('proveedores') && Schema::hasColumn('proveedores', 'tipo_identificacion')) {
+            return;
+        }
+
         Schema::dropIfExists('proveedores');
         Schema::create('proveedores', function (Blueprint $table) {
             $table->id();

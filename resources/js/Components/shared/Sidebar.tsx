@@ -40,8 +40,9 @@ const navItems: NavItem[] = [
         hijos: [
             { nombre: 'Facturas de Compra', href: '/compras/facturas' },
             { nombre: 'Proveedores',        href: '/compras/proveedores' },
-            { nombre: 'Cuentas por Pagar',  href: '/compras/cuentas-pagar' },
-            { nombre: 'Importaciones',      href: '/compras/importaciones' },
+            { nombre: 'Cuentas por Pagar',      href: '/compras/cuentas-pagar' },
+            { nombre: 'Anticipos Proveedores', href: '/compras/anticipos' },
+            { nombre: 'Importaciones',         href: '/compras/importaciones' },
         ]
     },
     {
@@ -69,13 +70,20 @@ const navItems: NavItem[] = [
             { nombre: 'Ejercicios', href: '/contabilidad/ejercicios' },
             { nombre: 'Asientos', href: '/contabilidad/asientos' },
             { nombre: 'Plan de Cuentas', href: '/contabilidad/plan-cuentas' },
+            { nombre: 'Parámetros Contables', href: '/contabilidad/parametros' },
+            { nombre: 'Reportes Contables', href: '/contabilidad/reportes' },
         ]
     },
     {
         nombre: 'Bancos', clave: 'bancos', icon: Landmark,
         hijos: [
-            { nombre: 'Movimientos', href: '/bancos/movimientos' },
-            { nombre: 'Cajas', href: '/bancos/cajas' },
+            { nombre: 'Bancos y Cajas',        href: '/bancos/catalogo'        },
+            { nombre: 'Movimientos',            href: '/bancos/movimientos'     },
+            { nombre: 'Cajas',                  href: '/bancos/cajas'           },
+            { nombre: 'Datafast',               href: '/bancos/datafast'        },
+            { nombre: 'Conciliación Bancaria',  href: '/bancos/conciliaciones'  },
+            { nombre: 'Cheques',                href: '/bancos/cheques'          },
+            { nombre: 'Reportes',               href: '/bancos/reportes'         },
         ]
     },
     {
