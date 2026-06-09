@@ -2,6 +2,7 @@ import { Head, Link, router, usePage } from '@inertiajs/react'
 import { useEffect, useRef, useState } from 'react'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
+import PdfPreviewModal from '@/Components/shared/PdfPreviewModal'
 import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Badge } from '@/Components/ui/badge'
@@ -26,6 +27,7 @@ export default function ProveedoresIndex() {
     const [search, setSearch] = useState(filters.search ?? '')
     const [tipo, setTipo] = useState(filters.tipo ?? 'todos')
     const [estado, setEstado] = useState(filters.estado ?? '')
+    const [pdfModal, setPdfModal] = useState(false)
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
     useEffect(() => {
@@ -137,14 +139,15 @@ export default function ProveedoresIndex() {
                     </div>
 
                     <div className="flex items-center gap-2 ml-auto">
-                        <a href={route('personas.proveedores.reporte.lista')} target="_blank" rel="noreferrer"
+                        <button
+                            onClick={() => setPdfModal(true)}
                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium"
                             style={{ background: '#DC2626', color: 'white', transition: 'background 0.2s' }}
                             onMouseEnter={e => (e.currentTarget.style.background = '#B91C1C')}
                             onMouseLeave={e => (e.currentTarget.style.background = '#DC2626')}>
                             <FileText className="w-4 h-4" />
                             PDF
-                        </a>
+                        </button>
                         <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium"
                             style={{ background: '#16A34A', color: 'white', transition: 'background 0.2s' }}
                             onMouseEnter={e => (e.currentTarget.style.background = '#15803D')}
@@ -300,6 +303,16 @@ export default function ProveedoresIndex() {
                     </div>
                 )}
             </div>
+            <PdfPreviewModal
+                abierto={pdfModal}
+                onCerrar={() => setPdfModal(false)}
+                url={pdfModal ? route('personas.proveedores.reporte.lista', {
+                    tipo: tipo !== 'todos' ? tipo : undefined,
+                    estado: estado || undefined,
+                }) : ''}
+                titulo="Lista de Proveedores"
+                nombreDescarga="proveedores.pdf"
+            />
         </AppLayout>
     )
 }

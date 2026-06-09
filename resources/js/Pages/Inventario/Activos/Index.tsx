@@ -2,6 +2,7 @@ import { Head, Link, router, usePage } from '@inertiajs/react'
 import { useEffect, useRef, useState } from 'react'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
+import PdfPreviewModal from '@/Components/shared/PdfPreviewModal'
 import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Plus, Search, Pencil, Trash2, Eye, FileText, FileSpreadsheet } from 'lucide-react'
@@ -34,6 +35,7 @@ export default function ActivosIndex() {
 
     const [search, setSearch] = useState(filters.search ?? '')
     const [estado, setEstado] = useState(filters.estado ?? '')
+    const [pdfModal, setPdfModal] = useState(false)
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
     useEffect(() => {
@@ -130,7 +132,7 @@ export default function ActivosIndex() {
                             style={{ background: '#DC2626', color: 'white', transition: 'background 0.2s' }}
                             onMouseEnter={e => (e.currentTarget.style.background = '#B91C1C')}
                             onMouseLeave={e => (e.currentTarget.style.background = '#DC2626')}
-                            onClick={() => {}}>
+                            onClick={() => setPdfModal(true)}>
                             <FileText className="w-4 h-4" />
                             PDF
                         </button>
@@ -245,6 +247,13 @@ export default function ActivosIndex() {
                     </div>
                 )}
             </div>
+            <PdfPreviewModal
+                abierto={pdfModal}
+                onCerrar={() => setPdfModal(false)}
+                url={pdfModal ? route('inventario.activos.reporte.lista') : ''}
+                titulo="Activos Fijos"
+                nombreDescarga="activos_fijos.pdf"
+            />
         </AppLayout>
     )
 }

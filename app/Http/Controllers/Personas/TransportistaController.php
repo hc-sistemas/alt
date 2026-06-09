@@ -9,6 +9,7 @@ use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -26,7 +27,10 @@ class TransportistaController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $data = $request->validate([
-            'identificacion' => ['nullable', 'string', 'max:20'],
+            'identificacion' => [
+                'nullable', 'string', 'max:20',
+                Rule::unique('transportistas', 'identificacion'),
+            ],
             'razon_social'   => ['required', 'string', 'max:200'],
             'placa'          => ['nullable', 'string', 'max:20'],
             'email'          => ['nullable', 'email', 'max:200'],
@@ -49,7 +53,11 @@ class TransportistaController extends Controller
     public function update(Request $request, Transportista $transportista): RedirectResponse
     {
         $data = $request->validate([
-            'identificacion' => ['nullable', 'string', 'max:20'],
+            'identificacion' => [
+                'nullable', 'string', 'max:20',
+                Rule::unique('transportistas', 'identificacion')
+                    ->ignore($transportista->id),
+            ],
             'razon_social'   => ['required', 'string', 'max:200'],
             'placa'          => ['nullable', 'string', 'max:20'],
             'email'          => ['nullable', 'email', 'max:200'],
@@ -72,15 +80,31 @@ class TransportistaController extends Controller
     public function destroy(Transportista $transportista): RedirectResponse
     {
         $nombre = $transportista->razon_social;
-        $transportista->delete();
+
+        if ($transportista->guiasRemision()->exists()) {
+            $transportista->update(['estado' => false]);
+
+            $this->auditoria->documento('desactivar', 'personas', 'transportistas', $transportista->id,
+                "Transportista {$nombre} desactivado (tiene guías de remisión asociadas)");
+
+            return back()->with('flash', [
+                'type'    => 'warning',
+                'message' => 'El transportista tiene guías de remisión asociadas y fue desactivado en lugar de eliminado.',
+            ]);
+        }
 
         $this->auditoria->documento('eliminar', 'personas', 'transportistas', $transportista->id,
             "Transportista {$nombre} eliminado");
 
-        return back()->with('success', 'Transportista eliminado correctamente.');
+        $transportista->delete();
+
+        return back()->with('flash', [
+            'type'    => 'success',
+            'message' => 'Transportista eliminado correctamente.',
+        ]);
     }
 
-    public function reporteLista(): HttpResponse
+    public function reporteLista(Request $request): HttpResponse
     {
         $empresa = \App\Models\Empresa::find(session('empresa_activa_id'));
 
@@ -93,10 +117,14 @@ class TransportistaController extends Controller
             'tipo'           => 'lista',
         ]);
 
-        return $pdf->download('transportistas_' . now()->format('Ymd_His') . '.pdf');
+        $nombre = 'transportistas_' . now()->format('Ymd_His') . '.pdf';
+
+        return $request->boolean('download')
+            ? $pdf->download($nombre)
+            : $pdf->stream($nombre);
     }
 
-    public function reporteIndividual(Transportista $transportista): HttpResponse
+    public function reporteIndividual(Request $request, Transportista $transportista): HttpResponse
     {
         $empresa = \App\Models\Empresa::find(session('empresa_activa_id'));
 
@@ -107,6 +135,10 @@ class TransportistaController extends Controller
             'tipo'          => 'individual',
         ]);
 
-        return $pdf->download('transportista_' . $transportista->id . '.pdf');
+        $nombre = 'transportista_' . $transportista->id . '.pdf';
+
+        return $request->boolean('download')
+            ? $pdf->download($nombre)
+            : $pdf->stream($nombre);
     }
 }

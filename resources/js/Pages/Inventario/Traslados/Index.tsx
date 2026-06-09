@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
 import { Button } from '@/Components/ui/button'
-import { Plus, Eye, FileSpreadsheet, FileText } from 'lucide-react'
+import { Plus, Eye, FileSpreadsheet } from 'lucide-react'
 import type { TrasladoBodega, PaginatedData, PageProps } from '@/types'
 
 interface Props extends PageProps {
@@ -109,14 +109,6 @@ export default function TrasladosIndex() {
 
                     <div className="flex items-center gap-2 ml-auto">
                         <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium"
-                            style={{ background: '#DC2626', color: 'white', transition: 'background 0.2s' }}
-                            onMouseEnter={e => (e.currentTarget.style.background = '#B91C1C')}
-                            onMouseLeave={e => (e.currentTarget.style.background = '#DC2626')}
-                            onClick={() => {}}>
-                            <FileText className="w-4 h-4" />
-                            PDF
-                        </button>
-                        <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium"
                             style={{ background: '#16A34A', color: 'white', transition: 'background 0.2s' }}
                             onMouseEnter={e => (e.currentTarget.style.background = '#15803D')}
                             onMouseLeave={e => (e.currentTarget.style.background = '#16A34A')}
@@ -207,6 +199,7 @@ export default function TrasladosIndex() {
                     </div>
                 )}
             </div>
+
         </AppLayout>
     )
 }

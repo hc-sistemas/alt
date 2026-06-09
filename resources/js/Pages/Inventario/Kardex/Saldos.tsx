@@ -2,6 +2,7 @@ import { Head, Link, router, usePage } from '@inertiajs/react'
 import { useEffect, useRef, useState } from 'react'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
+import PdfPreviewModal from '@/Components/shared/PdfPreviewModal'
 import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Search, ArrowUpDown, SlidersHorizontal, FileText, FileSpreadsheet } from 'lucide-react'
@@ -25,6 +26,7 @@ export default function KardexSaldos() {
     const [search, setSearch]         = useState(filters.search ?? '')
     const [bodegaId, setBodegaId]     = useState(filters.bodega_id ?? '')
     const [soloCriticos, setSoloCriticos] = useState(filters.solo_criticos === '1')
+    const [pdfModal, setPdfModal]     = useState(false)
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
     useEffect(() => {
@@ -115,7 +117,7 @@ export default function KardexSaldos() {
                             style={{ background: '#DC2626', color: 'white', transition: 'background 0.2s' }}
                             onMouseEnter={e => (e.currentTarget.style.background = '#B91C1C')}
                             onMouseLeave={e => (e.currentTarget.style.background = '#DC2626')}
-                            onClick={() => {}}>
+                            onClick={() => setPdfModal(true)}>
                             <FileText className="w-4 h-4" />
                             PDF
                         </button>
@@ -233,6 +235,13 @@ export default function KardexSaldos() {
                     </div>
                 )}
             </div>
+            <PdfPreviewModal
+                abierto={pdfModal}
+                onCerrar={() => setPdfModal(false)}
+                url={pdfModal ? route('inventario.kardex.reporte.saldos') : ''}
+                titulo="Saldos de Inventario"
+                nombreDescarga="kardex_saldos.pdf"
+            />
         </AppLayout>
     )
 }

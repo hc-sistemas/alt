@@ -4,14 +4,17 @@ namespace App\Http\Controllers\Inventario;
 
 use App\Http\Controllers\Controller;
 use App\Models\Bodega;
+use App\Models\Empresa;
 use App\Models\InventarioMovimiento;
 use App\Models\InventarioSaldo;
 use App\Models\Producto;
 use App\Services\AuditoriaService;
 use App\Services\Contracts\InventarioServiceInterface;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response as HttpResponse;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -106,6 +109,30 @@ class KardexController extends Controller
             'bodegas' => $bodegas,
             'filters' => $request->only(['search', 'bodega_id', 'solo_criticos']),
         ]);
+    }
+
+    public function reporteSaldos(Request $request): HttpResponse
+    {
+        $empresaId = session('empresa_activa_id');
+        $empresa   = Empresa::findOrFail($empresaId);
+
+        $saldos = InventarioSaldo::with(['producto', 'bodega'])
+            ->join('productos', 'inventario_saldos.producto_id', '=', 'productos.id')
+            ->join('bodegas', 'inventario_saldos.bodega_id', '=', 'bodegas.id')
+            ->where('productos.empresa_id', $empresaId)
+            ->select('inventario_saldos.*')
+            ->orderBy('productos.nombre')
+            ->get();
+
+        $pdf = Pdf::loadView('reportes.inventario.saldos', [
+            'saldos'  => $saldos,
+            'empresa' => $empresa,
+            'usuario' => auth()->user(),
+        ])->setPaper('a4', 'landscape');
+
+        return $request->boolean('download')
+            ? $pdf->download('kardex_saldos.pdf')
+            : $pdf->stream('kardex_saldos.pdf');
     }
 
     public function ajuste(Request $request): Response

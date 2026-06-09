@@ -68,6 +68,7 @@ class ProveedorController extends Controller
 
         $existe = Proveedor::where('empresa_id', $empresaId)
             ->where('identificacion', $request->identificacion)
+            ->whereNull('deleted_at')
             ->exists();
 
         if ($existe) {

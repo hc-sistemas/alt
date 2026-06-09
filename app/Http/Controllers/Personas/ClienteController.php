@@ -88,12 +88,33 @@ class ClienteController extends Controller
     public function destroy(Cliente $cliente): RedirectResponse
     {
         $nombre = $cliente->razon_social;
-        $cliente->delete();
+
+        $tieneDocumentos = $cliente->facturas()->exists()
+            || $cliente->cuentasCobrar()->exists()
+            || $cliente->prefacturas()->exists()
+            || $cliente->proformas()->exists();
+
+        if ($tieneDocumentos) {
+            $cliente->update(['estado' => false]);
+
+            $this->auditoria->documento('desactivar', 'personas', 'clientes', $cliente->id,
+                "Cliente {$nombre} desactivado (tiene documentos asociados)");
+
+            return back()->with('flash', [
+                'type'    => 'warning',
+                'message' => 'El cliente tiene documentos asociados y fue desactivado en lugar de eliminado.',
+            ]);
+        }
 
         $this->auditoria->documento('eliminar', 'personas', 'clientes', $cliente->id,
             "Cliente {$nombre} eliminado");
 
-        return back()->with('success', 'Cliente eliminado correctamente.');
+        $cliente->delete();
+
+        return back()->with('flash', [
+            'type'    => 'success',
+            'message' => 'Cliente eliminado correctamente.',
+        ]);
     }
 
     public function reporteLista(Request $request): HttpResponse
@@ -113,10 +134,14 @@ class ClienteController extends Controller
             'tipo'     => 'lista',
         ]);
 
-        return $pdf->download('clientes_' . now()->format('Ymd_His') . '.pdf');
+        $nombre = 'clientes_' . now()->format('Ymd_His') . '.pdf';
+
+        return $request->boolean('download')
+            ? $pdf->download($nombre)
+            : $pdf->stream($nombre);
     }
 
-    public function reporteIndividual(Cliente $cliente): HttpResponse
+    public function reporteIndividual(Request $request, Cliente $cliente): HttpResponse
     {
         $empresa = \App\Models\Empresa::find(session('empresa_activa_id'));
 
@@ -127,7 +152,11 @@ class ClienteController extends Controller
             'tipo'     => 'individual',
         ]);
 
-        return $pdf->download('cliente_' . $cliente->identificacion . '.pdf');
+        $nombre = 'cliente_' . $cliente->identificacion . '.pdf';
+
+        return $request->boolean('download')
+            ? $pdf->download($nombre)
+            : $pdf->stream($nombre);
     }
 
     public function search(Request $request): JsonResponse

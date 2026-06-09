@@ -5,14 +5,17 @@ namespace App\Http\Controllers\Inventario;
 use App\Http\Controllers\Controller;
 use App\Models\Bodega;
 use App\Models\CategoriaProducto;
+use App\Models\Empresa;
 use App\Models\InventarioSaldo;
 use App\Models\Marca;
 use App\Models\PlanCuenta;
 use App\Models\Producto;
 use App\Services\AuditoriaService;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -117,7 +120,7 @@ class ProductoController extends Controller
             'porcentaje_iva'     => ['numeric', 'min:0'],
             'tiene_ice'          => ['boolean'],
             'porcentaje_ice'     => ['numeric', 'min:0'],
-            'stock_minimo'       => ['integer', 'min:0'],
+            'stock_minimo'       => ['nullable', 'integer', 'min:0'],
             'stock_maximo'       => ['nullable', 'integer', 'min:0'],
             'cuenta_inventario'  => ['nullable', 'string', 'max:20'],
             'cuenta_costo_ventas' => ['nullable', 'string', 'max:20'],
@@ -125,6 +128,9 @@ class ProductoController extends Controller
             'ref_importacion'    => ['nullable', 'string'],
             'estado'             => ['boolean'],
         ]);
+
+        $data['stock_minimo'] = $data['stock_minimo'] ?? 0;
+        $data['stock_maximo'] = $data['stock_maximo'] ?? 0;
 
         $producto = Producto::create([...$data, 'empresa_id' => $empresaId]);
 
@@ -181,7 +187,7 @@ class ProductoController extends Controller
             'porcentaje_iva'     => ['numeric', 'min:0'],
             'tiene_ice'          => ['boolean'],
             'porcentaje_ice'     => ['numeric', 'min:0'],
-            'stock_minimo'       => ['integer', 'min:0'],
+            'stock_minimo'       => ['nullable', 'integer', 'min:0'],
             'stock_maximo'       => ['nullable', 'integer', 'min:0'],
             'cuenta_inventario'  => ['nullable', 'string', 'max:20'],
             'cuenta_costo_ventas' => ['nullable', 'string', 'max:20'],
@@ -190,6 +196,9 @@ class ProductoController extends Controller
             'estado'             => ['boolean'],
         ]);
 
+        $data['stock_minimo'] = $data['stock_minimo'] ?? 0;
+        $data['stock_maximo'] = $data['stock_maximo'] ?? 0;
+
         $producto->update($data);
 
         $this->auditoria->documento('editar', 'inventario', 'productos', $producto->id,
@@ -197,6 +206,27 @@ class ProductoController extends Controller
 
         return redirect()->route('inventario.productos.index')
             ->with('success', 'Producto actualizado correctamente.');
+    }
+
+    public function reporteLista(Request $request): HttpResponse
+    {
+        $empresaId = session('empresa_activa_id');
+        $empresa   = Empresa::findOrFail($empresaId);
+
+        $productos = Producto::with(['marca', 'categoria'])
+            ->where('empresa_id', $empresaId)
+            ->orderBy('nombre')
+            ->get();
+
+        $pdf = Pdf::loadView('reportes.inventario.productos', [
+            'productos' => $productos,
+            'empresa'   => $empresa,
+            'usuario'   => auth()->user(),
+        ])->setPaper('a3', 'landscape');
+
+        return $request->boolean('download')
+            ? $pdf->download('productos.pdf')
+            : $pdf->stream('productos.pdf');
     }
 
     public function destroy(Producto $producto): RedirectResponse|JsonResponse

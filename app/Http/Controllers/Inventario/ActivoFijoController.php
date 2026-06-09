@@ -5,9 +5,12 @@ namespace App\Http\Controllers\Inventario;
 use App\Http\Controllers\Controller;
 use App\Models\ActivoDepreciacion;
 use App\Models\ActivoFijo;
+use App\Models\Empresa;
 use App\Services\AuditoriaService;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
@@ -140,6 +143,26 @@ class ActivoFijoController extends Controller
         $activoFijo->delete();
 
         return back()->with('success', 'Activo eliminado correctamente.');
+    }
+
+    public function reporteLista(Request $request): HttpResponse
+    {
+        $empresaId = session('empresa_activa_id');
+        $empresa   = Empresa::findOrFail($empresaId);
+
+        $activos = ActivoFijo::where('empresa_id', $empresaId)
+            ->orderBy('codigo')
+            ->get();
+
+        $pdf = Pdf::loadView('reportes.inventario.activos', [
+            'activos' => $activos,
+            'empresa' => $empresa,
+            'usuario' => auth()->user(),
+        ])->setPaper('a3', 'landscape');
+
+        return $request->boolean('download')
+            ? $pdf->download('activos_fijos.pdf')
+            : $pdf->stream('activos_fijos.pdf');
     }
 
     public function depreciar(Request $request, ActivoFijo $activoFijo): RedirectResponse

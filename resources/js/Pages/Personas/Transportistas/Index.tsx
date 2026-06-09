@@ -2,6 +2,7 @@ import { Head, router, usePage } from '@inertiajs/react'
 import { useState } from 'react'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
+import PdfPreviewModal from '@/Components/shared/PdfPreviewModal'
 import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
@@ -27,6 +28,7 @@ const emptyForm = {
 export default function TransportistasIndex() {
     const { transportistas } = usePage<Props>().props
     const [search, setSearch] = useState('')
+    const [pdfModal, setPdfModal] = useState(false)
 
     const [modalOpen, setModalOpen] = useState(false)
     const [editando, setEditando] = useState<Transportista | null>(null)
@@ -141,14 +143,15 @@ export default function TransportistasIndex() {
                     </div>
 
                     <div className="flex items-center gap-2 ml-auto">
-                        <a href={route('personas.transportistas.reporte.lista')} target="_blank" rel="noreferrer"
+                        <button
+                            onClick={() => setPdfModal(true)}
                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium"
                             style={{ background: '#DC2626', color: 'white', transition: 'background 0.2s' }}
                             onMouseEnter={e => (e.currentTarget.style.background = '#B91C1C')}
                             onMouseLeave={e => (e.currentTarget.style.background = '#DC2626')}>
                             <FileText className="w-4 h-4" />
                             PDF
-                        </a>
+                        </button>
                         <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium"
                             style={{ background: '#16A34A', color: 'white', transition: 'background 0.2s' }}
                             onMouseEnter={e => (e.currentTarget.style.background = '#15803D')}
@@ -251,6 +254,14 @@ export default function TransportistasIndex() {
                     })()}
                 </div>
             </div>
+
+            <PdfPreviewModal
+                abierto={pdfModal}
+                onCerrar={() => setPdfModal(false)}
+                url={pdfModal ? route('personas.transportistas.reporte.lista') : ''}
+                titulo="Lista de Transportistas"
+                nombreDescarga="transportistas.pdf"
+            />
 
             {/* Modal crear/editar */}
             {modalOpen && (

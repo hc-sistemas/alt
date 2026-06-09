@@ -3,9 +3,11 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Transportista extends Model
 {
+
     protected $table = 'transportistas';
 
     protected $fillable = [
@@ -23,5 +25,10 @@ class Transportista extends Model
         return [
             'estado' => 'boolean',
         ];
+    }
+
+    public function guiasRemision(): HasMany
+    {
+        return $this->hasMany(GuiaRemision::class, 'transportista_id');
     }
 }
