@@ -119,7 +119,6 @@ function ModalPago({ cxp, bancos, onClose }: {
     const [processing, setProcessing] = useState(false)
 
     const bancoBanco = bancos.find(b => b.id.toString() === form.banco_caja_id)
-    const inputStyle = { background: 'var(--bg-card)', color: 'var(--text-main)', borderColor: 'var(--border)' }
 
     function submit(e: React.FormEvent) {
         e.preventDefault()
@@ -132,24 +131,18 @@ function ModalPago({ cxp, bancos, onClose }: {
     }
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-            <div className="relative w-full max-w-md rounded-xl shadow-2xl"
-                style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal-card max-w-md" onClick={e => e.stopPropagation()}>
 
                 {/* Header */}
-                <div className="flex items-center justify-between px-6 pt-5 pb-4"
-                    style={{ borderBottom: '1px solid var(--border)' }}>
+                <div className="modal-header">
                     <div>
-                        <h2 className="font-semibold text-base" style={{ color: 'var(--text-main)' }}>
-                            Registrar pago
-                        </h2>
-                        <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                        <h2>Registrar pago</h2>
+                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
                             {cxp.proveedor ?? '—'} · {cxp.num_documento ?? '—'}
                         </p>
                     </div>
-                    <button onClick={onClose} className="p-1.5 rounded-lg hover:opacity-70 transition-opacity"
-                        style={{ color: 'var(--text-muted)' }}>
+                    <button className="modal-close" onClick={onClose}>
                         <X className="w-4 h-4" />
                     </button>
                 </div>
@@ -171,7 +164,8 @@ function ModalPago({ cxp, bancos, onClose }: {
                     </div>
                 </div>
 
-                <form onSubmit={submit} className="p-6 space-y-4">
+                <form onSubmit={submit}>
+                <div className="modal-body">
                     <div className="space-y-1.5">
                         <Label>Monto a pagar <span className="text-red-400">*</span></Label>
                         <Input
@@ -186,8 +180,7 @@ function ModalPago({ cxp, bancos, onClose }: {
                         <Label>Banco / Caja <span className="text-red-400">*</span></Label>
                         <select value={form.banco_caja_id}
                             onChange={e => setForm(f => ({ ...f, banco_caja_id: e.target.value }))}
-                            className="w-full h-9 px-3 border rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
-                            style={inputStyle}>
+                            className="input-field select-field">
                             {bancos.map(b => (
                                 <option key={b.id} value={b.id}>
                                     {b.nombre} ({b.tipo}) — Saldo: ${Number(b.saldo_actual).toFixed(2)}
@@ -215,12 +208,13 @@ function ModalPago({ cxp, bancos, onClose }: {
                             onChange={e => setForm(f => ({ ...f, referencia: e.target.value }))} />
                     </div>
 
-                    <div className="flex gap-2 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
-                        <Button type="submit" disabled={processing}>
-                            <CreditCard className="w-4 h-4" /> Registrar pago
-                        </Button>
-                        <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
-                    </div>
+                </div>
+                <div className="modal-footer">
+                    <Button type="submit" disabled={processing}>
+                        <CreditCard className="w-4 h-4" /> Registrar pago
+                    </Button>
+                    <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
+                </div>
                 </form>
             </div>
         </div>
@@ -236,6 +230,9 @@ export default function CuentasPagarIndex() {
     const [estado,      setEstado]      = useState(filtros.estado ?? '')
     const [proveedorId, setProveedorId] = useState(filtros.proveedor_id ?? '')
     const [modalPago,   setModalPago]   = useState<CxPRow | null>(null)
+    const [modalPdf,    setModalPdf]    = useState(false)
+    const [urlPdf,      setUrlPdf]      = useState('')
+    const abrirPdf = (url: string) => { setUrlPdf(url); setModalPdf(true) }
 
     useEffect(() => {
         if (flash?.success) notify.success(flash.success)
@@ -294,19 +291,16 @@ export default function CuentasPagarIndex() {
 
                 {/* Toolbar */}
                 <div className="flex items-center gap-2 flex-wrap mb-6">
-                    <div className="relative">
-                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2"
-                                style={{ color: 'var(--text-muted)' }} />
+                    <div className="input-with-icon">
+                        <Search size={14} className="input-icon" />
                         <input type="text" value={buscar}
                             onChange={e => setBuscar(e.target.value)}
                             placeholder="Buscar proveedor o documento…"
-                            className="pl-9 pr-3 py-2 text-sm rounded-xl border focus:outline-none focus:ring-2 w-52 dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600"
-                            style={{ borderColor: 'var(--border)', background: 'var(--bg-card)', color: 'var(--text-main)' }} />
+                            className="input-field w-52" />
                     </div>
 
                     <select value={estado} onChange={e => setEstado(e.target.value)}
-                        className="py-2 px-3 text-sm rounded-xl border focus:outline-none dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600"
-                        style={inputStyle}>
+                        className="input-field select-field" style={{ width: 'auto' }}>
                         <option value="">Todas (pendiente + parcial)</option>
                         <option value="pendiente">Pendiente</option>
                         <option value="parcial">Parcial</option>
@@ -314,8 +308,7 @@ export default function CuentasPagarIndex() {
                     </select>
 
                     <select value={proveedorId} onChange={e => setProveedorId(e.target.value)}
-                        className="py-2 px-3 text-sm rounded-xl border focus:outline-none dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600"
-                        style={inputStyle}>
+                        className="input-field select-field" style={{ width: 'auto' }}>
                         <option value="">Todos los proveedores</option>
                         {proveedores.map(p => (
                             <option key={p.id} value={p.id}>{p.razon_social}</option>
@@ -337,11 +330,12 @@ export default function CuentasPagarIndex() {
 
                     <div className="flex-1" />
 
-                    <a href={pdfUrl} target="_blank"
-                       className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90"
-                       style={{ background: '#ef4444' }}>
+                    <button
+                        onClick={() => abrirPdf(pdfUrl)}
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90"
+                        style={{ background: '#ef4444' }}>
                         <FileText size={15} /> PDF
-                    </a>
+                    </button>
                     <a href={excelUrl}
                        className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90"
                        style={{ background: '#16a34a' }}>
@@ -479,6 +473,39 @@ export default function CuentasPagarIndex() {
                     bancos={bancos}
                     onClose={() => setModalPago(null)}
                 />
+            )}
+
+            {/* ── Modal PDF ── */}
+            {modalPdf && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+                     style={{ background: 'rgba(0,0,0,0.85)' }}
+                     onClick={() => setModalPdf(false)}>
+                    <div className="w-full max-w-5xl rounded-2xl overflow-hidden shadow-2xl flex flex-col"
+                         style={{ background: 'var(--bg-card)', height: '90vh' }}
+                         onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between px-4 py-3 border-b shrink-0"
+                             style={{ borderColor: 'var(--border)' }}>
+                            <h3 className="font-semibold text-sm flex items-center gap-2"
+                                style={{ color: 'var(--text-main)' }}>
+                                <FileText size={16} style={{ color: '#ef4444' }} />
+                                Reporte de Cuentas por Pagar
+                            </h3>
+                            <div className="flex items-center gap-2">
+                                <a href={urlPdf} download target="_blank"
+                                   className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-all hover:opacity-90"
+                                   style={{ background: '#ef4444' }}>
+                                    <Download size={13} /> Descargar
+                                </a>
+                                <button onClick={() => setModalPdf(false)}
+                                    className="px-3 py-1.5 rounded-lg text-xs font-semibold border hover:opacity-80"
+                                    style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
+                                    ✕ Cerrar
+                                </button>
+                            </div>
+                        </div>
+                        <iframe src={urlPdf} className="flex-1 w-full border-0" title="Reporte PDF CxP" />
+                    </div>
+                </div>
             )}
 
             <ToastContainer position="top-right" autoClose={3500} hideProgressBar={false}

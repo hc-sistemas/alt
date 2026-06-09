@@ -10,6 +10,7 @@ use App\Http\Controllers\Contabilidad\PlanCuentaController;
 use App\Http\Controllers\Contabilidad\EjercicioContableController;
 use App\Http\Controllers\Contabilidad\AsientoContableController;
 use App\Http\Controllers\Contabilidad\ParametroContableController;
+use App\Http\Controllers\Contabilidad\ReporteContableController;
 use App\Http\Controllers\Compras\ProveedorController as ComprasProveedorController;
 use App\Http\Controllers\Compras\CompraController;
 use App\Http\Controllers\Compras\CuentaPagarController;
@@ -30,6 +31,8 @@ use App\Http\Controllers\Bancos\MovimientoBancarioController;
 use App\Http\Controllers\Bancos\CierreCajaController;
 use App\Http\Controllers\Bancos\DatafastController;
 use App\Http\Controllers\Bancos\ConciliacionController;
+use App\Http\Controllers\Bancos\ChequesController;
+use App\Http\Controllers\Bancos\BancoReporteController;
 use Illuminate\Support\Facades\Route;
 
 // Auth
@@ -99,6 +102,13 @@ Route::middleware('auth')->group(function () {
         Route::post('/',                     [EjercicioContableController::class, 'store']) ->name('store');
         Route::patch('/{ejercicio}/cerrar',  [EjercicioContableController::class, 'cerrar'])->name('cerrar');
         Route::patch('/{ejercicio}/reabrir', [EjercicioContableController::class, 'reabrir'])->name('reabrir');
+    });
+
+    // Contabilidad - Reportes
+    Route::prefix('contabilidad/reportes')->name('contabilidad.reportes.')->group(function () {
+        Route::get('/',             [ReporteContableController::class, 'index'])      ->name('index');
+        Route::get('/libro-diario', [ReporteContableController::class, 'libroDiario'])->name('libro-diario');
+        Route::get('/mayor',        [ReporteContableController::class, 'mayor'])      ->name('mayor');
     });
 
     // Contabilidad - Asientos
@@ -250,5 +260,20 @@ Route::middleware('auth')->group(function () {
         Route::post('/',                            [ConciliacionController::class, 'store'])           ->name('store');
         Route::get('/{conciliacion}',               [ConciliacionController::class, 'show'])            ->name('show');
         Route::patch('/{conciliacion}/conciliar',   [ConciliacionController::class, 'marcarConciliada'])->name('conciliar');
+    });
+
+    // Bancos - Cheques
+    Route::prefix('bancos/cheques')->name('bancos.cheques.')->group(function () {
+        Route::get('/',                      [ChequesController::class, 'index'])        ->name('index');
+        Route::post('/',                     [ChequesController::class, 'store'])        ->name('store');
+        Route::patch('/{cheque}/estado',     [ChequesController::class, 'cambiarEstado'])->name('estado');
+    });
+
+    // Bancos - Reportes
+    Route::prefix('bancos/reportes')->name('bancos.reportes.')->group(function () {
+        Route::get('/',                [BancoReporteController::class, 'index'])             ->name('index');
+        Route::get('/estado-cuenta',   [BancoReporteController::class, 'estadoCuenta'])      ->name('estado-cuenta');
+        Route::get('/movimientos',     [BancoReporteController::class, 'reporteMovimientos']) ->name('movimientos');
+        Route::get('/caja-chica',      [BancoReporteController::class, 'reporteCajaChica'])  ->name('caja-chica');
     });
 });

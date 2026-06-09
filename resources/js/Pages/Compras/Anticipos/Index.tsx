@@ -88,7 +88,6 @@ function ModalNuevo({ proveedores, importaciones, bancos, onClose }: {
     })
     const [processing, setProcessing] = useState(false)
 
-    const inputStyle = { background: 'var(--bg-card)', color: 'var(--text-main)', borderColor: 'var(--border)' }
     const bancoBanco = bancos.find(b => b.id.toString() === form.banco_id)
 
     function submit(e: React.FormEvent) {
@@ -102,31 +101,26 @@ function ModalNuevo({ proveedores, importaciones, bancos, onClose }: {
     }
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-            <div className="relative w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl shadow-2xl"
-                style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal-card max-w-md overflow-y-auto max-h-[90vh]" onClick={e => e.stopPropagation()}>
 
-                <div className="sticky top-0 z-10 flex items-center justify-between px-6 pt-5 pb-4"
-                    style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
-                    <h2 className="font-bold text-base flex items-center gap-2"
-                        style={{ color: 'var(--text-main)' }}>
+                <div className="modal-header">
+                    <h2>
                         <CreditCard className="w-5 h-5" style={{ color: 'var(--primary)' }} />
                         Nuevo Anticipo
                     </h2>
-                    <button onClick={onClose} className="p-1.5 rounded-lg hover:opacity-70 transition-opacity"
-                        style={{ color: 'var(--text-muted)' }}>
+                    <button className="modal-close" onClick={onClose}>
                         <X className="w-4 h-4" />
                     </button>
                 </div>
 
-                <form onSubmit={submit} className="p-6 space-y-4">
+                <form onSubmit={submit}>
+                <div className="modal-body">
                     <div className="space-y-1.5">
                         <Label>Proveedor <span className="text-red-400">*</span></Label>
                         <select value={form.proveedor_id}
                             onChange={e => setForm(f => ({ ...f, proveedor_id: e.target.value }))}
-                            className="w-full h-9 px-3 border rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
-                            style={inputStyle}>
+                            className="input-field select-field">
                             <option value="">— Seleccionar proveedor —</option>
                             {proveedores.map(p => (
                                 <option key={p.id} value={p.id}>{p.razon_social}</option>
@@ -140,8 +134,7 @@ function ModalNuevo({ proveedores, importaciones, bancos, onClose }: {
                         </Label>
                         <select value={form.importacion_id}
                             onChange={e => setForm(f => ({ ...f, importacion_id: e.target.value }))}
-                            className="w-full h-9 px-3 border rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
-                            style={inputStyle}>
+                            className="input-field select-field">
                             <option value="">— Sin importación —</option>
                             {importaciones.map(i => (
                                 <option key={i.id} value={i.id}>
@@ -169,8 +162,7 @@ function ModalNuevo({ proveedores, importaciones, bancos, onClose }: {
                         <Label>Pagar desde <span className="text-red-400">*</span></Label>
                         <select value={form.banco_id}
                             onChange={e => setForm(f => ({ ...f, banco_id: e.target.value }))}
-                            className="w-full h-9 px-3 border rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
-                            style={inputStyle}>
+                            className="input-field select-field">
                             <option value="">— Seleccionar banco/caja —</option>
                             {bancos.map(b => (
                                 <option key={b.id} value={b.id}>
@@ -194,13 +186,14 @@ function ModalNuevo({ proveedores, importaciones, bancos, onClose }: {
                             onChange={e => setForm(f => ({ ...f, num_transferencia: e.target.value }))} />
                     </div>
 
-                    <div className="flex gap-2 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
-                        <Button type="submit"
-                            disabled={processing || !form.proveedor_id || !form.monto || !form.banco_id || !form.fecha}>
-                            <CreditCard className="w-4 h-4" /> Registrar Anticipo
-                        </Button>
-                        <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
-                    </div>
+                </div>
+                <div className="modal-footer">
+                    <Button type="submit"
+                        disabled={processing || !form.proveedor_id || !form.monto || !form.banco_id || !form.fecha}>
+                        <CreditCard className="w-4 h-4" /> Registrar Anticipo
+                    </Button>
+                    <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
+                </div>
                 </form>
             </div>
         </div>
@@ -219,8 +212,6 @@ function ModalCruzar({ anticipo, onClose }: {
     })
     const [processing, setProcessing] = useState(false)
 
-    const inputStyle = { background: 'var(--bg-card)', color: 'var(--text-main)', borderColor: 'var(--border)' }
-
     function submit(e: React.FormEvent) {
         e.preventDefault()
         setProcessing(true)
@@ -232,20 +223,15 @@ function ModalCruzar({ anticipo, onClose }: {
     }
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-            <div className="relative w-full max-w-md rounded-2xl shadow-2xl"
-                style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal-card max-w-md" onClick={e => e.stopPropagation()}>
 
-                <div className="flex items-center justify-between px-6 pt-5 pb-4"
-                    style={{ borderBottom: '1px solid var(--border)' }}>
-                    <h2 className="font-bold text-base flex items-center gap-2"
-                        style={{ color: 'var(--text-main)' }}>
+                <div className="modal-header">
+                    <h2>
                         <ArrowLeftRight className="w-5 h-5" style={{ color: 'var(--primary)' }} />
                         Cruzar con Factura
                     </h2>
-                    <button onClick={onClose} className="p-1.5 rounded-lg hover:opacity-70 transition-opacity"
-                        style={{ color: 'var(--text-muted)' }}>
+                    <button className="modal-close" onClick={onClose}>
                         <X className="w-4 h-4" />
                     </button>
                 </div>
@@ -270,7 +256,8 @@ function ModalCruzar({ anticipo, onClose }: {
                     </div>
                 </div>
 
-                <form onSubmit={submit} className="p-6 space-y-4">
+                <form onSubmit={submit}>
+                <div className="modal-body">
                     <div className="space-y-1.5">
                         <Label>ID Factura de Compra <span className="text-red-400">*</span></Label>
                         <Input
@@ -293,12 +280,13 @@ function ModalCruzar({ anticipo, onClose }: {
                         />
                     </div>
 
-                    <div className="flex gap-2 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
-                        <Button type="submit" disabled={processing || !form.compra_id || !form.monto}>
-                            <ArrowLeftRight className="w-4 h-4" /> Confirmar cruce
-                        </Button>
-                        <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
-                    </div>
+                </div>
+                <div className="modal-footer">
+                    <Button type="submit" disabled={processing || !form.compra_id || !form.monto}>
+                        <ArrowLeftRight className="w-4 h-4" /> Confirmar cruce
+                    </Button>
+                    <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
+                </div>
                 </form>
             </div>
         </div>
@@ -421,28 +409,24 @@ export default function AnticiposIndex() {
                         <Plus size={15} /> Nuevo Anticipo
                     </button>
 
-                    <div className="relative">
-                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2"
-                                style={{ color: 'var(--text-muted)' }} />
+                    <div className="input-with-icon">
+                        <Search size={14} className="input-icon" />
                         <input type="text" value={buscar}
                             onChange={e => setBuscar(e.target.value)}
                             onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
                             placeholder="Proveedor o transferencia…"
-                            className="pl-9 pr-3 py-2 text-sm rounded-xl border focus:outline-none w-52 dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600"
-                            style={{ borderColor: 'var(--border)', background: 'var(--bg-card)', color: 'var(--text-main)' }} />
+                            className="input-field w-52" />
                     </div>
 
                     <select value={estado} onChange={e => setEstado(e.target.value)}
-                        className="py-2 px-3 text-sm rounded-xl border focus:outline-none dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600"
-                        style={inputStyle}>
+                        className="input-field select-field" style={{ width: 'auto' }}>
                         <option value="">Todos</option>
                         <option value="pendiente">Pendientes</option>
                         <option value="cruzado">Cruzados</option>
                     </select>
 
                     <select value={proveedorId} onChange={e => setProveedorId(e.target.value)}
-                        className="py-2 px-3 text-sm rounded-xl border focus:outline-none dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600"
-                        style={inputStyle}>
+                        className="input-field select-field" style={{ width: 'auto' }}>
                         <option value="">Todos los proveedores</option>
                         {proveedores.map(p => (
                             <option key={p.id} value={p.id}>{p.razon_social}</option>

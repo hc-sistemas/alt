@@ -485,18 +485,13 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, o
     ] as const
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-            <div className="relative w-full max-w-[75vw] max-h-[90vh] flex flex-col rounded-2xl shadow-2xl overflow-hidden"
-                style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal-card max-w-[75vw] max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
 
                 {/* Header */}
-                <div className="flex items-center justify-between px-6 pt-5 pb-0 shrink-0">
-                    <h2 className="font-semibold text-base" style={{ color: 'var(--text-main)' }}>
-                        Nueva factura de compra
-                    </h2>
-                    <button onClick={onClose} className="p-1.5 rounded-lg hover:opacity-70 transition-opacity"
-                        style={{ color: 'var(--text-muted)' }}>
+                <div className="modal-header shrink-0">
+                    <h2>Nueva factura de compra</h2>
+                    <button className="modal-close" onClick={onClose}>
                         <X className="w-4 h-4" />
                     </button>
                 </div>
@@ -532,8 +527,7 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, o
                                     <Label>Proveedor <span className="text-red-400">*</span></Label>
                                     <select value={data.proveedor_id}
                                         onChange={e => setData('proveedor_id', e.target.value)}
-                                        className="w-full h-9 px-3 border rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
-                                        style={inputStyle}>
+                                        className="input-field select-field">
                                         <option value="">— Seleccionar proveedor —</option>
                                         {proveedores.map(p => (
                                             <option key={p.id} value={p.id}>
@@ -556,8 +550,7 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, o
                                         <Label>Tipo documento <span className="text-red-400">*</span></Label>
                                         <select value={data.tipo_documento}
                                             onChange={e => setData('tipo_documento', e.target.value)}
-                                            className="w-full h-9 px-3 border rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
-                                            style={inputStyle}>
+                                            className="input-field select-field">
                                             <option value="FAC">Factura</option>
                                             <option value="LIQ">Liquidación</option>
                                             <option value="TIK">Ticket</option>
@@ -641,8 +634,7 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, o
                                     <textarea value={data.concepto}
                                         onChange={e => setData('concepto', e.target.value)}
                                         rows={2}
-                                        className="w-full px-3 py-2 border rounded-md text-sm resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
-                                        style={inputStyle}
+                                        className="input-field textarea-field"
                                         placeholder="Descripción general de la compra..." />
                                 </div>
                             </div>
@@ -740,8 +732,7 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, o
                                     <Label>Centro de costo</Label>
                                     <select value={data.centro_costo_id}
                                         onChange={e => setData('centro_costo_id', e.target.value)}
-                                        className="w-full h-9 px-3 border rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
-                                        style={inputStyle}>
+                                        className="input-field select-field">
                                         <option value="">— Sin centro de costo —</option>
                                         {centros.map(c => (
                                             <option key={c.id} value={c.id}>{c.codigo} — {c.nombre}</option>
@@ -753,8 +744,7 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, o
                                     <Label>Bodega destino</Label>
                                     <select value={data.bodega_id}
                                         onChange={e => setData('bodega_id', e.target.value)}
-                                        className="w-full h-9 px-3 border rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
-                                        style={inputStyle}>
+                                        className="input-field select-field">
                                         <option value="">— Sin ingreso a inventario —</option>
                                         {bodegas.map(b => (
                                             <option key={b.id} value={b.id}>{b.nombre}</option>
@@ -808,8 +798,7 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, o
                     </div>
 
                     {/* Footer fijo */}
-                    <div className="shrink-0 flex items-center justify-between gap-2 px-6 py-4 border-t"
-                        style={{ borderColor: 'var(--border)' }}>
+                    <div className="modal-footer shrink-0 justify-between">
                         <div className="flex gap-2">
                             {tab !== 'datos' && (
                                 <Button type="button" variant="outline" size="sm"
@@ -850,25 +839,18 @@ function AnularModal({ compra, onClose }: { compra: Compra; onClose: () => void 
         })
     }
 
-    const inputStyle = { background: 'var(--bg-card)', color: 'var(--text-main)', borderColor: 'var(--border)' }
-
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-            <div className="relative w-full max-w-md rounded-xl shadow-2xl"
-                style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-                <div className="flex items-center justify-between px-6 pt-5 pb-4"
-                    style={{ borderBottom: '1px solid var(--border)' }}>
-                    <h2 className="font-semibold text-base text-red-600 dark:text-red-400">
-                        Anular compra
-                    </h2>
-                    <button onClick={onClose} className="p-1.5 rounded-lg hover:opacity-70 transition-opacity"
-                        style={{ color: 'var(--text-muted)' }}>
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal-card max-w-md" onClick={e => e.stopPropagation()}>
+                <div className="modal-header">
+                    <h2 className="text-red-600 dark:text-red-400">Anular compra</h2>
+                    <button className="modal-close" onClick={onClose}>
                         <X className="w-4 h-4" />
                     </button>
                 </div>
 
-                <form onSubmit={submit} className="p-6 space-y-4">
+                <form onSubmit={submit}>
+                <div className="modal-body">
                     <div className="rounded-lg p-3 border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-900/10">
                         <p className="text-sm font-medium text-red-800 dark:text-red-400">
                             {compra.num_documento}
@@ -883,19 +865,18 @@ function AnularModal({ compra, onClose }: { compra: Compra; onClose: () => void 
                         <textarea value={data.motivo}
                             onChange={e => setData('motivo', e.target.value)}
                             rows={3}
-                            className="w-full px-3 py-2 border rounded-md text-sm resize-none focus:outline-none focus:ring-1 focus:ring-red-500"
-                            style={inputStyle}
+                            className="input-field textarea-field"
                             placeholder="Describe el motivo de la anulación (mínimo 10 caracteres)..." />
                         {errors.motivo && <p className="text-red-400 text-xs">{errors.motivo}</p>}
                     </div>
-
-                    <div className="flex gap-2 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
-                        <Button type="submit" disabled={processing}
-                            className="bg-red-600 hover:bg-red-700 text-white border-0">
-                            <Ban className="w-4 h-4" /> Anular compra
-                        </Button>
-                        <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
-                    </div>
+                </div>
+                <div className="modal-footer">
+                    <Button type="submit" disabled={processing}
+                        className="bg-red-600 hover:bg-red-700 text-white border-0">
+                        <Ban className="w-4 h-4" /> Anular compra
+                    </Button>
+                    <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
+                </div>
                 </form>
             </div>
         </div>
@@ -917,6 +898,9 @@ export default function ComprasIndex() {
     const [estado, setEstado]       = useState(filtros.estado ?? '')
     const [fechaDesde, setFechaDesde] = useState(filtros.fecha_desde ?? '')
     const [fechaHasta, setFechaHasta] = useState(filtros.fecha_hasta ?? '')
+    const [modalPdf, setModalPdf] = useState(false)
+    const [urlPdf,   setUrlPdf]   = useState('')
+    const abrirPdf = (url: string) => { setUrlPdf(url); setModalPdf(true) }
 
     useEffect(() => {
         if (flash?.success) notify.ok(flash.success)
@@ -967,31 +951,26 @@ export default function ComprasIndex() {
                         <Plus size={15} /> Nueva Factura de Compra
                     </button>
 
-                    <div className="relative">
-                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2"
-                                style={{ color: 'var(--text-muted)' }} />
+                    <div className="input-with-icon">
+                        <Search size={14} className="input-icon" />
                         <input type="text" value={buscar}
                             onChange={e => setBuscar(e.target.value)}
                             onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
                             placeholder="Buscar N° doc, proveedor…"
-                            className="pl-9 pr-3 py-2 text-sm rounded-xl border focus:outline-none focus:ring-2 w-52 dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600"
-                            style={{ borderColor: 'var(--border)', background: 'var(--bg-card)', color: 'var(--text-main)' }} />
+                            className="input-field w-52" />
                     </div>
 
                     <select value={estado} onChange={e => setEstado(e.target.value)}
-                        className="py-2 px-3 text-sm rounded-xl border focus:outline-none dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600"
-                        style={inputStyle}>
+                        className="input-field select-field" style={{ width: 'auto' }}>
                         <option value="">Todos los estados</option>
                         <option value="activa">Activa</option>
                         <option value="anulada">Anulada</option>
                     </select>
 
                     <input type="date" value={fechaDesde} onChange={e => setFechaDesde(e.target.value)}
-                        className="py-2 px-3 text-sm rounded-xl border focus:outline-none dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600"
-                        style={inputStyle} />
+                        className="input-field" style={{ width: 'auto' }} />
                     <input type="date" value={fechaHasta} onChange={e => setFechaHasta(e.target.value)}
-                        className="py-2 px-3 text-sm rounded-xl border focus:outline-none dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600"
-                        style={inputStyle} />
+                        className="input-field" style={{ width: 'auto' }} />
 
                     <button onClick={aplicarFiltros}
                         className="px-4 py-2 rounded-xl text-sm font-semibold text-white whitespace-nowrap transition-all hover:opacity-90"
@@ -1008,12 +987,14 @@ export default function ComprasIndex() {
 
                     <div className="flex-1" />
 
-                    <a href={`${route('compras.facturas.pdf')}?estado=${estado}&fecha_desde=${fechaDesde}&fecha_hasta=${fechaHasta}`}
-                       target="_blank"
-                       className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90"
-                       style={{ background: '#ef4444' }}>
+                    <button
+                        onClick={() => abrirPdf(
+                            `${route('compras.facturas.pdf')}?estado=${estado}&fecha_desde=${fechaDesde}&fecha_hasta=${fechaHasta}`
+                        )}
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90"
+                        style={{ background: '#ef4444' }}>
                         <FileText size={15} /> PDF
-                    </a>
+                    </button>
                     <a href={`${route('compras.facturas.excel')}?estado=${estado}&fecha_desde=${fechaDesde}&fecha_hasta=${fechaHasta}`}
                        className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90"
                        style={{ background: '#16a34a' }}>
@@ -1189,6 +1170,39 @@ export default function ComprasIndex() {
                     compra={modal.compra}
                     onClose={() => setModal({ type: 'none' })}
                 />
+            )}
+
+            {/* ── Modal PDF ── */}
+            {modalPdf && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+                     style={{ background: 'rgba(0,0,0,0.85)' }}
+                     onClick={() => setModalPdf(false)}>
+                    <div className="w-full max-w-5xl rounded-2xl overflow-hidden shadow-2xl flex flex-col"
+                         style={{ background: 'var(--bg-card)', height: '90vh' }}
+                         onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between px-4 py-3 border-b shrink-0"
+                             style={{ borderColor: 'var(--border)' }}>
+                            <h3 className="font-semibold text-sm flex items-center gap-2"
+                                style={{ color: 'var(--text-main)' }}>
+                                <FileText size={16} style={{ color: '#ef4444' }} />
+                                Reporte de Facturas de Compra
+                            </h3>
+                            <div className="flex items-center gap-2">
+                                <a href={urlPdf} download target="_blank"
+                                   className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-all hover:opacity-90"
+                                   style={{ background: '#ef4444' }}>
+                                    <Download size={13} /> Descargar
+                                </a>
+                                <button onClick={() => setModalPdf(false)}
+                                    className="px-3 py-1.5 rounded-lg text-xs font-semibold border hover:opacity-80"
+                                    style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
+                                    ✕ Cerrar
+                                </button>
+                            </div>
+                        </div>
+                        <iframe src={urlPdf} className="flex-1 w-full border-0" title="Reporte PDF Compras" />
+                    </div>
+                </div>
             )}
 
             <ToastContainer position="top-right" autoClose={3500} hideProgressBar={false}

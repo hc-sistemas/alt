@@ -245,8 +245,7 @@ export default function TrasladoShow() {
                                 onChange={e => setData('notas_destino', e.target.value)}
                                 rows={2}
                                 placeholder="Observaciones de la recepción..."
-                                className="flex w-full rounded-md border bg-transparent px-3 py-2 text-sm resize-none"
-                                style={{ borderColor: 'var(--border)', color: 'var(--text-main)' }}
+                                className="input-field"
                             />
                         </div>
                         <div className="flex gap-3">
@@ -266,34 +265,35 @@ export default function TrasladoShow() {
 
             {/* Modal de anulación */}
             {modalAnular && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                    <div className="absolute inset-0 bg-black/60" onClick={() => setModalAnular(false)} />
-                    <div className="relative w-full max-w-md rounded-xl shadow-2xl p-6 space-y-4"
-                        style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-                        <div className="flex items-center justify-between">
-                            <h3 className="text-base font-semibold" style={{ color: 'var(--text-main)' }}>
-                                Anular traslado #{traslado.id}
-                            </h3>
-                            <button onClick={() => setModalAnular(false)} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700">
-                                <X className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+                <div className="modal-overlay" onClick={() => setModalAnular(false)}>
+                    <div className="modal-card max-w-md" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <div>
+                                <h3 className="text-base font-semibold" style={{ color: 'var(--text-main)' }}>
+                                    Anular traslado #{traslado.id}
+                                </h3>
+                            </div>
+                            <button onClick={() => setModalAnular(false)} className="modal-close">
+                                <X className="w-4 h-4" />
                             </button>
                         </div>
-                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                            Al anular se liberará el stock reservado en bodega origen. Esta acción no se puede deshacer.
-                        </p>
-                        <div className="space-y-1.5">
-                            <label className="text-sm font-medium" style={{ color: 'var(--text-main)' }}>Motivo *</label>
-                            <textarea
-                                value={motivoAnular}
-                                onChange={e => setMotivoAnular(e.target.value)}
-                                rows={3}
-                                placeholder="Motivo de la anulación..."
-                                className="flex w-full rounded-md border bg-transparent px-3 py-2 text-sm resize-none"
-                                style={{ borderColor: 'var(--border)', color: 'var(--text-main)' }}
-                                autoFocus
-                            />
+                        <div className="modal-body space-y-4">
+                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                                Al anular se liberará el stock reservado en bodega origen. Esta acción no se puede deshacer.
+                            </p>
+                            <div className="space-y-1.5">
+                                <label className="text-sm font-medium" style={{ color: 'var(--text-main)' }}>Motivo *</label>
+                                <textarea
+                                    value={motivoAnular}
+                                    onChange={e => setMotivoAnular(e.target.value)}
+                                    rows={3}
+                                    placeholder="Motivo de la anulación..."
+                                    className="input-field"
+                                    autoFocus
+                                />
+                            </div>
                         </div>
-                        <div className="flex gap-3 pt-1">
+                        <div className="modal-footer">
                             <Button onClick={anular} loading={anulando}
                                 style={{ background: '#EF4444', color: 'white' }}>
                                 Confirmar anulación

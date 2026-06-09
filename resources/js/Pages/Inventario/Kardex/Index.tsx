@@ -197,21 +197,21 @@ export default function KardexIndex() {
                         {/* Filtros */}
                         <div className="flex gap-3 flex-wrap items-center">
                             <select value={bodegaId} onChange={e => setBodegaId(e.target.value)}
-                                className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm"
+                                className="input-field"
                                 style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
                                 <option value="">Todas las bodegas</option>
                                 {bodegas.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
                             </select>
                             <input type="date" value={fechaDesde} onChange={e => setFechaDesde(e.target.value)}
-                                className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm"
+                                className="input-field"
                                 style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}
                                 title="Fecha desde" />
                             <input type="date" value={fechaHasta} onChange={e => setFechaHasta(e.target.value)}
-                                className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm"
+                                className="input-field"
                                 style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}
                                 title="Fecha hasta" />
                             <select value={tipo} onChange={e => setTipo(e.target.value)}
-                                className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm"
+                                className="input-field"
                                 style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
                                 <option value="">Todos los tipos</option>
                                 {Object.entries(TIPO_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}

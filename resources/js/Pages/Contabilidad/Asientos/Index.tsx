@@ -8,7 +8,7 @@ import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import {
     BookOpen, Plus, Search, Eye, XCircle, CheckCircle,
-    AlertTriangle, User, X, FileText, Zap, Download, Printer, TrendingUp,
+    AlertTriangle, User, X, FileText, Zap, Download,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { AsientoContable, AsientoStats, EjercicioContable, PlanCuenta, PageProps } from '@/types'
@@ -65,17 +65,11 @@ export default function AsientosIndex() {
     const [fechaDesde, setFechaDesde] = useState(filtros.fecha_desde ?? '')
     const [fechaHasta, setFechaHasta] = useState(filtros.fecha_hasta ?? '')
 
-    // Modal Mayor Contable
-    const [modalMayor, setModalMayor] = useState(false)
-    const [buscarMayor, setBuscarMayor] = useState('')
+    // Modal PDF
+    const [modalPdf, setModalPdf] = useState(false)
+    const [urlPdf,   setUrlPdf]   = useState('')
 
-    const cuentasMayor = useMemo(() => {
-        const q = buscarMayor.toLowerCase().trim()
-        if (!q) return cuentas.slice(0, 30)
-        return cuentas.filter(c =>
-            c.codigo.toLowerCase().includes(q) || c.nombre.toLowerCase().includes(q)
-        ).slice(0, 25)
-    }, [buscarMayor, cuentas])
+    const abrirPdf = (url: string) => { setUrlPdf(url); setModalPdf(true) }
 
     // Modal nuevo asiento
     const [modalAbierto, setModalAbierto] = useState(false)
@@ -268,52 +262,50 @@ export default function AsientosIndex() {
                         )}
 
                         {/* Buscar */}
-                        <div className="relative">
-                            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2"
-                                    style={{ color: 'var(--text-muted)' }} />
+                        <div className="input-with-icon">
+                            <Search size={14} className="input-icon" />
                             <input type="text" value={buscar}
                                 onChange={e => setBuscar(e.target.value)}
                                 onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
                                 placeholder="Número, concepto, referencia…"
-                                className="pl-9 pr-3 py-2 text-sm rounded-xl border focus:outline-none focus:ring-2 w-52 dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600"
-                                style={{ borderColor: 'var(--border)', background: 'var(--bg-card)', color: 'var(--text-main)' }} />
+                                className="input-field w-52" />
                         </div>
 
                         {/* Spacer */}
                         <div className="flex-1" />
 
-                        {/* Libro Diario */}
-                        <a href={`${route('contabilidad.asientos.libro-diario')}?ejercicio_id=${ejercicioId}&fecha_desde=${fechaDesde}&fecha_hasta=${fechaHasta}`}
-                           target="_blank"
-                           className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90"
-                           style={{ background: '#7c3aed' }}>
-                            <BookOpen size={15} />
-                            Libro Diario
-                        </a>
-
-                        {/* Mayor Contable */}
-                        <button onClick={() => setModalMayor(true)}
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90"
-                            style={{ background: '#0891b2' }}>
-                            <TrendingUp size={15} />
-                            Mayor
-                        </button>
-
                         {/* PDF */}
-                        <a href={route('contabilidad.asientos.reporte-pdf')} target="_blank"
-                           className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90"
-                           style={{ background: '#ef4444' }}>
+                        <button
+                            onClick={() => abrirPdf(
+                                `${route('contabilidad.asientos.reporte-pdf')}` +
+                                `?ejercicio_id=${ejercicioId}` +
+                                `&fecha_desde=${fechaDesde}` +
+                                `&fecha_hasta=${fechaHasta}`
+                            )}
+                            className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90"
+                            style={{ background: '#ef4444' }}>
                             <FileText size={15} />
                             PDF
-                        </a>
+                        </button>
 
                         {/* Excel */}
-                        <a href={`${route('contabilidad.asientos.exportar-excel')}?ejercicio_id=${ejercicioId}&fecha_desde=${fechaDesde}&fecha_hasta=${fechaHasta}`}
-                           className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90"
-                           style={{ background: '#16a34a' }}>
+                        <button
+                            onClick={() => {
+                                const params = new URLSearchParams({
+                                    ejercicio_id: ejercicioId,
+                                    fecha_desde:  fechaDesde,
+                                    fecha_hasta:  fechaHasta,
+                                    tipo:         tipo,
+                                    estado:       estado,
+                                })
+                                window.location.href =
+                                    route('contabilidad.asientos.exportar-excel') + '?' + params
+                            }}
+                            className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90"
+                            style={{ background: '#16a34a' }}>
                             <Download size={15} />
                             Excel
-                        </a>
+                        </button>
                     </div>
                 </div>
                 {/* Stats */}
@@ -368,31 +360,19 @@ export default function AsientosIndex() {
                     style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
                     <div className={cn('gap-3', 'grid', 'grid-cols-1', 'md:grid-cols-2', 'lg:grid-cols-4')}>
                         <select value={tipo} onChange={e => setTipo(e.target.value)}
-                            className={cn('dark:bg-gray-800', 'px-3', 'py-2', 'border', 'dark:border-gray-600', 'rounded-lg', 'focus:outline-none', 'dark:text-gray-100', 'text-sm')}
-                            style={{
-                                borderColor: 'var(--border)', background: 'var(--bg-main)',
-                                color: 'var(--text-main)'
-                            }}>
+                            className="input-field select-field">
                             <option value="">Todos los tipos</option>
                             <option value="manual">Manuales</option>
                             <option value="automatico">Automáticos</option>
                         </select>
                         <select value={estado} onChange={e => setEstado(e.target.value)}
-                            className={cn('dark:bg-gray-800', 'px-3', 'py-2', 'border', 'dark:border-gray-600', 'rounded-lg', 'focus:outline-none', 'dark:text-gray-100', 'text-sm')}
-                            style={{
-                                borderColor: 'var(--border)', background: 'var(--bg-main)',
-                                color: 'var(--text-main)'
-                            }}>
+                            className="input-field select-field">
                             <option value="">Todos los estados</option>
                             <option value="activo">Activos</option>
                             <option value="anulado">Anulados</option>
                         </select>
                         <select value={ejercicioId} onChange={e => setEjercicioId(e.target.value)}
-                            className={cn('dark:bg-gray-800', 'px-3', 'py-2', 'border', 'dark:border-gray-600', 'rounded-lg', 'focus:outline-none', 'dark:text-gray-100', 'text-sm')}
-                            style={{
-                                borderColor: 'var(--border)', background: 'var(--bg-main)',
-                                color: 'var(--text-main)'
-                            }}>
+                            className="input-field select-field">
                             <option value="">Todos los períodos</option>
                             {ejercicios.map(e => (
                                 <option key={e.id} value={e.id}>{e.periodo_label}</option>
@@ -410,21 +390,13 @@ export default function AsientosIndex() {
                             <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Desde:</span>
                             <input type="date" value={fechaDesde}
                                 onChange={e => setFechaDesde(e.target.value)}
-                                className={cn('dark:bg-gray-800', 'px-2', 'py-1.5', 'border', 'dark:border-gray-600', 'rounded-lg', 'focus:outline-none', 'dark:text-gray-100', 'text-sm')}
-                                style={{
-                                    borderColor: 'var(--border)', background: 'var(--bg-main)',
-                                    color: 'var(--text-main)'
-                                }} />
+                                className="input-field" style={{ width: 'auto' }} />
                         </div>
                         <div className={cn('flex', 'items-center', 'gap-2')}>
                             <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Hasta:</span>
                             <input type="date" value={fechaHasta}
                                 onChange={e => setFechaHasta(e.target.value)}
-                                className={cn('dark:bg-gray-800', 'px-2', 'py-1.5', 'border', 'dark:border-gray-600', 'rounded-lg', 'focus:outline-none', 'dark:text-gray-100', 'text-sm')}
-                                style={{
-                                    borderColor: 'var(--border)', background: 'var(--bg-main)',
-                                    color: 'var(--text-main)'
-                                }} />
+                                className="input-field" style={{ width: 'auto' }} />
                         </div>
                     </div>
                 </div>
@@ -592,8 +564,8 @@ export default function AsientosIndex() {
                         style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
 
                         {/* Header modal */}
-                        <div className={cn('flex', 'justify-between', 'items-center', 'px-6', 'py-4', 'border-b', 'shrink-0')}
-                            style={{ borderColor: 'var(--border)' }}>
+                        <div className={cn('flex', 'justify-between', 'items-center', 'px-6', 'py-4', 'shrink-0')}
+                            style={{ borderBottom: '2px solid var(--primary)' }}>
                             <div>
                                 <h2 className={cn('flex', 'items-center', 'gap-2', 'font-bold', 'text-lg')}
                                     style={{ color: 'var(--text-main)' }}>
@@ -607,7 +579,10 @@ export default function AsientosIndex() {
                                 )}
                             </div>
                             <button onClick={cerrarModal}
-                                className={cn('p-1', 'text-gray-400', 'hover:text-gray-600', 'text-xl', 'leading-none')}>×</button>
+                                className={cn('flex', 'justify-center', 'items-center', 'rounded-full', 'w-8', 'h-8', 'text-lg', 'leading-none', 'transition-colors')}
+                                style={{ color: 'var(--text-muted)' }}
+                                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--border)'; }}
+                                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}>×</button>
                         </div>
 
                         <div className={cn('flex-1', 'space-y-4', 'px-6', 'py-4', 'overflow-y-auto')}>
@@ -629,11 +604,7 @@ export default function AsientosIndex() {
                                         type="date"
                                         value={fecha}
                                         onChange={e => setFecha(e.target.value)}
-                                        className={cn('dark:bg-gray-800', 'mt-1', 'px-3', 'py-2', 'border', 'dark:border-gray-600', 'rounded-lg', 'focus:outline-none', 'focus:ring-1', 'focus:ring-amber-500', 'w-full', 'dark:text-gray-100', 'text-sm')}
-                                        style={{
-                                            borderColor: 'var(--border)', background: 'var(--bg-card)',
-                                            color: 'var(--text-main)'
-                                        }}
+                                        className="input-field mt-1"
                                     />
                                 </div>
                             </div>
@@ -679,12 +650,7 @@ export default function AsientosIndex() {
                                                     }}
                                                     onFocus={() => setDropdownOpen(idx)}
                                                     placeholder="Buscar cuenta..."
-                                                    className={cn('dark:bg-gray-800', 'px-2', 'py-1.5', 'border', 'dark:border-gray-600', 'rounded-lg', 'focus:outline-none', 'focus:ring-1', 'focus:ring-amber-500', 'w-full', 'dark:text-gray-100', 'text-xs')}
-                                                    style={{
-                                                        borderColor: 'var(--border)',
-                                                        background: 'var(--bg-main)',
-                                                        color: 'var(--text-main)'
-                                                    }}
+                                                    className="input-field text-xs"
                                                 />
                                                 {dropdownOpen === idx && (
                                                     <div className={cn('top-full', 'right-0', 'left-0', 'z-50', 'absolute', 'shadow-xl', 'mt-1', 'border', 'rounded-lg', 'overflow-hidden')}
@@ -729,12 +695,7 @@ export default function AsientosIndex() {
                                                 value={p.descripcion}
                                                 onChange={e => actualizarPartida(idx, 'descripcion', e.target.value)}
                                                 placeholder="Detalle..."
-                                                className={cn('col-span-3', 'dark:bg-gray-800', 'px-2', 'py-1.5', 'border', 'dark:border-gray-600', 'rounded-lg', 'focus:outline-none', 'focus:ring-1', 'focus:ring-amber-500', 'dark:text-gray-100', 'text-xs')}
-                                                style={{
-                                                    borderColor: 'var(--border)',
-                                                    background: 'var(--bg-main)',
-                                                    color: 'var(--text-main)'
-                                                }}
+                                                className="input-field col-span-3 text-xs"
                                             />
 
                                             {/* Debe */}
@@ -749,12 +710,7 @@ export default function AsientosIndex() {
                                                         actualizarPartida(idx, 'haber', '')
                                                 }}
                                                 placeholder="0.00"
-                                                className={cn('col-span-2', 'dark:bg-gray-800', 'px-2', 'py-1.5', 'border', 'dark:border-gray-600', 'rounded-lg', 'focus:outline-none', 'focus:ring-1', 'focus:ring-amber-500', 'tabular-nums', 'dark:text-gray-100', 'text-xs', 'text-right')}
-                                                style={{
-                                                    borderColor: 'var(--border)',
-                                                    background: 'var(--bg-main)',
-                                                    color: 'var(--text-main)'
-                                                }}
+                                                className="input-field col-span-2 tabular-nums text-xs text-right"
                                             />
 
                                             {/* Haber */}
@@ -769,12 +725,7 @@ export default function AsientosIndex() {
                                                         actualizarPartida(idx, 'debe', '')
                                                 }}
                                                 placeholder="0.00"
-                                                className={cn('col-span-2', 'dark:bg-gray-800', 'px-2', 'py-1.5', 'border', 'dark:border-gray-600', 'rounded-lg', 'focus:outline-none', 'focus:ring-1', 'focus:ring-amber-500', 'tabular-nums', 'dark:text-gray-100', 'text-xs', 'text-right')}
-                                                style={{
-                                                    borderColor: 'var(--border)',
-                                                    background: 'var(--bg-main)',
-                                                    color: 'var(--text-main)'
-                                                }}
+                                                className="input-field col-span-2 tabular-nums text-xs text-right"
                                             />
 
                                             {/* Eliminar fila */}
@@ -836,8 +787,8 @@ export default function AsientosIndex() {
                         </div>
 
                         {/* Footer modal */}
-                        <div className={cn('flex', 'gap-3', 'px-6', 'py-4', 'border-t', 'shrink-0')}
-                            style={{ borderColor: 'var(--border)' }}>
+                        <div className={cn('flex', 'gap-3', 'px-6', 'py-4', 'border-t', 'rounded-b-2xl', 'shrink-0')}
+                            style={{ borderColor: 'var(--border)', background: 'color-mix(in srgb, var(--bg-main) 60%, var(--bg-card))' }}>
                             <Button variant="outline" onClick={cerrarModal} className="flex-1">
                                 Cancelar
                             </Button>
@@ -868,80 +819,27 @@ export default function AsientosIndex() {
                 }}
             />
 
-            {/* ── Modal Mayor Contable ── */}
-            {modalMayor && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-                     style={{ background: 'rgba(0,0,0,0.6)' }}
-                     onClick={() => setModalMayor(false)}>
-                    <div className="w-full max-w-md rounded-2xl shadow-2xl overflow-hidden"
-                         style={{ background: 'var(--bg-card)' }}
-                         onClick={e => e.stopPropagation()}>
-
-                        {/* Header */}
-                        <div className="flex items-center justify-between px-4 py-3 border-b"
-                             style={{ borderColor: 'var(--border)' }}>
-                            <h3 className="font-semibold text-sm flex items-center gap-2"
-                                style={{ color: 'var(--text-main)' }}>
-                                <TrendingUp size={16} style={{ color: 'var(--primary)' }} />
-                                Mayor Contable
-                            </h3>
-                            <button onClick={() => setModalMayor(false)}
-                                    className="p-1 rounded hover:opacity-70 text-xl leading-none"
-                                    style={{ color: 'var(--text-muted)' }}>
-                                <X size={16} />
-                            </button>
-                        </div>
-
-                        {/* Buscar */}
-                        <div className="px-4 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
-                            <div className="relative">
-                                <Search size={14}
-                                    className="absolute left-3 top-1/2 -translate-y-1/2"
-                                    style={{ color: 'var(--text-muted)' }} />
-                                <input
-                                    autoFocus
-                                    type="text"
-                                    value={buscarMayor}
-                                    onChange={e => setBuscarMayor(e.target.value)}
-                                    placeholder="Buscar cuenta por código o nombre…"
-                                    className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border focus:outline-none focus:ring-2 focus:ring-cyan-400"
-                                    style={{ borderColor: 'var(--border)', background: 'var(--bg-main)', color: 'var(--text-main)' }}
-                                />
+            {/* ── Modal PDF ── */}
+            {modalPdf && (
+                <div className="modal-overlay" style={{ background: 'rgba(0,0,0,0.85)' }} onClick={() => setModalPdf(false)}>
+                    <div className="modal-card max-w-5xl flex flex-col" style={{ height: '90vh' }} onClick={e => e.stopPropagation()}>
+                        <div className="modal-header shrink-0">
+                            <h2>
+                                <FileText size={16} style={{ color: '#ef4444' }} />
+                                Reporte de Asientos Contables
+                            </h2>
+                            <div className="flex items-center gap-2">
+                                <a href={urlPdf} download target="_blank"
+                                   className="btn-primary text-xs py-1.5 px-3"
+                                   style={{ background: '#ef4444', boxShadow: 'none', textDecoration: 'none' }}>
+                                    <Download size={13} /> Descargar
+                                </a>
+                                <button onClick={() => setModalPdf(false)} className="btn-secondary text-xs py-1.5 px-3">
+                                    ✕ Cerrar
+                                </button>
                             </div>
                         </div>
-
-                        {/* Lista de cuentas */}
-                        <div className="overflow-y-auto" style={{ maxHeight: '360px' }}>
-                            {cuentasMayor.map(c => (
-                                <a key={c.id}
-                                   href={`${route('contabilidad.asientos.mayor-cuenta')}?cuenta_id=${c.id}&fecha_desde=${fechaDesde}&fecha_hasta=${fechaHasta}`}
-                                   target="_blank"
-                                   className="w-full text-left px-4 py-2.5 border-b flex items-center gap-3 transition-colors hover:opacity-80"
-                                   style={{ borderColor: 'var(--border)', display: 'flex' }}
-                                   onClick={() => setModalMayor(false)}>
-                                    <span className="font-mono font-bold text-xs shrink-0"
-                                          style={{ color: 'var(--primary)' }}>
-                                        {c.codigo}
-                                    </span>
-                                    <span className="truncate text-sm"
-                                          style={{ color: 'var(--text-main)' }}>
-                                        {c.nombre}
-                                    </span>
-                                </a>
-                            ))}
-                            {cuentasMayor.length === 0 && (
-                                <div className="px-4 py-8 text-center text-sm"
-                                     style={{ color: 'var(--text-muted)' }}>
-                                    Sin resultados
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Footer */}
-                        <div className="px-4 py-2 border-t text-xs"
-                             style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
-                            Selecciona una cuenta para generar el mayor
-                        </div>
+                        <iframe src={urlPdf} className="flex-1 w-full border-0" title="Reporte PDF Asientos" />
                     </div>
                 </div>
             )}

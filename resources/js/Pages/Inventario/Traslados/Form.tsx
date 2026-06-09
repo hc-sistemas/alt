@@ -156,7 +156,7 @@ export default function TrasladoForm() {
                             <Label>Bodega origen *</Label>
                             <select value={data.bodega_origen_id}
                                 onChange={e => cambiarBodegaOrigen(e.target.value)}
-                                className="flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
+                                className="input-field"
                                 style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
                                 <option value="">Seleccionar bodega...</option>
                                 {bodegas.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
@@ -167,7 +167,7 @@ export default function TrasladoForm() {
                             <Label>Bodega destino *</Label>
                             <select value={data.bodega_destino_id}
                                 onChange={e => setData('bodega_destino_id', e.target.value)}
-                                className="flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
+                                className="input-field"
                                 style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
                                 <option value="">Seleccionar bodega...</option>
                                 {bodegas.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
@@ -189,7 +189,7 @@ export default function TrasladoForm() {
                             onChange={e => setData('notas_origen', e.target.value)}
                             rows={2}
                             placeholder="Ej: Reposición de bodega secundaria..."
-                            className="flex w-full rounded-md border bg-transparent px-3 py-2 text-sm resize-none"
+                            className="input-field"
                             style={{ borderColor: 'var(--border)', color: 'var(--text-main)' }}
                         />
                     </div>

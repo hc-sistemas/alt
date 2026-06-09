@@ -116,28 +116,24 @@ function MovimientoModal({ bancos, cuentas, onClose }: {
         })
     }
 
-    const inp = { background: 'var(--bg-card)', color: 'var(--text-main)', borderColor: 'var(--border)' }
-
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-            <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-xl shadow-2xl"
-                style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal-card max-w-lg overflow-y-auto max-h-[90vh]" onClick={e => e.stopPropagation()}>
 
-                <div className="sticky top-0 z-10 flex items-center justify-between px-6 pt-5 pb-4"
-                    style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
-                    <h2 className="font-semibold text-base" style={{ color: 'var(--text-main)' }}>Nuevo Movimiento</h2>
-                    <button onClick={onClose} className="p-1.5 rounded-lg hover:opacity-70"
-                        style={{ color: 'var(--text-muted)' }}><X className="w-4 h-4" /></button>
+                <div className="modal-header">
+                    <h2>Nuevo Movimiento</h2>
+                    <button className="modal-close" onClick={onClose}>
+                        <X className="w-4 h-4" />
+                    </button>
                 </div>
 
-                <form onSubmit={submit} className="p-6 space-y-4">
+                <form onSubmit={submit}>
+                <div className="modal-body" style={{ gap: '1rem' }}>
                     {/* Banco */}
                     <div className="space-y-1.5">
                         <Label>Banco/Caja <span className="text-red-400">*</span></Label>
                         <select value={data.banco_caja_id} onChange={e => setData('banco_caja_id', e.target.value)}
-                            className="w-full h-9 px-3 border rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
-                            style={inp}>
+                            className="input-field select-field">
                             <option value="">— Seleccionar —</option>
                             {bancos.map(b => <option key={b.id} value={b.id}>{b.nombre} (${Number(b.saldo_actual).toFixed(2)})</option>)}
                         </select>
@@ -284,18 +280,15 @@ function MovimientoModal({ bancos, cuentas, onClose }: {
                         </label>
                     )}
 
-                    <div className="flex gap-2 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
-                        <button type="submit" disabled={processing}
-                            className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50"
-                            style={{ background: 'var(--primary)' }}>
-                            <Plus className="w-4 h-4" /> Registrar Movimiento
-                        </button>
-                        <button type="button" onClick={onClose}
-                            className="px-4 py-2 rounded-lg text-sm font-medium border hover:opacity-80"
-                            style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
-                            Cancelar
-                        </button>
-                    </div>
+                </div>
+                <div className="modal-footer">
+                    <button type="submit" disabled={processing} className="btn-primary">
+                        <Plus className="w-4 h-4" /> Registrar Movimiento
+                    </button>
+                    <button type="button" onClick={onClose} className="btn-secondary">
+                        Cancelar
+                    </button>
+                </div>
                 </form>
             </div>
         </div>
@@ -316,31 +309,30 @@ function AnularModal({ movimiento, onClose }: { movimiento: MovimientoBancario; 
     }
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-            <div className="relative w-full max-w-sm rounded-xl shadow-2xl p-6"
-                style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-                <h2 className="font-semibold text-base mb-4 flex items-center gap-2" style={{ color: 'var(--text-main)' }}>
-                    <Ban className="w-5 h-5 text-red-500" /> Anular movimiento
-                </h2>
-                <form onSubmit={submit} className="space-y-4">
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal-card max-w-sm" onClick={e => e.stopPropagation()}>
+                <div className="modal-header">
+                    <h2><Ban className="w-5 h-5 text-red-500" /> Anular movimiento</h2>
+                    <button className="modal-close" onClick={onClose}><X className="w-4 h-4" /></button>
+                </div>
+                <form onSubmit={submit}>
+                <div className="modal-body">
                     <div className="space-y-1.5">
                         <Label>Motivo de anulación <span className="text-red-400">*</span></Label>
                         <Input value={data.motivo} onChange={e => setData('motivo', e.target.value)}
                             error={errors.motivo} placeholder="Mínimo 10 caracteres…" />
                         {errors.motivo && <p className="text-red-400 text-xs">{errors.motivo}</p>}
                     </div>
-                    <div className="flex gap-2">
-                        <button type="submit" disabled={processing || data.motivo.length < 10}
-                            className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50 bg-red-500 hover:bg-red-600">
-                            <Ban className="w-4 h-4" /> Anular
-                        </button>
-                        <button type="button" onClick={onClose}
-                            className="px-4 py-2 rounded-lg text-sm font-medium border hover:opacity-80"
-                            style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
-                            Cancelar
-                        </button>
-                    </div>
+                </div>
+                <div className="modal-footer">
+                    <button type="submit" disabled={processing || data.motivo.length < 10}
+                        className="btn-primary" style={{ background: '#EF4444', boxShadow: 'none' }}>
+                        <Ban className="w-4 h-4" /> Anular
+                    </button>
+                    <button type="button" onClick={onClose} className="btn-secondary">
+                        Cancelar
+                    </button>
+                </div>
                 </form>
             </div>
         </div>
@@ -394,26 +386,22 @@ export default function MovimientosIndex() {
                         <Plus size={15} /> Nuevo Movimiento
                     </button>
 
-                    <div className="relative">
-                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2"
-                                style={{ color: 'var(--text-muted)' }} />
+                    <div className="input-with-icon">
+                        <Search size={14} className="input-icon" />
                         <input type="text" value={filtro.buscar ?? ''}
                             onChange={e => setFiltro(f => ({ ...f, buscar: e.target.value }))}
                             placeholder="Descripción, beneficiario…"
-                            className="pl-9 pr-3 py-2 text-sm rounded-xl border focus:outline-none focus:ring-2 w-48 dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600"
-                            style={{ borderColor: 'var(--border)', background: 'var(--bg-card)', color: 'var(--text-main)' }} />
+                            className="input-field w-48" />
                     </div>
 
                     <select value={filtro.banco_caja_id ?? ''} onChange={e => setFiltro(f => ({ ...f, banco_caja_id: e.target.value }))}
-                        className="py-2 px-3 text-sm rounded-xl border focus:outline-none dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600"
-                        style={inp}>
+                        className="input-field select-field" style={{ width: 'auto' }}>
                         <option value="">Todos los bancos</option>
                         {bancos.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
                     </select>
 
                     <select value={filtro.tipo ?? ''} onChange={e => setFiltro(f => ({ ...f, tipo: e.target.value }))}
-                        className="py-2 px-3 text-sm rounded-xl border focus:outline-none dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600"
-                        style={inp}>
+                        className="input-field select-field" style={{ width: 'auto' }}>
                         <option value="">Todos</option>
                         <option value="ingreso">Ingreso</option>
                         <option value="egreso">Egreso</option>
@@ -421,12 +409,10 @@ export default function MovimientosIndex() {
 
                     <input type="date" value={filtro.fecha_desde ?? ''}
                         onChange={e => setFiltro(f => ({ ...f, fecha_desde: e.target.value }))}
-                        className="py-2 px-3 text-sm rounded-xl border focus:outline-none dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600"
-                        style={inp} />
+                        className="input-field" style={{ width: 'auto' }} />
                     <input type="date" value={filtro.fecha_hasta ?? ''}
                         onChange={e => setFiltro(f => ({ ...f, fecha_hasta: e.target.value }))}
-                        className="py-2 px-3 text-sm rounded-xl border focus:outline-none dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600"
-                        style={inp} />
+                        className="input-field" style={{ width: 'auto' }} />
 
                     <button onClick={buscar}
                         className="px-4 py-2 rounded-xl text-sm font-semibold text-white whitespace-nowrap transition-all hover:opacity-90"

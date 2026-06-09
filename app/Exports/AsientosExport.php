@@ -15,12 +15,12 @@ use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
 
-// ─── Hoja 1: Resumen de asientos ─────────────────────────────────────────────
+// ── Hoja 1: Resumen ────────────────────────────────────────────
 class AsientosResumenSheet implements
     FromCollection, WithHeadings, WithStyles,
     WithColumnWidths, WithTitle, WithEvents
 {
-    private int   $totalRows = 0;
+    private int   $totalRows  = 0;
     private float $totalDebe  = 0;
     private float $totalHaber = 0;
 
@@ -43,6 +43,14 @@ class AsientosResumenSheet implements
         if (!empty($this->filtros['fecha_hasta'])) {
             $query->where('fecha', '<=', $this->filtros['fecha_hasta']);
         }
+        if (!empty($this->filtros['tipo'])) {
+            $query->where('es_automatico',
+                $this->filtros['tipo'] === 'automatico');
+        }
+        if (!empty($this->filtros['estado'])) {
+            $query->where('estado',
+                $this->filtros['estado'] === 'activo' ? 1 : 0);
+        }
 
         $data = $query->orderByDesc('fecha')->get();
         $this->totalRows  = $data->count();
@@ -53,13 +61,13 @@ class AsientosResumenSheet implements
             $a->numero,
             $a->fecha?->format('d/m/Y') ?? '',
             $a->concepto,
-            $a->documento_ref ?? '—',
+            $a->documento_ref ?? '',
             $a->es_automatico ? 'Automático' : 'Manual',
             (float)$a->total_debe,
             (float)$a->total_haber,
             $a->estado === 1 ? 'Activo' : 'Anulado',
-            $a->ejercicio?->periodo_label ?? '—',
-            $a->creadoPor?->email ?? '—',
+            $a->ejercicio?->periodo_label ?? '',
+            $a->creadoPor?->email ?? '',
         ]);
     }
 
@@ -67,7 +75,7 @@ class AsientosResumenSheet implements
     {
         return [
             'N° Asiento', 'Fecha', 'Concepto', 'Referencia',
-            'Tipo', 'DEBE ($)', 'HABER ($)', 'Estado',
+            'Tipo', 'Debe ($)', 'Haber ($)', 'Estado',
             'Período', 'Creado por',
         ];
     }
@@ -75,13 +83,13 @@ class AsientosResumenSheet implements
     public function columnWidths(): array
     {
         return [
-            'A' => 16, 'B' => 13, 'C' => 50, 'D' => 20,
+            'A' => 16, 'B' => 13, 'C' => 52, 'D' => 18,
             'E' => 13, 'F' => 14, 'G' => 14, 'H' => 10,
-            'I' => 18, 'J' => 28,
+            'I' => 16, 'J' => 26,
         ];
     }
 
-    public function title(): string { return 'Resumen Asientos'; }
+    public function title(): string { return 'Asientos Contables'; }
 
     public function styles(Worksheet $sheet): array { return []; }
 
@@ -93,85 +101,151 @@ class AsientosResumenSheet implements
                 $lastRow  = $this->totalRows + 3;
                 $totalRow = $lastRow + 1;
 
+                // ── Insertar 2 filas para cabecera ──────────────
                 $sheet->insertNewRowBefore(1, 2);
 
-                // Título
+                // Título sobrio
                 $sheet->mergeCells('A1:J1');
-                $sheet->setCellValue('A1', 'ERP Altamira — Reporte General de Asientos Contables');
+                $sheet->setCellValue('A1',
+                    'Altamira Light & Sound — Asientos Contables');
                 $sheet->getStyle('A1')->applyFromArray([
-                    'font' => ['bold' => true, 'size' => 13, 'color' => ['rgb' => 'F59E0B']],
+                    'font' => [
+                        'bold'  => true,
+                        'size'  => 12,
+                        'color' => ['rgb' => '1A3A5C'],
+                    ],
                 ]);
 
-                // Subtítulo
                 $sheet->mergeCells('A2:J2');
                 $sheet->setCellValue('A2',
                     'Generado: ' . now()->format('d/m/Y H:i') .
-                    ' · Total: ' . $this->totalRows . ' asientos' .
-                    ' · DEBE Total: $' . number_format($this->totalDebe, 2) .
-                    ' · HABER Total: $' . number_format($this->totalHaber, 2)
+                    '   |   Total: ' . $this->totalRows . ' asientos' .
+                    '   |   Debe: $' . number_format($this->totalDebe, 2) .
+                    '   |   Haber: $' . number_format($this->totalHaber, 2)
                 );
-                $sheet->getStyle('A2')->getFont()->setSize(9)->getColor()->setRGB('9CA3AF');
+                $sheet->getStyle('A2')->applyFromArray([
+                    'font' => [
+                        'size'   => 8,
+                        'color'  => ['rgb' => '666666'],
+                        'italic' => true,
+                    ],
+                ]);
 
-                // Encabezado fila 3
+                // ── Encabezado fila 3 ───────────────────────────
                 $sheet->getStyle('A3:J3')->applyFromArray([
-                    'font'      => ['bold' => true, 'color' => ['rgb' => 'FFFFFF'], 'size' => 10],
-                    'fill'      => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'F59E0B']],
+                    'font' => [
+                        'bold'  => true,
+                        'size'  => 9,
+                        'color' => ['rgb' => 'FFFFFF'],
+                    ],
+                    'fill' => [
+                        'fillType'   => Fill::FILL_SOLID,
+                        'startColor' => ['rgb' => '2C3E50'],
+                    ],
                     'alignment' => [
                         'horizontal' => Alignment::HORIZONTAL_CENTER,
                         'vertical'   => Alignment::VERTICAL_CENTER,
                     ],
-                    'borders'   => ['allBorders' => [
-                        'borderStyle' => Border::BORDER_THIN,
-                        'color'       => ['rgb' => 'D97706'],
-                    ]],
+                    'borders' => [
+                        'allBorders' => [
+                            'borderStyle' => Border::BORDER_THIN,
+                            'color'       => ['rgb' => '1A2B3C'],
+                        ],
+                    ],
                 ]);
-                $sheet->getRowDimension(3)->setRowHeight(22);
+                $sheet->getRowDimension(3)->setRowHeight(20);
 
-                // Filas de datos
+                // ── Filas de datos ──────────────────────────────
                 for ($row = 4; $row <= $lastRow; $row++) {
-                    $bg = ($row % 2 === 0) ? 'F9FAFB' : 'FFFFFF';
+                    $bg = ($row % 2 === 0) ? 'F8F9FA' : 'FFFFFF';
                     $sheet->getStyle("A{$row}:J{$row}")->getFill()
-                        ->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB($bg);
+                        ->setFillType(Fill::FILL_SOLID)
+                        ->getStartColor()->setRGB($bg);
 
-                    $sheet->getStyle("A{$row}")->getFont()->setBold(true)->getColor()->setRGB('F59E0B');
+                    // Número asiento — azul marino bold
+                    $sheet->getStyle("A{$row}")->applyFromArray([
+                        'font' => [
+                            'bold'  => true,
+                            'color' => ['rgb' => '1A3A5C'],
+                        ],
+                    ]);
 
-                    $sheet->getStyle("F{$row}:G{$row}")->getAlignment()
-                        ->setHorizontal(Alignment::HORIZONTAL_RIGHT);
-                    $sheet->getStyle("F{$row}:G{$row}")->getNumberFormat()
-                        ->setFormatCode('#,##0.00');
-                    $sheet->getStyle("F{$row}")->getFont()->getColor()->setRGB('059669');
-                    $sheet->getStyle("G{$row}")->getFont()->getColor()->setRGB('DC2626');
+                    // Debe y Haber — verde oscuro, alineados derecha
+                    foreach (['F', 'G'] as $col) {
+                        $sheet->getStyle("{$col}{$row}")->applyFromArray([
+                            'font' => [
+                                'color' => ['rgb' => '2D6A4F'],
+                                'bold'  => true,
+                            ],
+                            'alignment' => [
+                                'horizontal' => Alignment::HORIZONTAL_RIGHT,
+                            ],
+                            'numberFormat' => [
+                                'formatCode' => '#,##0.00',
+                            ],
+                        ]);
+                    }
 
+                    // Estado — verde oscuro o rojo oscuro
                     $estado = $sheet->getCell("H{$row}")->getValue();
-                    $sheet->getStyle("H{$row}")->getFont()->setBold(true)->getColor()
-                        ->setRGB($estado === 'Activo' ? '059669' : 'DC2626');
+                    $colorEstado = $estado === 'Activo' ? '2D6A4F' : '7B2D2D';
+                    $sheet->getStyle("H{$row}")->applyFromArray([
+                        'font' => [
+                            'bold'  => true,
+                            'color' => ['rgb' => $colorEstado],
+                        ],
+                        'alignment' => [
+                            'horizontal' => Alignment::HORIZONTAL_CENTER,
+                        ],
+                    ]);
 
+                    // Tipo — centrado
+                    $sheet->getStyle("E{$row}")->getAlignment()
+                        ->setHorizontal(Alignment::HORIZONTAL_CENTER);
+
+                    // Borde inferior suave
                     $sheet->getStyle("A{$row}:J{$row}")->getBorders()
-                        ->getBottom()->setBorderStyle(Border::BORDER_THIN)
-                        ->getColor()->setRGB('E5E7EB');
-                    $sheet->getRowDimension($row)->setRowHeight(17);
+                        ->getBottom()
+                        ->setBorderStyle(Border::BORDER_HAIR)
+                        ->getColor()->setRGB('DDDDDD');
+
+                    $sheet->getRowDimension($row)->setRowHeight(16);
                 }
 
-                // Fila totales
+                // ── Fila de totales ─────────────────────────────
                 $sheet->mergeCells("A{$totalRow}:E{$totalRow}");
-                $sheet->setCellValue("A{$totalRow}", 'TOTALES');
+                $sheet->setCellValue("A{$totalRow}", 'TOTALES GENERALES');
                 $sheet->setCellValue("F{$totalRow}", "=SUM(F4:F{$lastRow})");
                 $sheet->setCellValue("G{$totalRow}", "=SUM(G4:G{$lastRow})");
+
                 $sheet->getStyle("A{$totalRow}:J{$totalRow}")->applyFromArray([
-                    'font'      => ['bold' => true, 'size' => 11, 'color' => ['rgb' => 'FFFFFF']],
-                    'fill'      => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '1F2937']],
-                    'alignment' => ['horizontal' => Alignment::HORIZONTAL_RIGHT],
-                    'numberFormat' => ['formatCode' => '#,##0.00'],
+                    'font' => [
+                        'bold'  => true,
+                        'size'  => 10,
+                        'color' => ['rgb' => 'FFFFFF'],
+                    ],
+                    'fill' => [
+                        'fillType'   => Fill::FILL_SOLID,
+                        'startColor' => ['rgb' => '2C3E50'],
+                    ],
+                    'alignment' => [
+                        'horizontal' => Alignment::HORIZONTAL_RIGHT,
+                    ],
+                    'numberFormat' => [
+                        'formatCode' => '#,##0.00',
+                    ],
                 ]);
-                $sheet->getStyle("F{$totalRow}")->getFont()->getColor()->setRGB('6EE7B7');
-                $sheet->getStyle("G{$totalRow}")->getFont()->getColor()->setRGB('FCA5A5');
+                $sheet->getStyle("A{$totalRow}")->getAlignment()
+                    ->setHorizontal(Alignment::HORIZONTAL_LEFT);
                 $sheet->getRowDimension($totalRow)->setRowHeight(20);
 
-                // Borde exterior
+                // ── Borde exterior de toda la tabla ────────────
                 $sheet->getStyle("A3:J{$totalRow}")->getBorders()
-                    ->getOutline()->setBorderStyle(Border::BORDER_MEDIUM)
-                    ->getColor()->setRGB('F59E0B');
+                    ->getOutline()
+                    ->setBorderStyle(Border::BORDER_MEDIUM)
+                    ->getColor()->setRGB('2C3E50');
 
+                // ── Autofilter y congelar ───────────────────────
                 $sheet->setAutoFilter("A3:J{$lastRow}");
                 $sheet->freezePane('A4');
             },
@@ -179,7 +253,7 @@ class AsientosResumenSheet implements
     }
 }
 
-// ─── Hoja 2: Detalle de partidas ─────────────────────────────────────────────
+// ── Hoja 2: Detalle de partidas ────────────────────────────────
 class AsientosDetalleSheet implements
     FromCollection, WithHeadings, WithStyles,
     WithColumnWidths, WithTitle, WithEvents
@@ -215,7 +289,7 @@ class AsientosDetalleSheet implements
                     $asiento->fecha?->format('d/m/Y') ?? '',
                     $d->cuenta?->codigo ?? '—',
                     $d->cuenta?->nombre ?? '—',
-                    $d->descripcion ?? '—',
+                    $d->descripcion ?? '',
                     (float)$d->debe,
                     (float)$d->haber,
                 ]);
@@ -230,14 +304,17 @@ class AsientosDetalleSheet implements
     {
         return [
             'N° Asiento', 'Fecha',
-            'Cód. Cuenta', 'Nombre Cuenta',
-            'Descripción', 'DEBE ($)', 'HABER ($)',
+            'Cód. Cuenta', 'Cuenta Contable',
+            'Descripción', 'Debe ($)', 'Haber ($)',
         ];
     }
 
     public function columnWidths(): array
     {
-        return ['A' => 16, 'B' => 13, 'C' => 16, 'D' => 40, 'E' => 40, 'F' => 14, 'G' => 14];
+        return [
+            'A' => 16, 'B' => 13, 'C' => 14,
+            'D' => 40, 'E' => 42, 'F' => 14, 'G' => 14,
+        ];
     }
 
     public function title(): string { return 'Detalle Partidas'; }
@@ -254,62 +331,114 @@ class AsientosDetalleSheet implements
                 $sheet->insertNewRowBefore(1, 2);
 
                 $sheet->mergeCells('A1:G1');
-                $sheet->setCellValue('A1', 'ERP Altamira — Detalle de Partidas Contables');
+                $sheet->setCellValue('A1',
+                    'Altamira Light & Sound — Detalle de Partidas Contables');
                 $sheet->getStyle('A1')->applyFromArray([
-                    'font' => ['bold' => true, 'size' => 13, 'color' => ['rgb' => 'F59E0B']],
+                    'font' => [
+                        'bold'  => true,
+                        'size'  => 11,
+                        'color' => ['rgb' => '1A3A5C'],
+                    ],
                 ]);
 
                 $sheet->mergeCells('A2:G2');
                 $sheet->setCellValue('A2',
                     'Generado: ' . now()->format('d/m/Y H:i') .
-                    ' · ' . $this->totalRows . ' líneas contables'
+                    '   |   ' . $this->totalRows . ' líneas contables'
                 );
-                $sheet->getStyle('A2')->getFont()->setSize(9)->getColor()->setRGB('9CA3AF');
+                $sheet->getStyle('A2')->getFont()
+                    ->setSize(8)->setItalic(true)
+                    ->getColor()->setRGB('666666');
 
                 // Encabezado
                 $sheet->getStyle('A3:G3')->applyFromArray([
-                    'font'      => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
-                    'fill'      => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '1F2937']],
-                    'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
+                    'font' => [
+                        'bold'  => true,
+                        'size'  => 9,
+                        'color' => ['rgb' => 'FFFFFF'],
+                    ],
+                    'fill' => [
+                        'fillType'   => Fill::FILL_SOLID,
+                        'startColor' => ['rgb' => '2C3E50'],
+                    ],
+                    'alignment' => [
+                        'horizontal' => Alignment::HORIZONTAL_CENTER,
+                        'vertical'   => Alignment::VERTICAL_CENTER,
+                    ],
                 ]);
-                $sheet->getRowDimension(3)->setRowHeight(22);
+                $sheet->getRowDimension(3)->setRowHeight(20);
 
                 $asientoActual = '';
                 for ($row = 4; $row <= $lastRow; $row++) {
-                    $numero = $sheet->getCell("A{$row}")->getValue();
+                    $numero  = $sheet->getCell("A{$row}")->getValue();
                     $esNuevo = $numero !== $asientoActual;
                     $asientoActual = $numero;
 
-                    $bg = $esNuevo ? 'FFF8EE' : 'FFFFFF';
-                    if (($row - 3) % 2 === 0 && !$esNuevo) $bg = 'F9FAFB';
+                    // Primera fila de asiento gris suave, resto alternado
+                    $bg = $esNuevo ? 'EEF2F7' :
+                        (($row % 2 === 0) ? 'F8F9FA' : 'FFFFFF');
 
                     $sheet->getStyle("A{$row}:G{$row}")->getFill()
-                        ->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB($bg);
+                        ->setFillType(Fill::FILL_SOLID)
+                        ->getStartColor()->setRGB($bg);
 
-                    $sheet->getStyle("A{$row}")->getFont()->setBold(true)->getColor()->setRGB('F59E0B');
-                    $sheet->getStyle("C{$row}")->getFont()->setBold(true)->getColor()->setRGB('1E40AF');
+                    // Número asiento — azul marino bold
+                    $sheet->getStyle("A{$row}")->applyFromArray([
+                        'font' => [
+                            'bold'  => true,
+                            'color' => ['rgb' => '1A3A5C'],
+                        ],
+                    ]);
 
-                    $debe  = (float)$sheet->getCell("F{$row}")->getValue();
+                    // Código cuenta — azul oscuro bold
+                    $sheet->getStyle("C{$row}")->applyFromArray([
+                        'font' => [
+                            'bold'  => true,
+                            'color' => ['rgb' => '2C3E50'],
+                        ],
+                    ]);
+
+                    // Debe — verde oscuro si > 0
+                    $debe = (float)$sheet->getCell("F{$row}")->getValue();
+                    $sheet->getStyle("F{$row}")->applyFromArray([
+                        'font' => [
+                            'color' => ['rgb' => $debe > 0 ? '2D6A4F' : 'AAAAAA'],
+                        ],
+                        'alignment' => [
+                            'horizontal' => Alignment::HORIZONTAL_RIGHT,
+                        ],
+                        'numberFormat' => [
+                            'formatCode' => $debe > 0 ? '#,##0.00' : '"-"',
+                        ],
+                    ]);
+
+                    // Haber — rojo oscuro si > 0
                     $haber = (float)$sheet->getCell("G{$row}")->getValue();
-                    $sheet->getStyle("F{$row}")->getFont()->getColor()
-                        ->setRGB($debe  > 0 ? '059669' : 'D1D5DB');
-                    $sheet->getStyle("G{$row}")->getFont()->getColor()
-                        ->setRGB($haber > 0 ? 'DC2626' : 'D1D5DB');
-
-                    $sheet->getStyle("F{$row}:G{$row}")->getNumberFormat()->setFormatCode('#,##0.00');
-                    $sheet->getStyle("F{$row}:G{$row}")->getAlignment()
-                        ->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+                    $sheet->getStyle("G{$row}")->applyFromArray([
+                        'font' => [
+                            'color' => ['rgb' => $haber > 0 ? '7B2D2D' : 'AAAAAA'],
+                        ],
+                        'alignment' => [
+                            'horizontal' => Alignment::HORIZONTAL_RIGHT,
+                        ],
+                        'numberFormat' => [
+                            'formatCode' => $haber > 0 ? '#,##0.00' : '"-"',
+                        ],
+                    ]);
 
                     $sheet->getStyle("A{$row}:G{$row}")->getBorders()
-                        ->getBottom()->setBorderStyle(Border::BORDER_THIN)
-                        ->getColor()->setRGB('E5E7EB');
-                    $sheet->getRowDimension($row)->setRowHeight(16);
+                        ->getBottom()
+                        ->setBorderStyle(Border::BORDER_HAIR)
+                        ->getColor()->setRGB('DDDDDD');
+
+                    $sheet->getRowDimension($row)->setRowHeight(15);
                 }
 
                 // Borde exterior
                 $sheet->getStyle("A3:G{$lastRow}")->getBorders()
-                    ->getOutline()->setBorderStyle(Border::BORDER_MEDIUM)
-                    ->getColor()->setRGB('1F2937');
+                    ->getOutline()
+                    ->setBorderStyle(Border::BORDER_MEDIUM)
+                    ->getColor()->setRGB('2C3E50');
 
                 $sheet->setAutoFilter("A3:G{$lastRow}");
                 $sheet->freezePane('A4');
@@ -318,7 +447,7 @@ class AsientosDetalleSheet implements
     }
 }
 
-// ─── Clase principal con múltiples hojas ─────────────────────────────────────
+// ── Clase principal con múltiples hojas ────────────────────────
 class AsientosExport implements WithMultipleSheets
 {
     public function __construct(

@@ -83,7 +83,7 @@ export default function TrasladosIndex() {
                     </Link>
 
                     <select value={estado} onChange={e => setEstado(e.target.value)}
-                        className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm"
+                        className="input-field"
                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
                         <option value="">Todos los estados</option>
                         <option value="pendiente">Pendiente</option>
@@ -92,14 +92,14 @@ export default function TrasladosIndex() {
                     </select>
 
                     <select value={origenId} onChange={e => setOrigenId(e.target.value)}
-                        className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm"
+                        className="input-field"
                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
                         <option value="">Bodega origen (todas)</option>
                         {bodegas.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
                     </select>
 
                     <select value={destinoId} onChange={e => setDestinoId(e.target.value)}
-                        className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm"
+                        className="input-field"
                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
                         <option value="">Bodega destino (todas)</option>
                         {bodegas.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}

@@ -119,7 +119,7 @@ export default function ProveedoresIndex() {
                         <select
                             value={estado}
                             onChange={e => setEstado(e.target.value)}
-                            className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm"
+                            className="input-field"
                             style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}
                         >
                             <option value="">Todos</option>

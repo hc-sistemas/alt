@@ -99,7 +99,7 @@ export default function KardexSaldos() {
                     </div>
 
                     <select value={bodegaId} onChange={e => setBodegaId(e.target.value)}
-                        className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm"
+                        className="input-field"
                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
                         <option value="">Todas las bodegas</option>
                         {bodegas.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}

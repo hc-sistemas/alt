@@ -248,7 +248,7 @@ export default function CategoriasIndex() {
                             <h3 className="text-base font-semibold" style={{ color: 'var(--text-main)' }}>
                                 {editando ? 'Editar categoría' : 'Nueva categoría'}
                             </h3>
-                            <button onClick={cerrarModal} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700">
+                            <button onClick={cerrarModal} className="modal-close">
                                 <X className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
                             </button>
                         </div>
@@ -268,7 +268,7 @@ export default function CategoriasIndex() {
                                 <select
                                     value={form.parent_id}
                                     onChange={e => setForm(f => ({ ...f, parent_id: e.target.value }))}
-                                    className="flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
+                                    className="input-field"
                                     style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}
                                 >
                                     <option value="">Sin padre (categoría raíz)</option>
@@ -290,7 +290,7 @@ export default function CategoriasIndex() {
                                     onChange={e => setForm(f => ({ ...f, descripcion: e.target.value }))}
                                     rows={2}
                                     placeholder="Descripción opcional..."
-                                    className="flex w-full rounded-md border bg-transparent px-3 py-2 text-sm resize-none"
+                                    className="input-field"
                                     style={{ borderColor: 'var(--border)', color: 'var(--text-main)' }}
                                 />
                             </div>
@@ -306,7 +306,7 @@ export default function CategoriasIndex() {
                             </div>
                         </div>
 
-                        <div className="flex gap-3 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
+                        <div className="modal-footer">
                             <Button onClick={guardar} loading={procesando}>
                                 <Save className="w-4 h-4" />
                                 {editando ? 'Guardar cambios' : 'Crear categoría'}

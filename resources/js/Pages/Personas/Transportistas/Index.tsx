@@ -257,7 +257,7 @@ export default function TransportistasIndex() {
                             <h3 className="text-base font-semibold" style={{ color: 'var(--text-main)' }}>
                                 {editando ? 'Editar transportista' : 'Nuevo transportista'}
                             </h3>
-                            <button onClick={cerrarModal} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700">
+                            <button onClick={cerrarModal} className="modal-close">
                                 <X className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
                             </button>
                         </div>
@@ -326,7 +326,7 @@ export default function TransportistasIndex() {
                             <Label>Activo</Label>
                         </div>
 
-                        <div className="flex gap-3 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
+                        <div className="modal-footer">
                             <Button onClick={guardar} loading={procesando}>
                                 <Save className="w-4 h-4" />
                                 {editando ? 'Guardar cambios' : 'Crear transportista'}

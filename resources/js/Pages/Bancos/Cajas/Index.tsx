@@ -65,23 +65,19 @@ function AbrirModal({ cajas, centros, onClose }: {
             onError: () => notify.error('Error al abrir caja'),
         })
     }
-    const inp = { background: 'var(--bg-card)', color: 'var(--text-main)', borderColor: 'var(--border)' }
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-            <div className="relative w-full max-w-sm rounded-xl shadow-2xl p-6"
-                style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-                <div className="flex items-center justify-between mb-5">
-                    <h2 className="font-semibold text-base" style={{ color: 'var(--text-main)' }}>Abrir Caja</h2>
-                    <button onClick={onClose} className="p-1.5 rounded-lg hover:opacity-70"
-                        style={{ color: 'var(--text-muted)' }}><X className="w-4 h-4" /></button>
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal-card max-w-sm" onClick={e => e.stopPropagation()}>
+                <div className="modal-header">
+                    <h2>Abrir Caja</h2>
+                    <button className="modal-close" onClick={onClose}><X className="w-4 h-4" /></button>
                 </div>
-                <form onSubmit={submit} className="space-y-4">
+                <form onSubmit={submit}>
+                <div className="modal-body" style={{ gap: '1rem' }}>
                     <div className="space-y-1.5">
                         <Label>Caja <span className="text-red-400">*</span></Label>
                         <select value={data.banco_caja_id} onChange={e => setData('banco_caja_id', e.target.value)}
-                            className="w-full h-9 px-3 border rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
-                            style={inp}>
+                            className="input-field select-field">
                             <option value="">— Seleccionar —</option>
                             {cajas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
                         </select>
@@ -96,25 +92,21 @@ function AbrirModal({ cajas, centros, onClose }: {
                         <div className="space-y-1.5">
                             <Label>Centro de costo</Label>
                             <select value={data.centro_costo_id} onChange={e => setData('centro_costo_id', e.target.value)}
-                                className="w-full h-9 px-3 border rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
-                                style={inp}>
+                                className="input-field select-field">
                                 <option value="">— Ninguno —</option>
                                 {centros.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
                             </select>
                         </div>
                     )}
-                    <div className="flex gap-2 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
-                        <button type="submit" disabled={processing}
-                            className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50"
-                            style={{ background: 'var(--primary)' }}>
-                            <CheckCircle className="w-4 h-4" /> Abrir Caja
-                        </button>
-                        <button type="button" onClick={onClose}
-                            className="px-4 py-2 rounded-lg text-sm font-medium border hover:opacity-80"
-                            style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
-                            Cancelar
-                        </button>
-                    </div>
+                </div>
+                <div className="modal-footer">
+                    <button type="submit" disabled={processing} className="btn-primary">
+                        <CheckCircle className="w-4 h-4" /> Abrir Caja
+                    </button>
+                    <button type="button" onClick={onClose} className="btn-secondary">
+                        Cancelar
+                    </button>
+                </div>
                 </form>
             </div>
         </div>
@@ -166,22 +158,15 @@ function CerrarModal({ cierre, onClose }: { cierre: CierreRow; onClose: () => vo
         })
     }
 
-    const inp = { background: 'var(--bg-card)', color: 'var(--text-main)', borderColor: 'var(--border)' }
-
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-            <div className="relative w-full max-w-md max-h-[90vh] overflow-y-auto rounded-xl shadow-2xl"
-                style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-                <div className="sticky top-0 z-10 flex items-center justify-between px-6 pt-5 pb-4"
-                    style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
-                    <h2 className="font-semibold text-base" style={{ color: 'var(--text-main)' }}>
-                        Cerrar Caja — {cierre.caja}
-                    </h2>
-                    <button onClick={onClose} className="p-1.5 rounded-lg hover:opacity-70"
-                        style={{ color: 'var(--text-muted)' }}><X className="w-4 h-4" /></button>
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal-card max-w-md overflow-y-auto max-h-[90vh]" onClick={e => e.stopPropagation()}>
+                <div className="modal-header">
+                    <h2>Cerrar Caja — {cierre.caja}</h2>
+                    <button className="modal-close" onClick={onClose}><X className="w-4 h-4" /></button>
                 </div>
-                <form onSubmit={submit} className="p-6 space-y-4">
+                <form onSubmit={submit}>
+                <div className="modal-body" style={{ gap: '1rem' }}>
                     <div className="grid grid-cols-2 gap-3">
                         {([
                             ['total_efectivo', 'Efectivo'],
@@ -225,25 +210,20 @@ function CerrarModal({ cierre, onClose }: { cierre: CierreRow; onClose: () => vo
                         <Label>Observaciones</Label>
                         <textarea value={data.observaciones} onChange={e => setData('observaciones', e.target.value)}
                             rows={2} placeholder="Novedades del día…"
-                            className="w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 resize-none"
-                            style={inp} />
+                            className="input-field textarea-field" />
                     </div>
 
-                    <div className="flex gap-2 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
-                        <button type="submit" disabled={processing}
-                            className={cn(
-                                'flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50',
-                                Math.abs(diferencia) > 0.01 ? 'bg-orange-500 hover:bg-orange-600' : ''
-                            )}
-                            style={Math.abs(diferencia) <= 0.01 ? { background: 'var(--primary)' } : {}}>
-                            <Lock className="w-4 h-4" /> Cerrar Caja
-                        </button>
-                        <button type="button" onClick={onClose}
-                            className="px-4 py-2 rounded-lg text-sm font-medium border hover:opacity-80"
-                            style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
-                            Cancelar
-                        </button>
-                    </div>
+                </div>
+                <div className="modal-footer">
+                    <button type="submit" disabled={processing}
+                        className={cn('btn-primary', Math.abs(diferencia) > 0.01 ? 'bg-orange-500' : '')}
+                        style={Math.abs(diferencia) <= 0.01 ? {} : { background: '#F97316', boxShadow: 'none' }}>
+                        <Lock className="w-4 h-4" /> Cerrar Caja
+                    </button>
+                    <button type="button" onClick={onClose} className="btn-secondary">
+                        Cancelar
+                    </button>
+                </div>
                 </form>
             </div>
         </div>

@@ -4,7 +4,7 @@ import { toast, ToastContainer } from 'react-toastify'
 import AppLayout from '@/Layouts/AppLayout'
 import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
-import { ChevronLeft, Ban, ShoppingCart, ExternalLink, X, Printer, XCircle } from 'lucide-react'
+import { ChevronLeft, Ban, ShoppingCart, ExternalLink, X, Printer, XCircle, Download } from 'lucide-react'
 import { formatFecha } from '@/utils/contabilidad'
 import type {
     Compra, Proveedor, CentroCosto, AsientoContable,
@@ -98,6 +98,8 @@ function AnularModal({ compra, onClose }: { compra: CompraShow; onClose: () => v
 export default function CompraShow() {
     const { compra, flash } = usePage<Props>().props
     const [showAnular, setShowAnular] = useState(false)
+    const [modalPdf,   setModalPdf]   = useState(false)
+    const [urlPdf,     setUrlPdf]     = useState('')
 
     useEffect(() => {
         if (flash?.success) notify.ok(flash.success)
@@ -147,12 +149,12 @@ export default function CompraShow() {
                             style={{ borderColor: 'var(--border)', color: 'var(--text-main)' }}>
                             <ChevronLeft size={15} /> Volver
                         </Link>
-                        <a href={route('compras.facturas.pdf-individual', compra.id)}
-                            target="_blank"
+                        <button
+                            onClick={() => { setUrlPdf(route('compras.facturas.pdf-individual', compra.id)); setModalPdf(true) }}
                             className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90"
                             style={{ background: '#ef4444' }}>
                             <Printer size={15} /> PDF
-                        </a>
+                        </button>
                         {compra.estado === 'activa' && puedeAnular && (
                             <button onClick={confirmarAnulacion}
                                 className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90"
@@ -397,6 +399,39 @@ export default function CompraShow() {
 
             {showAnular && (
                 <AnularModal compra={compra} onClose={() => setShowAnular(false)} />
+            )}
+
+            {/* ── Modal PDF ── */}
+            {modalPdf && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+                     style={{ background: 'rgba(0,0,0,0.85)' }}
+                     onClick={() => setModalPdf(false)}>
+                    <div className="w-full max-w-4xl rounded-2xl overflow-hidden shadow-2xl flex flex-col"
+                         style={{ background: 'var(--bg-card)', height: '90vh' }}
+                         onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between px-4 py-3 border-b shrink-0"
+                             style={{ borderColor: 'var(--border)' }}>
+                            <h3 className="font-semibold text-sm flex items-center gap-2"
+                                style={{ color: 'var(--text-main)' }}>
+                                <Printer size={16} style={{ color: '#ef4444' }} />
+                                Compra {compra.num_documento}
+                            </h3>
+                            <div className="flex items-center gap-2">
+                                <a href={urlPdf} download target="_blank"
+                                   className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-all hover:opacity-90"
+                                   style={{ background: '#ef4444' }}>
+                                    <Download size={13} /> Descargar
+                                </a>
+                                <button onClick={() => setModalPdf(false)}
+                                    className="px-3 py-1.5 rounded-lg text-xs font-semibold border hover:opacity-80"
+                                    style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
+                                    ✕ Cerrar
+                                </button>
+                            </div>
+                        </div>
+                        <iframe src={urlPdf} className="flex-1 w-full border-0" title="PDF Compra" />
+                    </div>
+                </div>
             )}
 
             <ToastContainer position="top-right" autoClose={3500} hideProgressBar={false}

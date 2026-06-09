@@ -69,23 +69,19 @@ function LoteModal({ bancos, onClose }: { bancos: Props['bancos']; onClose: () =
             onError: (errs) => notify.error(Object.values(errs).join(' | ')),
         })
     }
-    const inp = { background: 'var(--bg-card)', color: 'var(--text-main)', borderColor: 'var(--border)' }
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-            <div className="relative w-full max-w-sm rounded-xl shadow-2xl p-6"
-                style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-                <div className="flex items-center justify-between mb-5">
-                    <h2 className="font-semibold text-base" style={{ color: 'var(--text-main)' }}>Nuevo Lote Datafast</h2>
-                    <button onClick={onClose} className="p-1.5 rounded-lg hover:opacity-70"
-                        style={{ color: 'var(--text-muted)' }}><X className="w-4 h-4" /></button>
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal-card max-w-sm" onClick={e => e.stopPropagation()}>
+                <div className="modal-header">
+                    <h2>Nuevo Lote Datafast</h2>
+                    <button className="modal-close" onClick={onClose}><X className="w-4 h-4" /></button>
                 </div>
-                <form onSubmit={submit} className="space-y-4">
+                <form onSubmit={submit}>
+                <div className="modal-body" style={{ gap: '1rem' }}>
                     <div className="space-y-1.5">
                         <Label>Terminal <span className="text-red-400">*</span></Label>
                         <select value={data.banco_caja_id} onChange={e => setData('banco_caja_id', e.target.value)}
-                            className="w-full h-9 px-3 border rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
-                            style={inp}
+                            className="input-field select-field"
                             disabled={terminales.length === 0}>
                             <option value="">— Seleccionar —</option>
                             {terminales.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
@@ -114,18 +110,13 @@ function LoteModal({ bancos, onClose }: { bancos: Props['bancos']; onClose: () =
                                 error={errors.total_vouchers} placeholder="0.00" />
                         </div>
                     </div>
-                    <div className="flex gap-2 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
-                        <button type="submit" disabled={processing}
-                            className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50"
-                            style={{ background: 'var(--primary)' }}>
-                            <Plus className="w-4 h-4" /> Registrar Lote
-                        </button>
-                        <button type="button" onClick={onClose}
-                            className="px-4 py-2 rounded-lg text-sm font-medium border hover:opacity-80"
-                            style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
-                            Cancelar
-                        </button>
-                    </div>
+                </div>
+                <div className="modal-footer">
+                    <button type="submit" disabled={processing} className="btn-primary">
+                        <Plus className="w-4 h-4" /> Registrar Lote
+                    </button>
+                    <button type="button" onClick={onClose} className="btn-secondary">Cancelar</button>
+                </div>
                 </form>
             </div>
         </div>
@@ -162,21 +153,15 @@ function LiquidarModal({ lote, bancos, onClose }: { lote: LoteRow; bancos: Props
         })
     }
 
-    const inp = { background: 'var(--bg-card)', color: 'var(--text-main)', borderColor: 'var(--border)' }
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-            <div className="relative w-full max-w-md max-h-[90vh] overflow-y-auto rounded-xl shadow-2xl"
-                style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-                <div className="sticky top-0 z-10 flex items-center justify-between px-6 pt-5 pb-4"
-                    style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
-                    <h2 className="font-semibold text-base" style={{ color: 'var(--text-main)' }}>
-                        Liquidar Lote {lote.numero_lote}
-                    </h2>
-                    <button onClick={onClose} className="p-1.5 rounded-lg hover:opacity-70"
-                        style={{ color: 'var(--text-muted)' }}><X className="w-4 h-4" /></button>
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal-card max-w-md overflow-y-auto max-h-[90vh]" onClick={e => e.stopPropagation()}>
+                <div className="modal-header">
+                    <h2>Liquidar Lote {lote.numero_lote}</h2>
+                    <button className="modal-close" onClick={onClose}><X className="w-4 h-4" /></button>
                 </div>
-                <form onSubmit={submit} className="p-6 space-y-4">
+                <form onSubmit={submit}>
+                <div className="modal-body" style={{ gap: '1rem' }}>
                     <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1.5">
                             <Label>Fecha depósito <span className="text-red-400">*</span></Label>
@@ -216,26 +201,20 @@ function LiquidarModal({ lote, bancos, onClose }: { lote: LoteRow; bancos: Props
                     <div className="space-y-1.5">
                         <Label>Banco destino <span className="text-red-400">*</span></Label>
                         <select value={data.banco_destino_id} onChange={e => setData('banco_destino_id', e.target.value)}
-                            className="w-full h-9 px-3 border rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
-                            style={inp}>
+                            className="input-field select-field">
                             <option value="">— Seleccionar banco —</option>
                             {bancosDestino.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
                         </select>
                         {errors.banco_destino_id && <p className="text-red-400 text-xs">{errors.banco_destino_id}</p>}
                     </div>
 
-                    <div className="flex gap-2 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
-                        <button type="submit" disabled={processing}
-                            className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50"
-                            style={{ background: 'var(--primary)' }}>
-                            <CheckCircle className="w-4 h-4" /> Liquidar
-                        </button>
-                        <button type="button" onClick={onClose}
-                            className="px-4 py-2 rounded-lg text-sm font-medium border hover:opacity-80"
-                            style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
-                            Cancelar
-                        </button>
-                    </div>
+                </div>
+                <div className="modal-footer">
+                    <button type="submit" disabled={processing} className="btn-primary">
+                        <CheckCircle className="w-4 h-4" /> Liquidar
+                    </button>
+                    <button type="button" onClick={onClose} className="btn-secondary">Cancelar</button>
+                </div>
                 </form>
             </div>
         </div>

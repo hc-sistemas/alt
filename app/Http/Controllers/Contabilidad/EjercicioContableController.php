@@ -92,7 +92,11 @@ class EjercicioContableController extends Controller
     public function cerrar(Request $request, EjercicioContable $ejercicio): RedirectResponse
     {
         $request->validate([
-            'motivo' => 'required|string|min:10|max:300',
+            'motivo'       => 'required|string|min:10|max:300',
+            'fecha_cierre' => 'required|date|before_or_equal:today',
+        ], [
+            'fecha_cierre.required'        => 'La fecha de cierre es obligatoria.',
+            'fecha_cierre.before_or_equal' => 'La fecha no puede ser futura.',
         ]);
 
         if ($ejercicio->estaCerrado()) {
@@ -111,7 +115,7 @@ class EjercicioContableController extends Controller
 
         $ejercicio->update([
             'estado'       => 'cerrado',
-            'fecha_cierre' => now()->toDateString(),
+            'fecha_cierre' => $request->fecha_cierre,
             'cerrado_por'  => Auth::id(),
         ]);
 

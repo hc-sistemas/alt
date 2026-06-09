@@ -186,7 +186,7 @@ export default function ProveedorForm() {
                                 <select
                                     value={data.divisa}
                                     onChange={e => setData('divisa', e.target.value)}
-                                    className="flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
+                                    className="input-field"
                                     style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}
                                 >
                                     {DIVISAS.map(d => (
@@ -263,7 +263,7 @@ export default function ProveedorForm() {
                 </div>
 
                 {/* Acciones */}
-                <div className="flex gap-3 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
+                <div className="modal-footer">
                     <Button type="submit" loading={processing}>
                         <Save className="w-4 h-4" />
                         {esEdicion ? 'Guardar cambios' : 'Crear proveedor'}

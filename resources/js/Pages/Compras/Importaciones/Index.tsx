@@ -131,25 +131,18 @@ function CrearModal({ proveedores, onClose }: {
         })
     }
 
-    const inputStyle = { background: 'var(--bg-card)', color: 'var(--text-main)', borderColor: 'var(--border)' }
-
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-            <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-xl shadow-2xl"
-                style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-                <div className="sticky top-0 z-10 flex items-center justify-between px-6 pt-5 pb-4"
-                    style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
-                    <h2 className="font-semibold text-base" style={{ color: 'var(--text-main)' }}>
-                        Nueva importación
-                    </h2>
-                    <button onClick={onClose} className="p-1.5 rounded-lg hover:opacity-70 transition-opacity"
-                        style={{ color: 'var(--text-muted)' }}>
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal-card max-w-lg overflow-y-auto max-h-[90vh]" onClick={e => e.stopPropagation()}>
+                <div className="modal-header">
+                    <h2>Nueva importación</h2>
+                    <button className="modal-close" onClick={onClose}>
                         <X className="w-4 h-4" />
                     </button>
                 </div>
 
-                <form onSubmit={submit} className="p-6 space-y-4">
+                <form onSubmit={submit}>
+                <div className="modal-body">
                     <div className="space-y-1.5">
                         <Label>Nombre de la importación <span className="text-red-400">*</span></Label>
                         <Input value={data.nombre} onChange={e => setData('nombre', e.target.value)}
@@ -161,8 +154,7 @@ function CrearModal({ proveedores, onClose }: {
                         <Label>Proveedor internacional</Label>
                         <select value={data.proveedor_id}
                             onChange={e => setData('proveedor_id', e.target.value)}
-                            className="w-full h-9 px-3 border rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
-                            style={inputStyle}>
+                            className="input-field select-field">
                             <option value="">— Sin proveedor asignado —</option>
                             {proveedores.map(p => (
                                 <option key={p.id} value={p.id}>{p.razon_social} ({p.pais})</option>
@@ -228,17 +220,17 @@ function CrearModal({ proveedores, onClose }: {
                         <textarea value={data.observaciones}
                             onChange={e => setData('observaciones', e.target.value)}
                             rows={3}
-                            className="w-full px-3 py-2 border rounded-md text-sm resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
-                            style={inputStyle}
+                            className="input-field textarea-field"
                             placeholder="Notas adicionales..." />
                     </div>
 
-                    <div className="flex gap-2 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
-                        <Button type="submit" disabled={processing}>
-                            <Plus className="w-4 h-4" /> Crear importación
-                        </Button>
-                        <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
-                    </div>
+                </div>
+                <div className="modal-footer">
+                    <Button type="submit" disabled={processing}>
+                        <Plus className="w-4 h-4" /> Crear importación
+                    </Button>
+                    <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
+                </div>
                 </form>
             </div>
         </div>
@@ -271,34 +263,26 @@ function ActualizarModal({ importacion, onClose }: {
         })
     }
 
-    const inputStyle = { background: 'var(--bg-card)', color: 'var(--text-main)', borderColor: 'var(--border)' }
-
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-            <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-xl shadow-2xl"
-                style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-                <div className="sticky top-0 z-10 flex items-center justify-between px-6 pt-5 pb-4"
-                    style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal-card max-w-lg overflow-y-auto max-h-[90vh]" onClick={e => e.stopPropagation()}>
+                <div className="modal-header">
                     <div>
-                        <h2 className="font-semibold text-base" style={{ color: 'var(--text-main)' }}>
-                            Actualizar importación
-                        </h2>
-                        <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{importacion.nombre}</p>
+                        <h2>Actualizar importación</h2>
+                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{importacion.nombre}</p>
                     </div>
-                    <button onClick={onClose} className="p-1.5 rounded-lg hover:opacity-70 transition-opacity"
-                        style={{ color: 'var(--text-muted)' }}>
+                    <button className="modal-close" onClick={onClose}>
                         <X className="w-4 h-4" />
                     </button>
                 </div>
 
-                <form onSubmit={submit} className="p-6 space-y-4">
+                <form onSubmit={submit}>
+                <div className="modal-body">
                     <div className="space-y-1.5">
                         <Label>Estado</Label>
                         <select value={data.estado}
                             onChange={e => setData('estado', e.target.value as ImportacionRow['estado'])}
-                            className="w-full h-9 px-3 border rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
-                            style={inputStyle}>
+                            className="input-field select-field">
                             <option value="en_transito">En Tránsito</option>
                             <option value="en_aduana">En Aduana</option>
                         </select>
@@ -329,17 +313,17 @@ function ActualizarModal({ importacion, onClose }: {
                         <textarea value={data.observaciones}
                             onChange={e => setData('observaciones', e.target.value)}
                             rows={3}
-                            className="w-full px-3 py-2 border rounded-md text-sm resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
-                            style={inputStyle}
+                            className="input-field textarea-field"
                             placeholder="Notas..." />
                     </div>
 
-                    <div className="flex gap-2 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
-                        <Button type="submit" disabled={processing}>
-                            <Pencil className="w-4 h-4" /> Guardar cambios
-                        </Button>
-                        <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
-                    </div>
+                </div>
+                <div className="modal-footer">
+                    <Button type="submit" disabled={processing}>
+                        <Pencil className="w-4 h-4" /> Guardar cambios
+                    </Button>
+                    <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
+                </div>
                 </form>
             </div>
         </div>
@@ -358,8 +342,6 @@ function LiquidarModal({ importacion, onClose }: {
     const [fechaLiquidacion, setFecha]   = useState(new Date().toISOString().slice(0, 10))
     const [costos,          setCostos]   = useState<CostoExtra[]>([{ descripcion: '', monto: '' }])
     const [processing,      setProcessing] = useState(false)
-
-    const inputStyle = { background: 'var(--bg-card)', color: 'var(--text-main)', borderColor: 'var(--border)' }
 
     const totalCostosExtra = costos.reduce((acc, c) => acc + (parseFloat(c.monto) || 0), 0)
     const costoTotal       = Number(importacion.costo_fob) + totalCostosExtra
@@ -392,25 +374,20 @@ function LiquidarModal({ importacion, onClose }: {
     }
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-            <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-xl shadow-2xl"
-                style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-                <div className="sticky top-0 z-10 flex items-center justify-between px-6 pt-5 pb-4"
-                    style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal-card max-w-lg overflow-y-auto max-h-[90vh]" onClick={e => e.stopPropagation()}>
+                <div className="modal-header">
                     <div>
-                        <h2 className="font-semibold text-base" style={{ color: 'var(--text-main)' }}>
-                            Liquidar importación
-                        </h2>
-                        <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{importacion.nombre}</p>
+                        <h2>Liquidar importación</h2>
+                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{importacion.nombre}</p>
                     </div>
-                    <button onClick={onClose} className="p-1.5 rounded-lg hover:opacity-70 transition-opacity"
-                        style={{ color: 'var(--text-muted)' }}>
+                    <button className="modal-close" onClick={onClose}>
                         <X className="w-4 h-4" />
                     </button>
                 </div>
 
-                <form onSubmit={submit} className="p-6 space-y-4">
+                <form onSubmit={submit}>
+                <div className="modal-body">
                     {/* Costos extra dinámicos */}
                     <div className="space-y-2">
                         <div className="flex items-center justify-between">
@@ -427,15 +404,13 @@ function LiquidarModal({ importacion, onClose }: {
                                     value={c.descripcion}
                                     onChange={e => actualizarCosto(idx, 'descripcion', e.target.value)}
                                     placeholder="Descripción (flete, seguro…)"
-                                    className="flex-1 h-8 px-2 border rounded text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
-                                    style={inputStyle} />
+                                    className="input-field flex-1 text-xs" />
                                 <input
                                     type="number" step="0.01" min={0}
                                     value={c.monto}
                                     onChange={e => actualizarCosto(idx, 'monto', e.target.value)}
                                     placeholder="0.00"
-                                    className="w-24 h-8 px-2 border rounded text-sm text-right focus:outline-none focus:ring-1 focus:ring-amber-500"
-                                    style={inputStyle} />
+                                    className="input-field text-xs text-right" style={{ width: '6rem' }} />
                                 {costos.length > 1 && (
                                     <button type="button" onClick={() => quitarCosto(idx)}
                                         className="p-1 rounded hover:text-red-500 transition-colors"
@@ -472,8 +447,7 @@ function LiquidarModal({ importacion, onClose }: {
                     <div className="space-y-1.5">
                         <Label>Método de prorrateo <span className="text-red-400">*</span></Label>
                         <select value={metodo} onChange={e => setMetodo(e.target.value as typeof metodo)}
-                            className="w-full h-9 px-3 border rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
-                            style={inputStyle}>
+                            className="input-field select-field">
                             <option value="cantidad">Por cantidad (unidades)</option>
                             <option value="precio">Por precio (valor)</option>
                             <option value="peso">Por peso</option>
@@ -486,12 +460,13 @@ function LiquidarModal({ importacion, onClose }: {
                             onChange={e => setFecha(e.target.value)} />
                     </div>
 
-                    <div className="flex gap-2 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
-                        <Button type="submit" disabled={processing || totalCostosExtra <= 0}>
-                            <CheckCircle2 className="w-4 h-4" /> Liquidar
-                        </Button>
-                        <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
-                    </div>
+                </div>
+                <div className="modal-footer">
+                    <Button type="submit" disabled={processing || totalCostosExtra <= 0}>
+                        <CheckCircle2 className="w-4 h-4" /> Liquidar
+                    </Button>
+                    <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
+                </div>
                 </form>
             </div>
         </div>

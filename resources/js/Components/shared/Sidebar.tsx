@@ -71,6 +71,7 @@ const navItems: NavItem[] = [
             { nombre: 'Asientos', href: '/contabilidad/asientos' },
             { nombre: 'Plan de Cuentas', href: '/contabilidad/plan-cuentas' },
             { nombre: 'Parámetros Contables', href: '/contabilidad/parametros' },
+            { nombre: 'Reportes Contables', href: '/contabilidad/reportes' },
         ]
     },
     {
@@ -81,6 +82,8 @@ const navItems: NavItem[] = [
             { nombre: 'Cajas',                  href: '/bancos/cajas'           },
             { nombre: 'Datafast',               href: '/bancos/datafast'        },
             { nombre: 'Conciliación Bancaria',  href: '/bancos/conciliaciones'  },
+            { nombre: 'Cheques',                href: '/bancos/cheques'          },
+            { nombre: 'Reportes',               href: '/bancos/reportes'         },
         ]
     },
     {

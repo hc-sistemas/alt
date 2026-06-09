@@ -279,38 +279,21 @@ export default function ParametrosIndex({ grupos, cuentas, stats }: Props) {
 
             {/* MODAL BÚSQUEDA */}
             {modalAbierto && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-                     style={{ background: 'rgba(0,0,0,0.6)' }}
-                     onClick={() => setModalAbierto(false)}>
-                    <div className="w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden"
-                         style={{ background: 'var(--bg-card)' }}
-                         onClick={e => e.stopPropagation()}>
+                <div className="modal-overlay" onClick={() => setModalAbierto(false)}>
+                    <div className="modal-card max-w-lg" onClick={e => e.stopPropagation()}>
 
-                        <div className="flex items-center justify-between px-4 py-3 border-b"
-                             style={{ borderColor: 'var(--border)' }}>
-                            <h3 className="font-semibold text-sm" style={{ color: 'var(--text-main)' }}>
-                                Seleccionar cuenta contable
-                            </h3>
-                            <button onClick={() => setModalAbierto(false)}
-                                    className="text-gray-400 hover:text-gray-600 text-xl leading-none">
-                                ×
-                            </button>
+                        <div className="modal-header">
+                            <h2>Seleccionar cuenta contable</h2>
+                            <button className="modal-close" onClick={() => setModalAbierto(false)}>×</button>
                         </div>
 
                         <div className="px-4 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
-                            <div className="relative">
-                                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2"
-                                        style={{ color: 'var(--text-muted)' }} />
+                            <div className="input-with-icon">
+                                <Search size={14} className="input-icon" />
                                 <input autoFocus type="text" value={busqueda}
                                     onChange={e => setBusqueda(e.target.value)}
                                     placeholder="Buscar por código o nombre..."
-                                    className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border
-                                               focus:outline-none focus:ring-2"
-                                    style={{
-                                        borderColor: 'var(--border)',
-                                        background:  'var(--bg-main)',
-                                        color:       'var(--text-main)',
-                                    }}
+                                    className="input-field"
                                 />
                             </div>
                         </div>
@@ -347,7 +330,7 @@ export default function ParametrosIndex({ grupos, cuentas, stats }: Props) {
                         </div>
 
                         <div className="px-4 py-2 border-t text-xs"
-                             style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
+                             style={{ borderColor: 'var(--border)', color: 'var(--text-muted)', background: 'color-mix(in srgb, var(--bg-main) 60%, var(--bg-card))' }}>
                             {cuentasFiltradas.length} resultado(s)
                         </div>
                     </div>

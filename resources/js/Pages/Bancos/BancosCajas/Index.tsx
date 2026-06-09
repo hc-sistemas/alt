@@ -160,30 +160,21 @@ function CuentaSearchModal({ cuentas, onSelect, onClose }: {
     }, [busq, cuentas])
 
     return (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4"
-            style={{ background: 'rgba(0,0,0,0.6)' }}
-            onClick={onClose}>
-            <div className="w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden"
-                style={{ background: 'var(--bg-card)' }}
-                onClick={e => e.stopPropagation()}>
+        <div className="modal-overlay" style={{ zIndex: 60 }} onClick={onClose}>
+            <div className="modal-card max-w-lg" onClick={e => e.stopPropagation()}>
 
-                <div className="flex items-center justify-between px-4 py-3 border-b"
-                    style={{ borderColor: 'var(--border)' }}>
-                    <h3 className="font-semibold text-sm" style={{ color: 'var(--text-main)' }}>
-                        Seleccionar cuenta contable
-                    </h3>
-                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
+                <div className="modal-header">
+                    <h2>Seleccionar cuenta contable</h2>
+                    <button className="modal-close" onClick={onClose}>×</button>
                 </div>
 
                 <div className="px-4 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
-                    <div className="relative">
-                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2"
-                            style={{ color: 'var(--text-muted)' }} />
+                    <div className="input-with-icon">
+                        <Search size={14} className="input-icon" />
                         <input autoFocus type="text" value={busq}
                             onChange={e => setBusq(e.target.value)}
                             placeholder="Buscar por código o nombre…"
-                            className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border focus:outline-none focus:ring-1 focus:ring-amber-500"
-                            style={{ borderColor: 'var(--border)', background: 'var(--bg-main)', color: 'var(--text-main)' }} />
+                            className="input-field" />
                     </div>
                 </div>
 
@@ -214,7 +205,7 @@ function CuentaSearchModal({ cuentas, onSelect, onClose }: {
                     )}
                 </div>
 
-                <div className="px-4 py-2 border-t text-xs" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
+                <div className="px-4 py-2 border-t text-xs" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)', background: 'color-mix(in srgb, var(--bg-main) 60%, var(--bg-card))' }}>
                     {filtradas.length} resultado(s)
                 </div>
             </div>
@@ -266,25 +257,20 @@ function BancoModal({ banco, cuentas, onClose }: ModalProps) {
         }
     }
 
-    const inp = { background: 'var(--bg-card)', color: 'var(--text-main)', borderColor: 'var(--border)' }
-
     return (
         <>
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-                <div className="relative w-full max-w-md max-h-[90vh] overflow-y-auto rounded-xl shadow-2xl"
-                    style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+            <div className="modal-overlay" onClick={onClose}>
+                <div className="modal-card max-w-md overflow-y-auto max-h-[90vh]" onClick={e => e.stopPropagation()}>
 
-                    <div className="sticky top-0 z-10 flex items-center justify-between px-6 pt-5 pb-4"
-                        style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
-                        <h2 className="font-semibold text-base" style={{ color: 'var(--text-main)' }}>
-                            {isEdit ? 'Editar banco/caja' : 'Nuevo banco/caja'}
-                        </h2>
-                        <button onClick={onClose} className="p-1.5 rounded-lg hover:opacity-70"
-                            style={{ color: 'var(--text-muted)' }}><X className="w-4 h-4" /></button>
+                    <div className="modal-header">
+                        <h2>{isEdit ? 'Editar banco/caja' : 'Nuevo banco/caja'}</h2>
+                        <button className="modal-close" onClick={onClose}>
+                            <X className="w-4 h-4" />
+                        </button>
                     </div>
 
-                    <form onSubmit={submit} className="p-6 space-y-4">
+                    <form onSubmit={submit}>
+                    <div className="modal-body" style={{ gap: '1rem' }}>
                         {!isEdit && (
                             <div className="space-y-1.5">
                                 <Label>Tipo <span className="text-red-400">*</span></Label>
@@ -324,8 +310,7 @@ function BancoModal({ banco, cuentas, onClose }: ModalProps) {
                                     <div className="space-y-1.5">
                                         <Label>Tipo Cuenta</Label>
                                         <select value={data.tipo_cuenta ?? ''} onChange={e => setData('tipo_cuenta', e.target.value)}
-                                            className="w-full h-9 px-3 border rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
-                                            style={inp}>
+                                            className="input-field select-field">
                                             <option value="">— Seleccionar —</option>
                                             <option value="corriente">Corriente</option>
                                             <option value="ahorros">Ahorros</option>
@@ -369,19 +354,16 @@ function BancoModal({ banco, cuentas, onClose }: ModalProps) {
                             </div>
                         )}
 
-                        <div className="flex gap-2 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
-                            <button type="submit" disabled={processing}
-                                className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50"
-                                style={{ background: 'var(--primary)' }}>
-                                <Plus className="w-4 h-4" />
-                                {isEdit ? 'Guardar cambios' : 'Crear'}
-                            </button>
-                            <button type="button" onClick={onClose}
-                                className="px-4 py-2 rounded-lg text-sm font-medium border hover:opacity-80"
-                                style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
-                                Cancelar
-                            </button>
-                        </div>
+                    </div>
+                    <div className="modal-footer">
+                        <button type="submit" disabled={processing} className="btn-primary">
+                            <Plus className="w-4 h-4" />
+                            {isEdit ? 'Guardar cambios' : 'Crear'}
+                        </button>
+                        <button type="button" onClick={onClose} className="btn-secondary">
+                            Cancelar
+                        </button>
+                    </div>
                     </form>
                 </div>
             </div>

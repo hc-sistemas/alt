@@ -76,8 +76,7 @@ export default function ActivoFijoForm() {
         }
     }
 
-    const selectCls = "flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
-    const selectStyle = { borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }
+    const selectCls = "input-field"
 
     return (
         <AppLayout title={esEdicion ? 'Editar Activo' : 'Nuevo Activo Fijo'}>
@@ -115,7 +114,7 @@ export default function ActivoFijoForm() {
                         <div className="space-y-1.5">
                             <Label>Categoría *</Label>
                             <select value={data.categoria} onChange={e => setData('categoria', e.target.value)}
-                                className={selectCls} style={selectStyle}>
+                                className={selectCls}>
                                 <option value="">Seleccionar categoría...</option>
                                 {categorias.map(c => (
                                     <option key={c} value={c}>{CATEGORIA_LABELS[c] ?? c}</option>
@@ -133,7 +132,7 @@ export default function ActivoFijoForm() {
                             <textarea value={data.descripcion}
                                 onChange={e => setData('descripcion', e.target.value)}
                                 rows={2} placeholder="Ej: Descripción del activo..."
-                                className="flex w-full rounded-md border bg-transparent px-3 py-2 text-sm resize-none"
+                                className="input-field"
                                 style={{ borderColor: 'var(--border)', color: 'var(--text-main)' }} />
                         </div>
                     </div>
@@ -174,7 +173,7 @@ export default function ActivoFijoForm() {
                         </div>
                         <div className="space-y-1.5">
                             <Label>Método de depreciación</Label>
-                            <select disabled className={`${selectCls} opacity-60 cursor-not-allowed`} style={selectStyle}>
+                            <select disabled className="input-field opacity-60 cursor-not-allowed">
                                 <option value="lineal">Lineal</option>
                             </select>
                         </div>
@@ -226,12 +225,11 @@ export default function ActivoFijoForm() {
                     <textarea value={data.notas}
                         onChange={e => setData('notas', e.target.value)}
                         rows={3} placeholder="Ej: Observaciones internas..."
-                        className="flex w-full rounded-md border bg-transparent px-3 py-2 text-sm resize-none"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)' }} />
+                        className="input-field" />
                 </div>
 
                 {/* Acciones */}
-                <div className="flex gap-3 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
+                <div className="modal-footer">
                     <Button type="submit" loading={processing}>
                         <Save className="w-4 h-4" />
                         {esEdicion ? 'Guardar cambios' : 'Crear activo'}
