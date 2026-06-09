@@ -19,7 +19,7 @@ import 'react-toastify/dist/ReactToastify.css'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type ProductoRow = Pick<Producto, 'id' | 'codigo' | 'nombre' | 'unidad' | 'costo' | 'iva_porcentaje'>
+type ProductoRow = Pick<Producto, 'id' | 'codigo' | 'nombre' | 'unidad' | 'costo' | 'porcentaje_iva'>
 
 interface CompraStats {
     total: number
@@ -232,7 +232,7 @@ function DetalleRow({ detalle, idx, cuentas, productos, onChange, onRemove, onSe
                                             <span className="font-medium text-xs truncate" style={{ color: 'var(--text-main)' }}>{p.nombre}</span>
                                         </div>
                                         <div className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                                            {p.unidad} · ${Number(p.costo).toFixed(2)} · IVA {p.iva_porcentaje}%
+                                            {p.unidad} · ${Number(p.costo).toFixed(2)} · IVA {p.porcentaje_iva}%
                                         </div>
                                     </button>
                                 ))}
@@ -458,7 +458,7 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, o
                     codigo:          p.codigo,
                     descripcion:     p.nombre,
                     precio_unitario: String(p.costo),
-                    porcentaje_iva:  String(p.iva_porcentaje),
+                    porcentaje_iva:  String(p.porcentaje_iva),
                 }
             }),
         }))

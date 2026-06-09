@@ -68,14 +68,14 @@ class CompraController extends Controller
             ->get(['id', 'codigo', 'nombre']);
 
         $bodegas = Bodega::where('empresa_id', $empresaId)
-            ->where('activo', true)
+            ->where('estado', true)
             ->orderBy('nombre')
             ->get(['id', 'nombre', 'tipo']);
 
         $productos = Producto::where('empresa_id', $empresaId)
             ->where('estado', true)
             ->orderBy('codigo')
-            ->get(['id', 'codigo', 'nombre', 'unidad', 'costo', 'iva_porcentaje']);
+            ->get(['id', 'codigo', 'nombre', 'unidad', 'costo', 'porcentaje_iva']);
 
         return Inertia::render('Compras/Compras/Index', [
             'compras'     => $compras,
