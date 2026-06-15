@@ -30,8 +30,10 @@ export default function ClientesIndex() {
     const [estado, setEstado] = useState(filters.estado ?? '')
     const [pdfModal, setPdfModal] = useState(false)
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const isFirstRender = useRef(true)
 
     useEffect(() => {
+        if (isFirstRender.current) { isFirstRender.current = false; return }
         if (debounceRef.current) clearTimeout(debounceRef.current)
         debounceRef.current = setTimeout(() => {
             router.get(route('personas.clientes.index'), { search, estado }, { preserveState: true, replace: true })

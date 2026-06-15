@@ -37,8 +37,10 @@ export default function ActivosIndex() {
     const [estado, setEstado] = useState(filters.estado ?? '')
     const [pdfModal, setPdfModal] = useState(false)
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const isFirstRender = useRef(true)
 
     useEffect(() => {
+        if (isFirstRender.current) { isFirstRender.current = false; return }
         if (debounceRef.current) clearTimeout(debounceRef.current)
         debounceRef.current = setTimeout(() => {
             router.get(route('inventario.activos.index'), {
@@ -182,7 +184,7 @@ export default function ActivosIndex() {
                                             {activo.nombre}
                                         </td>
                                         <td className="px-3 py-2.5 whitespace-nowrap font-mono" style={{ color: 'var(--text-muted)' }}>
-                                            {activo.fecha_adquisicion}
+                                            {activo.fecha_adquisicion?.split('T')[0]}
                                         </td>
                                         <td className="px-3 py-2.5 text-right font-mono" style={{ color: 'var(--text-main)' }}>
                                             {fmt(activo.costo_adquisicion)}

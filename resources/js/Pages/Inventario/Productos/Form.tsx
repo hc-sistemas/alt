@@ -14,7 +14,7 @@ interface Props extends PageProps {
     marcas: { id: number; nombre: string }[]
     categorias: { id: number; nombre: string; categoria_padre_id: number | null }[]
     bodegas: { id: number; nombre: string; tipo: string }[]
-    cuentas: { id: number; codigo: string; descripcion: string }[]
+    cuentas: { id: number; codigo: string; nombre: string }[]
 }
 
 type Tab = 'general' | 'precios' | 'inventario' | 'contabilidad'
@@ -56,9 +56,9 @@ export default function ProductoForm() {
         porcentaje_ice: producto?.porcentaje_ice?.toString() ?? '0',
         stock_minimo: producto ? Math.round(Number(producto.stock_minimo)).toString() : '0',
         stock_maximo: producto?.stock_maximo ? Math.round(Number(producto.stock_maximo)).toString() : '',
-        cuenta_inventario: producto?.cuenta_inventario ?? '',
-        cuenta_costo_ventas: producto?.cuenta_costo_ventas ?? '',
-        cuenta_ventas: producto?.cuenta_ventas ?? '',
+        cuenta_inventario: producto?.cuenta_inventario ?? '1.1.4.1',
+        cuenta_costo_ventas: producto?.cuenta_costo_ventas ?? '5.1.1.1',
+        cuenta_ventas: producto?.cuenta_ventas ?? '4.1.1.01',
         estado: producto?.estado ?? true,
     })
 
@@ -384,7 +384,7 @@ export default function ProductoForm() {
                                     <option value="">— Sin cuenta asignada —</option>
                                     {cuentas.map(c => (
                                         <option key={c.id} value={c.codigo}>
-                                            {c.codigo} — {c.descripcion}
+                                            {c.codigo} — {c.nombre}
                                         </option>
                                     ))}
                                 </select>
@@ -401,7 +401,7 @@ export default function ProductoForm() {
                                     <option value="">— Sin cuenta asignada —</option>
                                     {cuentas.map(c => (
                                         <option key={c.id} value={c.codigo}>
-                                            {c.codigo} — {c.descripcion}
+                                            {c.codigo} — {c.nombre}
                                         </option>
                                     ))}
                                 </select>
@@ -418,7 +418,7 @@ export default function ProductoForm() {
                                     <option value="">— Sin cuenta asignada —</option>
                                     {cuentas.map(c => (
                                         <option key={c.id} value={c.codigo}>
-                                            {c.codigo} — {c.descripcion}
+                                            {c.codigo} — {c.nombre}
                                         </option>
                                     ))}
                                 </select>

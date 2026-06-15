@@ -5,7 +5,7 @@ import PageHeader from '@/Components/shared/PageHeader'
 import PdfPreviewModal from '@/Components/shared/PdfPreviewModal'
 import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
-import { Search, ArrowUpDown, SlidersHorizontal, FileText, FileSpreadsheet } from 'lucide-react'
+import { Search, ArrowUpDown, Plus, Pencil, FileText, FileSpreadsheet } from 'lucide-react'
 import type { InventarioSaldo, PaginatedData, PageProps } from '@/types'
 
 interface SaldoRow extends InventarioSaldo {
@@ -28,8 +28,10 @@ export default function KardexSaldos() {
     const [soloCriticos, setSoloCriticos] = useState(filters.solo_criticos === '1')
     const [pdfModal, setPdfModal]     = useState(false)
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const isFirstRender = useRef(true)
 
     useEffect(() => {
+        if (isFirstRender.current) { isFirstRender.current = false; return }
         if (debounceRef.current) clearTimeout(debounceRef.current)
         debounceRef.current = setTimeout(() => {
             router.get(route('inventario.kardex.saldos'), {
@@ -86,7 +88,7 @@ export default function KardexSaldos() {
                             onMouseEnter={e => (e.currentTarget.style.background = 'var(--primary-hover)')}
                             onMouseLeave={e => (e.currentTarget.style.background = 'var(--primary)')}
                         >
-                            <SlidersHorizontal className="w-4 h-4" />
+                            <Plus className="w-4 h-4" />
                             Registrar Ajuste
                         </Button>
                     </Link>
@@ -185,12 +187,12 @@ export default function KardexSaldos() {
                                                     </span>
                                                 )}
                                                 <span style={{ color: esCritico ? '#EF4444' : 'var(--text-main)' }}>
-                                                    {Number(saldo.cantidad).toFixed(4)}
+                                                    {Number(saldo.cantidad).toFixed(0)}
                                                 </span>
                                             </div>
                                         </td>
                                         <td className="px-3 py-2.5 text-right font-mono" style={{ color: 'var(--text-muted)' }}>
-                                            {Number(saldo.costo_promedio).toFixed(4)}
+                                            {Number(saldo.costo_promedio).toFixed(2)}
                                         </td>
                                         <td className="px-3 py-2.5 text-right font-mono font-medium" style={{ color: 'var(--text-main)' }}>
                                             {valorTotal.toFixed(2)}
@@ -201,7 +203,7 @@ export default function KardexSaldos() {
                                                 bodega_id: saldo.bodega_id,
                                             })}>
                                                 <Button variant="ghost" size="icon" title="Registrar ajuste">
-                                                    <SlidersHorizontal className="w-3.5 h-3.5" />
+                                                    <Pencil className="w-3.5 h-3.5" />
                                                 </Button>
                                             </Link>
                                         </td>

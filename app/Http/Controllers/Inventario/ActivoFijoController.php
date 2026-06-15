@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ActivoDepreciacion;
 use App\Models\ActivoFijo;
 use App\Models\Empresa;
+use App\Models\PlanCuenta;
 use App\Services\AuditoriaService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\RedirectResponse;
@@ -43,6 +44,11 @@ class ActivoFijoController extends Controller
     {
         return Inertia::render('Inventario/Activos/Form', [
             'activoFijo' => null,
+            'cuentas'    => PlanCuenta::where('permite_asientos', true)
+                ->where('estado', true)
+                ->where('codigo', 'like', '1.2%')
+                ->orderBy('codigo')
+                ->get(['id', 'codigo', 'nombre']),
         ]);
     }
 
@@ -56,7 +62,7 @@ class ActivoFijoController extends Controller
             'descripcion'       => ['nullable', 'string'],
             'fecha_adquisicion' => ['required', 'date'],
             'costo_adquisicion' => ['required', 'numeric', 'min:0'],
-            'valor_residual'    => ['nullable', 'numeric', 'min:0'],
+            'valor_residual'    => ['nullable', 'numeric', 'min:0', 'lt:costo_adquisicion'],
             'vida_util_anios'   => ['required', 'integer', 'min:1', 'max:100'],
             'cuenta_id'         => ['nullable', 'integer'],
         ]);
@@ -78,7 +84,7 @@ class ActivoFijoController extends Controller
 
     public function show(ActivoFijo $activoFijo): Response
     {
-        abort_if($activoFijo->empresa_id !== session('empresa_activa_id'), 403);
+        abort_if((int) $activoFijo->empresa_id !== (int) session('empresa_activa_id'), 403);
 
         return Inertia::render('Inventario/Activos/Show', [
             'activo' => $activoFijo->load([
@@ -89,16 +95,21 @@ class ActivoFijoController extends Controller
 
     public function edit(ActivoFijo $activoFijo): Response
     {
-        abort_if($activoFijo->empresa_id !== session('empresa_activa_id'), 403);
+        abort_if((int) $activoFijo->empresa_id !== (int) session('empresa_activa_id'), 403);
 
         return Inertia::render('Inventario/Activos/Form', [
             'activoFijo' => $activoFijo,
+            'cuentas'    => PlanCuenta::where('permite_asientos', true)
+                ->where('estado', true)
+                ->where('codigo', 'like', '1.2%')
+                ->orderBy('codigo')
+                ->get(['id', 'codigo', 'nombre']),
         ]);
     }
 
     public function update(Request $request, ActivoFijo $activoFijo): RedirectResponse
     {
-        abort_if($activoFijo->empresa_id !== session('empresa_activa_id'), 403);
+        abort_if((int) $activoFijo->empresa_id !== (int) session('empresa_activa_id'), 403);
 
         if ($activoFijo->estado !== 'activo') {
             abort(422, 'No se puede editar un activo dado de baja o vendido.');
@@ -112,10 +123,27 @@ class ActivoFijoController extends Controller
             'descripcion'       => ['nullable', 'string'],
             'fecha_adquisicion' => ['required', 'date'],
             'costo_adquisicion' => ['required', 'numeric', 'min:0'],
-            'valor_residual'    => ['nullable', 'numeric', 'min:0'],
+            'valor_residual'    => ['nullable', 'numeric', 'min:0', 'lt:costo_adquisicion'],
             'vida_util_anios'   => ['required', 'integer', 'min:1', 'max:100'],
             'cuenta_id'         => ['nullable', 'integer'],
         ]);
+
+        $primeraDepreciacion = ActivoDepreciacion::where('activo_id', $activoFijo->id)
+            ->orderBy('periodo_año')
+            ->orderBy('periodo_mes')
+            ->first();
+
+        if ($primeraDepreciacion) {
+            $fechaAdq   = \Carbon\Carbon::parse($data['fecha_adquisicion']);
+            $periodoAdq = $fechaAdq->year * 12 + $fechaAdq->month;
+            $primerPer  = $primeraDepreciacion->periodo_año * 12 + $primeraDepreciacion->periodo_mes;
+
+            if ($periodoAdq > $primerPer) {
+                return back()->withErrors([
+                    'fecha_adquisicion' => "No se puede establecer una fecha de adquisición posterior a la primera depreciación registrada ({$primeraDepreciacion->periodo_año}/{$primeraDepreciacion->periodo_mes}).",
+                ]);
+            }
+        }
 
         $data['valor_residual']  = $data['valor_residual'] ?? 0;
         $data['valor_en_libros'] = $data['costo_adquisicion'] - $activoFijo->depreciacion_acumulada;
@@ -131,7 +159,7 @@ class ActivoFijoController extends Controller
 
     public function destroy(ActivoFijo $activoFijo): RedirectResponse
     {
-        abort_if($activoFijo->empresa_id !== session('empresa_activa_id'), 403);
+        abort_if((int) $activoFijo->empresa_id !== (int) session('empresa_activa_id'), 403);
 
         if ($activoFijo->depreciaciones()->exists()) {
             abort(422, 'No se puede eliminar: tiene depreciaciones registradas.');
@@ -167,7 +195,7 @@ class ActivoFijoController extends Controller
 
     public function depreciar(Request $request, ActivoFijo $activoFijo): RedirectResponse
     {
-        abort_if($activoFijo->empresa_id !== session('empresa_activa_id'), 403);
+        abort_if((int) $activoFijo->empresa_id !== (int) session('empresa_activa_id'), 403);
 
         $data = $request->validate([
             'periodo_año' => ['required', 'integer', 'min:2000', 'max:2100'],
@@ -190,6 +218,35 @@ class ActivoFijoController extends Controller
 
         if ($yaExiste) {
             abort(422, "Ya existe una depreciación para {$data['periodo_año']}/{$data['periodo_mes']}.");
+        }
+
+        $hoy          = now();
+        $periodoMax   = $hoy->year * 12 + $hoy->month;
+        $nuevoPeriodo = $data['periodo_año'] * 12 + $data['periodo_mes'];
+
+        if ($nuevoPeriodo > $periodoMax) {
+            abort(422, 'No se puede registrar una depreciación para un período futuro.');
+        }
+
+        $fechaAdq    = \Carbon\Carbon::parse($activoFijo->fecha_adquisicion);
+        $anioAdq     = (int) $fechaAdq->format('Y');
+        $mesAdq      = (int) $fechaAdq->format('n');
+        $periodoAdq  = $anioAdq * 12 + $mesAdq;
+
+        if ($nuevoPeriodo < $periodoAdq) {
+            abort(422, "No se puede depreciar antes de la fecha de adquisición ({$anioAdq}/{$mesAdq}).");
+        }
+
+        $ultimaDepreciacion = ActivoDepreciacion::where('activo_id', $activoFijo->id)
+            ->orderByDesc('periodo_año')
+            ->orderByDesc('periodo_mes')
+            ->first();
+
+        if ($ultimaDepreciacion) {
+            $ultimoPeriodo = $ultimaDepreciacion->periodo_año * 12 + $ultimaDepreciacion->periodo_mes;
+            if ($nuevoPeriodo <= $ultimoPeriodo) {
+                abort(422, "Debe registrar períodos en orden cronológico. El último registrado es {$ultimaDepreciacion->periodo_año}/{$ultimaDepreciacion->periodo_mes}.");
+            }
         }
 
         $monto           = min($activoFijo->depreciacionMensual(), $disponible);

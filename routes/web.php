@@ -104,6 +104,7 @@ Route::middleware('auth')->group(function () {
         // Traslados
         Route::get('traslados', [TrasladoController::class, 'index'])->name('traslados.index');
         Route::get('traslados/nuevo', [TrasladoController::class, 'create'])->name('traslados.create');
+        Route::get('traslados/productos-en-bodega', [TrasladoController::class, 'productosEnBodega'])->name('traslados.productosEnBodega');
         Route::post('traslados', [TrasladoController::class, 'store'])->name('traslados.store');
         Route::post('traslados/{traslado}/confirmar', [TrasladoController::class, 'confirmar'])->name('traslados.confirmar');
         Route::post('traslados/{traslado}/anular', [TrasladoController::class, 'anular'])->name('traslados.anular');
@@ -111,7 +112,7 @@ Route::middleware('auth')->group(function () {
 
         // Activos Fijos
         Route::get('activos/reporte/lista', [ActivoFijoController::class, 'reporteLista'])->name('activos.reporte.lista');
-        Route::resource('activos', ActivoFijoController::class)->except(['show']);
+        Route::resource('activos', ActivoFijoController::class)->except(['show'])->parameters(['activos' => 'activoFijo']);
         Route::get('activos/{activoFijo}', [ActivoFijoController::class, 'show'])->name('activos.show');
         Route::post('activos/{activoFijo}/depreciar', [ActivoFijoController::class, 'depreciar'])->name('activos.depreciar');
     });

@@ -46,10 +46,12 @@ export default function KardexIndex() {
     const [fechaHasta, setFechaHasta] = useState(filters.fecha_hasta ?? '')
     const [tipo, setTipo]             = useState(filters.tipo ?? '')
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const isFirstRender = useRef(true)
 
     const [busqueda, setBusqueda] = useState('')
 
     useEffect(() => {
+        if (isFirstRender.current) { isFirstRender.current = false; return }
         if (!producto) return
         if (debounceRef.current) clearTimeout(debounceRef.current)
         debounceRef.current = setTimeout(() => {
@@ -64,8 +66,10 @@ export default function KardexIndex() {
         return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
     }, [bodegaId, fechaDesde, fechaHasta, tipo])
 
-    const formatNum = (n: number | string | null | undefined) =>
-        n !== null && n !== undefined ? Number(n).toFixed(4) : '—'
+    const formatCantidad = (n: number | string | null | undefined) =>
+        n !== null && n !== undefined ? Number(n).toFixed(0) : '—'
+    const formatCosto = (n: number | string | null | undefined) =>
+        n !== null && n !== undefined ? Number(n).toFixed(2) : '—'
 
     const formatFecha = (dt: string) => {
         const d = new Date(dt)
@@ -155,7 +159,7 @@ export default function KardexIndex() {
                                             {Number(s.cantidad).toFixed(2)}
                                         </p>
                                         <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                                            Costo prom.: {formatNum(s.costo_promedio)}
+                                            Costo prom.: {formatCosto(s.costo_promedio)}
                                         </p>
                                     </div>
                                 ))}
@@ -222,10 +226,10 @@ export default function KardexIndex() {
                                                         {m.bodega_origen?.nombre ?? (m.bodega_origen_id ? `#${m.bodega_origen_id}` : '—')}
                                                     </td>
                                                     <td className="px-3 py-2.5 text-right font-mono" style={{ color: 'var(--text-main)' }}>
-                                                        {Number(m.cantidad).toFixed(4)}
+                                                        {formatCantidad(m.cantidad)}
                                                     </td>
                                                     <td className="px-3 py-2.5 text-right font-mono" style={{ color: 'var(--text-muted)' }}>
-                                                        {m.costo_unitario !== null ? Number(m.costo_unitario).toFixed(4) : '—'}
+                                                        {formatCosto(m.costo_unitario)}
                                                     </td>
                                                     <td className="px-3 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>
                                                         {m.documento_tipo ?? '—'}

@@ -146,7 +146,7 @@ export default function KardexAjuste() {
                             <span style={{ color: 'var(--text-muted)' }}>Cargando...</span>
                         ) : (
                             <span className="font-bold font-mono" style={{ color: 'var(--primary)' }}>
-                                {saldoDisponible !== null ? saldoDisponible.toFixed(4) : '—'}
+                                {saldoDisponible !== null ? saldoDisponible.toFixed(0) : '—'}
                             </span>
                         )}
                     </div>
@@ -200,7 +200,7 @@ export default function KardexAjuste() {
                     {stockInsuficiente && (
                         <div className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
                             <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                            La cantidad supera el stock disponible ({saldoDisponible?.toFixed(4)}). El servidor rechazará la operación.
+                            La cantidad supera el stock disponible ({saldoDisponible?.toFixed(0)}). El servidor rechazará la operación.
                         </div>
                     )}
                 </div>
@@ -212,7 +212,7 @@ export default function KardexAjuste() {
                         <Input
                             type="number"
                             min={0}
-                            step="0.0001"
+                            step="0.01"
                             value={data.costo_unitario}
                             onChange={e => setData('costo_unitario', e.target.value)}
                             placeholder="Costo unitario del producto ingresado"

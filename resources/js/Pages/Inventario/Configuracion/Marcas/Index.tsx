@@ -21,6 +21,7 @@ export default function MarcasIndex() {
     const { marcas, filters } = usePage<Props>().props
     const [search, setSearch] = useState(filters.search ?? '')
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const isFirstRender = useRef(true)
 
     const [modalOpen, setModalOpen] = useState(false)
     const [editando, setEditando] = useState<Marca | null>(null)
@@ -30,6 +31,7 @@ export default function MarcasIndex() {
     const [errorEliminar, setErrorEliminar] = useState<string | null>(null)
 
     useEffect(() => {
+        if (isFirstRender.current) { isFirstRender.current = false; return }
         if (debounceRef.current) clearTimeout(debounceRef.current)
         debounceRef.current = setTimeout(() => {
             router.get(route('inventario.config.marcas.index'), { search }, { preserveState: true, replace: true })

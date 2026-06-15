@@ -25,6 +25,39 @@ class TrasladoController extends Controller
         private AuditoriaService $auditoria
     ) {}
 
+    public function productosEnBodega(Request $request): JsonResponse
+    {
+        $empresaId = session('empresa_activa_id');
+        $bodegaId  = $request->integer('bodega_id');
+        $query     = $request->string('q')->trim();
+
+        $resultados = InventarioSaldo::with('producto.marca')
+            ->where('bodega_id', $bodegaId)
+            ->where('cantidad', '>', 0)
+            ->whereHas('producto', function ($q) use ($empresaId, $query) {
+                $q->where('empresa_id', $empresaId)
+                  ->where('estado', true)
+                  ->when($query->isNotEmpty(), fn($q) =>
+                      $q->where(function ($q) use ($query) {
+                          $q->where('codigo', 'ilike', "%{$query}%")
+                            ->orWhere('nombre', 'ilike', "%{$query}%");
+                      })
+                  );
+            })
+            ->limit(15)
+            ->get()
+            ->map(fn($s) => [
+                'id'             => $s->producto->id,
+                'codigo'         => $s->producto->codigo,
+                'nombre'         => $s->producto->nombre,
+                'marca'          => $s->producto->marca?->nombre,
+                'requiere_serie' => $s->producto->requiere_serie,
+                'disponible'     => (float) $s->cantidad,
+            ]);
+
+        return response()->json(['resultados' => $resultados]);
+    }
+
     public function index(Request $request): Response
     {
         $empresaId = session('empresa_activa_id');

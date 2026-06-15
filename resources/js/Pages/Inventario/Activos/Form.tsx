@@ -10,25 +10,27 @@ import type { ActivoFijo, PageProps } from '@/types'
 
 interface Props extends PageProps {
     activoFijo: ActivoFijo | null
+    cuentas: { id: number; codigo: string; nombre: string }[]
 }
 
 export default function ActivoFijoForm() {
-    const { activoFijo } = usePage<Props>().props
+    const { activoFijo, cuentas } = usePage<Props>().props
     const esEdicion = !!activoFijo
 
     const { data, setData, post, put, processing, errors } = useForm({
-        codigo:            activoFijo?.codigo ?? '',
-        nombre:            activoFijo?.nombre ?? '',
-        descripcion:       activoFijo?.descripcion ?? '',
-        fecha_adquisicion: activoFijo?.fecha_adquisicion ?? '',
+        codigo: activoFijo?.codigo ?? '',
+        nombre: activoFijo?.nombre ?? '',
+        descripcion: activoFijo?.descripcion ?? '',
+        fecha_adquisicion: activoFijo?.fecha_adquisicion ?? new Date().toISOString().split('T')[0],
         costo_adquisicion: activoFijo?.costo_adquisicion?.toString() ?? '',
-        valor_residual:    activoFijo?.valor_residual?.toString() ?? '0',
-        vida_util_anios:   activoFijo?.vida_util_anios?.toString() ?? '',
-        cuenta_id:         activoFijo?.cuenta_id?.toString() ?? '',
+        valor_residual: activoFijo?.valor_residual?.toString() ?? '0',
+        vida_util_anios: activoFijo?.vida_util_anios?.toString() ?? '',
+        cuenta_id: activoFijo?.cuenta_id?.toString() ?? '45',
     })
 
-    const valorAdq  = parseFloat(data.costo_adquisicion) || 0
-    const valorRes  = parseFloat(data.valor_residual) || 0
+    const valorAdq = parseFloat(data.costo_adquisicion) || 0
+    const valorRes = parseFloat(data.valor_residual) || 0
+    const residualInvalido = valorAdq > 0 && valorRes >= valorAdq
     const vidaAnios = parseInt(data.vida_util_anios) || 0
     const depMensual = vidaAnios > 0 && valorAdq > valorRes
         ? ((valorAdq - valorRes) / (vidaAnios * 12)).toFixed(2)
@@ -39,7 +41,7 @@ export default function ActivoFijoForm() {
         const payload = {
             ...data,
             valor_residual: data.valor_residual || '0',
-            cuenta_id:      data.cuenta_id || null,
+            cuenta_id: data.cuenta_id || null,
         }
 
         if (esEdicion) {
@@ -135,6 +137,11 @@ export default function ActivoFijoForm() {
                             <Input type="number" min={0} step="0.01" value={data.valor_residual}
                                 onChange={e => setData('valor_residual', e.target.value)}
                                 placeholder="Ej: 0.00" />
+                            {residualInvalido && (
+                                <p className="text-xs text-red-400">
+                                    El valor residual no puede ser mayor o igual al costo de adquisición
+                                </p>
+                            )}
                         </div>
                         <div className="space-y-1.5">
                             <Label>Vida útil (años) *</Label>
@@ -169,22 +176,27 @@ export default function ActivoFijoForm() {
                         style={{ color: 'var(--text-main)', borderColor: 'var(--border)' }}>
                         Contabilidad
                     </h2>
-                    <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg text-xs mb-4"
-                        style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
-                        <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                        <span>Vincula este activo a una cuenta del Plan de Cuentas (ID numérico).</span>
-                    </div>
                     <div className="space-y-1.5 max-w-sm">
                         <Label>Cuenta contable</Label>
-                        <Input type="number" value={data.cuenta_id}
+                        <select
+                            value={data.cuenta_id}
                             onChange={e => setData('cuenta_id', e.target.value)}
-                            placeholder="ID de cuenta — disponible con Plan de Cuentas" />
+                            className="flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}
+                        >
+                            <option value="">— Sin cuenta asignada —</option>
+                            {cuentas.map(c => (
+                                <option key={c.id} value={c.id}>
+                                    {c.codigo} — {c.nombre}
+                                </option>
+                            ))}
+                        </select>
                     </div>
                 </section>
 
                 {/* Acciones */}
                 <div className="flex gap-3 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
-                    <Button type="submit" loading={processing}>
+                    <Button type="submit" loading={processing} disabled={processing || residualInvalido}>
                         <Save className="w-4 h-4" />
                         {esEdicion ? 'Guardar cambios' : 'Crear activo'}
                     </Button>

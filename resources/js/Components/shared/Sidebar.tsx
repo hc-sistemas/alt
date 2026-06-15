@@ -120,12 +120,21 @@ interface Props {
 
 export default function Sidebar({ collapsed, onCollapse, mobileOpen, onMobileClose }: Props) {
     const { url } = usePage<PageProps>()
-    const [openSections, setOpenSections] = useState<string[]>(['configuracion', 'inventario-config'])
+    const [openSections, setOpenSections] = useState<string[]>(() => {
+        try {
+            const saved = localStorage.getItem('sidebar_open_modules')
+            return saved ? JSON.parse(saved) : ['configuracion', 'inventario-config']
+        } catch {
+            return ['configuracion', 'inventario-config']
+        }
+    })
 
     const toggleSection = (clave: string) => {
-        setOpenSections(prev =>
-            prev.includes(clave) ? prev.filter(s => s !== clave) : [...prev, clave]
-        )
+        setOpenSections(prev => {
+            const next = prev.includes(clave) ? prev.filter(s => s !== clave) : [...prev, clave]
+            localStorage.setItem('sidebar_open_modules', JSON.stringify(next))
+            return next
+        })
     }
 
     const isActive = (href: string) => url.startsWith(href)
