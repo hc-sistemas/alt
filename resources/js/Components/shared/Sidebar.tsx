@@ -51,6 +51,7 @@ const navItems: NavItem[] = [
             { nombre: 'Kárdex', href: '/inventario/kardex/saldos' },
             { nombre: 'Traslados', href: '/inventario/traslados' },
             { nombre: 'Activos Fijos', href: '/inventario/activos' },
+            { nombre: 'Listas de Precio', href: '/inventario/listas-precio' },
         ],
         subgrupos: [
             {

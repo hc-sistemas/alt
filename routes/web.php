@@ -13,6 +13,7 @@ use App\Http\Controllers\Inventario\ProductoController;
 use App\Http\Controllers\Inventario\KardexController;
 use App\Http\Controllers\Inventario\TrasladoController;
 use App\Http\Controllers\Inventario\ActivoFijoController;
+use App\Http\Controllers\Inventario\ListaPrecioController;
 use App\Http\Controllers\Personas\ClienteController;
 use App\Http\Controllers\Personas\ProveedorController;
 use App\Http\Controllers\Personas\TransportistaController;
@@ -115,6 +116,11 @@ Route::middleware('auth')->group(function () {
         Route::resource('activos', ActivoFijoController::class)->except(['show'])->parameters(['activos' => 'activoFijo']);
         Route::get('activos/{activoFijo}', [ActivoFijoController::class, 'show'])->name('activos.show');
         Route::post('activos/{activoFijo}/depreciar', [ActivoFijoController::class, 'depreciar'])->name('activos.depreciar');
+
+        // Listas de Precio
+        Route::get('listas-precio', [ListaPrecioController::class, 'index'])->name('listas.index');
+        Route::put('listas-precio/{producto}', [ListaPrecioController::class, 'update'])->name('listas.update');
+        Route::post('listas-precio/importar', [ListaPrecioController::class, 'importar'])->name('listas.importar');
     });
 
     // Inventario — Configuración
