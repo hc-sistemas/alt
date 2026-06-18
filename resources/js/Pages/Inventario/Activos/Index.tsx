@@ -24,16 +24,17 @@ const CATEGORIA_LABELS: Record<string, string> = {
 }
 
 const ESTADO_COLORES: Record<string, string> = {
-    activo:        'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
-    dado_de_baja:  'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-    vendido:       'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400',
+    activo:       'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+    dado_de_baja: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+    vendido:      'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400',
 }
 
 const ESTADO_LABELS: Record<string, string> = {
     activo: 'Activo', dado_de_baja: 'Baja', vendido: 'Vendido',
 }
 
-function fmt(v: number | string) {
+function fmt(v: number | string | null | undefined) {
+    if (v === null || v === undefined) return '—'
     return Number(v).toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
@@ -60,24 +61,14 @@ export default function ActivosIndex() {
     async function exportarExcel() {
         const XLSX = await import('xlsx')
         const filas = activos.data.map(a => ({
-<<<<<<< Updated upstream
-            'Código':                  a.codigo,
-            'Nombre':                  a.nombre,
-            'Categoría':               CATEGORIA_LABELS[a.categoria] ?? a.categoria,
-            'Fecha Adquisición':       a.fecha_adquisicion,
-            'Valor Adquisición':       Number(a.valor_adquisicion),
-            'Depreciación Acumulada':  Number(a.depreciacion_acumulada),
-            'Valor Libro':             Number(a.valor_libro),
-            'Estado':                  a.estado,
-=======
-            'Código': a.codigo,
-            'Nombre': a.nombre,
-            'Fecha Adquisición': a.fecha_adquisicion,
-            'Costo Adquisición': Number(a.costo_adquisicion),
+            'Código':                 a.codigo,
+            'Nombre':                 a.nombre,
+            'Categoría':              CATEGORIA_LABELS[a.categoria ?? ''] ?? (a.categoria ?? '—'),
+            'Fecha Adquisición':      a.fecha_adquisicion,
+            'Costo Adquisición':      Number(a.costo_adquisicion),
             'Depreciación Acumulada': Number(a.depreciacion_acumulada),
-            'Valor en Libros': Number(a.valor_en_libros),
-            'Estado': ESTADO_LABELS[a.estado] ?? a.estado,
->>>>>>> Stashed changes
+            'Valor en Libros':        Number(a.valor_en_libros),
+            'Estado':                 ESTADO_LABELS[a.estado] ?? a.estado,
         }))
         const ws = XLSX.utils.json_to_sheet(filas)
         const wb = XLSX.utils.book_new()
@@ -119,12 +110,7 @@ export default function ActivosIndex() {
             />
 
             <div className="p-6">
-<<<<<<< Updated upstream
-                {/* Barra de filtros */}
                 <div className="flex items-center gap-3 mb-4 flex-wrap">
-=======
-                <div className={cn('flex', 'flex-wrap', 'items-center', 'gap-3', 'mb-4')}>
->>>>>>> Stashed changes
                     <Link href={route('inventario.activos.create')}>
                         <Button>
                             <Plus className={cn('w-4', 'h-4')} />
@@ -161,19 +147,14 @@ export default function ActivosIndex() {
                     </select>
 
                     <div className={cn('flex', 'items-center', 'gap-2', 'ml-auto')}>
-                        <button className={cn('flex', 'items-center', 'gap-1.5', 'px-3', 'py-1.5', 'rounded-md', 'font-medium', 'text-sm')}
+                        <a href={route('inventario.activos.index')} target="_blank" rel="noreferrer"
+                            className={cn('flex', 'items-center', 'gap-1.5', 'px-3', 'py-1.5', 'rounded-md', 'font-medium', 'text-sm')}
                             style={{ background: '#DC2626', color: 'white', transition: 'background 0.2s' }}
                             onMouseEnter={e => (e.currentTarget.style.background = '#B91C1C')}
-                            onMouseLeave={e => (e.currentTarget.style.background = '#DC2626')}
-<<<<<<< Updated upstream
-                            onClick={() => {}}>
+                            onMouseLeave={e => (e.currentTarget.style.background = '#DC2626')}>
                             <FileText className="w-4 h-4" />
-=======
-                            onClick={() => setPdfModal(true)}>
-                            <FileText className={cn('w-4', 'h-4')} />
->>>>>>> Stashed changes
                             PDF
-                        </button>
+                        </a>
                         <button className={cn('flex', 'items-center', 'gap-1.5', 'px-3', 'py-1.5', 'rounded-md', 'font-medium', 'text-sm')}
                             style={{ background: '#16A34A', color: 'white', transition: 'background 0.2s' }}
                             onMouseEnter={e => (e.currentTarget.style.background = '#15803D')}
@@ -185,22 +166,13 @@ export default function ActivosIndex() {
                     </div>
                 </div>
 
-<<<<<<< Updated upstream
                 {/* Tabla */}
                 <div className="rounded-xl border overflow-x-auto" style={{ borderColor: 'var(--border)' }}>
                     <table className="w-full text-xs">
                         <thead>
                             <tr style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
-                                {['Código', 'Nombre', 'Categoría', 'Fecha Adq.', 'Valor Adq.', 'Dep. Acumulada', 'Valor Libro', 'Estado', ''].map(h => (
+                                {['Código', 'Nombre', 'Categoría', 'Fecha Adq.', 'Costo Adq.', 'Dep. Acumulada', 'Valor Libros', 'Estado', ''].map(h => (
                                     <th key={h} className="text-left px-3 py-3 font-medium text-xs uppercase tracking-wider whitespace-nowrap"
-=======
-                <div className={cn('border', 'rounded-xl', 'overflow-x-auto')} style={{ borderColor: 'var(--border)' }}>
-                    <table className={cn('w-full', 'text-xs')}>
-                        <thead>
-                            <tr style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
-                                {['Código', 'Nombre', 'Fecha Adq.', 'Costo Adq.', 'Dep. Acumulada', 'Valor Libros', 'Estado', ''].map(h => (
-                                    <th key={h} className={cn('px-3', 'py-3', 'font-medium', 'text-xs', 'text-left', 'uppercase', 'tracking-wider', 'whitespace-nowrap')}
->>>>>>> Stashed changes
                                         style={{ color: 'var(--text-muted)' }}>{h}</th>
                                 ))}
                             </tr>
@@ -208,21 +180,16 @@ export default function ActivosIndex() {
                         <tbody>
                             {activos.data.length === 0 ? (
                                 <tr>
-<<<<<<< Updated upstream
                                     <td colSpan={9} className="text-center py-16" style={{ color: 'var(--text-muted)' }}>
                                         <p className="font-medium text-sm" style={{ color: 'var(--text-main)' }}>
-=======
-                                    <td colSpan={8} className={cn('py-16', 'text-center')} style={{ color: 'var(--text-muted)' }}>
-                                        <p className={cn('font-medium', 'text-sm')} style={{ color: 'var(--text-main)' }}>
->>>>>>> Stashed changes
                                             No hay activos registrados
                                         </p>
                                         <p>Crea el primero con "Nuevo Activo"</p>
                                     </td>
                                 </tr>
                             ) : activos.data.map(activo => {
-                                const totalDepreciable = Number(activo.valor_adquisicion) - Number(activo.valor_residual)
-                                const totDepreciado = totalDepreciable > 0 && Number(activo.valor_libro) <= Number(activo.valor_residual)
+                                const totalDepreciable = Number(activo.costo_adquisicion) - Number(activo.valor_residual)
+                                const totDepreciado = totalDepreciable > 0 && Number(activo.valor_en_libros) <= Number(activo.valor_residual)
                                 return (
                                     <tr key={activo.id}
                                         className={`border-t transition-colors ${totDepreciado ? 'bg-amber-50/40 dark:bg-amber-900/10' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'}`}
@@ -230,37 +197,25 @@ export default function ActivosIndex() {
                                         <td className={cn('px-3', 'py-2.5', 'font-mono', 'font-medium')} style={{ color: 'var(--text-muted)' }}>
                                             {activo.codigo}
                                         </td>
-<<<<<<< Updated upstream
-                                        <td className="px-3 py-2.5 max-w-[180px] truncate font-medium" style={{ color: 'var(--text-main)' }}
+                                        <td className="px-3 py-2.5 max-w-40 truncate font-medium" style={{ color: 'var(--text-main)' }}
                                             title={activo.nombre}>
                                             {activo.nombre}
                                         </td>
                                         <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>
-                                            {CATEGORIA_LABELS[activo.categoria] ?? activo.categoria}
+                                            {CATEGORIA_LABELS[activo.categoria ?? ''] ?? (activo.categoria ?? '—')}
                                         </td>
                                         <td className="px-3 py-2.5 whitespace-nowrap font-mono" style={{ color: 'var(--text-muted)' }}>
                                             {activo.fecha_adquisicion}
                                         </td>
                                         <td className="px-3 py-2.5 text-right font-mono" style={{ color: 'var(--text-main)' }}>
-                                            {fmt(activo.valor_adquisicion)}
-=======
-                                        <td className={cn('px-3', 'py-2.5', 'max-w-50', 'font-medium', 'truncate')} style={{ color: 'var(--text-main)' }}
-                                            title={activo.nombre}>
-                                            {activo.nombre}
-                                        </td>
-                                        <td className={cn('px-3', 'py-2.5', 'font-mono', 'whitespace-nowrap')} style={{ color: 'var(--text-muted)' }}>
-                                            {activo.fecha_adquisicion}
-                                        </td>
-                                        <td className={cn('px-3', 'py-2.5', 'font-mono', 'text-right')} style={{ color: 'var(--text-main)' }}>
                                             {fmt(activo.costo_adquisicion)}
->>>>>>> Stashed changes
                                         </td>
                                         <td className={cn('px-3', 'py-2.5', 'font-mono', 'text-right')} style={{ color: 'var(--text-muted)' }}>
                                             {fmt(activo.depreciacion_acumulada)}
                                         </td>
                                         <td className={cn('px-3', 'py-2.5', 'font-mono', 'font-semibold', 'text-right')}
                                             style={{ color: totDepreciado ? '#F59E0B' : 'var(--text-main)' }}>
-                                            {fmt(activo.valor_libro)}
+                                            {fmt(activo.valor_en_libros)}
                                         </td>
                                         <td className={cn('px-3', 'py-2.5')}>
                                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${ESTADO_COLORES[activo.estado] ?? ''}`}>

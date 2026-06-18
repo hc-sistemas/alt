@@ -142,6 +142,7 @@ export interface ActivoFijo {
     nombre: string
     descripcion: string | null
     codigo: string | null
+    categoria?: string
     fecha_adquisicion: string
     costo_adquisicion: number
     vida_util_anios: number
