@@ -70,12 +70,6 @@ class AsientoContableController extends Controller
             'filtros'       => $request->only([
                 'buscar','tipo','estado','ejercicio_id','fecha_desde','fecha_hasta'
             ]),
-            'stats' => [
-                'total'    => AsientoContable::where('empresa_id', $empresaId)->count(),
-                'activos'  => AsientoContable::where('empresa_id', $empresaId)->where('estado',1)->count(),
-                'anulados' => AsientoContable::where('empresa_id', $empresaId)->where('estado',0)->count(),
-                'manuales' => AsientoContable::where('empresa_id', $empresaId)->where('es_automatico',false)->count(),
-            ],
         ]);
     }
 

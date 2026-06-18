@@ -39,6 +39,7 @@ class CuentaPagarController extends Controller
         $cxp = $query->orderBy('fecha_vencimiento')->get()
             ->map(fn($c) => [
                 'id'               => $c->id,
+                'compra_id'        => $c->compra_id,
                 'proveedor'        => $c->proveedor?->razon_social,
                 'num_documento'    => $c->compra?->num_documento,
                 'monto'            => $c->monto,
@@ -64,12 +65,6 @@ class CuentaPagarController extends Controller
             'proveedores' => $proveedores,
             'bancos'      => $bancos,
             'filtros'     => $request->only(['estado', 'proveedor_id']),
-            'resumen' => [
-                'total_pendiente' => (float) CuentaPagar::where('empresa_id', $empresaId)
-                    ->whereIn('estado', ['pendiente', 'parcial'])->sum('saldo'),
-                'vencidas'   => CuentaPagar::where('empresa_id', $empresaId)->vencidas()->count(),
-                'por_vencer' => CuentaPagar::where('empresa_id', $empresaId)->porVencer(15)->count(),
-            ],
         ]);
     }
 

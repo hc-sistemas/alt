@@ -42,12 +42,6 @@ class ProveedorController extends Controller
 
         return Inertia::render('Compras/Proveedores/Index', [
             'proveedores' => $proveedores,
-            'stats' => [
-                'total'           => $proveedores->count(),
-                'nacionales'      => $proveedores->where('tipo', 'nacional')->count(),
-                'internacionales' => $proveedores->where('tipo', 'internacional')->count(),
-                'con_saldo'       => $proveedores->where('saldo_pendiente', '>', 0)->count(),
-            ],
         ]);
     }
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { router, usePage, useForm, Head, Link } from '@inertiajs/react'
 import { toast, ToastContainer } from 'react-toastify'
 import Swal from 'sweetalert2'
@@ -11,22 +11,15 @@ import { cn } from '@/lib/utils'
 import { formatFecha } from '@/utils/contabilidad'
 import {
     Plus, Search, X, FileText, Download, ChevronLeft, ChevronRight,
-    Lock, Ban, Eye, ShoppingCart, CheckCircle, AlertCircle,
-    DollarSign, Trash2, CreditCard,
+    Eye, ShoppingCart, Trash2, CreditCard,
+    Barcode, CheckCircle, XCircle,
 } from 'lucide-react'
-import type { Compra, Proveedor, CentroCosto, PlanCuenta, Bodega, PageProps, PaginatedData, Producto } from '@/types'
+import type { Compra, Proveedor, CentroCosto, PlanCuenta, Bodega, PageProps, PaginatedData, Producto, EtiquetaDetalleData } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type ProductoRow = Pick<Producto, 'id' | 'codigo' | 'nombre' | 'unidad' | 'costo' | 'iva_porcentaje'>
-
-interface CompraStats {
-    total: number
-    activas: number
-    anuladas: number
-    con_pago: number
-}
 
 interface Filtros {
     buscar?: string
@@ -43,7 +36,6 @@ interface Props extends PageProps {
     bodegas: Pick<Bodega, 'id' | 'nombre' | 'tipo'>[]
     productos: ProductoRow[]
     filtros: Filtros
-    stats: CompraStats
 }
 
 interface DetalleItem {
@@ -121,23 +113,6 @@ const TIPO_DOC_LABELS: Record<string, string> = {
     FAC: 'Factura', LIQ: 'Liquidación', TIK: 'Ticket', CON: 'Contrato', EXT: 'Exterior',
 }
 
-// ─── StatCard ─────────────────────────────────────────────────────────────────
-
-function StatCard({ label, value, icon: Icon, cls, valueCls }: {
-    label: string; value: number; icon: React.ElementType; cls: string; valueCls: string
-}) {
-    return (
-        <div className="rounded-xl border p-4 flex items-center gap-3 hover:shadow-md transition-shadow"
-            style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
-            <div className={cn('rounded-lg p-2.5 shrink-0', cls)}><Icon className="w-5 h-5" /></div>
-            <div>
-                <p className={cn('text-2xl font-bold leading-none mb-1', valueCls)}>{value}</p>
-                <p className="text-xs leading-none" style={{ color: 'var(--text-muted)' }}>{label}</p>
-            </div>
-        </div>
-    )
-}
-
 // ─── Fila detalle editable ────────────────────────────────────────────────────
 
 const DETALLE_COLS = '130px 1fr 70px 90px 80px 70px 80px 70px 80px 36px'
@@ -146,43 +121,14 @@ interface DetalleRowProps {
     detalle: DetalleItem
     idx: number
     cuentas: Props['cuentas']
-    productos: ProductoRow[]
     onChange: (idx: number, field: keyof DetalleItem, value: string | number | boolean | null) => void
     onRemove: (idx: number) => void
-    onSelect: (idx: number, p: ProductoRow | null) => void
+    onAbrirModal: (idx: number) => void
 }
 
-function DetalleRow({ detalle, idx, cuentas, productos, onChange, onRemove, onSelect }: DetalleRowProps) {
+function DetalleRow({ detalle, idx, cuentas, onChange, onRemove, onAbrirModal }: DetalleRowProps) {
     const { subtotal, iva, total } = calcDetalle(detalle)
     const inputStyle = { background: 'var(--bg-card)', color: 'var(--text-main)', borderColor: 'var(--border)' }
-
-    const [query,    setQuery]    = useState(detalle.codigo ?? '')
-    const [showDrop, setShowDrop] = useState(false)
-    const dropRef = useRef<HTMLDivElement>(null)
-
-    useEffect(() => { setQuery(detalle.codigo ?? '') }, [detalle.codigo])
-
-    const filtered = useMemo(() => {
-        if (query.length < 2) return []
-        const q = query.toLowerCase()
-        return productos.filter(p =>
-            p.codigo.toLowerCase().includes(q) || p.nombre.toLowerCase().includes(q)
-        ).slice(0, 8)
-    }, [query, productos])
-
-    function handleCodigoChange(val: string) {
-        setQuery(val)
-        onChange(idx, 'codigo', val)
-        if (detalle.producto_id) onChange(idx, 'producto_id', null)
-        setShowDrop(val.length >= 2)
-    }
-
-    function selectProducto(p: ProductoRow) {
-        onSelect(idx, p)
-        setShowDrop(false)
-    }
-
-    const vinculado = Boolean(detalle.producto_id)
 
     return (
         <div className="border-b text-xs"
@@ -191,11 +137,39 @@ function DetalleRow({ detalle, idx, cuentas, productos, onChange, onRemove, onSe
             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
 
             {/* ── Código ── */}
-            <div className="px-1 py-1.5 relative">
-                <input
-                    className={cn(
-                        'w-full px-2 py-1 border rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500',
-                        vinculado ? 'border-green-500 dark:border-green-600' : ''
+            <div className="px-1 py-1.5">
+                <button
+                    type="button"
+                    onClick={() => onAbrirModal(idx)}
+                    title={detalle.codigo ? `${detalle.codigo} — clic para cambiar` : 'Clic para buscar producto'}
+                    className="w-full flex items-center justify-between gap-1 px-2 py-1 border rounded text-xs transition-all"
+                    style={{
+                        background: detalle.producto_id
+                            ? 'color-mix(in srgb, #10b981 10%, var(--bg-main))'
+                            : 'var(--bg-main)',
+                        borderColor: detalle.producto_id ? '#10b981' : 'var(--border)',
+                        cursor: 'pointer',
+                        minHeight: '28px',
+                    }}>
+                    <span style={{
+                        fontFamily: detalle.codigo ? 'monospace' : 'inherit',
+                        fontWeight: detalle.codigo ? 'bold' : 'normal',
+                        color: detalle.codigo ? 'var(--primary)' : 'var(--text-muted)',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                    }}>
+                        {detalle.codigo || 'Buscar…'}
+                    </span>
+                    {detalle.producto_id ? (
+                        <span style={{ color: '#10b981', fontSize: '11px', flexShrink: 0 }}>✓</span>
+                    ) : (
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none"
+                             stroke="currentColor" strokeWidth="2"
+                             style={{ flexShrink: 0, color: 'var(--text-muted)' }}>
+                            <circle cx="11" cy="11" r="8"/>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                        </svg>
                     )}
                     style={inputStyle}
                     value={query}
@@ -362,10 +336,12 @@ interface NuevaCompraModalProps {
     cuentas: Props['cuentas']
     bodegas: Props['bodegas']
     productos: ProductoRow[]
+    centroMatrizId: number | null
+    bodegaDefaultId: number | null
     onClose: () => void
 }
 
-function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, onClose }: NuevaCompraModalProps) {
+function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, centroMatrizId, bodegaDefaultId, onClose }: NuevaCompraModalProps) {
     const [tab, setTab] = useState<'datos' | 'detalle' | 'centro'>('datos')
 
     const { data, setData, post, processing, errors } = useForm<{
@@ -393,8 +369,8 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, o
         gasto_no_deducible:  false,
         sustento_tributario: '',
         concepto:            '',
-        centro_costo_id:     '',
-        bodega_id:           '',
+        centro_costo_id:     centroMatrizId ? String(centroMatrizId) : '',
+        bodega_id:           bodegaDefaultId ? String(bodegaDefaultId) : '',
         detalles: [{
             producto_id: null, codigo: '',
             descripcion: '', cantidad: 1, precio_unitario: '',
@@ -469,6 +445,33 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, o
         detalles: prev.detalles.filter((_, i) => i !== idx),
     }))
 
+    // ── Modal búsqueda de producto ──────────────────────────
+    const [modalProductos,   setModalProductos]   = useState(false)
+    const [idxDetalleActivo, setIdxDetalleActivo] = useState(0)
+    const [busquedaProducto, setBusquedaProducto] = useState('')
+
+    const productosFiltrados = useMemo(() => {
+        const q = busquedaProducto.toLowerCase().trim()
+        if (!q) return productos.slice(0, 20)
+        return productos.filter(p =>
+            p.codigo.toLowerCase().includes(q) ||
+            p.nombre.toLowerCase().includes(q) ||
+            p.tipo.toLowerCase().includes(q)
+        ).slice(0, 30)
+    }, [busquedaProducto, productos])
+
+    const abrirModalProductos = (idx: number) => {
+        setIdxDetalleActivo(idx)
+        setBusquedaProducto('')
+        setModalProductos(true)
+    }
+
+    const seleccionarProducto = (p: ProductoRow) => {
+        handleSelectProducto(idxDetalleActivo, p)
+        setModalProductos(false)
+        setBusquedaProducto('')
+    }
+
     function submit(e: React.FormEvent) {
         e.preventDefault()
         post(route('compras.facturas.store'), {
@@ -485,8 +488,9 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, o
     ] as const
 
     return (
+        <>
         <div className="modal-overlay" onClick={onClose}>
-            <div className="modal-card max-w-[75vw] max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="modal-card max-w-4xl max-h-[90vh]" onClick={e => e.stopPropagation()}>
 
                 {/* Header */}
                 <div className="modal-header shrink-0">
@@ -669,10 +673,9 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, o
                                         {data.detalles.map((d, idx) => (
                                             <DetalleRow key={idx} detalle={d} idx={idx}
                                                 cuentas={cuentas}
-                                                productos={productos}
                                                 onChange={updateDetalle}
                                                 onRemove={removeDetalle}
-                                                onSelect={handleSelectProducto} />
+                                                onAbrirModal={abrirModalProductos} />
                                         ))}
                                     </div>
                                 </div>
@@ -823,75 +826,402 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, o
                 </form>
             </div>
         </div>
+
+        {/* ═══ MODAL BÚSQUEDA DE PRODUCTOS ═══ */}
+        {modalProductos && (
+            <div className="modal-overlay" style={{ zIndex: 60 }}
+                 onClick={() => setModalProductos(false)}>
+                <div className="modal-card"
+                     style={{ maxWidth: '680px', maxHeight: '85vh',
+                              display: 'flex', flexDirection: 'column' }}
+                     onClick={e => e.stopPropagation()}>
+
+                    {/* Header */}
+                    <div className="modal-header">
+                        <h2 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <svg width="18" height="18" viewBox="0 0 24 24"
+                                 fill="none" stroke="currentColor" strokeWidth="2">
+                                <circle cx="11" cy="11" r="8"/>
+                                <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                            </svg>
+                            Buscar Producto
+                        </h2>
+                        <button className="modal-close"
+                                onClick={() => setModalProductos(false)}>
+                            <X className="w-4 h-4" />
+                        </button>
+                    </div>
+
+                    {/* Buscador */}
+                    <div style={{ padding: '16px 20px',
+                                  borderBottom: '1px solid var(--border)' }}>
+                        <div className="input-with-icon">
+                            <svg className="input-icon" width="16" height="16"
+                                 viewBox="0 0 24 24" fill="none"
+                                 stroke="currentColor" strokeWidth="2">
+                                <circle cx="11" cy="11" r="8"/>
+                                <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                            </svg>
+                            <input
+                                autoFocus
+                                type="text"
+                                value={busquedaProducto}
+                                onChange={e => setBusquedaProducto(e.target.value)}
+                                placeholder="Buscar por código, nombre o tipo..."
+                                className="input-field"
+                            />
+                        </div>
+                        <p style={{ fontSize: '12px', color: 'var(--text-muted)',
+                                    marginTop: '6px' }}>
+                            {productosFiltrados.length} producto(s) encontrado(s)
+                            {busquedaProducto && ` para "${busquedaProducto}"`}
+                        </p>
+                    </div>
+
+                    {/* Lista */}
+                    <div style={{ overflowY: 'auto', flex: 1 }}>
+                        {productosFiltrados.length === 0 ? (
+                            <div style={{ textAlign: 'center', padding: '40px 20px',
+                                          color: 'var(--text-muted)' }}>
+                                <svg width="40" height="40" viewBox="0 0 24 24"
+                                     fill="none" stroke="currentColor" strokeWidth="1.5"
+                                     style={{ margin: '0 auto 12px', display: 'block',
+                                              opacity: 0.3 }}>
+                                    <circle cx="11" cy="11" r="8"/>
+                                    <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                                </svg>
+                                <p style={{ fontWeight: 600 }}>Sin resultados</p>
+                                <p style={{ fontSize: '12px', marginTop: '4px' }}>
+                                    Intenta con otro término
+                                </p>
+                            </div>
+                        ) : (
+                            <table style={{ width: '100%', borderCollapse: 'collapse',
+                                            fontSize: '13px' }}>
+                                <thead>
+                                    <tr style={{ background: 'var(--bg-main)',
+                                                 position: 'sticky', top: 0, zIndex: 1 }}>
+                                        {['Código','Nombre','Tipo','Unidad',
+                                          'Costo','PVP','IVA%',''].map(h => (
+                                            <th key={h} style={{
+                                                padding: '8px 12px',
+                                                textAlign: h === 'Costo' || h === 'PVP'
+                                                    ? 'right' : 'left',
+                                                fontWeight: 600, fontSize: '11px',
+                                                textTransform: 'uppercase',
+                                                letterSpacing: '0.5px',
+                                                color: 'var(--text-muted)',
+                                                borderBottom: '1px solid var(--border)',
+                                                whiteSpace: 'nowrap',
+                                            }}>
+                                                {h}
+                                            </th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {productosFiltrados.map((p, i) => (
+                                        <tr key={p.id}
+                                            onClick={() => seleccionarProducto(p)}
+                                            style={{
+                                                cursor: 'pointer',
+                                                borderBottom: '1px solid var(--border)',
+                                                background: i % 2 === 0
+                                                    ? 'transparent'
+                                                    : 'color-mix(in srgb, var(--bg-main) 50%, transparent)',
+                                            }}
+                                            onMouseEnter={e => {
+                                                (e.currentTarget as HTMLElement).style.background =
+                                                    'color-mix(in srgb, var(--primary) 8%, transparent)'
+                                            }}
+                                            onMouseLeave={e => {
+                                                (e.currentTarget as HTMLElement).style.background =
+                                                    i % 2 === 0 ? 'transparent'
+                                                    : 'color-mix(in srgb, var(--bg-main) 50%, transparent)'
+                                            }}>
+                                            <td style={{ padding: '9px 12px',
+                                                         fontFamily: 'monospace',
+                                                         fontWeight: 'bold',
+                                                         color: 'var(--primary)',
+                                                         whiteSpace: 'nowrap' }}>
+                                                {p.codigo}
+                                            </td>
+                                            <td style={{ padding: '9px 12px',
+                                                         color: 'var(--text-main)',
+                                                         fontWeight: 500,
+                                                         maxWidth: '220px' }}>
+                                                <div style={{ overflow: 'hidden',
+                                                              textOverflow: 'ellipsis',
+                                                              whiteSpace: 'nowrap' }}>
+                                                    {p.nombre}
+                                                </div>
+                                            </td>
+                                            <td style={{ padding: '9px 12px' }}>
+                                                <span style={{
+                                                    display: 'inline-block',
+                                                    padding: '2px 7px',
+                                                    borderRadius: '6px',
+                                                    fontSize: '11px', fontWeight: 600,
+                                                    background: p.tipo === 'servicio'
+                                                        ? '#dbeafe'
+                                                        : p.tipo === 'repuesto'
+                                                            ? '#fef3c7' : '#d1fae5',
+                                                    color: p.tipo === 'servicio'
+                                                        ? '#1e40af'
+                                                        : p.tipo === 'repuesto'
+                                                            ? '#92400e' : '#065f46',
+                                                }}>
+                                                    {p.tipo}
+                                                </span>
+                                            </td>
+                                            <td style={{ padding: '9px 12px',
+                                                         color: 'var(--text-muted)',
+                                                         fontSize: '12px' }}>
+                                                {p.unidad}
+                                            </td>
+                                            <td style={{ padding: '9px 12px',
+                                                         textAlign: 'right',
+                                                         fontFamily: 'monospace',
+                                                         fontWeight: 600,
+                                                         color: '#10b981',
+                                                         whiteSpace: 'nowrap' }}>
+                                                ${Number(p.costo).toFixed(2)}
+                                            </td>
+                                            <td style={{ padding: '9px 12px',
+                                                         textAlign: 'right',
+                                                         fontFamily: 'monospace',
+                                                         color: 'var(--text-muted)',
+                                                         fontSize: '12px',
+                                                         whiteSpace: 'nowrap' }}>
+                                                ${Number(p.pvp).toFixed(2)}
+                                            </td>
+                                            <td style={{ padding: '9px 12px',
+                                                         textAlign: 'center',
+                                                         whiteSpace: 'nowrap' }}>
+                                                <span style={{
+                                                    display: 'inline-block',
+                                                    padding: '1px 5px',
+                                                    borderRadius: '4px',
+                                                    fontSize: '11px', fontWeight: 600,
+                                                    background: '#dbeafe', color: '#1e40af',
+                                                }}>
+                                                    {p.porcentaje_iva}%
+                                                </span>
+                                            </td>
+                                            <td style={{ padding: '9px 10px',
+                                                         textAlign: 'center' }}>
+                                                <span style={{
+                                                    display: 'inline-block',
+                                                    padding: '3px 10px',
+                                                    borderRadius: '6px',
+                                                    fontSize: '11px', fontWeight: 600,
+                                                    background: 'var(--primary)',
+                                                    color: 'white',
+                                                }}>
+                                                    Seleccionar
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        )}
+                    </div>
+
+                    {/* Footer */}
+                    <div className="modal-footer"
+                         style={{ justifyContent: 'space-between',
+                                  alignItems: 'center' }}>
+                        <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                            Clic en una fila para seleccionar el producto
+                        </p>
+                        <button className="btn-secondary"
+                                onClick={() => setModalProductos(false)}>
+                            Cancelar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+        </>
     )
 }
 
-// ─── Modal Anular ─────────────────────────────────────────────────────────────
+// ─── Modal Etiquetas ──────────────────────────────────────────────────────────
 
-function AnularModal({ compra, onClose }: { compra: Compra; onClose: () => void }) {
-    const { data, setData, patch, processing, errors } = useForm({ motivo: '' })
+interface EtiquetasModalProps {
+    compra: Compra
+    onClose: () => void
+    abrirPdf: (url: string) => void
+}
 
-    function submit(e: React.FormEvent) {
-        e.preventDefault()
-        patch(route('compras.facturas.anular', compra.id), {
-            onSuccess: () => { notify.ok(`Compra ${compra.num_documento} anulada`); onClose() },
-            onError:   (errs) => notify.error('Error: ' + Object.values(errs).join(', ')),
+function EtiquetasModal({ compra, onClose, abrirPdf }: EtiquetasModalProps) {
+    const [cargando,  setCargando]  = useState(true)
+    const [detalles,  setDetalles]  = useState<EtiquetaDetalleData[]>([])
+    const [reimprimir, setReimprimir] = useState(false)
+    const [generando, setGenerando] = useState(false)
+
+    useEffect(() => {
+        fetch(route('compras.facturas.etiquetas-data', compra.id), {
+            headers: { 'Accept': 'application/json' },
         })
+            .then(async r => {
+                const json = await r.json() as { detalles?: EtiquetaDetalleData[]; error?: string }
+                if (!r.ok || json.error) throw new Error(json.error ?? `Error ${r.status}`)
+                setDetalles(json.detalles ?? [])
+                setCargando(false)
+            })
+            .catch((err: unknown) => {
+                const msg = err instanceof Error ? err.message : 'Error al cargar datos'
+                notify.error(msg)
+                onClose()
+            })
+    }, [compra.id])
+
+    function actualizar(idx: number, field: 'desde' | 'num_etiquetas', value: number) {
+        setDetalles(prev => prev.map((d, i) => {
+            if (i !== idx) return d
+            if (field === 'desde')        return { ...d, desde: value, hasta: value + d.num_etiquetas - 1 }
+            if (field === 'num_etiquetas') return { ...d, num_etiquetas: value, hasta: d.desde + value - 1 }
+            return d
+        }))
+    }
+
+    async function generar() {
+        setGenerando(true)
+        try {
+            const csrf = document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content ?? ''
+            const res  = await fetch(route('compras.facturas.etiquetas-pdf', compra.id), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf },
+                body: JSON.stringify({
+                    productos: detalles.map(d => ({
+                        producto_id:   d.producto_id,
+                        detalle_id:    d.id,
+                        codigo:        d.codigo,
+                        descripcion:   d.descripcion,
+                        desde:         d.desde,
+                        num_etiquetas: d.num_etiquetas,
+                    })),
+                    reimprimir,
+                }),
+            })
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ message: 'Error desconocido' })) as { message?: string }
+                notify.error(err.message ?? 'Error al generar PDF')
+                return
+            }
+            const blob = await res.blob()
+            const url  = URL.createObjectURL(blob)
+            abrirPdf(url)
+            onClose()
+        } catch {
+            notify.error('Error al conectar con el servidor')
+        } finally {
+            setGenerando(false)
+        }
     }
 
     return (
         <div className="modal-overlay" onClick={onClose}>
-            <div className="modal-card max-w-md" onClick={e => e.stopPropagation()}>
+            <div className="modal-card max-w-2xl" onClick={e => e.stopPropagation()}>
                 <div className="modal-header">
-                    <h2 className="text-red-600 dark:text-red-400">Anular compra</h2>
-                    <button className="modal-close" onClick={onClose}>
-                        <X className="w-4 h-4" />
-                    </button>
+                    <h2 className="flex items-center gap-2" style={{ color: 'var(--text-main)' }}>
+                        <Barcode className="w-5 h-5" style={{ color: 'var(--primary)' }} />
+                        Generar Etiquetas — {compra.num_documento}
+                    </h2>
+                    <button className="modal-close" onClick={onClose}><X className="w-4 h-4" /></button>
                 </div>
 
-                <form onSubmit={submit}>
-                <div className="modal-body">
-                    <div className="rounded-lg p-3 border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-900/10">
-                        <p className="text-sm font-medium text-red-800 dark:text-red-400">
-                            {compra.num_documento}
+                <div className="modal-body space-y-4">
+                    {cargando ? (
+                        <p className="text-center py-8 text-sm" style={{ color: 'var(--text-muted)' }}>Cargando datos…</p>
+                    ) : detalles.length === 0 ? (
+                        <p className="text-center py-8 text-sm" style={{ color: 'var(--text-muted)' }}>
+                            Esta factura no tiene productos con código registrado.
                         </p>
-                        <p className="text-xs text-red-600 dark:text-red-500 mt-0.5">
-                            Total: ${Number(compra.total).toFixed(2)}
-                        </p>
-                    </div>
+                    ) : (
+                        <>
+                            <div className="border rounded-xl overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+                                <table className="w-full text-xs">
+                                    <thead>
+                                        <tr style={{ background: 'rgba(245,158,11,0.05)', borderBottom: '1px solid var(--border)' }}>
+                                            {['Producto', 'Última etiq.', 'Desde', 'Hasta', '# Etiquetas'].map(h => (
+                                                <th key={h} className="text-center px-3 py-2 font-semibold uppercase tracking-wider"
+                                                    style={{ color: 'var(--text-muted)' }}>{h}</th>
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {detalles.map((d, i) => (
+                                            <tr key={d.id} className="border-t" style={{ borderColor: 'var(--border)' }}>
+                                                <td className="px-3 py-2">
+                                                    <p className="font-mono font-bold text-[11px]" style={{ color: 'var(--primary)' }}>{d.codigo}</p>
+                                                    <p className="text-[10px] truncate" style={{ color: 'var(--text-muted)', maxWidth: '200px' }}>{d.descripcion}</p>
+                                                </td>
+                                                <td className="px-2 py-2 text-center font-mono" style={{ color: 'var(--text-muted)' }}>
+                                                    {d.ultimo_correlativo || '—'}
+                                                </td>
+                                                <td className="px-2 py-2 text-center">
+                                                    <input type="number" min={1} value={d.desde}
+                                                        onChange={e => actualizar(i, 'desde', parseInt(e.target.value) || 1)}
+                                                        className="input-field w-20 text-center text-xs" />
+                                                </td>
+                                                <td className="px-2 py-2 text-center font-mono font-bold" style={{ color: 'var(--text-main)' }}>
+                                                    {d.hasta}
+                                                </td>
+                                                <td className="px-2 py-2 text-center">
+                                                    <input type="number" min={1} value={d.num_etiquetas}
+                                                        onChange={e => actualizar(i, 'num_etiquetas', parseInt(e.target.value) || 1)}
+                                                        className="input-field w-20 text-center text-xs" />
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
 
-                    <div className="space-y-1.5">
-                        <Label>Motivo de anulación <span className="text-red-400">*</span></Label>
-                        <textarea value={data.motivo}
-                            onChange={e => setData('motivo', e.target.value)}
-                            rows={3}
-                            className="input-field textarea-field"
-                            placeholder="Describe el motivo de la anulación (mínimo 10 caracteres)..." />
-                        {errors.motivo && <p className="text-red-400 text-xs">{errors.motivo}</p>}
-                    </div>
+                            <label className="flex items-center gap-2 cursor-pointer text-sm" style={{ color: 'var(--text-muted)' }}>
+                                <input type="checkbox" checked={reimprimir}
+                                    onChange={e => setReimprimir(e.target.checked)}
+                                    className="rounded" />
+                                Re-imprimir — no registra nuevo rango, usa los correlativos indicados
+                            </label>
+                        </>
+                    )}
                 </div>
+
                 <div className="modal-footer">
-                    <Button type="submit" disabled={processing}
-                        className="bg-red-600 hover:bg-red-700 text-white border-0">
-                        <Ban className="w-4 h-4" /> Anular compra
-                    </Button>
-                    <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
+                    {!cargando && detalles.length > 0 && (
+                        <button onClick={generar} disabled={generando} className="btn-primary flex items-center gap-2">
+                            <Barcode className="w-4 h-4" />
+                            {generando ? 'Generando…' : 'Generar Etiquetas'}
+                        </button>
+                    )}
+                    <button type="button" className="btn-secondary" onClick={onClose}>Cancelar</button>
                 </div>
-                </form>
             </div>
         </div>
     )
 }
+
+// ─── Tipo escenario anulación ─────────────────────────────────────────────────
+
+type EscenarioAnulacion =
+    | { escenario: 'A';       mensaje: string }
+    | { escenario: 'B';       mensaje: string; monto: number; banco: string }
+    | { escenario: 'C';       mensaje: string; productos_vendidos: Array<{ nombre: string; cantidad_salida: number }> }
+    | { escenario: 'ANULADA'; mensaje: string }
 
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 type ModalState =
     | { type: 'none' }
     | { type: 'nueva' }
-    | { type: 'anular'; compra: Compra }
+    | { type: 'etiquetas'; compra: Compra }
 
 export default function ComprasIndex() {
-    const { compras, proveedores, centros, cuentas, bodegas, productos, filtros, stats, flash } = usePage<Props>().props
+    const { compras, proveedores, centros, cuentas, bodegas, productos, filtros, flash } = usePage<Props>().props
 
     const [modal, setModal] = useState<ModalState>({ type: 'none' })
     const [buscar, setBuscar]       = useState(filtros.buscar ?? '')
@@ -901,6 +1231,133 @@ export default function ComprasIndex() {
     const [modalPdf, setModalPdf] = useState(false)
     const [urlPdf,   setUrlPdf]   = useState('')
     const abrirPdf = (url: string) => { setUrlPdf(url); setModalPdf(true) }
+
+    function confirmarRecepcion(c: Compra) {
+        Swal.fire({
+            ...swalBase,
+            title: '¿Confirmar recepción de mercadería?',
+            html: `<p style="color:#6b7280;font-size:14px;margin-bottom:10px">
+                       <strong>${c.num_documento}</strong> — $${Number(c.total).toFixed(2)}
+                   </p>
+                   <p style="color:#374151;font-size:13px">
+                       Esta acción activará la factura, actualizará el inventario
+                       y generará la cuenta por pagar.
+                   </p>`,
+            confirmButtonText:  'Confirmar recepción',
+            cancelButtonText:   'Cancelar',
+            confirmButtonColor: '#10b981',
+            cancelButtonColor:  '#6b7280',
+        }).then(result => {
+            if (result.isConfirmed) {
+                router.post(route('compras.facturas.activar', c.id), {}, {
+                    onSuccess: () => notify.ok(`Factura ${c.num_documento} confirmada. Inventario y CxP actualizados.`),
+                    onError:   (e)  => notify.error(Object.values(e)[0] ?? 'Error al confirmar recepción'),
+                })
+            }
+        })
+    }
+
+    async function iniciarAnulacion(c: Compra) {
+        let escData: EscenarioAnulacion
+        try {
+            const res  = await fetch(route('compras.facturas.verificar-anulacion', c.id), {
+                headers: { Accept: 'application/json' },
+            })
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ message: 'Error del servidor' })) as { message?: string }
+                notify.error(err.message ?? 'Error al verificar la compra')
+                return
+            }
+            escData = await res.json() as EscenarioAnulacion
+        } catch {
+            notify.error('Error al verificar el estado de la compra.')
+            return
+        }
+
+        if (escData.escenario === 'ANULADA') {
+            notify.error(escData.mensaje)
+            return
+        }
+
+        // ── Escenario C: bloqueado — productos con ventas ───────────────────────
+        if (escData.escenario === 'C') {
+            const listaHtml = escData.productos_vendidos
+                .map(d => `<li><b>${d.nombre}</b> — ${d.cantidad_salida} unid. vendidas</li>`)
+                .join('')
+            void Swal.fire({
+                icon: 'error',
+                title: 'No se puede anular',
+                html: `<p style="color:#6b7280;font-size:13px;margin-bottom:12px">${escData.mensaje}</p>
+                       <ul style="text-align:left;font-size:13px;color:#374151;line-height:1.8;padding-left:16px">
+                           ${listaHtml}
+                       </ul>`,
+                confirmButtonText: 'Entendido',
+                confirmButtonColor: '#ef4444',
+                showCancelButton: false,
+                customClass: { popup: 'swal-pop', title: 'swal-title', confirmButton: 'swal-confirm' },
+                didOpen: injectSwalCss,
+            })
+            return
+        }
+
+        // ── Escenario A: sin pago ───────────────────────────────────────────────
+        if (escData.escenario === 'A') {
+            const result = await Swal.fire({
+                ...swalBase,
+                title: 'Anular compra',
+                html: `<p style="color:#6b7280;font-size:14px;margin-bottom:10px">
+                           <strong>${c.num_documento}</strong> — $${Number(c.total).toFixed(2)}
+                       </p>
+                       <p style="color:#374151;font-size:13px">${escData.mensaje}</p>`,
+                input: 'textarea',
+                inputPlaceholder: 'Motivo de la anulación (mínimo 10 caracteres)…',
+                inputAttributes: { rows: '3', style: 'font-size:13px' },
+                confirmButtonText: 'Anular',
+                cancelButtonText:  'Cancelar',
+                confirmButtonColor: '#ef4444',
+                cancelButtonColor:  '#6b7280',
+                inputValidator: (v) => (!v || v.trim().length < 10) ? 'El motivo debe tener al menos 10 caracteres.' : null,
+            })
+            if (!result.isConfirmed) return
+            router.patch(route('compras.facturas.anular', c.id), { motivo: result.value as string }, {
+                onSuccess: () => notify.ok(`Compra ${c.num_documento} anulada correctamente.`),
+                onError:   (e)  => notify.error(Object.values(e)[0] ?? 'Error al anular'),
+            })
+            return
+        }
+
+        // ── Escenario B: con pago bancario ──────────────────────────────────────
+        if (escData.escenario === 'B') {
+            const result = await Swal.fire({
+                ...swalBase,
+                title: 'Anular compra con pago',
+                html: `<p style="color:#6b7280;font-size:13px;margin-bottom:12px">
+                           <strong>${c.num_documento}</strong> — $${Number(c.total).toFixed(2)}
+                       </p>
+                       <div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:10px;padding:10px 14px;margin-bottom:12px;text-align:left">
+                           <p style="font-size:12px;color:#92400e;font-weight:600;margin-bottom:4px">Pago registrado</p>
+                           <p style="font-size:12px;color:#78350f">
+                               Banco/Caja: <b>${escData.banco}</b><br>
+                               Monto a reversar: <b>$${escData.monto.toFixed(2)}</b>
+                           </p>
+                       </div>
+                       <p style="color:#374151;font-size:13px">${escData.mensaje}</p>`,
+                input: 'textarea',
+                inputPlaceholder: 'Motivo de la anulación (mínimo 10 caracteres)…',
+                inputAttributes: { rows: '3', style: 'font-size:13px' },
+                confirmButtonText: 'Anular y reversar pago',
+                cancelButtonText:  'Cancelar',
+                confirmButtonColor: '#ef4444',
+                cancelButtonColor:  '#6b7280',
+                inputValidator: (v) => (!v || v.trim().length < 10) ? 'El motivo debe tener al menos 10 caracteres.' : null,
+            })
+            if (!result.isConfirmed) return
+            router.patch(route('compras.facturas.anular', c.id), { motivo: result.value as string }, {
+                onSuccess: () => notify.ok(`Compra ${c.num_documento} anulada. Pago revertido.`),
+                onError:   (e)  => notify.error(Object.values(e)[0] ?? 'Error al anular'),
+            })
+        }
+    }
 
     useEffect(() => {
         if (flash?.success) notify.ok(flash.success)
@@ -944,79 +1401,57 @@ export default function ComprasIndex() {
                     </div>
                 </div>
                 {/* Toolbar */}
-                <div className="flex items-center gap-2 flex-wrap mb-6">
-                    <button onClick={() => setModal({ type: 'nueva' })}
-                        className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5"
-                        style={{ background: 'var(--primary)' }}>
-                        <Plus size={15} /> Nueva Factura de Compra
-                    </button>
+                <div className="flex items-center justify-between gap-3 mb-6">
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <button onClick={() => setModal({ type: 'nueva' })} className="btn-primary flex items-center gap-2 whitespace-nowrap">
+                            <Plus size={15} /> Nueva Factura de Compra
+                        </button>
 
-                    <div className="input-with-icon">
-                        <Search size={14} className="input-icon" />
-                        <input type="text" value={buscar}
-                            onChange={e => setBuscar(e.target.value)}
-                            onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
-                            placeholder="Buscar N° doc, proveedor…"
-                            className="input-field w-52" />
+                        <div className="input-with-icon">
+                            <Search size={14} className="input-icon" />
+                            <input type="text" value={buscar}
+                                onChange={e => setBuscar(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
+                                placeholder="Buscar N° doc, proveedor…"
+                                className="input-field w-52" />
+                        </div>
+
+                        <select value={estado} onChange={e => setEstado(e.target.value)}
+                            className="input-field select-field" style={{ width: 'auto' }}>
+                            <option value="">Todos los estados</option>
+                            <option value="activa">Activa</option>
+                            <option value="anulada">Anulada</option>
+                        </select>
+
+                        <input type="date" value={fechaDesde} onChange={e => setFechaDesde(e.target.value)}
+                            className="input-field" style={{ width: 'auto' }} />
+                        <input type="date" value={fechaHasta} onChange={e => setFechaHasta(e.target.value)}
+                            className="input-field" style={{ width: 'auto' }} />
+
+                        <button onClick={aplicarFiltros} className="btn-secondary whitespace-nowrap">
+                            Filtrar
+                        </button>
+                        {hayFiltros && (
+                            <button onClick={limpiar} className="btn-secondary whitespace-nowrap">
+                                Limpiar
+                            </button>
+                        )}
                     </div>
 
-                    <select value={estado} onChange={e => setEstado(e.target.value)}
-                        className="input-field select-field" style={{ width: 'auto' }}>
-                        <option value="">Todos los estados</option>
-                        <option value="activa">Activa</option>
-                        <option value="anulada">Anulada</option>
-                    </select>
-
-                    <input type="date" value={fechaDesde} onChange={e => setFechaDesde(e.target.value)}
-                        className="input-field" style={{ width: 'auto' }} />
-                    <input type="date" value={fechaHasta} onChange={e => setFechaHasta(e.target.value)}
-                        className="input-field" style={{ width: 'auto' }} />
-
-                    <button onClick={aplicarFiltros}
-                        className="px-4 py-2 rounded-xl text-sm font-semibold text-white whitespace-nowrap transition-all hover:opacity-90"
-                        style={{ background: 'var(--primary)' }}>
-                        Filtrar
-                    </button>
-                    {hayFiltros && (
-                        <button onClick={limpiar}
-                            className="px-3 py-2 rounded-xl text-sm font-medium border transition-all hover:opacity-80"
-                            style={{ color: 'var(--text-muted)', borderColor: 'var(--border)' }}>
-                            Limpiar
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => abrirPdf(
+                                `${route('compras.facturas.pdf')}?estado=${estado}&fecha_desde=${fechaDesde}&fecha_hasta=${fechaHasta}`
+                            )}
+                            className="btn-pdf flex items-center gap-2 whitespace-nowrap">
+                            <FileText size={15} /> PDF
                         </button>
-                    )}
-
-                    <div className="flex-1" />
-
-                    <button
-                        onClick={() => abrirPdf(
-                            `${route('compras.facturas.pdf')}?estado=${estado}&fecha_desde=${fechaDesde}&fecha_hasta=${fechaHasta}`
-                        )}
-                        className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90"
-                        style={{ background: '#ef4444' }}>
-                        <FileText size={15} /> PDF
-                    </button>
-                    <a href={`${route('compras.facturas.excel')}?estado=${estado}&fecha_desde=${fechaDesde}&fecha_hasta=${fechaHasta}`}
-                       className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90"
-                       style={{ background: '#16a34a' }}>
-                        <Download size={15} /> Excel
-                    </a>
+                        <a href={`${route('compras.facturas.excel')}?estado=${estado}&fecha_desde=${fechaDesde}&fecha_hasta=${fechaHasta}`}
+                           className="btn-excel flex items-center gap-2 whitespace-nowrap">
+                            <Download size={15} /> Excel
+                        </a>
+                    </div>
                 </div>
-            </div>
-
-            {/* Stats */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 px-6 py-4">
-                <StatCard label="Total registros" value={stats.total} icon={FileText}
-                    cls="bg-slate-500/15 text-slate-600 dark:text-slate-400"
-                    valueCls="text-slate-600 dark:text-slate-400" />
-                <StatCard label="Activas" value={stats.activas} icon={CheckCircle}
-                    cls="bg-green-500/15 text-green-600 dark:text-green-400"
-                    valueCls="text-green-600 dark:text-green-400" />
-                <StatCard label="Anuladas" value={stats.anuladas} icon={AlertCircle}
-                    cls="bg-red-500/15 text-red-600 dark:text-red-400"
-                    valueCls="text-red-600 dark:text-red-400" />
-                <StatCard label="Con pago" value={stats.con_pago} icon={DollarSign}
-                    cls="bg-amber-500/15 text-amber-600 dark:text-amber-400"
-                    valueCls="text-amber-600 dark:text-amber-400" />
             </div>
 
             {/* Tabla */}
@@ -1029,13 +1464,13 @@ export default function ComprasIndex() {
                         style={{ borderColor: 'var(--border)', background: 'rgba(245,158,11,0.05)', color: 'var(--text-muted)' }}>
                         <span className="col-span-2">N° Documento</span>
                         <span className="col-span-1 text-center">Fecha</span>
-                        <span className="col-span-3">Proveedor</span>
+                        <span className="col-span-2">Proveedor</span>
                         <span className="col-span-1 text-center">Tipo</span>
                         <span className="col-span-1 text-right">Subtotal</span>
                         <span className="col-span-1 text-right">IVA</span>
                         <span className="col-span-1 text-right">Total</span>
                         <span className="col-span-1 text-center">Estado</span>
-                        <span className="col-span-1 text-right">Acción</span>
+                        <span className="col-span-2 text-right">Acción</span>
                     </div>
 
                     {compras.data.length === 0 && (
@@ -1067,7 +1502,7 @@ export default function ComprasIndex() {
                                     {formatFecha(c.fecha_emision)}
                                 </p>
                             </div>
-                            <div className="col-span-3 min-w-0">
+                            <div className="col-span-2 min-w-0">
                                 <p className="text-xs truncate" style={{ color: 'var(--text-main)' }}>
                                     {(c.proveedor as Proveedor | undefined)?.razon_social ?? '—'}
                                 </p>
@@ -1079,7 +1514,7 @@ export default function ComprasIndex() {
                             </div>
                             <div className="col-span-1 text-right">
                                 <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                                    ${Number(c.subtotal_0 + c.subtotal_iva).toFixed(2)}
+                                    ${(Number(c.subtotal_0) + Number(c.subtotal_iva)).toFixed(2)}
                                 </p>
                             </div>
                             <div className="col-span-1 text-right">
@@ -1093,29 +1528,73 @@ export default function ComprasIndex() {
                                 </p>
                             </div>
                             <div className="col-span-1 flex justify-center">
-                                {c.estado === 'activa'
-                                    ? <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">Activa</span>
-                                    : <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400">Anulada</span>
-                                }
-                            </div>
-                            <div className="col-span-1 flex justify-end gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <Link href={route('compras.facturas.show', c.id)}
-                                    className="p-1.5 rounded hover:bg-blue-500/20 text-blue-500 dark:text-blue-400 transition-colors"
-                                    title="Ver detalle">
-                                    <Eye className="w-3.5 h-3.5" />
-                                </Link>
+                                {c.estado === 'pendiente' && (
+                                    <span className="inline-flex items-center justify-center w-20 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">Pendiente</span>
+                                )}
                                 {c.estado === 'activa' && (
-                                    c.tiene_pago
-                                        ? <button disabled title="Tiene pago registrado — anula el pago primero"
-                                            className="p-1.5 rounded opacity-30 cursor-not-allowed"
-                                            style={{ color: 'var(--text-muted)' }}>
-                                            <Lock className="w-3.5 h-3.5" />
-                                          </button>
-                                        : <button onClick={() => setModal({ type: 'anular', compra: c })}
+                                    <span className="inline-flex items-center justify-center w-20 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">Activa</span>
+                                )}
+                                {c.estado === 'anulada' && (
+                                    <span className="inline-flex items-center justify-center w-20 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400">Anulada</span>
+                                )}
+                            </div>
+                            <div className="col-span-2 flex justify-end items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                {c.estado === 'pendiente' && (
+                                    <>
+                                        <button
+                                            onClick={() => setModal({ type: 'etiquetas', compra: c })}
+                                            title="Generar etiquetas"
+                                            className="h-7 w-7 flex items-center justify-center rounded hover:bg-amber-500/20 transition-colors"
+                                            style={{ color: 'var(--primary)' }}>
+                                            <Barcode className="w-4 h-4" />
+                                        </button>
+                                        <button
+                                            onClick={() => confirmarRecepcion(c)}
+                                            title="Confirmar recepción manual"
+                                            className="h-7 w-7 flex items-center justify-center rounded hover:bg-green-500/20 text-green-600 dark:text-green-400 transition-colors">
+                                            <CheckCircle className="w-4 h-4" />
+                                        </button>
+                                        <Link href={route('compras.facturas.show', c.id)}
+                                            title="Ver detalle"
+                                            className="h-7 w-7 flex items-center justify-center rounded hover:bg-blue-500/20 text-blue-500 dark:text-blue-400 transition-colors">
+                                            <Eye className="w-4 h-4" />
+                                        </Link>
+                                        <button
+                                            onClick={() => iniciarAnulacion(c)}
                                             title="Anular compra"
-                                            className="p-1.5 rounded hover:bg-red-500/20 text-red-500 dark:text-red-400 transition-colors">
-                                            <Ban className="w-3.5 h-3.5" />
-                                          </button>
+                                            className="h-7 w-7 flex items-center justify-center rounded hover:bg-red-500/20 text-red-500 dark:text-red-400 transition-colors">
+                                            <XCircle className="w-4 h-4" />
+                                        </button>
+                                    </>
+                                )}
+                                {c.estado === 'activa' && (
+                                    <>
+                                        <button
+                                            onClick={() => setModal({ type: 'etiquetas', compra: c })}
+                                            title="Re-imprimir etiquetas"
+                                            className="h-7 w-7 flex items-center justify-center rounded hover:bg-amber-500/20 transition-colors"
+                                            style={{ color: 'var(--primary)' }}>
+                                            <Barcode className="w-4 h-4" />
+                                        </button>
+                                        <Link href={route('compras.facturas.show', c.id)}
+                                            title="Ver detalle"
+                                            className="h-7 w-7 flex items-center justify-center rounded hover:bg-blue-500/20 text-blue-500 dark:text-blue-400 transition-colors">
+                                            <Eye className="w-4 h-4" />
+                                        </Link>
+                                        <button
+                                            onClick={() => iniciarAnulacion(c)}
+                                            title="Anular compra activa"
+                                            className="h-7 w-7 flex items-center justify-center rounded hover:bg-red-500/20 text-red-500 dark:text-red-400 transition-colors">
+                                            <XCircle className="w-4 h-4" />
+                                        </button>
+                                    </>
+                                )}
+                                {c.estado === 'anulada' && (
+                                    <Link href={route('compras.facturas.show', c.id)}
+                                        title="Ver detalle"
+                                        className="h-7 w-7 flex items-center justify-center rounded hover:bg-blue-500/20 text-blue-500 dark:text-blue-400 transition-colors">
+                                        <Eye className="w-4 h-4" />
+                                    </Link>
                                 )}
                             </div>
                         </div>
@@ -1162,13 +1641,16 @@ export default function ComprasIndex() {
                     cuentas={cuentas}
                     bodegas={bodegas}
                     productos={productos}
+                    centroMatrizId={centros.find(c => c.codigo === 'MATRIZ')?.id ?? centros[0]?.id ?? null}
+                    bodegaDefaultId={bodegas.find(b => b.tipo === 'general')?.id ?? bodegas[0]?.id ?? null}
                     onClose={() => setModal({ type: 'none' })}
                 />
             )}
-            {modal.type === 'anular' && (
-                <AnularModal
+            {modal.type === 'etiquetas' && (
+                <EtiquetasModal
                     compra={modal.compra}
                     onClose={() => setModal({ type: 'none' })}
+                    abrirPdf={abrirPdf}
                 />
             )}
 

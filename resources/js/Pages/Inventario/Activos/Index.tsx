@@ -8,6 +8,7 @@ import { Plus, Search, Pencil, Trash2, Eye, FileText, FileSpreadsheet } from 'lu
 import { confirmarEliminar } from '@/lib/swal'
 import { toastExito, toastError } from '@/lib/toast'
 import type { ActivoFijo, PaginatedData, PageProps } from '@/types'
+import { cn } from "../../../lib/utils";
 
 interface Props extends PageProps {
     activos: PaginatedData<ActivoFijo>
@@ -59,6 +60,7 @@ export default function ActivosIndex() {
     async function exportarExcel() {
         const XLSX = await import('xlsx')
         const filas = activos.data.map(a => ({
+<<<<<<< Updated upstream
             'Código':                  a.codigo,
             'Nombre':                  a.nombre,
             'Categoría':               CATEGORIA_LABELS[a.categoria] ?? a.categoria,
@@ -67,6 +69,15 @@ export default function ActivosIndex() {
             'Depreciación Acumulada':  Number(a.depreciacion_acumulada),
             'Valor Libro':             Number(a.valor_libro),
             'Estado':                  a.estado,
+=======
+            'Código': a.codigo,
+            'Nombre': a.nombre,
+            'Fecha Adquisición': a.fecha_adquisicion,
+            'Costo Adquisición': Number(a.costo_adquisicion),
+            'Depreciación Acumulada': Number(a.depreciacion_acumulada),
+            'Valor en Libros': Number(a.valor_en_libros),
+            'Estado': ESTADO_LABELS[a.estado] ?? a.estado,
+>>>>>>> Stashed changes
         }))
         const ws = XLSX.utils.json_to_sheet(filas)
         const wb = XLSX.utils.book_new()
@@ -108,22 +119,26 @@ export default function ActivosIndex() {
             />
 
             <div className="p-6">
+<<<<<<< Updated upstream
                 {/* Barra de filtros */}
                 <div className="flex items-center gap-3 mb-4 flex-wrap">
+=======
+                <div className={cn('flex', 'flex-wrap', 'items-center', 'gap-3', 'mb-4')}>
+>>>>>>> Stashed changes
                     <Link href={route('inventario.activos.create')}>
                         <Button>
-                            <Plus className="w-4 h-4" />
+                            <Plus className={cn('w-4', 'h-4')} />
                             Nuevo Activo
                         </Button>
                     </Link>
 
                     <div className="relative">
-                        <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+                        <Search className={cn('top-2.5', 'left-3', 'absolute', 'w-4', 'h-4')} style={{ color: 'var(--text-muted)' }} />
                         <Input
                             value={search}
                             onChange={e => setSearch(e.target.value)}
                             placeholder="Código o nombre..."
-                            className="pl-9 w-52"
+                            className={cn('pl-9', 'w-52')}
                         />
                     </div>
 
@@ -145,26 +160,32 @@ export default function ActivosIndex() {
                         ))}
                     </select>
 
-                    <div className="flex items-center gap-2 ml-auto">
-                        <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium"
+                    <div className={cn('flex', 'items-center', 'gap-2', 'ml-auto')}>
+                        <button className={cn('flex', 'items-center', 'gap-1.5', 'px-3', 'py-1.5', 'rounded-md', 'font-medium', 'text-sm')}
                             style={{ background: '#DC2626', color: 'white', transition: 'background 0.2s' }}
                             onMouseEnter={e => (e.currentTarget.style.background = '#B91C1C')}
                             onMouseLeave={e => (e.currentTarget.style.background = '#DC2626')}
+<<<<<<< Updated upstream
                             onClick={() => {}}>
                             <FileText className="w-4 h-4" />
+=======
+                            onClick={() => setPdfModal(true)}>
+                            <FileText className={cn('w-4', 'h-4')} />
+>>>>>>> Stashed changes
                             PDF
                         </button>
-                        <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium"
+                        <button className={cn('flex', 'items-center', 'gap-1.5', 'px-3', 'py-1.5', 'rounded-md', 'font-medium', 'text-sm')}
                             style={{ background: '#16A34A', color: 'white', transition: 'background 0.2s' }}
                             onMouseEnter={e => (e.currentTarget.style.background = '#15803D')}
                             onMouseLeave={e => (e.currentTarget.style.background = '#16A34A')}
                             onClick={exportarExcel}>
-                            <FileSpreadsheet className="w-4 h-4" />
+                            <FileSpreadsheet className={cn('w-4', 'h-4')} />
                             Excel
                         </button>
                     </div>
                 </div>
 
+<<<<<<< Updated upstream
                 {/* Tabla */}
                 <div className="rounded-xl border overflow-x-auto" style={{ borderColor: 'var(--border)' }}>
                     <table className="w-full text-xs">
@@ -172,6 +193,14 @@ export default function ActivosIndex() {
                             <tr style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
                                 {['Código', 'Nombre', 'Categoría', 'Fecha Adq.', 'Valor Adq.', 'Dep. Acumulada', 'Valor Libro', 'Estado', ''].map(h => (
                                     <th key={h} className="text-left px-3 py-3 font-medium text-xs uppercase tracking-wider whitespace-nowrap"
+=======
+                <div className={cn('border', 'rounded-xl', 'overflow-x-auto')} style={{ borderColor: 'var(--border)' }}>
+                    <table className={cn('w-full', 'text-xs')}>
+                        <thead>
+                            <tr style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
+                                {['Código', 'Nombre', 'Fecha Adq.', 'Costo Adq.', 'Dep. Acumulada', 'Valor Libros', 'Estado', ''].map(h => (
+                                    <th key={h} className={cn('px-3', 'py-3', 'font-medium', 'text-xs', 'text-left', 'uppercase', 'tracking-wider', 'whitespace-nowrap')}
+>>>>>>> Stashed changes
                                         style={{ color: 'var(--text-muted)' }}>{h}</th>
                                 ))}
                             </tr>
@@ -179,8 +208,13 @@ export default function ActivosIndex() {
                         <tbody>
                             {activos.data.length === 0 ? (
                                 <tr>
+<<<<<<< Updated upstream
                                     <td colSpan={9} className="text-center py-16" style={{ color: 'var(--text-muted)' }}>
                                         <p className="font-medium text-sm" style={{ color: 'var(--text-main)' }}>
+=======
+                                    <td colSpan={8} className={cn('py-16', 'text-center')} style={{ color: 'var(--text-muted)' }}>
+                                        <p className={cn('font-medium', 'text-sm')} style={{ color: 'var(--text-main)' }}>
+>>>>>>> Stashed changes
                                             No hay activos registrados
                                         </p>
                                         <p>Crea el primero con "Nuevo Activo"</p>
@@ -193,9 +227,10 @@ export default function ActivosIndex() {
                                     <tr key={activo.id}
                                         className={`border-t transition-colors ${totDepreciado ? 'bg-amber-50/40 dark:bg-amber-900/10' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'}`}
                                         style={{ borderColor: 'var(--border)' }}>
-                                        <td className="px-3 py-2.5 font-mono font-medium" style={{ color: 'var(--text-muted)' }}>
+                                        <td className={cn('px-3', 'py-2.5', 'font-mono', 'font-medium')} style={{ color: 'var(--text-muted)' }}>
                                             {activo.codigo}
                                         </td>
+<<<<<<< Updated upstream
                                         <td className="px-3 py-2.5 max-w-[180px] truncate font-medium" style={{ color: 'var(--text-main)' }}
                                             title={activo.nombre}>
                                             {activo.nombre}
@@ -208,34 +243,45 @@ export default function ActivosIndex() {
                                         </td>
                                         <td className="px-3 py-2.5 text-right font-mono" style={{ color: 'var(--text-main)' }}>
                                             {fmt(activo.valor_adquisicion)}
+=======
+                                        <td className={cn('px-3', 'py-2.5', 'max-w-50', 'font-medium', 'truncate')} style={{ color: 'var(--text-main)' }}
+                                            title={activo.nombre}>
+                                            {activo.nombre}
                                         </td>
-                                        <td className="px-3 py-2.5 text-right font-mono" style={{ color: 'var(--text-muted)' }}>
+                                        <td className={cn('px-3', 'py-2.5', 'font-mono', 'whitespace-nowrap')} style={{ color: 'var(--text-muted)' }}>
+                                            {activo.fecha_adquisicion}
+                                        </td>
+                                        <td className={cn('px-3', 'py-2.5', 'font-mono', 'text-right')} style={{ color: 'var(--text-main)' }}>
+                                            {fmt(activo.costo_adquisicion)}
+>>>>>>> Stashed changes
+                                        </td>
+                                        <td className={cn('px-3', 'py-2.5', 'font-mono', 'text-right')} style={{ color: 'var(--text-muted)' }}>
                                             {fmt(activo.depreciacion_acumulada)}
                                         </td>
-                                        <td className="px-3 py-2.5 text-right font-mono font-semibold"
+                                        <td className={cn('px-3', 'py-2.5', 'font-mono', 'font-semibold', 'text-right')}
                                             style={{ color: totDepreciado ? '#F59E0B' : 'var(--text-main)' }}>
                                             {fmt(activo.valor_libro)}
                                         </td>
-                                        <td className="px-3 py-2.5">
+                                        <td className={cn('px-3', 'py-2.5')}>
                                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${ESTADO_COLORES[activo.estado] ?? ''}`}>
                                                 {ESTADO_LABELS[activo.estado] ?? activo.estado}
                                             </span>
                                         </td>
-                                        <td className="px-3 py-2.5">
-                                            <div className="flex items-center justify-end gap-1">
+                                        <td className={cn('px-3', 'py-2.5')}>
+                                            <div className={cn('flex', 'justify-end', 'items-center', 'gap-1')}>
                                                 <Link href={route('inventario.activos.show', activo.id)}>
                                                     <Button variant="ghost" size="icon" title="Ver detalle">
-                                                        <Eye className="w-3.5 h-3.5" />
+                                                        <Eye className={cn('w-3.5', 'h-3.5')} />
                                                     </Button>
                                                 </Link>
                                                 <Link href={route('inventario.activos.edit', activo.id)}>
                                                     <Button variant="ghost" size="icon" title="Editar">
-                                                        <Pencil className="w-3.5 h-3.5" />
+                                                        <Pencil className={cn('w-3.5', 'h-3.5')} />
                                                     </Button>
                                                 </Link>
                                                 <Button variant="ghost" size="icon" title="Eliminar"
                                                     onClick={() => eliminar(activo)}>
-                                                    <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                                                    <Trash2 className={cn('w-3.5', 'h-3.5', 'text-red-400')} />
                                                 </Button>
                                             </div>
                                         </td>
@@ -248,11 +294,11 @@ export default function ActivosIndex() {
 
                 {/* Paginación */}
                 {activos.last_page > 1 && (
-                    <div className="flex items-center justify-between mt-4 text-sm">
+                    <div className={cn('flex', 'justify-between', 'items-center', 'mt-4', 'text-sm')}>
                         <p style={{ color: 'var(--text-muted)' }}>
                             Mostrando {activos.from}–{activos.to} de {activos.total}
                         </p>
-                        <div className="flex gap-1">
+                        <div className={cn('flex', 'gap-1')}>
                             {activos.links.map((link, i) => (
                                 link.url ? (
                                     <Link key={i} href={link.url}
@@ -261,7 +307,7 @@ export default function ActivosIndex() {
                                         dangerouslySetInnerHTML={{ __html: link.label }}
                                     />
                                 ) : (
-                                    <span key={i} className="px-3 py-1 rounded border text-xs opacity-40"
+                                    <span key={i} className={cn('opacity-40', 'px-3', 'py-1', 'border', 'rounded', 'text-xs')}
                                         style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}
                                         dangerouslySetInnerHTML={{ __html: link.label }} />
                                 )

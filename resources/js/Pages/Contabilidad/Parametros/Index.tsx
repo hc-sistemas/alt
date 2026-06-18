@@ -20,7 +20,6 @@ interface Parametro {
 interface Props extends PageProps {
     grupos: Record<string, Parametro[]>
     cuentas: PlanCuenta[]
-    stats: { total: number; configurados: number; pendientes: number }
 }
 
 const COLORES_GRUPO: Record<string, string> = {
@@ -32,7 +31,7 @@ const COLORES_GRUPO: Record<string, string> = {
     SRI:        '#ef4444',
 }
 
-export default function ParametrosIndex({ grupos, cuentas, stats }: Props) {
+export default function ParametrosIndex({ grupos, cuentas }: Props) {
     usePage<Props>()
 
     const [valores, setValores] = useState<Record<string, number | null>>(() => {
@@ -168,22 +167,6 @@ export default function ParametrosIndex({ grupos, cuentas, stats }: Props) {
                             Autoconfigurar
                         </button>
                     </div>
-                </div>
-
-                {/* STATS */}
-                <div className="grid grid-cols-3 gap-4">
-                    {[
-                        { label: 'Total',        value: stats.total,        color: '#3b82f6' },
-                        { label: 'Configurados', value: totalConfigurados,  color: '#10b981' },
-                        { label: 'Pendientes',   value: totalPendientes,    color: '#ef4444' },
-                    ].map(({ label, value, color }) => (
-                        <div key={label} className="rounded-2xl p-4 border"
-                             style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
-                            <p className="text-xs font-medium uppercase tracking-wider mb-1"
-                               style={{ color: 'var(--text-muted)' }}>{label}</p>
-                            <p className="text-2xl font-bold" style={{ color }}>{value}</p>
-                        </div>
-                    ))}
                 </div>
 
                 {/* Banner pendientes */}

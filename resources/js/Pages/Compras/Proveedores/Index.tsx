@@ -10,23 +10,15 @@ import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
 import {
     Plus, Pencil, ToggleLeft, ToggleRight, Search, X,
-    FileText, Download, Users, Globe, Building2, AlertCircle, ShoppingCart,
+    FileText, Download, Users, ShoppingCart,
 } from 'lucide-react'
 import type { Proveedor, PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface ProveedorStats {
-    total: number
-    nacionales: number
-    internacionales: number
-    con_saldo: number
-}
-
 interface Props extends PageProps {
     proveedores: Proveedor[]
-    stats: ProveedorStats
 }
 
 // ─── Notify ───────────────────────────────────────────────────────────────────
@@ -58,23 +50,6 @@ const swalBase = {
     showCancelButton: true, reverseButtons: true, focusCancel: true,
     customClass: { popup: 'swal-pop', title: 'swal-title', confirmButton: 'swal-confirm', cancelButton: 'swal-cancel' },
     didOpen: injectSwalCss,
-}
-
-// ─── StatCard ─────────────────────────────────────────────────────────────────
-
-function StatCard({ label, value, icon: Icon, cls, valueCls }: {
-    label: string; value: number | string; icon: React.ElementType; cls: string; valueCls: string
-}) {
-    return (
-        <div className="rounded-xl border p-4 flex items-center gap-3 hover:shadow-md transition-shadow"
-            style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
-            <div className={cn('rounded-lg p-2.5 shrink-0', cls)}><Icon className="w-5 h-5" /></div>
-            <div className="min-w-0">
-                <p className={cn('text-2xl font-bold leading-none mb-1', valueCls)}>{value}</p>
-                <p className="text-xs leading-none" style={{ color: 'var(--text-muted)' }}>{label}</p>
-            </div>
-        </div>
-    )
 }
 
 // ─── Badge Tipo ───────────────────────────────────────────────────────────────
@@ -141,7 +116,7 @@ function ProveedorModal({ proveedor, onClose }: ModalProps) {
 
     return (
         <div className="modal-overlay" onClick={onClose}>
-            <div className="modal-card max-w-xl overflow-y-auto max-h-[90vh]" onClick={e => e.stopPropagation()}>
+            <div className="modal-card max-w-2xl" onClick={e => e.stopPropagation()}>
 
                 {/* Header */}
                 <div className="modal-header">
@@ -323,7 +298,7 @@ function ProveedorModal({ proveedor, onClose }: ModalProps) {
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function ProveedoresIndex() {
-    const { proveedores, stats, flash } = usePage<Props>().props
+    const { proveedores, flash } = usePage<Props>().props
 
     const [busqueda, setBusqueda] = useState('')
     const [modal, setModal] = useState<{ open: boolean; proveedor?: Proveedor }>({ open: false })
@@ -398,51 +373,33 @@ export default function ProveedoresIndex() {
                     </div>
                 </div>
                 {/* Toolbar */}
-                <div className="flex items-center gap-2 flex-wrap mb-6">
-                    <button onClick={() => setModal({ open: true })}
-                        className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5"
-                        style={{ background: 'var(--primary)' }}>
-                        <Plus size={15} /> Nuevo Proveedor
-                    </button>
+                <div className="flex items-center justify-between gap-3 mb-6">
+                    <div className="flex items-center gap-2">
+                        <button onClick={() => setModal({ open: true })} className="btn-primary flex items-center gap-2 whitespace-nowrap">
+                            <Plus size={15} /> Nuevo Proveedor
+                        </button>
 
-                    <div className="input-with-icon">
-                        <Search size={14} className="input-icon" />
-                        <input type="text" value={busqueda}
-                            onChange={e => setBusqueda(e.target.value)}
-                            placeholder="Buscar por nombre, RUC, email…"
-                            className="input-field w-52" />
+                        <div className="input-with-icon">
+                            <Search size={14} className="input-icon" />
+                            <input type="text" value={busqueda}
+                                onChange={e => setBusqueda(e.target.value)}
+                                placeholder="Buscar por nombre, RUC, email…"
+                                className="input-field w-52" />
+                        </div>
                     </div>
 
-                    <div className="flex-1" />
-
-                    <button
-                        onClick={() => abrirPdf(route('compras.proveedores.pdf'))}
-                        className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90"
-                        style={{ background: '#ef4444' }}>
-                        <FileText size={15} /> PDF
-                    </button>
-                    <a href={route('compras.proveedores.excel')}
-                       className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90"
-                       style={{ background: '#16a34a' }}>
-                        <Download size={15} /> Excel
-                    </a>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => abrirPdf(route('compras.proveedores.pdf'))}
+                            className="btn-pdf flex items-center gap-2 whitespace-nowrap">
+                            <FileText size={15} /> PDF
+                        </button>
+                        <a href={route('compras.proveedores.excel')}
+                           className="btn-excel flex items-center gap-2 whitespace-nowrap">
+                            <Download size={15} /> Excel
+                        </a>
+                    </div>
                 </div>
-            </div>
-
-            {/* Stats */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 px-6 py-4">
-                <StatCard label="Total" value={stats.total} icon={Users}
-                    cls="bg-slate-500/15 text-slate-600 dark:text-slate-400"
-                    valueCls="text-slate-600 dark:text-slate-400" />
-                <StatCard label="Nacionales" value={stats.nacionales} icon={Building2}
-                    cls="bg-blue-500/15 text-blue-600 dark:text-blue-400"
-                    valueCls="text-blue-600 dark:text-blue-400" />
-                <StatCard label="Internacionales" value={stats.internacionales} icon={Globe}
-                    cls="bg-purple-500/15 text-purple-600 dark:text-purple-400"
-                    valueCls="text-purple-600 dark:text-purple-400" />
-                <StatCard label="Con saldo" value={stats.con_saldo} icon={AlertCircle}
-                    cls="bg-orange-500/15 text-orange-600 dark:text-orange-400"
-                    valueCls="text-orange-600 dark:text-orange-400" />
             </div>
 
             {/* Tabla */}

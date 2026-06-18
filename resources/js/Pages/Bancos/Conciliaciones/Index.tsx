@@ -174,12 +174,13 @@ export default function ConciliacionesIndex() {
                         <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Cuadre de saldos banco vs sistema</p>
                     </div>
                 </div>
-                <div className="flex items-center gap-2 flex-wrap mb-6">
-                    <button onClick={() => setShowModal(true)}
-                        className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5"
-                        style={{ background: 'var(--primary)' }}>
-                        <Plus size={15} /> Nueva Conciliación
-                    </button>
+                {/* Toolbar */}
+                <div className="flex items-center justify-between gap-3 mb-6">
+                    <div className="flex items-center gap-2">
+                        <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-2 whitespace-nowrap">
+                            <Plus size={15} /> Nueva Conciliación
+                        </button>
+                    </div>
                 </div>
             </div>
 

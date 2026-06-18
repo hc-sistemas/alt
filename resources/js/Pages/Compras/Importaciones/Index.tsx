@@ -21,17 +21,9 @@ interface ImportacionRow extends Omit<Importacion, 'proveedor'> {
     proveedor: string | null
 }
 
-interface ImportacionStats {
-    total: number
-    en_transito: number
-    en_aduana: number
-    liquidadas: number
-}
-
 interface Props extends PageProps {
     importaciones: ImportacionRow[]
     proveedores: Pick<Proveedor, 'id' | 'razon_social' | 'pais' | 'divisa'>[]
-    stats: ImportacionStats
 }
 
 // ─── Notify ───────────────────────────────────────────────────────────────────
@@ -87,23 +79,6 @@ function EstadoBadge({ estado }: { estado: string }) {
     )
 }
 
-// ─── StatCard ─────────────────────────────────────────────────────────────────
-
-function StatCard({ label, value, icon: Icon, cls, valueCls }: {
-    label: string; value: number; icon: React.ElementType; cls: string; valueCls: string
-}) {
-    return (
-        <div className="rounded-xl border p-4 flex items-center gap-3 hover:shadow-md transition-shadow"
-            style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
-            <div className={cn('rounded-lg p-2.5 shrink-0', cls)}><Icon className="w-5 h-5" /></div>
-            <div>
-                <p className={cn('text-2xl font-bold leading-none mb-1', valueCls)}>{value}</p>
-                <p className="text-xs leading-none" style={{ color: 'var(--text-muted)' }}>{label}</p>
-            </div>
-        </div>
-    )
-}
-
 // ─── Modal Crear ──────────────────────────────────────────────────────────────
 
 function CrearModal({ proveedores, onClose }: {
@@ -133,7 +108,7 @@ function CrearModal({ proveedores, onClose }: {
 
     return (
         <div className="modal-overlay" onClick={onClose}>
-            <div className="modal-card max-w-lg overflow-y-auto max-h-[90vh]" onClick={e => e.stopPropagation()}>
+            <div className="modal-card max-w-2xl" onClick={e => e.stopPropagation()}>
                 <div className="modal-header">
                     <h2>Nueva importación</h2>
                     <button className="modal-close" onClick={onClose}>
@@ -265,7 +240,7 @@ function ActualizarModal({ importacion, onClose }: {
 
     return (
         <div className="modal-overlay" onClick={onClose}>
-            <div className="modal-card max-w-lg overflow-y-auto max-h-[90vh]" onClick={e => e.stopPropagation()}>
+            <div className="modal-card max-w-2xl" onClick={e => e.stopPropagation()}>
                 <div className="modal-header">
                     <div>
                         <h2>Actualizar importación</h2>
@@ -375,7 +350,7 @@ function LiquidarModal({ importacion, onClose }: {
 
     return (
         <div className="modal-overlay" onClick={onClose}>
-            <div className="modal-card max-w-lg overflow-y-auto max-h-[90vh]" onClick={e => e.stopPropagation()}>
+            <div className="modal-card max-w-2xl" onClick={e => e.stopPropagation()}>
                 <div className="modal-header">
                     <div>
                         <h2>Liquidar importación</h2>
@@ -482,7 +457,7 @@ type ModalState =
     | { type: 'liquidar'; importacion: ImportacionRow }
 
 export default function ImportacionesIndex() {
-    const { importaciones, proveedores, stats, flash } = usePage<Props>().props
+    const { importaciones, proveedores, flash } = usePage<Props>().props
 
     const [modal, setModal] = useState<ModalState>({ type: 'none' })
 
@@ -512,29 +487,14 @@ export default function ImportacionesIndex() {
                         </p>
                     </div>
                 </div>
-                <div className="flex items-center gap-2 flex-wrap mb-6">
-                    <button onClick={() => setModal({ type: 'crear' })}
-                        className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5"
-                        style={{ background: 'var(--primary)' }}>
-                        <Plus size={15} /> Nueva Importación
-                    </button>
+                {/* Toolbar */}
+                <div className="flex items-center justify-between gap-3 mb-6">
+                    <div className="flex items-center gap-2">
+                        <button onClick={() => setModal({ type: 'crear' })} className="btn-primary flex items-center gap-2 whitespace-nowrap">
+                            <Plus size={15} /> Nueva Importación
+                        </button>
+                    </div>
                 </div>
-            </div>
-
-            {/* Stats */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 px-6 py-4">
-                <StatCard label="Total" value={stats.total} icon={Package}
-                    cls="bg-slate-500/15 text-slate-600 dark:text-slate-400"
-                    valueCls="text-slate-600 dark:text-slate-400" />
-                <StatCard label="En tránsito" value={stats.en_transito} icon={Plane}
-                    cls="bg-blue-500/15 text-blue-600 dark:text-blue-400"
-                    valueCls="text-blue-600 dark:text-blue-400" />
-                <StatCard label="En aduana" value={stats.en_aduana} icon={Anchor}
-                    cls="bg-yellow-500/15 text-yellow-600 dark:text-yellow-400"
-                    valueCls="text-yellow-600 dark:text-yellow-400" />
-                <StatCard label="Liquidadas" value={stats.liquidadas} icon={CheckCircle2}
-                    cls="bg-green-500/15 text-green-600 dark:text-green-400"
-                    valueCls="text-green-600 dark:text-green-400" />
             </div>
 
             {/* Tabla */}

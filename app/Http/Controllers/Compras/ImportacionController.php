@@ -48,12 +48,6 @@ class ImportacionController extends Controller
         return Inertia::render('Compras/Importaciones/Index', [
             'importaciones' => $importaciones,
             'proveedores'   => $proveedores,
-            'stats' => [
-                'total'       => $importaciones->count(),
-                'en_transito' => $importaciones->where('estado', 'en_transito')->count(),
-                'en_aduana'   => $importaciones->where('estado', 'en_aduana')->count(),
-                'liquidadas'  => $importaciones->where('estado', 'liquidada')->count(),
-            ],
         ]);
     }
 
@@ -162,7 +156,7 @@ class ImportacionController extends Controller
                         / $detalle->cantidad;
 
                     $saldo = InventarioSaldo::where('producto_id', $detalle->producto_id)->first();
-                    if ($saldo && $saldo->cantidad > 0) {
+                    if ($saldo && $saldo->stock_actual > 0) {
                         $saldo->increment('costo_promedio', round($costoPorUnitario, 4));
                     }
                 }

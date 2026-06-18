@@ -33,6 +33,17 @@ use App\Http\Controllers\Bancos\DatafastController;
 use App\Http\Controllers\Bancos\ConciliacionController;
 use App\Http\Controllers\Bancos\ChequesController;
 use App\Http\Controllers\Bancos\BancoReporteController;
+use App\Http\Controllers\Ventas\AprobacionController;
+use App\Http\Controllers\Ventas\FacturaController;
+use App\Http\Controllers\Ventas\ProformaController;
+use App\Http\Controllers\Ventas\PrefacturaController;
+use App\Http\Controllers\Ventas\NotaCreditoController;
+use App\Http\Controllers\Ventas\RetencionController;
+use App\Http\Controllers\Ventas\GuiaRemisionController;
+use App\Http\Controllers\Ventas\CuentaCobrarController;
+use App\Http\Controllers\RRHH\ColaboradorController;
+use App\Http\Controllers\RRHH\AsistenciaController;
+use App\Http\Controllers\RRHH\HorasExtrasController;
 use Illuminate\Support\Facades\Route;
 
 // Auth
@@ -141,9 +152,13 @@ Route::middleware('auth')->group(function () {
         Route::post('/',                 [CompraController::class, 'store']) ->name('store');
         Route::get('/pdf',               [CompraController::class, 'pdf'])   ->name('pdf');
         Route::get('/excel',             [CompraController::class, 'excel']) ->name('excel');
-        Route::get('/{compra}',          [CompraController::class, 'show'])        ->name('show');
-        Route::get('/{compra}/pdf',      [CompraController::class, 'pdfIndividual'])->name('pdf-individual');
-        Route::patch('/{compra}/anular', [CompraController::class, 'anular'])       ->name('anular');
+        Route::get('/{compra}',                    [CompraController::class, 'show'])              ->name('show');
+        Route::get('/{compra}/pdf',               [CompraController::class, 'pdfIndividual'])    ->name('pdf-individual');
+        Route::patch('/{compra}/anular',          [CompraController::class, 'anular'])            ->name('anular');
+        Route::post('/{compra}/activar',          [CompraController::class, 'activar'])           ->name('activar');
+        Route::get('/{compra}/etiquetas-data',      [CompraController::class, 'etiquetasData'])       ->name('etiquetas-data');
+        Route::post('/{compra}/etiquetas-pdf',     [CompraController::class, 'generarEtiquetasPdf']) ->name('etiquetas-pdf');
+        Route::get('/{compra}/verificar-anulacion',[CompraController::class, 'verificarAnulacion'])  ->name('verificar-anulacion');
     });
 
     // Compras - CxP
@@ -275,5 +290,31 @@ Route::middleware('auth')->group(function () {
         Route::get('/estado-cuenta',   [BancoReporteController::class, 'estadoCuenta'])      ->name('estado-cuenta');
         Route::get('/movimientos',     [BancoReporteController::class, 'reporteMovimientos']) ->name('movimientos');
         Route::get('/caja-chica',      [BancoReporteController::class, 'reporteCajaChica'])  ->name('caja-chica');
+    });
+
+    // ── RRHH ──────────────────────────────────────────────────────────────────
+    Route::prefix('rrhh')->name('rrhh.')->group(function () {
+
+        // Colaboradores
+        Route::prefix('colaboradores')->name('colaboradores.')->group(function () {
+            Route::get('/',                          [ColaboradorController::class, 'index'])  ->name('index');
+            Route::post('/',                         [ColaboradorController::class, 'store'])  ->name('store');
+            Route::put('/{colaborador}',             [ColaboradorController::class, 'update']) ->name('update');
+            Route::patch('/{colaborador}/toggle',    [ColaboradorController::class, 'toggle']) ->name('toggle');
+        });
+
+        // Asistencia — Timbre digital
+        Route::prefix('asistencia')->name('asistencia.')->group(function () {
+            Route::get('/',        [AsistenciaController::class, 'index'])           ->name('index');
+            Route::post('/entrada',[AsistenciaController::class, 'registrarEntrada'])->name('entrada');
+            Route::post('/salida', [AsistenciaController::class, 'registrarSalida']) ->name('salida');
+        });
+
+        // Horas Extras — Panel de aprobación
+        Route::prefix('horas-extras')->name('horas-extras.')->group(function () {
+            Route::get('/',                            [HorasExtrasController::class, 'index'])   ->name('index');
+            Route::patch('/{horaExtra}/aprobar',       [HorasExtrasController::class, 'aprobar']) ->name('aprobar');
+            Route::patch('/{horaExtra}/rechazar',      [HorasExtrasController::class, 'rechazar'])->name('rechazar');
+        });
     });
 });

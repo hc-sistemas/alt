@@ -1,12 +1,11 @@
 import { useState, useEffect, useMemo } from 'react'
 import { router, usePage, useForm, Head } from '@inertiajs/react'
 import { toast, ToastContainer } from 'react-toastify'
-import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
 import { cn } from '@/lib/utils'
 import {
-    Plus, X, CheckCircle, AlertTriangle, Ban,
-    CreditCard, DollarSign, Clock
+    Plus, X, CheckCircle, XCircle,
+    CreditCard
 } from 'lucide-react'
 import type { BancoCaja, PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
@@ -29,19 +28,10 @@ interface Cheque {
     movimiento_id: number | null
 }
 
-interface Stats {
-    total: number
-    emitidos: number
-    cobrados: number
-    protestados: number
-    monto_total: number
-}
-
 interface Props extends PageProps {
     cheques: Cheque[]
     bancos: Pick<BancoCaja, 'id' | 'nombre' | 'num_cuenta'>[]
     filtros: { estado?: string; banco_caja_id?: string; buscar?: string }
-    stats: Stats
 }
 
 // ─── Notify / SweetAlert ──────────────────────────────────────────────────────
@@ -51,18 +41,6 @@ const notify = {
     success: (msg: string) => toast.success(msg, { icon: () => '✅', style: { ...S, background: 'linear-gradient(135deg,#10b981,#059669)' } }),
     warning: (msg: string) => toast.info(msg,    { icon: () => '⚠️', style: { ...S, background: 'linear-gradient(135deg,#f59e0b,#d97706)' } }),
     error:   (msg: string) => toast.error(msg,   { icon: () => '❌', autoClose: 6000, style: { ...S, background: 'linear-gradient(135deg,#ef4444,#dc2626)' } }),
-}
-
-const SWAL_CSS = `.swal-pop{border-radius:20px!important;padding:28px!important;box-shadow:0 25px 60px rgba(0,0,0,.25)!important}.swal-title{font-size:1.1rem!important;font-weight:700!important}.swal-confirm,.swal-cancel{border-radius:10px!important;padding:10px 20px!important;font-weight:600!important}`
-function injectCss() {
-    if (document.getElementById('swal-cheques')) return
-    const s = document.createElement('style'); s.id = 'swal-cheques'; s.textContent = SWAL_CSS
-    document.head.appendChild(s)
-}
-const swalBase = {
-    showCancelButton: true, reverseButtons: true, focusCancel: true,
-    customClass: { popup: 'swal-pop', title: 'swal-title', confirmButton: 'swal-confirm', cancelButton: 'swal-cancel' },
-    didOpen: injectCss,
 }
 
 const fmt = (n: number) => '$' + Number(n ?? 0).toLocaleString('es-EC', { minimumFractionDigits: 2 })
@@ -106,7 +84,7 @@ function NuevoModal({ bancos, onClose }: {
 
     return (
         <div className="modal-overlay" onClick={onClose}>
-            <div className="modal-card max-w-lg" onClick={e => e.stopPropagation()}>
+            <div className="modal-card max-w-xl" onClick={e => e.stopPropagation()}>
 
                 {/* Header */}
                 <div className="modal-header">
@@ -235,12 +213,119 @@ function NuevoModal({ bancos, onClose }: {
     )
 }
 
+// ─── Modal Cambio de Estado ───────────────────────────────────────────────────
+
+function CambioEstadoModal({ cheque, estadoNuevo, onClose }: {
+    cheque: Cheque
+    estadoNuevo: 'cobrado' | 'protestado'
+    onClose: () => void
+}) {
+    const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0])
+    const [obs, setObs] = useState('')
+    const [processing, setProcessing] = useState(false)
+
+    function confirmarCambioEstado() {
+        if (estadoNuevo === 'protestado' && !obs.trim()) {
+            notify.error('El motivo de protesta es obligatorio')
+            return
+        }
+        setProcessing(true)
+        router.patch(route('bancos.cheques.estado', cheque.id), {
+            estado: estadoNuevo,
+            ...(estadoNuevo === 'cobrado' ? { fecha_cobro: fecha } : {}),
+            observacion: obs,
+        }, {
+            onSuccess: () => {
+                estadoNuevo === 'cobrado'
+                    ? notify.success(`Cheque N° ${cheque.numero} cobrado`)
+                    : notify.warning(`Cheque N° ${cheque.numero} protestado`)
+                onClose()
+            },
+            onError: () => { notify.error('Error al actualizar'); setProcessing(false) },
+            onFinish: () => setProcessing(false),
+        })
+    }
+
+    return (
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal-card max-w-md" onClick={e => e.stopPropagation()}>
+
+                <div className="modal-header">
+                    <h2 className="flex items-center gap-2">
+                        {estadoNuevo === 'cobrado'
+                            ? <><CheckCircle className="w-5 h-5 text-green-500" /> Confirmar cobro</>
+                            : <><XCircle className="w-5 h-5 text-red-500" /> Marcar protestado</>
+                        }
+                    </h2>
+                    <button className="modal-close" onClick={onClose}><X className="w-4 h-4" /></button>
+                </div>
+
+                {/* Resumen cheque */}
+                <div className="mx-6 mt-4 rounded-lg p-3 space-y-1.5"
+                    style={{
+                        background: estadoNuevo === 'cobrado' ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)',
+                        border: `1px solid ${estadoNuevo === 'cobrado' ? 'rgba(16,185,129,0.25)' : 'rgba(239,68,68,0.25)'}`,
+                    }}>
+                    <div className="flex justify-between text-sm">
+                        <span style={{ color: 'var(--text-muted)' }}>Beneficiario</span>
+                        <span className="font-semibold" style={{ color: 'var(--text-main)' }}>{cheque.beneficiario}</span>
+                    </div>
+                    <div className="flex justify-between text-sm font-bold border-t pt-1.5"
+                        style={{
+                            borderColor: estadoNuevo === 'cobrado' ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)',
+                            color: estadoNuevo === 'cobrado' ? '#059669' : '#dc2626',
+                        }}>
+                        <span>Monto</span>
+                        <span>{fmt(cheque.monto)}</span>
+                    </div>
+                </div>
+
+                <div className="modal-body">
+                    {estadoNuevo === 'cobrado' && (
+                        <div className="space-y-1.5">
+                            <label className="input-label">Fecha de cobro <span className="text-red-400">*</span></label>
+                            <input type="date" value={fecha} onChange={e => setFecha(e.target.value)}
+                                className="input-field" />
+                        </div>
+                    )}
+                    <div className="space-y-1.5">
+                        <label className="input-label">
+                            {estadoNuevo === 'cobrado' ? 'Observación' : 'Motivo de protesta'}
+                            {estadoNuevo === 'protestado' && <span className="text-red-400"> *</span>}
+                        </label>
+                        <textarea value={obs} onChange={e => setObs(e.target.value)}
+                            rows={estadoNuevo === 'protestado' ? 3 : 2}
+                            className="input-field textarea-field"
+                            placeholder={estadoNuevo === 'cobrado' ? 'Opcional...' : 'Describe el motivo del protesto...'} />
+                    </div>
+                </div>
+
+                <div className="modal-footer" style={{ justifyContent: 'space-between' }}>
+                    <button onClick={confirmarCambioEstado} disabled={processing}
+                        className="btn-primary flex items-center gap-2"
+                        style={{
+                            background: estadoNuevo === 'cobrado' ? '#059669' : '#dc2626',
+                            boxShadow: 'none',
+                        }}>
+                        {estadoNuevo === 'cobrado'
+                            ? <><CheckCircle size={15} /> Confirmar cobro</>
+                            : <><XCircle size={15} /> Marcar protestado</>
+                        }
+                    </button>
+                    <button onClick={onClose} className="btn-secondary">Cancelar</button>
+                </div>
+            </div>
+        </div>
+    )
+}
+
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function ChequesIndex() {
-    const { cheques, bancos, filtros, stats, flash } = usePage<Props>().props
+    const { cheques, bancos, filtros, flash } = usePage<Props>().props
 
     const [showModal, setShowModal] = useState(false)
+    const [estadoModal, setEstadoModal] = useState<{ cheque: Cheque; estado: 'cobrado' | 'protestado' } | null>(null)
     const [buscar, setBuscar] = useState(filtros.buscar ?? '')
     const [estado, setEstado] = useState(filtros.estado ?? '')
     const [bancoId, setBancoId] = useState(filtros.banco_caja_id ?? '')
@@ -266,108 +351,9 @@ export default function ChequesIndex() {
         return list
     }, [cheques, buscar, estado, bancoId])
 
-    async function confirmarCobro(cheque: Cheque) {
-        const { value } = await Swal.fire({
-            ...swalBase,
-            title: `Cobrar cheque N° ${cheque.numero}`,
-            html: `
-                <div style="text-align:left">
-                    <div style="background:#f0fdf4;border-left:4px solid #10b981;
-                                border-radius:8px;padding:12px;margin-bottom:14px">
-                        <p style="font-weight:700;color:#065f46;margin:0">${cheque.beneficiario}</p>
-                        <p style="color:#047857;font-size:0.85rem;margin:4px 0 0 0">
-                            Monto: ${fmt(cheque.monto)}
-                        </p>
-                    </div>
-                    <label class="input-label">
-                        Fecha de cobro <span style="color:#ef4444">*</span>
-                    </label>
-                    <input type="date" id="fecha-cobro"
-                        value="${new Date().toISOString().split('T')[0]}"
-                        class="input-field"
-                        style="width:100%;margin-bottom:12px" />
-                    <label class="input-label">Observación</label>
-                    <textarea id="obs-cobro" class="input-field textarea-field"
-                        placeholder="Opcional..." rows="2"
-                        style="width:100%"></textarea>
-                </div>
-            `,
-            showCancelButton: true,
-            confirmButtonColor: '#10b981',
-            cancelButtonColor: '#6b7280',
-            confirmButtonText: '✓ Confirmar cobro',
-            cancelButtonText: 'Cancelar',
-            reverseButtons: true,
-            preConfirm: () => ({
-                fecha_cobro: (document.getElementById('fecha-cobro') as HTMLInputElement)?.value,
-                observacion: (document.getElementById('obs-cobro') as HTMLTextAreaElement)?.value,
-            }),
-        })
-        if (value) {
-            router.patch(route('bancos.cheques.estado', cheque.id), {
-                estado: 'cobrado',
-                fecha_cobro: value.fecha_cobro,
-                observacion: value.observacion,
-            }, {
-                onSuccess: () => notify.success(`Cheque N° ${cheque.numero} cobrado`),
-                onError: () => notify.error('Error al actualizar'),
-            })
-        }
+    function abrirCambioEstado(cheque: Cheque, nuevoEstado: 'cobrado' | 'protestado') {
+        setEstadoModal({ cheque, estado: nuevoEstado })
     }
-
-    async function confirmarProtesta(cheque: Cheque) {
-        const { value } = await Swal.fire({
-            ...swalBase,
-            title: `Protestar cheque N° ${cheque.numero}`,
-            html: `
-                <div style="text-align:left">
-                    <div style="background:#fef2f2;border-left:4px solid #ef4444;
-                                border-radius:8px;padding:12px;margin-bottom:14px">
-                        <p style="font-weight:700;color:#7f1d1d;margin:0">${cheque.beneficiario}</p>
-                        <p style="color:#b91c1c;font-size:0.85rem;margin:4px 0 0 0">
-                            Monto: ${fmt(cheque.monto)}
-                        </p>
-                    </div>
-                    <label class="input-label">
-                        Motivo de protesta <span style="color:#ef4444">*</span>
-                    </label>
-                    <textarea id="obs-protesta" class="input-field textarea-field"
-                        placeholder="Describe el motivo del protesto..." rows="3"
-                        style="width:100%"></textarea>
-                </div>
-            `,
-            showCancelButton: true,
-            confirmButtonColor: '#ef4444',
-            cancelButtonColor: '#6b7280',
-            confirmButtonText: '✗ Confirmar protesta',
-            cancelButtonText: 'Cancelar',
-            reverseButtons: true,
-            preConfirm: () => {
-                const obs = (document.getElementById('obs-protesta') as HTMLTextAreaElement)?.value
-                if (!obs?.trim()) {
-                    Swal.showValidationMessage('El motivo de protesta es obligatorio')
-                    return false
-                }
-                return { observacion: obs }
-            },
-        })
-        if (value) {
-            router.patch(route('bancos.cheques.estado', cheque.id), {
-                estado: 'protestado',
-                observacion: value.observacion,
-            }, {
-                onSuccess: () => notify.warning(`Cheque N° ${cheque.numero} protestado`),
-                onError: () => notify.error('Error al actualizar'),
-            })
-        }
-    }
-
-    const statCards = [
-        { label: 'Total cheques',  value: stats.total,       color: '#1A3A5C', icon: CreditCard },
-        { label: 'Emitidos',       value: stats.emitidos,    color: '#d97706', icon: Clock },
-        { label: 'Cobrados',       value: stats.cobrados,    color: '#16a34a', icon: CheckCircle },
-        { label: 'Protestados',    value: stats.protestados, color: '#dc2626', icon: AlertTriangle },
-    ]
 
     return (
         <AppLayout title="Cheques" suppressFlash>
@@ -377,96 +363,57 @@ export default function ChequesIndex() {
                  style={{ background: 'var(--bg-main)', minHeight: '100vh' }}>
 
                 {/* Header */}
-                <div className="flex items-center justify-between flex-wrap gap-3">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-xl"
-                             style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
-                            <CreditCard size={24} style={{ color: 'var(--primary)' }} />
-                        </div>
-                        <div>
-                            <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>
-                                Cheques
-                            </h1>
-                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                                {filtrados.length} de {cheques.length} cheques
-                            </p>
-                        </div>
+                <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-xl"
+                         style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
+                        <CreditCard size={24} style={{ color: 'var(--primary)' }} />
                     </div>
-                    <button onClick={() => setShowModal(true)}
-                        className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white"
-                        style={{ background: 'var(--primary)' }}>
-                        <Plus className="w-4 h-4" /> Nuevo Cheque
-                    </button>
+                    <div>
+                        <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>
+                            Cheques
+                        </h1>
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                            {filtrados.length} de {cheques.length} cheques
+                        </p>
+                    </div>
                 </div>
 
-                {/* Stats */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    {statCards.map(({ label, value, color, icon: Icon }) => (
-                        <div key={label}
-                             className="rounded-xl border p-4"
-                             style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
-                            <div className="flex items-center justify-between mb-2">
-                                <p className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
-                                    {label}
-                                </p>
-                                <Icon className="w-4 h-4 opacity-60" style={{ color }} />
-                            </div>
-                            <p className="text-2xl font-bold" style={{ color }}>
-                                {value}
-                            </p>
-                        </div>
-                    ))}
-                </div>
-
-                {/* Monto total emitidos */}
-                {stats.monto_total > 0 && (
-                    <div className="rounded-xl border p-4 flex items-center gap-3"
-                         style={{ background: 'color-mix(in srgb, #f59e0b 8%, var(--bg-card))',
-                                  borderColor: '#f59e0b44' }}>
-                        <DollarSign className="w-5 h-5" style={{ color: '#d97706' }} />
-                        <div>
-                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                                Monto total emitidos pendientes de cobro
-                            </p>
-                            <p className="text-xl font-bold" style={{ color: '#d97706' }}>
-                                {fmt(stats.monto_total)}
-                            </p>
-                        </div>
-                    </div>
-                )}
-
-                {/* Filtros */}
-                <div className="flex flex-wrap gap-2 items-center">
-                    <div className="relative">
-                        <input type="text" placeholder="Buscar N°, beneficiario..."
-                            value={buscar} onChange={e => setBuscar(e.target.value)}
-                            className="input-field"
-                            style={{ width: '220px', paddingLeft: '0.875rem' }} />
-                    </div>
-                    <select value={estado} onChange={e => setEstado(e.target.value)}
-                        className="input-field select-field"
-                        style={{ width: 'auto' }}>
-                        <option value="">Todos los estados</option>
-                        <option value="emitido">Emitido</option>
-                        <option value="cobrado">Cobrado</option>
-                        <option value="protestado">Protestado</option>
-                        <option value="anulado">Anulado</option>
-                    </select>
-                    <select value={bancoId} onChange={e => setBancoId(e.target.value)}
-                        className="input-field select-field"
-                        style={{ width: 'auto' }}>
-                        <option value="">Todos los bancos</option>
-                        {bancos.map(b => (
-                            <option key={b.id} value={b.id}>{b.nombre}</option>
-                        ))}
-                    </select>
-                    {(buscar || estado || bancoId) && (
-                        <button onClick={() => { setBuscar(''); setEstado(''); setBancoId('') }}
-                            className="flex items-center gap-1 px-3 py-2 rounded-lg text-xs border transition-colors"
-                            style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
-                            <X className="w-3 h-3" /> Limpiar
+                {/* Toolbar */}
+                <div className="flex items-center justify-between gap-3">
+                    <div className="flex flex-wrap gap-2 items-center">
+                        <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-2 whitespace-nowrap">
+                            <Plus className="w-4 h-4" /> Nuevo Cheque
                         </button>
-                    )}
+                        <div className="relative">
+                            <input type="text" placeholder="Buscar N°, beneficiario..."
+                                value={buscar} onChange={e => setBuscar(e.target.value)}
+                                className="input-field"
+                                style={{ width: '220px', paddingLeft: '0.875rem' }} />
+                        </div>
+                        <select value={estado} onChange={e => setEstado(e.target.value)}
+                            className="input-field select-field"
+                            style={{ width: 'auto' }}>
+                            <option value="">Todos los estados</option>
+                            <option value="emitido">Emitido</option>
+                            <option value="cobrado">Cobrado</option>
+                            <option value="protestado">Protestado</option>
+                            <option value="anulado">Anulado</option>
+                        </select>
+                        <select value={bancoId} onChange={e => setBancoId(e.target.value)}
+                            className="input-field select-field"
+                            style={{ width: 'auto' }}>
+                            <option value="">Todos los bancos</option>
+                            {bancos.map(b => (
+                                <option key={b.id} value={b.id}>{b.nombre}</option>
+                            ))}
+                        </select>
+                        {(buscar || estado || bancoId) && (
+                            <button onClick={() => { setBuscar(''); setEstado(''); setBancoId('') }}
+                                className="btn-secondary flex items-center gap-1 whitespace-nowrap">
+                                <X className="w-3 h-3" /> Limpiar
+                            </button>
+                        )}
+                    </div>
                 </div>
 
                 {/* Tabla */}
@@ -552,22 +499,22 @@ export default function ChequesIndex() {
                                     {cheque.estado === 'emitido' && (
                                         <>
                                             <button
-                                                onClick={() => confirmarCobro(cheque)}
+                                                onClick={() => abrirCambioEstado(cheque, 'cobrado')}
                                                 title="Marcar como cobrado"
-                                                className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium transition-colors"
-                                                style={{ background: '#dcfce7', color: '#16a34a' }}
-                                                onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.background = '#bbf7d0'}
-                                                onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.background = '#dcfce7'}>
-                                                <CheckCircle className="w-3.5 h-3.5" /> Cobrar
+                                                className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold transition-colors"
+                                                style={{ background: '#D1FAE5', color: '#065F46' }}
+                                                onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.background = '#A7F3D0'}
+                                                onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.background = '#D1FAE5'}>
+                                                <CheckCircle className="w-3 h-3" /> Cobrar
                                             </button>
                                             <button
-                                                onClick={() => confirmarProtesta(cheque)}
+                                                onClick={() => abrirCambioEstado(cheque, 'protestado')}
                                                 title="Marcar como protestado"
-                                                className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium transition-colors"
-                                                style={{ background: '#fee2e2', color: '#dc2626' }}
-                                                onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.background = '#fecaca'}
-                                                onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.background = '#fee2e2'}>
-                                                <Ban className="w-3.5 h-3.5" /> Protestar
+                                                className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold transition-colors"
+                                                style={{ background: '#FEE2E2', color: '#7B2D2D' }}
+                                                onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.background = '#FECACA'}
+                                                onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.background = '#FEE2E2'}>
+                                                <XCircle className="w-3 h-3" /> Protestar
                                             </button>
                                         </>
                                     )}
@@ -583,6 +530,14 @@ export default function ChequesIndex() {
 
             {showModal && (
                 <NuevoModal bancos={bancos} onClose={() => setShowModal(false)} />
+            )}
+
+            {estadoModal && (
+                <CambioEstadoModal
+                    cheque={estadoModal.cheque}
+                    estadoNuevo={estadoModal.estado}
+                    onClose={() => setEstadoModal(null)}
+                />
             )}
 
             <ToastContainer position="top-right" autoClose={3500} hideProgressBar={false}

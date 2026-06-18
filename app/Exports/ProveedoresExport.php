@@ -1,23 +1,25 @@
 <?php
 namespace App\Exports;
 
+use App\Exports\Concerns\EstiloAcademico;
 use App\Models\Proveedor;
 use Maatwebsite\Excel\Concerns\FromCollection;
+use Maatwebsite\Excel\Concerns\WithColumnWidths;
+use Maatwebsite\Excel\Concerns\WithEvents;
 use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\WithStyles;
-use Maatwebsite\Excel\Concerns\WithColumnWidths;
 use Maatwebsite\Excel\Concerns\WithTitle;
-use Maatwebsite\Excel\Concerns\WithEvents;
 use Maatwebsite\Excel\Events\AfterSheet;
-use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
-use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
+use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 class ProveedoresExport implements
     FromCollection, WithHeadings, WithStyles,
     WithColumnWidths, WithTitle, WithEvents
 {
+    use EstiloAcademico;
+
     private int $totalRows = 0;
 
     public function __construct(private int $empresaId) {}
@@ -71,83 +73,73 @@ class ProveedoresExport implements
     public function registerEvents(): array
     {
         return [
-            AfterSheet::class => function(AfterSheet $event) {
-                $sheet   = $event->sheet->getDelegate();
-                $lastRow = $this->totalRows + 3;
+            AfterSheet::class => function (AfterSheet $event) {
+                $sheet    = $event->sheet->getDelegate();
+                $lastRow  = $this->totalRows + 3;
+                $totalRow = $lastRow + 1;
 
                 $sheet->insertNewRowBefore(1, 2);
 
                 // Título
                 $sheet->mergeCells('A1:L1');
-                $sheet->setCellValue('A1', 'ERP Altamira — Catálogo de Proveedores');
+                $sheet->setCellValue('A1', 'Altamira Light & Sound — Catálogo de Proveedores');
                 $sheet->getStyle('A1')->applyFromArray([
-                    'font' => ['bold'=>true,'size'=>13,'color'=>['rgb'=>'F59E0B']],
+                    'font' => ['bold' => true, 'size' => 12, 'color' => ['rgb' => self::H_TEXTO]],
                 ]);
+
                 $sheet->mergeCells('A2:L2');
                 $sheet->setCellValue('A2',
                     'Generado: ' . now()->format('d/m/Y H:i') .
-                    ' · Total: ' . $this->totalRows . ' proveedores'
+                    '   |   Total: ' . $this->totalRows . ' proveedores'
                 );
-                $sheet->getStyle('A2')->getFont()->setSize(9)->getColor()->setRGB('9CA3AF');
+                $sheet->getStyle('A2')->applyFromArray([
+                    'font' => ['size' => 8, 'italic' => true, 'color' => ['rgb' => self::H_MUTED]],
+                ]);
 
                 // Encabezado fila 3
-                $sheet->getStyle('A3:L3')->applyFromArray([
-                    'font' => ['bold'=>true,'color'=>['rgb'=>'FFFFFF'],'size'=>10],
-                    'fill' => ['fillType'=>Fill::FILL_SOLID,'startColor'=>['rgb'=>'F59E0B']],
-                    'alignment' => ['horizontal'=>Alignment::HORIZONTAL_CENTER,
-                                    'vertical'=>Alignment::VERTICAL_CENTER],
-                    'borders' => ['allBorders'=>[
-                        'borderStyle'=>Border::BORDER_THIN,
-                        'color'=>['rgb'=>'D97706'],
-                    ]],
-                ]);
-                $sheet->getRowDimension(3)->setRowHeight(22);
+                $sheet->getStyle('A3:L3')->applyFromArray($this->estiloHeaderAcad());
+                $sheet->getRowDimension(3)->setRowHeight(20);
+
+                // Filas de datos
+                $this->aplicarFilasAcad($sheet, 4, $lastRow, 12);
 
                 for ($row = 4; $row <= $lastRow; $row++) {
-                    $bg = ($row % 2 === 0) ? 'F9FAFB' : 'FFFFFF';
-                    $sheet->getStyle("A{$row}:L{$row}")->getFill()
-                        ->setFillType(Fill::FILL_SOLID)
-                        ->getStartColor()->setRGB($bg);
+                    // Tipo — texto plano sin color
+                    $sheet->getStyle("D{$row}")->applyFromArray([
+                        'font' => ['bold' => true, 'color' => ['rgb' => self::H_TEXTO]],
+                        'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
+                    ]);
 
-                    // Tipo en color
-                    $tipo = $sheet->getCell("D{$row}")->getValue();
-                    $sheet->getStyle("D{$row}")->getFont()
-                        ->setBold(true)->getColor()
-                        ->setRGB($tipo === 'Nacional' ? '059669' : '3B82F6');
-
-                    // Estado en color
+                    // Estado — texto plano
                     $estado = $sheet->getCell("L{$row}")->getValue();
-                    $sheet->getStyle("L{$row}")->getFont()
-                        ->setBold(true)->getColor()
-                        ->setRGB($estado === 'Activo' ? '059669' : 'DC2626');
+                    $color  = $estado === 'Activo' ? self::H_TEXTO : self::H_MUTED;
+                    $sheet->getStyle("L{$row}")->applyFromArray([
+                        'font' => ['bold' => true, 'color' => ['rgb' => $color]],
+                        'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
+                    ]);
 
-                    // Crédito
-                    $credito = $sheet->getCell("J{$row}")->getValue();
-                    $sheet->getStyle("J{$row}")->getFont()
-                        ->getColor()
-                        ->setRGB($credito === 'Sí' ? '059669' : '9CA3AF');
-
-                    $sheet->getStyle("A{$row}:L{$row}")->getBorders()
-                        ->getBottom()->setBorderStyle(Border::BORDER_THIN)
-                        ->getColor()->setRGB('E5E7EB');
-                    $sheet->getRowDimension($row)->setRowHeight(17);
+                    // Días crédito — centrado
+                    $sheet->getStyle("K{$row}")->getAlignment()
+                        ->setHorizontal(Alignment::HORIZONTAL_CENTER);
                 }
 
-                // Fila totales
-                $totalRow = $lastRow + 1;
+                // Fila total
                 $sheet->mergeCells("A{$totalRow}:K{$totalRow}");
                 $sheet->setCellValue("A{$totalRow}", 'TOTAL DE PROVEEDORES');
                 $sheet->setCellValue("L{$totalRow}", $this->totalRows);
-                $sheet->getStyle("A{$totalRow}:L{$totalRow}")->applyFromArray([
-                    'font' => ['bold'=>true,'size'=>11,'color'=>['rgb'=>'FFFFFF']],
-                    'fill' => ['fillType'=>Fill::FILL_SOLID,'startColor'=>['rgb'=>'1F2937']],
-                    'alignment' => ['horizontal'=>Alignment::HORIZONTAL_CENTER],
-                ]);
+                $sheet->getStyle("A{$totalRow}:L{$totalRow}")->applyFromArray(
+                    array_merge($this->estiloTotalAcad(), [
+                        'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT],
+                    ])
+                );
+                $sheet->getStyle("L{$totalRow}")->getAlignment()
+                    ->setHorizontal(Alignment::HORIZONTAL_CENTER);
                 $sheet->getRowDimension($totalRow)->setRowHeight(20);
 
+                // Borde exterior
                 $sheet->getStyle("A3:L{$totalRow}")->getBorders()
                     ->getOutline()->setBorderStyle(Border::BORDER_MEDIUM)
-                    ->getColor()->setRGB('F59E0B');
+                    ->getColor()->setRGB(self::H_NAVY);
 
                 $sheet->setAutoFilter("A3:L{$lastRow}");
                 $sheet->freezePane('A4');

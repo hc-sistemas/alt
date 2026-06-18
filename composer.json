@@ -13,6 +13,7 @@
         "laravel/tinker": "^2.10.1",
         "league/csv": "^9.28",
         "maatwebsite/excel": "^3.1",
+        "picqer/php-barcode-generator": "^3.2",
         "predis/predis": "^2.0",
         "spatie/laravel-permission": "^6.0",
         "tightenco/ziggy": "^2.0"

@@ -6,6 +6,7 @@ import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Search, Plus, ArrowUpDown } from 'lucide-react'
 import type { Producto, InventarioSaldo, InventarioMovimiento, Bodega, PaginatedData, PageProps } from '@/types'
+import { cn } from "../../../lib/utils";
 
 interface SaldoBodega extends InventarioSaldo {
     bodega?: Bodega
@@ -46,11 +47,11 @@ const TIPO_LABELS: Record<string, string> = {
 export default function KardexIndex() {
     const { producto, movimientos, saldosPorBodega, bodegas, filters } = usePage<Props>().props
 
-    const [search, setSearch]       = useState('')
-    const [bodegaId, setBodegaId]   = useState(filters.bodega_id ?? '')
+    const [search, setSearch]         = useState('')
+    const [bodegaId, setBodegaId]     = useState(filters.bodega_id ?? '')
     const [fechaDesde, setFechaDesde] = useState(filters.fecha_desde ?? '')
     const [fechaHasta, setFechaHasta] = useState(filters.fecha_hasta ?? '')
-    const [tipo, setTipo]           = useState(filters.tipo ?? '')
+    const [tipo, setTipo]             = useState(filters.tipo ?? '')
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
     // Buscador de producto (cuando no hay producto seleccionado)
@@ -110,15 +111,14 @@ export default function KardexIndex() {
             />
 
             <div className="p-6 space-y-6">
-                {/* Sin producto seleccionado — buscador */}
                 {!producto ? (
                     <div className="max-w-xl">
-                        <p className="text-sm mb-3" style={{ color: 'var(--text-muted)' }}>
+                        <p className={cn('mb-3', 'text-sm')} style={{ color: 'var(--text-muted)' }}>
                             Selecciona un producto para ver sus movimientos
                         </p>
-                        <div className="flex gap-2">
-                            <div className="relative flex-1">
-                                <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+                        <div className={cn('flex', 'gap-2')}>
+                            <div className={cn('relative', 'flex-1')}>
+                                <Search className={cn('top-2.5', 'left-3', 'absolute', 'w-4', 'h-4')} style={{ color: 'var(--text-muted)' }} />
                                 <Input
                                     value={busqueda}
                                     onChange={e => setBusqueda(e.target.value)}
@@ -139,7 +139,7 @@ export default function KardexIndex() {
                                 Buscar
                             </Button>
                         </div>
-                        <div className="mt-4 text-sm" style={{ color: 'var(--text-muted)' }}>
+                        <div className={cn('mt-4', 'text-sm')} style={{ color: 'var(--text-muted)' }}>
                             O ve directamente a{' '}
                             <Link href={route('inventario.kardex.saldos')} className="underline" style={{ color: 'var(--primary)' }}>
                                 Saldos de Inventario
@@ -149,19 +149,19 @@ export default function KardexIndex() {
                 ) : (
                     <>
                         {/* Header producto */}
-                        <div className="flex items-start justify-between gap-4 flex-wrap">
+                        <div className={cn('flex', 'flex-wrap', 'justify-between', 'items-start', 'gap-4')}>
                             <div>
-                                <h2 className="text-base font-semibold" style={{ color: 'var(--text-main)' }}>
+                                <h2 className={cn('font-semibold', 'text-base')} style={{ color: 'var(--text-main)' }}>
                                     {producto.nombre}
                                 </h2>
-                                <p className="text-xs font-mono mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                                <p className={cn('mt-0.5', 'font-mono', 'text-xs')} style={{ color: 'var(--text-muted)' }}>
                                     {producto.codigo}
                                 </p>
                             </div>
-                            <div className="flex gap-2">
+                            <div className={cn('flex', 'gap-2')}>
                                 <Link href={route('inventario.kardex.ajuste', { producto_id: producto.id })}>
                                     <Button>
-                                        <Plus className="w-4 h-4" />
+                                        <Plus className={cn('w-4', 'h-4')} />
                                         Registrar Ajuste
                                     </Button>
                                 </Link>
@@ -173,11 +173,11 @@ export default function KardexIndex() {
 
                         {/* Cards de saldos por bodega */}
                         {saldosPorBodega.length > 0 && (
-                            <div className="flex gap-3 flex-wrap">
+                            <div className={cn('flex', 'flex-wrap', 'gap-3')}>
                                 {saldosPorBodega.map(s => (
-                                    <div key={s.id} className="px-4 py-3 rounded-xl border min-w-[160px]"
+                                    <div key={s.id} className={cn('px-4', 'py-3', 'border', 'rounded-xl', 'min-w-40')}
                                         style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
-                                        <p className="text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>
+                                        <p className={cn('mb-1', 'font-medium', 'text-xs')} style={{ color: 'var(--text-muted)' }}>
                                             {s.bodega?.nombre ?? `Bodega #${s.bodega_id}`}
                                         </p>
                                         <p className="text-lg font-bold" style={{ color: 'var(--text-main)' }}>
@@ -195,7 +195,7 @@ export default function KardexIndex() {
                         )}
 
                         {/* Filtros */}
-                        <div className="flex gap-3 flex-wrap items-center">
+                        <div className={cn('flex', 'flex-wrap', 'items-center', 'gap-3')}>
                             <select value={bodegaId} onChange={e => setBodegaId(e.target.value)}
                                 className="input-field"
                                 style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
@@ -221,8 +221,8 @@ export default function KardexIndex() {
                         {/* Tabla de movimientos */}
                         {movimientos && (
                             <>
-                                <div className="rounded-xl border overflow-x-auto" style={{ borderColor: 'var(--border)' }}>
-                                    <table className="w-full text-xs">
+                                <div className={cn('border', 'rounded-xl', 'overflow-x-auto')} style={{ borderColor: 'var(--border)' }}>
+                                    <table className={cn('w-full', 'text-xs')}>
                                         <thead>
                                             <tr style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
                                                 {['Fecha', 'Tipo', 'Bodega', 'Cantidad', 'Costo Unit.', 'Stock Ant.', 'Stock Nuevo', 'Doc.', 'Usuario', 'Notas'].map(h => (
@@ -240,9 +240,9 @@ export default function KardexIndex() {
                                                 </tr>
                                             ) : movimientos.data.map(m => (
                                                 <tr key={m.id}
-                                                    className="border-t hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+                                                    className={cn('hover:bg-slate-50', 'dark:hover:bg-slate-800/50', 'border-t', 'transition-colors')}
                                                     style={{ borderColor: 'var(--border)' }}>
-                                                    <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>
+                                                    <td className={cn('px-3', 'py-2.5', 'whitespace-nowrap')} style={{ color: 'var(--text-muted)' }}>
                                                         {formatFecha(m.created_at)}
                                                     </td>
                                                     <td className="px-3 py-2.5">
@@ -251,12 +251,12 @@ export default function KardexIndex() {
                                                         </span>
                                                     </td>
                                                     <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>
-                                                        {m.bodega?.nombre ?? `#${m.bodega_id}`}
+                                                        {m.bodega?.nombre ?? (m.bodega_id ? `#${m.bodega_id}` : '—')}
                                                     </td>
-                                                    <td className="px-3 py-2.5 text-right font-mono" style={{ color: 'var(--text-main)' }}>
+                                                    <td className={cn('px-3', 'py-2.5', 'font-mono', 'text-right')} style={{ color: 'var(--text-main)' }}>
                                                         {Number(m.cantidad).toFixed(4)}
                                                     </td>
-                                                    <td className="px-3 py-2.5 text-right font-mono" style={{ color: 'var(--text-muted)' }}>
+                                                    <td className={cn('px-3', 'py-2.5', 'font-mono', 'text-right')} style={{ color: 'var(--text-muted)' }}>
                                                         {m.costo_unitario !== null ? Number(m.costo_unitario).toFixed(4) : '—'}
                                                     </td>
                                                     <td className="px-3 py-2.5 text-right font-mono" style={{ color: 'var(--text-muted)' }}>
@@ -269,9 +269,9 @@ export default function KardexIndex() {
                                                         {m.doc_tipo ? `${m.doc_tipo}/${m.doc_id}` : '—'}
                                                     </td>
                                                     <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>
-                                                        {m.usuario?.nombre ?? `#${m.usuario_id}`}
+                                                        {m.usuario?.nombre ?? (m.usuario_id ? `#${m.usuario_id}` : '—')}
                                                     </td>
-                                                    <td className="px-3 py-2.5 max-w-[160px] truncate" style={{ color: 'var(--text-muted)' }}
+                                                    <td className="px-3 py-2.5 max-w-40 truncate" style={{ color: 'var(--text-muted)' }}
                                                         title={m.notas ?? ''}>
                                                         {m.notas ?? '—'}
                                                     </td>
@@ -283,11 +283,11 @@ export default function KardexIndex() {
 
                                 {/* Paginación */}
                                 {movimientos.last_page > 1 && (
-                                    <div className="flex items-center justify-between text-sm">
+                                    <div className={cn('flex', 'justify-between', 'items-center', 'text-sm')}>
                                         <p style={{ color: 'var(--text-muted)' }}>
                                             Mostrando {movimientos.from}–{movimientos.to} de {movimientos.total}
                                         </p>
-                                        <div className="flex gap-1">
+                                        <div className={cn('flex', 'gap-1')}>
                                             {movimientos.links.map((link, i) => (
                                                 link.url ? (
                                                     <Link key={i} href={link.url}
@@ -296,7 +296,7 @@ export default function KardexIndex() {
                                                         dangerouslySetInnerHTML={{ __html: link.label }}
                                                     />
                                                 ) : (
-                                                    <span key={i} className="px-3 py-1 rounded border text-xs opacity-40"
+                                                    <span key={i} className={cn('opacity-40', 'px-3', 'py-1', 'border', 'rounded', 'text-xs')}
                                                         style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}
                                                         dangerouslySetInnerHTML={{ __html: link.label }} />
                                                 )

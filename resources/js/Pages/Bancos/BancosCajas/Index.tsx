@@ -260,7 +260,7 @@ function BancoModal({ banco, cuentas, onClose }: ModalProps) {
     return (
         <>
             <div className="modal-overlay" onClick={onClose}>
-                <div className="modal-card max-w-md overflow-y-auto max-h-[90vh]" onClick={e => e.stopPropagation()}>
+                <div className="modal-card max-w-xl" onClick={e => e.stopPropagation()}>
 
                     <div className="modal-header">
                         <h2>{isEdit ? 'Editar banco/caja' : 'Nuevo banco/caja'}</h2>

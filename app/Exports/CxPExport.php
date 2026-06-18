@@ -1,23 +1,25 @@
 <?php
 namespace App\Exports;
 
+use App\Exports\Concerns\EstiloAcademico;
 use App\Models\CuentaPagar;
 use Maatwebsite\Excel\Concerns\FromCollection;
+use Maatwebsite\Excel\Concerns\WithColumnWidths;
+use Maatwebsite\Excel\Concerns\WithEvents;
 use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\WithStyles;
-use Maatwebsite\Excel\Concerns\WithColumnWidths;
 use Maatwebsite\Excel\Concerns\WithTitle;
-use Maatwebsite\Excel\Concerns\WithEvents;
 use Maatwebsite\Excel\Events\AfterSheet;
-use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
-use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
+use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 class CxPExport implements
     FromCollection, WithHeadings, WithStyles,
     WithColumnWidths, WithTitle, WithEvents
 {
+    use EstiloAcademico;
+
     private int   $totalRows  = 0;
     private float $totalSaldo = 0;
 
@@ -50,8 +52,8 @@ class CxPExport implements
             $c->compra?->num_documento      ?? '—',
             number_format((float)$c->monto, 2),
             number_format((float)$c->saldo, 2),
-            $c->fecha_emision?->format('d/m/Y')     ?? '—',
-            $c->fecha_vencimiento?->format('d/m/Y')  ?? '—',
+            $c->fecha_emision?->format('d/m/Y')    ?? '—',
+            $c->fecha_vencimiento?->format('d/m/Y') ?? '—',
             $c->dias_vencimiento > 0
                 ? "En {$c->dias_vencimiento} días"
                 : ($c->dias_vencimiento === 0
@@ -86,105 +88,83 @@ class CxPExport implements
     public function registerEvents(): array
     {
         return [
-            AfterSheet::class => function(AfterSheet $event) {
+            AfterSheet::class => function (AfterSheet $event) {
                 $sheet    = $event->sheet->getDelegate();
                 $lastRow  = $this->totalRows + 3;
                 $totalRow = $lastRow + 1;
 
                 $sheet->insertNewRowBefore(1, 2);
 
+                // Título
                 $sheet->mergeCells('A1:I1');
-                $sheet->setCellValue('A1', 'ERP Altamira — Cuentas por Pagar');
+                $sheet->setCellValue('A1', 'Altamira Light & Sound — Cuentas por Pagar');
                 $sheet->getStyle('A1')->applyFromArray([
-                    'font' => ['bold'=>true,'size'=>13,'color'=>['rgb'=>'F59E0B']],
+                    'font' => ['bold' => true, 'size' => 12, 'color' => ['rgb' => self::H_TEXTO]],
                 ]);
 
                 $sheet->mergeCells('A2:I2');
                 $sheet->setCellValue('A2',
                     'Generado: ' . now()->format('d/m/Y H:i') .
-                    ' · Pendientes: ' . $this->totalRows .
-                    ' · Saldo total: $' . number_format($this->totalSaldo, 2)
+                    '   |   Pendientes: ' . $this->totalRows .
+                    '   |   Saldo total: $' . number_format($this->totalSaldo, 2)
                 );
-                $sheet->getStyle('A2')->getFont()->setSize(9)->getColor()->setRGB('9CA3AF');
-
-                $sheet->getStyle('A3:I3')->applyFromArray([
-                    'font' => ['bold'=>true,'color'=>['rgb'=>'FFFFFF'],'size'=>10],
-                    'fill' => ['fillType'=>Fill::FILL_SOLID,'startColor'=>['rgb'=>'F59E0B']],
-                    'alignment' => ['horizontal'=>Alignment::HORIZONTAL_CENTER,
-                                    'vertical'=>Alignment::VERTICAL_CENTER],
-                    'borders' => ['allBorders'=>[
-                        'borderStyle'=>Border::BORDER_THIN,
-                        'color'=>['rgb'=>'D97706'],
-                    ]],
+                $sheet->getStyle('A2')->applyFromArray([
+                    'font' => ['size' => 8, 'italic' => true, 'color' => ['rgb' => self::H_MUTED]],
                 ]);
-                $sheet->getRowDimension(3)->setRowHeight(22);
 
-                $bgUrgencia = [
-                    'Vencida' => 'FEE2E2',
-                    'Critica' => 'FFEDD5',
-                    'Proxima' => 'FEF9C3',
-                    'Normal'  => 'F0FDF4',
-                ];
-                $colorTexto = [
-                    'Vencida' => 'DC2626',
-                    'Critica' => 'EA580C',
-                    'Proxima' => 'CA8A04',
-                    'Normal'  => '16A34A',
-                ];
+                // Encabezado fila 3
+                $sheet->getStyle('A3:I3')->applyFromArray($this->estiloHeaderAcad());
+                $sheet->getRowDimension(3)->setRowHeight(20);
+
+                // Filas de datos — alternadas, sin color por urgencia
+                $this->aplicarFilasAcad($sheet, 4, $lastRow, 9);
 
                 for ($row = 4; $row <= $lastRow; $row++) {
-                    $urgencia = $sheet->getCell("H{$row}")->getValue();
-                    $bg       = $bgUrgencia[$urgencia] ?? 'FFFFFF';
+                    // N° Documento — acento azul
+                    $sheet->getStyle("B{$row}")->applyFromArray([
+                        'font' => ['bold' => true, 'color' => ['rgb' => self::H_ACENTO]],
+                    ]);
 
-                    $sheet->getStyle("A{$row}:I{$row}")->getFill()
-                        ->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB($bg);
+                    // Saldo destacado (texto oscuro, bold)
+                    $sheet->getStyle("D{$row}")->applyFromArray([
+                        'font' => ['bold' => true, 'color' => ['rgb' => self::H_TEXTO]],
+                        'alignment' => ['horizontal' => Alignment::HORIZONTAL_RIGHT],
+                    ]);
 
-                    $color = $colorTexto[$urgencia] ?? '374151';
-                    $sheet->getStyle("H{$row}")->getFont()
-                        ->setBold(true)->getColor()->setRGB($color);
-                    $sheet->getStyle("G{$row}")->getFont()
-                        ->getColor()->setRGB($color);
+                    // Monto alineado derecha
+                    $sheet->getStyle("C{$row}")->getAlignment()
+                        ->setHorizontal(Alignment::HORIZONTAL_RIGHT);
 
-                    $sheet->getStyle("D{$row}")->getFont()
-                        ->setBold(true)->getColor()->setRGB('F59E0B');
+                    // Urgencia — texto sin color de fondo
+                    $sheet->getStyle("H{$row}")->applyFromArray([
+                        'font' => ['color' => ['rgb' => self::H_MUTED]],
+                        'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
+                    ]);
 
-                    foreach (['C','D'] as $col) {
-                        $sheet->getStyle("{$col}{$row}")->getAlignment()
-                            ->setHorizontal(Alignment::HORIZONTAL_RIGHT);
-                    }
+                    // Estado — texto neutro
+                    $sheet->getStyle("I{$row}")->applyFromArray([
+                        'font' => ['bold' => true, 'color' => ['rgb' => self::H_TEXTO]],
+                        'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
+                    ]);
 
-                    $estado = $sheet->getCell("I{$row}")->getValue();
-                    $sheet->getStyle("I{$row}")->getFont()
-                        ->setBold(true)->getColor()->setRGB(
-                            match($estado) {
-                                'Pendiente' => 'EA580C',
-                                'Parcial'   => 'CA8A04',
-                                default     => '059669',
-                            }
-                        );
-
-                    $sheet->getStyle("A{$row}:I{$row}")->getBorders()
-                        ->getBottom()->setBorderStyle(Border::BORDER_THIN)
-                        ->getColor()->setRGB('E5E7EB');
-                    $sheet->getRowDimension($row)->setRowHeight(18);
+                    $sheet->getRowDimension($row)->setRowHeight(17);
                 }
 
-                // Fila totales
+                // Fila total
                 $sheet->mergeCells("A{$totalRow}:C{$totalRow}");
                 $sheet->setCellValue("A{$totalRow}", 'SALDO TOTAL PENDIENTE');
-                $sheet->setCellValue("D{$totalRow}",
-                    '$' . number_format($this->totalSaldo, 2));
-                $sheet->getStyle("A{$totalRow}:I{$totalRow}")->applyFromArray([
-                    'font' => ['bold'=>true,'size'=>11,'color'=>['rgb'=>'FFFFFF']],
-                    'fill' => ['fillType'=>Fill::FILL_SOLID,'startColor'=>['rgb'=>'1F2937']],
-                ]);
-                $sheet->getStyle("D{$totalRow}")->getFont()
-                    ->getColor()->setRGB('F59E0B');
+                $sheet->setCellValue("D{$totalRow}", '$' . number_format($this->totalSaldo, 2));
+                $sheet->getStyle("A{$totalRow}:I{$totalRow}")->applyFromArray(
+                    $this->estiloTotalAcad()
+                );
+                $sheet->getStyle("A{$totalRow}")->getAlignment()
+                    ->setHorizontal(Alignment::HORIZONTAL_LEFT);
                 $sheet->getRowDimension($totalRow)->setRowHeight(20);
 
+                // Borde exterior
                 $sheet->getStyle("A3:I{$totalRow}")->getBorders()
                     ->getOutline()->setBorderStyle(Border::BORDER_MEDIUM)
-                    ->getColor()->setRGB('F59E0B');
+                    ->getColor()->setRGB(self::H_NAVY);
 
                 $sheet->setAutoFilter("A3:I{$lastRow}");
                 $sheet->freezePane('A4');

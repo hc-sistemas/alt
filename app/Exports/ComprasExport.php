@@ -1,23 +1,25 @@
 <?php
 namespace App\Exports;
 
+use App\Exports\Concerns\EstiloAcademico;
 use App\Models\Compra;
 use Maatwebsite\Excel\Concerns\FromCollection;
+use Maatwebsite\Excel\Concerns\WithColumnWidths;
+use Maatwebsite\Excel\Concerns\WithEvents;
 use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\WithStyles;
-use Maatwebsite\Excel\Concerns\WithColumnWidths;
 use Maatwebsite\Excel\Concerns\WithTitle;
-use Maatwebsite\Excel\Concerns\WithEvents;
 use Maatwebsite\Excel\Events\AfterSheet;
-use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
-use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
+use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 class ComprasExport implements
     FromCollection, WithHeadings, WithStyles,
     WithColumnWidths, WithTitle, WithEvents
 {
+    use EstiloAcademico;
+
     private int   $totalRows  = 0;
     private float $totalMonto = 0;
 
@@ -85,85 +87,78 @@ class ComprasExport implements
     public function registerEvents(): array
     {
         return [
-            AfterSheet::class => function(AfterSheet $event) {
+            AfterSheet::class => function (AfterSheet $event) {
                 $sheet    = $event->sheet->getDelegate();
                 $lastRow  = $this->totalRows + 3;
                 $totalRow = $lastRow + 1;
 
                 $sheet->insertNewRowBefore(1, 2);
 
+                // Título
                 $sheet->mergeCells('A1:K1');
-                $sheet->setCellValue('A1', 'ERP Altamira — Facturas de Compra');
+                $sheet->setCellValue('A1', 'Altamira Light & Sound — Facturas de Compra');
                 $sheet->getStyle('A1')->applyFromArray([
-                    'font' => ['bold'=>true,'size'=>13,'color'=>['rgb'=>'F59E0B']],
+                    'font' => ['bold' => true, 'size' => 12, 'color' => ['rgb' => self::H_TEXTO]],
                 ]);
+
                 $sheet->mergeCells('A2:K2');
                 $sheet->setCellValue('A2',
                     'Generado: ' . now()->format('d/m/Y H:i') .
-                    ' · Total: ' . $this->totalRows . ' facturas' .
-                    ' · Monto total: $' . number_format($this->totalMonto, 2)
+                    '   |   Total: ' . $this->totalRows . ' facturas' .
+                    '   |   Monto total: $' . number_format($this->totalMonto, 2)
                 );
-                $sheet->getStyle('A2')->getFont()->setSize(9)->getColor()->setRGB('9CA3AF');
-
-                $sheet->getStyle('A3:K3')->applyFromArray([
-                    'font' => ['bold'=>true,'color'=>['rgb'=>'FFFFFF'],'size'=>10],
-                    'fill' => ['fillType'=>Fill::FILL_SOLID,'startColor'=>['rgb'=>'F59E0B']],
-                    'alignment' => ['horizontal'=>Alignment::HORIZONTAL_CENTER,
-                                    'vertical'=>Alignment::VERTICAL_CENTER],
-                    'borders' => ['allBorders'=>[
-                        'borderStyle'=>Border::BORDER_THIN,
-                        'color'=>['rgb'=>'D97706'],
-                    ]],
+                $sheet->getStyle('A2')->applyFromArray([
+                    'font' => ['size' => 8, 'italic' => true, 'color' => ['rgb' => self::H_MUTED]],
                 ]);
-                $sheet->getRowDimension(3)->setRowHeight(22);
+
+                // Encabezado fila 3
+                $sheet->getStyle('A3:K3')->applyFromArray($this->estiloHeaderAcad());
+                $sheet->getRowDimension(3)->setRowHeight(20);
+
+                // Filas de datos
+                $this->aplicarFilasAcad($sheet, 4, $lastRow, 11);
 
                 for ($row = 4; $row <= $lastRow; $row++) {
-                    $bg = ($row % 2 === 0) ? 'F9FAFB' : 'FFFFFF';
-                    $sheet->getStyle("A{$row}:K{$row}")->getFill()
-                        ->setFillType(Fill::FILL_SOLID)
-                        ->getStartColor()->setRGB($bg);
+                    // N° Documento — acento azul bold
+                    $sheet->getStyle("A{$row}")->applyFromArray([
+                        'font' => ['bold' => true, 'color' => ['rgb' => self::H_ACENTO]],
+                    ]);
 
-                    $sheet->getStyle("A{$row}")->getFont()
-                        ->setBold(true)->getColor()->setRGB('F59E0B');
-
-                    // Montos alineados a la derecha con formato numérico
-                    foreach (['E','F','G','H'] as $col) {
-                        $sheet->getStyle("{$col}{$row}")->getAlignment()
-                            ->setHorizontal(Alignment::HORIZONTAL_RIGHT);
-                        $sheet->getStyle("{$col}{$row}")->getNumberFormat()
-                            ->setFormatCode('#,##0.00');
+                    // Montos alineados derecha con formato numérico
+                    foreach (['E', 'F', 'G', 'H'] as $col) {
+                        $sheet->getStyle("{$col}{$row}")->applyFromArray([
+                            'alignment' => ['horizontal' => Alignment::HORIZONTAL_RIGHT],
+                            'numberFormat' => ['formatCode' => '#,##0.00'],
+                            'font' => ['color' => ['rgb' => self::H_TEXTO]],
+                        ]);
                     }
-                    $sheet->getStyle("H{$row}")->getFont()
-                        ->setBold(true)->getColor()->setRGB('F59E0B');
 
-                    // Estado en color
+                    // Estado — texto plano sin color
                     $estado = $sheet->getCell("K{$row}")->getValue();
-                    $sheet->getStyle("K{$row}")->getFont()
-                        ->setBold(true)->getColor()
-                        ->setRGB($estado === 'Activa' ? '059669' : 'DC2626');
-
-                    $sheet->getStyle("A{$row}:K{$row}")->getBorders()
-                        ->getBottom()->setBorderStyle(Border::BORDER_THIN)
-                        ->getColor()->setRGB('E5E7EB');
-                    $sheet->getRowDimension($row)->setRowHeight(17);
+                    $color  = $estado === 'Activa' ? self::H_TEXTO : self::H_MUTED;
+                    $sheet->getStyle("K{$row}")->applyFromArray([
+                        'font' => ['bold' => true, 'color' => ['rgb' => $color]],
+                        'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
+                    ]);
                 }
 
-                // Fila totales
+                // Fila total
                 $sheet->mergeCells("A{$totalRow}:G{$totalRow}");
                 $sheet->setCellValue("A{$totalRow}", 'TOTAL FACTURAS');
                 $sheet->setCellValue("H{$totalRow}", "=SUM(H4:H{$lastRow})");
-                $sheet->getStyle("A{$totalRow}:K{$totalRow}")->applyFromArray([
-                    'font' => ['bold'=>true,'size'=>11,'color'=>['rgb'=>'FFFFFF']],
-                    'fill' => ['fillType'=>Fill::FILL_SOLID,'startColor'=>['rgb'=>'1F2937']],
-                    'alignment' => ['horizontal'=>Alignment::HORIZONTAL_RIGHT],
-                ]);
-                $sheet->getStyle("H{$totalRow}")->getFont()->getColor()->setRGB('F59E0B');
-                $sheet->getStyle("H{$totalRow}")->getNumberFormat()->setFormatCode('#,##0.00');
+                $sheet->getStyle("A{$totalRow}:K{$totalRow}")->applyFromArray(
+                    $this->estiloTotalAcad()
+                );
+                $sheet->getStyle("A{$totalRow}")->getAlignment()
+                    ->setHorizontal(Alignment::HORIZONTAL_LEFT);
+                $sheet->getStyle("H{$totalRow}")->getNumberFormat()
+                    ->setFormatCode('#,##0.00');
                 $sheet->getRowDimension($totalRow)->setRowHeight(20);
 
+                // Borde exterior
                 $sheet->getStyle("A3:K{$totalRow}")->getBorders()
                     ->getOutline()->setBorderStyle(Border::BORDER_MEDIUM)
-                    ->getColor()->setRGB('F59E0B');
+                    ->getColor()->setRGB(self::H_NAVY);
 
                 $sheet->setAutoFilter("A3:K{$lastRow}");
                 $sheet->freezePane('A4');

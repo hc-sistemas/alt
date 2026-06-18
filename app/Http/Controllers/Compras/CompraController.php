@@ -7,7 +7,9 @@ use App\Models\Bodega;
 use App\Models\Compra;
 use App\Models\CompraDetalle;
 use App\Models\CuentaPagar;
+use App\Models\EtiquetaProducto;
 use App\Models\Empresa;
+use App\Models\MovimientoBancario;
 use App\Models\Proveedor;
 use App\Models\PlanCuenta;
 use App\Models\CentroCosto;
@@ -15,6 +17,7 @@ use App\Models\Producto;
 use App\Services\AsientoService;
 use App\Services\Contracts\InventarioServiceInterface;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -22,6 +25,7 @@ use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 use Maatwebsite\Excel\Facades\Excel;
+use Picqer\Barcode\BarcodeGeneratorPNG;
 
 class CompraController extends Controller
 {
@@ -85,12 +89,6 @@ class CompraController extends Controller
             'bodegas'     => $bodegas,
             'productos'   => $productos,
             'filtros'     => $request->only(['buscar', 'estado', 'fecha_desde', 'fecha_hasta']),
-            'stats' => [
-                'total'    => Compra::where('empresa_id', $empresaId)->count(),
-                'activas'  => Compra::where('empresa_id', $empresaId)->where('estado', 'activa')->count(),
-                'anuladas' => Compra::where('empresa_id', $empresaId)->where('estado', 'anulada')->count(),
-                'con_pago' => Compra::where('empresa_id', $empresaId)->where('tiene_pago', true)->count(),
-            ],
         ]);
     }
 
@@ -173,7 +171,7 @@ class CompraController extends Controller
                     'gasto_no_deducible'  => $request->boolean('gasto_no_deducible'),
                     'sustento_tributario' => $request->sustento_tributario,
                     'concepto'            => $request->concepto,
-                    'estado'              => 'activa',
+                    'estado'              => 'pendiente',
                     'created_by'          => Auth::id(),
                 ]);
 
@@ -187,63 +185,199 @@ class CompraController extends Controller
                         ['compra_id' => $compra->id]
                     ));
                 }
-
-                // Ingreso a inventario para detalles con producto_id
-                if ($request->bodega_id) {
-                    foreach ($detalles as $d) {
-                        if (empty($d['producto_id'])) {
-                            continue;
-                        }
-                        try {
-                            $this->inventario->ingresarStock(
-                                productoId:   (int) $d['producto_id'],
-                                bodegaId:     (int) $request->bodega_id,
-                                cantidad:     (float) $d['cantidad'],
-                                costoUnitario:(float) $d['precio_unitario'],
-                                docTipo:      'compra',
-                                docId:        $compra->id,
-                                notas:        "Compra {$request->num_documento}",
-                            );
-                        } catch (\Exception) {
-                            // No bloquear la compra si falla el inventario
-                        }
-                    }
-                }
-
-                if ($request->dias_credito > 0) {
-                    CuentaPagar::create([
-                        'empresa_id'        => $empresaId,
-                        'proveedor_id'      => $request->proveedor_id,
-                        'compra_id'         => $compra->id,
-                        'monto'             => $total,
-                        'saldo'             => $total,
-                        'fecha_emision'     => now()->toDateString(),
-                        'fecha_vencimiento' => $fechaVenc,
-                        'estado'            => 'pendiente',
-                    ]);
-                }
-
-                try {
-                    $asiento = $this->asientoService->compraRegistrada(
-                        empresaId:  $empresaId,
-                        compraId:   $compra->id,
-                        referencia: $request->num_documento,
-                        subtotal:   $subtotal0 + $subtotalIva,
-                        iva:        $totalIva,
-                        tipo:       $request->boolean('gasto_no_deducible') ? 'gasto' : 'inventario',
-                    );
-                    $compra->update(['asiento_id' => $asiento->id]);
-                } catch (\Exception) {
-                    // No bloquear si el período contable está cerrado
-                }
             });
 
             return back()->with('success',
-                "Compra {$request->num_documento} registrada correctamente.");
+                "Compra {$request->num_documento} ingresada. Pendiente de confirmación en bodega.");
         } catch (\Exception $e) {
             return back()->with('error', $e->getMessage());
         }
     }
+
+    // ── Confirmar recepción en bodega ────────────────────────────────────────────
+
+    public function activar(Compra $compra): RedirectResponse
+    {
+        if (!$compra->estaPendiente()) {
+            return back()->with('error', 'Solo se pueden activar facturas en estado pendiente.');
+        }
+
+        $empresaId = session('empresa_activa_id');
+
+        DB::transaction(function () use ($compra, $empresaId) {
+            $compra->update(['estado' => 'activa']);
+
+            $bodegaEfectiva = $compra->bodega_id
+                ?? optional(Bodega::where('empresa_id', $empresaId)
+                    ->where('tipo', 'general')->first())->id;
+
+            if ($bodegaEfectiva) {
+                foreach ($compra->detalles as $d) {
+                    if (empty($d->producto_id)) continue;
+                    try {
+                        $this->inventario->ingresarStock(
+                            productoId:  (int) $d->producto_id,
+                            bodegaId:    (int) $bodegaEfectiva,
+                            cantidad:    (float) $d->cantidad,
+                            costo:       (float) $d->precio_unitario,
+                            docTipo:     'COMPRA',
+                            docId:       $compra->id,
+                            docNumero:   $compra->num_documento,
+                            observacion: "Compra confirmada: {$compra->num_documento}",
+                        );
+                        Producto::where('id', $d->producto_id)
+                            ->update(['costo' => $d->precio_unitario, 'updated_at' => now()]);
+                    } catch (\Exception $e) {
+                        \Log::warning("Inventario: error producto {$d->producto_id}: {$e->getMessage()}");
+                    }
+                }
+            }
+
+            if ($compra->dias_credito > 0) {
+                CuentaPagar::create([
+                    'empresa_id'        => $empresaId,
+                    'proveedor_id'      => $compra->proveedor_id,
+                    'compra_id'         => $compra->id,
+                    'monto'             => $compra->total,
+                    'saldo'             => $compra->total,
+                    'fecha_emision'     => now()->toDateString(),
+                    'fecha_vencimiento' => $compra->fecha_vencimiento,
+                    'estado'            => 'pendiente',
+                ]);
+            }
+
+            try {
+                $asiento = $this->asientoService->compraRegistrada(
+                    empresaId:  $empresaId,
+                    compraId:   $compra->id,
+                    referencia: $compra->num_documento,
+                    subtotal:   $compra->subtotal_0 + $compra->subtotal_iva,
+                    iva:        $compra->total_iva,
+                    tipo:       $compra->gasto_no_deducible ? 'gasto' : 'inventario',
+                );
+                $compra->update(['asiento_id' => $asiento->id]);
+            } catch (\Exception) {
+                // No bloquear si período contable cerrado
+            }
+        });
+
+        return back()->with('success',
+            "Factura {$compra->num_documento} confirmada. Inventario y CxP actualizados.");
+    }
+
+    // ── Etiquetas — datos para el modal ─────────────────────────────────────────
+
+    public function etiquetasData(Compra $compra): JsonResponse
+    {
+        try {
+            $compra->load(['detalles' => function ($q) {
+                $q->with('producto:id,codigo,nombre');
+            }]);
+
+            $detalles = $compra->detalles
+                ->filter(fn($d) => $d->producto_id !== null)
+                ->map(function ($d) {
+                    $codigo = $d->producto?->codigo ?? '?';
+                    $nombre = $d->producto?->nombre ?? $d->descripcion;
+                    $ultimo = EtiquetaProducto::ultimoCorrelativo((int) $d->producto_id);
+                    $desde  = $ultimo + 1;
+                    $cant   = (int) ceil((float) $d->cantidad);
+                    return [
+                        'id'                 => $d->id,
+                        'producto_id'        => $d->producto_id,
+                        'codigo'             => $codigo,
+                        'nombre'             => $nombre,
+                        'descripcion'        => $d->descripcion,
+                        'cantidad'           => $cant,
+                        'ultimo_correlativo' => $ultimo,
+                        'desde'              => $desde,
+                        'hasta'              => $desde + $cant - 1,
+                        'num_etiquetas'      => $cant,
+                    ];
+                })
+                ->values();
+
+            return response()->json(['detalles' => $detalles]);
+        } catch (\Throwable $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    // ── Etiquetas — generar PDF y guardar en BD ──────────────────────────────────
+
+    public function generarEtiquetasPdf(Request $request, Compra $compra): \Illuminate\Http\Response
+    {
+        $request->validate([
+            'productos'             => 'required|array|min:1',
+            'productos.*.producto_id'   => 'required|integer',
+            'productos.*.detalle_id'    => 'nullable|integer',
+            'productos.*.codigo'        => 'required|string',
+            'productos.*.descripcion'   => 'required|string',
+            'productos.*.desde'         => 'required|integer|min:1',
+            'productos.*.num_etiquetas' => 'required|integer|min:1',
+            'reimprimir'            => 'boolean',
+        ]);
+
+        $empresaId  = session('empresa_activa_id');
+        $reimprimir = $request->boolean('reimprimir');
+
+        $registros = [];
+
+        foreach ($request->productos as $p) {
+            $productoId   = (int) $p['producto_id'];
+            $desde        = (int) $p['desde'];
+            $numEtiquetas = (int) $p['num_etiquetas'];
+            $hasta        = $desde + $numEtiquetas - 1;
+
+            if (!$reimprimir) {
+                EtiquetaProducto::create([
+                    'empresa_id'        => $empresaId,
+                    'compra_id'         => $compra->id,
+                    'compra_detalle_id' => $p['detalle_id'] ?? null,
+                    'producto_id'       => $productoId,
+                    'codigo_producto'   => $p['codigo'],
+                    'correlativo_desde' => $desde,
+                    'correlativo_hasta' => $hasta,
+                    'cantidad'          => $numEtiquetas,
+                    'generado_por'      => Auth::id(),
+                    'created_at'        => now(),
+                ]);
+            }
+
+            $registros[] = [
+                'codigo'      => $p['codigo'],
+                'descripcion' => $p['descripcion'],
+                'desde'       => $desde,
+                'hasta'       => $hasta,
+            ];
+        }
+
+        // Construir lista de etiquetas individuales
+        $generator = new BarcodeGeneratorPNG();
+        $etiquetas = [];
+        foreach ($registros as $r) {
+            for ($i = $r['desde']; $i <= $r['hasta']; $i++) {
+                $codigoBarras = $r['codigo'] . '-' . str_pad($i, 6, '0', STR_PAD_LEFT);
+                $etiquetas[]  = [
+                    'codigo_barras' => $codigoBarras,
+                    'descripcion'   => $r['descripcion'],
+                    'barcode_png'   => base64_encode(
+                        $generator->getBarcode($codigoBarras, BarcodeGeneratorPNG::TYPE_CODE_128, 2, 60)
+                    ),
+                ];
+            }
+        }
+
+        $etiquetas = array_values(array_filter($etiquetas, fn($e) => !empty($e['barcode_png'])));
+
+        $empresa = Empresa::find($empresaId);
+        // 9cm × 3.5cm en puntos (1cm = 28.3465pt)
+        $pdf     = Pdf::loadView('pdf.etiquetas', compact('etiquetas', 'empresa'))
+            ->setPaper([0, 0, 255.12, 99.21], 'portrait');
+
+        return $pdf->stream('etiquetas-' . $compra->num_documento . '.pdf');
+    }
+
 
     public function show(Compra $compra): Response
     {
@@ -262,26 +396,236 @@ class CompraController extends Controller
         return $pdf->stream('compra-' . $compra->num_documento . '-' . now()->format('Y-m-d') . '.pdf');
     }
 
+    // ── Verificar escenario de anulación ────────────────────────────────────────
+
+    public function verificarAnulacion(Compra $compra): JsonResponse
+    {
+        try {
+            if ($compra->estaAnulada()) {
+                return response()->json([
+                    'escenario' => 'ANULADA',
+                    'mensaje'   => 'Esta compra ya está anulada.',
+                ]);
+            }
+
+            // Escenario especial para pendiente — nunca tuvo inventario ni CxP
+            if ($compra->estaPendiente()) {
+                return response()->json([
+                    'escenario' => 'A',
+                    'mensaje'   => 'Esta factura está pendiente de recepción. Se anulará sin reversión de inventario.',
+                ]);
+            }
+
+            $compra->loadMissing(['detalles' => fn($q) => $q->with('producto:id,nombre')->whereNotNull('producto_id')]);
+            $productoIds = $compra->detalles->pluck('producto_id')->filter()->unique()->values();
+
+            // Escenario C: salidas reales por VENTAS
+            // Columnas reales: tipo (no tipo_movimiento), doc_tipo (no documento_tipo)
+            // No existe columna 'fecha' — usar DATE(created_at)
+            if ($productoIds->isNotEmpty() && $compra->fecha_emision) {
+                $salidas = DB::table('inventario_movimientos')
+                    ->whereIn('producto_id', $productoIds)
+                    ->where('tipo', 'salida')
+                    ->where(fn($q) => $q
+                        ->whereNull('doc_tipo')
+                        ->orWhereNotIn('doc_tipo', ['ANULACION', 'ANULACION_COMPRA', 'AJUSTE', 'COMPRA'])
+                    )
+                    ->whereRaw("DATE(created_at) >= ?", [$compra->fecha_emision->toDateString()])
+                    ->select('producto_id', DB::raw('SUM(cantidad) as total_salida'))
+                    ->groupBy('producto_id')
+                    ->get();
+
+                if ($salidas->isNotEmpty()) {
+                    $productosVendidos = $salidas->map(function ($m) use ($compra) {
+                        $det = $compra->detalles->firstWhere('producto_id', $m->producto_id);
+                        return [
+                            'nombre'          => $det?->producto?->nombre ?? $det?->descripcion ?? '—',
+                            'cantidad_salida' => (float) $m->total_salida,
+                        ];
+                    })->values();
+
+                    return response()->json([
+                        'escenario'          => 'C',
+                        'mensaje'            => 'No se puede anular: uno o más productos de esta factura tienen ventas registradas.',
+                        'productos_vendidos' => $productosVendidos,
+                    ]);
+                }
+            }
+
+            // Escenario B: hay egreso bancario activo
+            $movPago = MovimientoBancario::with('bancoCaja')
+                ->where('documento_tipo', 'COMPRA')
+                ->where('documento_id', $compra->id)
+                ->where('tipo', 'egreso')
+                ->where('anulado', false)
+                ->first();
+
+            if ($compra->tiene_pago || $movPago !== null) {
+                $monto = $movPago ? (float) $movPago->monto : (float) $compra->total;
+                $banco = $movPago?->bancoCaja?->nombre ?? '—';
+                return response()->json([
+                    'escenario' => 'B',
+                    'mensaje'   => "Esta factura tiene un pago de \${$monto} en {$banco}. Se revertirá automáticamente.",
+                    'monto'     => $monto,
+                    'banco'     => $banco,
+                ]);
+            }
+
+            // Escenario A: activa sin pago, sin ventas
+            return response()->json([
+                'escenario' => 'A',
+                'mensaje'   => 'La factura puede anularse. Se revertirá el inventario y se cancelará la CxP.',
+            ]);
+
+        } catch (\Throwable $e) {
+            \Log::error("verificarAnulacion error compra#{$compra->id}: {$e->getMessage()} en {$e->getFile()}:{$e->getLine()}");
+            return response()->json([
+                'escenario' => 'ERROR',
+                'mensaje'   => 'Error al verificar: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    // ── Anular factura de compra (escenarios A / B) ──────────────────────────────
+
     public function anular(Request $request, Compra $compra): RedirectResponse
     {
-        $request->validate([
-            'motivo' => 'required|string|min:10|max:300',
-        ]);
+        $request->validate(['motivo' => 'required|string|min:10|max:300']);
 
         if ($compra->estaAnulada()) {
             return back()->with('error', 'Esta compra ya está anulada.');
         }
-        if ($compra->tiene_pago) {
-            return back()->with('error',
-                'No se puede anular: tiene un pago registrado. Anula el pago primero.');
+
+        $empresaId      = session('empresa_activa_id');
+        $estadoAnterior = $compra->estado;
+
+        // ── Pendiente: nunca entró al inventario ni generó CxP/asiento ──────────
+        if ($compra->estaPendiente()) {
+            DB::transaction(function () use ($compra, $request, $estadoAnterior) {
+                $compra->update(['estado' => 'anulada']);
+                DB::table('log_cambios_criticos')->insert([
+                    'usuario_id'     => Auth::id(),
+                    'username'       => Auth::user()?->email ?? '',
+                    'tabla'          => 'compras',
+                    'registro_id'    => $compra->id,
+                    'campo'          => 'estado',
+                    'valor_anterior' => $estadoAnterior,
+                    'valor_nuevo'    => 'anulada',
+                    'motivo'         => $request->motivo,
+                    'ip'             => request()->ip(),
+                    'fecha'          => now(),
+                ]);
+            });
+            return back()->with('success',
+                "Factura pendiente {$compra->num_documento} anulada correctamente.");
         }
 
-        DB::transaction(function () use ($compra, $request) {
-            $compra->update(['estado' => 'anulada']);
+        // ── Activa: verificar que no haya ventas (columnas reales de la BD) ─────
+        $compra->load(['detalles', 'cuentaPagar', 'asiento.detalles']);
+        $productoIds = $compra->detalles->pluck('producto_id')->filter()->unique();
 
+        if ($productoIds->isNotEmpty() && $compra->fecha_emision) {
+            $hayVentas = DB::table('inventario_movimientos')
+                ->whereIn('producto_id', $productoIds)
+                ->where('tipo', 'salida')
+                ->where(fn($q) => $q
+                    ->whereNull('doc_tipo')
+                    ->orWhereNotIn('doc_tipo', ['ANULACION', 'ANULACION_COMPRA', 'AJUSTE', 'COMPRA'])
+                )
+                ->whereRaw("DATE(created_at) >= ?", [$compra->fecha_emision->toDateString()])
+                ->exists();
+
+            if ($hayVentas) {
+                return back()->with('error',
+                    'No se puede anular: los productos de esta factura tienen ventas registradas.');
+            }
+        }
+
+        DB::transaction(function () use ($compra, $request, $empresaId, $estadoAnterior) {
+
+            $bodegaEfectiva = $compra->bodega_id
+                ?? optional(Bodega::where('empresa_id', $empresaId)
+                    ->where('tipo', 'general')->first())->id;
+
+            // Revertir inventario
+            if ($bodegaEfectiva) {
+                foreach ($compra->detalles as $d) {
+                    if (!$d->producto_id) continue;
+                    try {
+                        $this->inventario->egresarStock(
+                            productoId:  (int) $d->producto_id,
+                            bodegaId:    (int) $bodegaEfectiva,
+                            cantidad:    (float) $d->cantidad,
+                            docTipo:     'ANULACION',
+                            docId:       $compra->id,
+                            docNumero:   $compra->num_documento,
+                            observacion: "Anulación compra: {$request->motivo}",
+                        );
+                    } catch (\Exception $e) {
+                        \Log::warning("Anulación inv. producto {$d->producto_id}: {$e->getMessage()}");
+                    }
+                }
+            }
+
+            // Escenario B: revertir pago bancario activo
+            $movPago = MovimientoBancario::where('documento_tipo', 'COMPRA')
+                ->where('documento_id', $compra->id)
+                ->where('tipo', 'egreso')
+                ->where('anulado', false)
+                ->first();
+
+            if ($movPago) {
+                MovimientoBancario::create([
+                    'empresa_id'     => $empresaId,
+                    'banco_caja_id'  => $movPago->banco_caja_id,
+                    'tipo'           => 'ingreso',
+                    'sub_tipo'       => $movPago->sub_tipo,
+                    'fecha'          => now()->toDateString(),
+                    'monto'          => $movPago->monto,
+                    'persona_tipo'   => 'proveedor',
+                    'persona_id'     => $compra->proveedor_id,
+                    'num_documento'  => $compra->num_documento,
+                    'descripcion'    => "Reversión pago — Anulación {$compra->num_documento}: {$request->motivo}",
+                    'documento_tipo' => 'ANULACION_COMPRA',
+                    'documento_id'   => $compra->id,
+                    'created_by'     => Auth::id(),
+                ]);
+                DB::table('bancos_cajas')
+                    ->where('id', $movPago->banco_caja_id)
+                    ->increment('saldo_actual', (float) $movPago->monto);
+                $movPago->update(['anulado' => true]);
+
+                if ($movPago->asiento_id) {
+                    try {
+                        $movPago->loadMissing('asiento.detalles');
+                        $this->asientoService->anular(
+                            $movPago->asiento,
+                            "Reversión pago — Anulación {$compra->num_documento}"
+                        );
+                    } catch (\Exception $e) {
+                        \Log::warning("Asiento pago no revertido: {$e->getMessage()}");
+                    }
+                }
+            }
+
+            // Revertir asiento de la compra
+            if ($compra->asiento_id && $compra->asiento) {
+                try {
+                    $this->asientoService->anular(
+                        $compra->asiento,
+                        "Anulación compra {$compra->num_documento}: {$request->motivo}"
+                    );
+                } catch (\Exception $e) {
+                    \Log::warning("Asiento compra no revertido: {$e->getMessage()}");
+                }
+            }
+
+            // Cancelar CxP
             if ($compra->cuentaPagar) {
                 $compra->cuentaPagar->update(['estado' => 'pagada', 'saldo' => 0]);
             }
+
+            $compra->update(['estado' => 'anulada']);
 
             DB::table('log_cambios_criticos')->insert([
                 'usuario_id'     => Auth::id(),
@@ -289,16 +633,15 @@ class CompraController extends Controller
                 'tabla'          => 'compras',
                 'registro_id'    => $compra->id,
                 'campo'          => 'estado',
-                'valor_anterior' => 'activa',
+                'valor_anterior' => $estadoAnterior,
                 'valor_nuevo'    => 'anulada',
                 'motivo'         => $request->motivo,
-                'ip'             => $request->ip(),
+                'ip'             => request()->ip(),
                 'fecha'          => now(),
             ]);
         });
 
-        return back()->with('success',
-            "Compra {$compra->num_documento} anulada correctamente.");
+        return back()->with('success', "Compra {$compra->num_documento} anulada correctamente.");
     }
 
     public function pdf(Request $request): \Illuminate\Http\Response

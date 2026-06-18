@@ -11,7 +11,7 @@ import {
     AlertTriangle, User, X, FileText, Zap, Download,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { AsientoContable, AsientoStats, EjercicioContable, PlanCuenta, PageProps } from '@/types'
+import type { AsientoContable, EjercicioContable, PlanCuenta, PageProps } from '@/types'
 import { notify, formatMoney, formatFecha, swalBase, injectSwalStyles } from '@/utils/contabilidad'
 import 'react-toastify/dist/ReactToastify.css'
 
@@ -40,7 +40,6 @@ interface Props extends PageProps {
     cuentas: PlanCuenta[]
     periodoActivo: EjercicioContable | null
     filtros: Record<string, string>
-    stats: AsientoStats
 }
 
 const PARTIDA_VACIA: Partida = { cuenta_id: '', descripcion: '', debe: '', haber: '' }
@@ -51,7 +50,7 @@ const TIPO_BADGE = {
 }
 
 export default function AsientosIndex() {
-    const { asientos, ejercicios, cuentas, periodoActivo, filtros, stats, flash, auth }
+    const { asientos, ejercicios, cuentas, periodoActivo, filtros, flash, auth }
         = usePage<Props>().props
     const perfil = auth.user?.perfil ?? ''
     const puedeCrear = ['super_admin', 'admin', 'contador'].includes(perfil)
@@ -242,93 +241,70 @@ export default function AsientosIndex() {
                     </div>
 
                     {/* Toolbar */}
-                    <div className="flex items-center gap-2 flex-wrap mb-6">
-                        {/* Nuevo asiento */}
-                        {puedeCrear && (
+                    <div className="flex items-center justify-between gap-3 mb-6">
+                        <div className="flex items-center gap-2 flex-wrap">
+                            {/* Nuevo asiento */}
+                            {puedeCrear && (
+                                <button
+                                    onClick={() => {
+                                        if (!periodoActivo) {
+                                            notify.error('No hay período activo.')
+                                            return
+                                        }
+                                        setModalAbierto(true)
+                                    }}
+                                    className="btn-primary flex items-center gap-2 whitespace-nowrap"
+                                >
+                                    <Plus size={15} />
+                                    Nuevo Asiento Manual
+                                </button>
+                            )}
+
+                            {/* Buscar */}
+                            <div className="input-with-icon">
+                                <Search size={14} className="input-icon" />
+                                <input type="text" value={buscar}
+                                    onChange={e => setBuscar(e.target.value)}
+                                    onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
+                                    placeholder="Número, concepto, referencia…"
+                                    className="input-field w-52" />
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                            {/* PDF */}
+                            <button
+                                onClick={() => abrirPdf(
+                                    `${route('contabilidad.asientos.reporte-pdf')}` +
+                                    `?ejercicio_id=${ejercicioId}` +
+                                    `&fecha_desde=${fechaDesde}` +
+                                    `&fecha_hasta=${fechaHasta}`
+                                )}
+                                className="btn-pdf flex items-center gap-2 whitespace-nowrap">
+                                <FileText size={15} />
+                                PDF
+                            </button>
+
+                            {/* Excel */}
                             <button
                                 onClick={() => {
-                                    if (!periodoActivo) {
-                                        notify.error('No hay período activo.')
-                                        return
-                                    }
-                                    setModalAbierto(true)
+                                    const params = new URLSearchParams({
+                                        ejercicio_id: ejercicioId,
+                                        fecha_desde:  fechaDesde,
+                                        fecha_hasta:  fechaHasta,
+                                        tipo:         tipo,
+                                        estado:       estado,
+                                    })
+                                    window.location.href =
+                                        route('contabilidad.asientos.exportar-excel') + '?' + params
                                 }}
-                                className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5"
-                                style={{ background: 'var(--primary)' }}
-                            >
-                                <Plus size={15} />
-                                Nuevo Asiento Manual
+                                className="btn-excel flex items-center gap-2 whitespace-nowrap">
+                                <Download size={15} />
+                                Excel
                             </button>
-                        )}
-
-                        {/* Buscar */}
-                        <div className="input-with-icon">
-                            <Search size={14} className="input-icon" />
-                            <input type="text" value={buscar}
-                                onChange={e => setBuscar(e.target.value)}
-                                onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
-                                placeholder="Número, concepto, referencia…"
-                                className="input-field w-52" />
                         </div>
-
-                        {/* Spacer */}
-                        <div className="flex-1" />
-
-                        {/* PDF */}
-                        <button
-                            onClick={() => abrirPdf(
-                                `${route('contabilidad.asientos.reporte-pdf')}` +
-                                `?ejercicio_id=${ejercicioId}` +
-                                `&fecha_desde=${fechaDesde}` +
-                                `&fecha_hasta=${fechaHasta}`
-                            )}
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90"
-                            style={{ background: '#ef4444' }}>
-                            <FileText size={15} />
-                            PDF
-                        </button>
-
-                        {/* Excel */}
-                        <button
-                            onClick={() => {
-                                const params = new URLSearchParams({
-                                    ejercicio_id: ejercicioId,
-                                    fecha_desde:  fechaDesde,
-                                    fecha_hasta:  fechaHasta,
-                                    tipo:         tipo,
-                                    estado:       estado,
-                                })
-                                window.location.href =
-                                    route('contabilidad.asientos.exportar-excel') + '?' + params
-                            }}
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90"
-                            style={{ background: '#16a34a' }}>
-                            <Download size={15} />
-                            Excel
-                        </button>
                     </div>
                 </div>
-                {/* Stats */}
-                <div className={cn('gap-4', 'grid', 'grid-cols-2', 'md:grid-cols-4')}>
-                    {([
-                        { label: 'Total', value: stats.total, color: '#3b82f6', Icon: FileText },
-                        { label: 'Activos', value: stats.activos, color: '#10b981', Icon: CheckCircle },
-                        { label: 'Anulados', value: stats.anulados, color: '#ef4444', Icon: XCircle },
-                        { label: 'Manuales', value: stats.manuales, color: '#F59E0B', Icon: User },
-                    ] as const).map(({ label, value, color, Icon }) => (
-                        <div key={label}
-                            className={cn('p-4', 'border', 'rounded-xl')}
-                            style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
-                            <div className={cn('flex', 'justify-between', 'items-center', 'mb-2')}>
-                                <p className={cn('font-medium', 'text-xs', 'uppercase', 'tracking-wider')}
-                                    style={{ color: 'var(--text-muted)' }}>{label}</p>
-                                <Icon size={15} style={{ color }} />
-                            </div>
-                            <p className={cn('font-bold', 'text-2xl')} style={{ color }}>{value}</p>
-                        </div>
-                    ))}
-                </div>
-
                 {/* Banner período */}
                 {periodoActivo ? (
                     <div className={cn('flex', 'items-center', 'gap-2', 'px-4', 'py-2', 'border', 'rounded-xl', 'text-sm')}
@@ -560,7 +536,7 @@ export default function AsientosIndex() {
             {modalAbierto && (
                 <div className={cn('z-50', 'fixed', 'inset-0', 'flex', 'justify-center', 'items-center', 'p-4')}
                     style={{ background: 'rgba(0,0,0,0.6)' }}>
-                    <div className={cn('flex', 'flex-col', 'shadow-2xl', 'rounded-2xl', 'w-full', 'max-w-3xl', 'max-h-[90vh]')}
+                    <div className={cn('flex', 'flex-col', 'shadow-2xl', 'rounded-2xl', 'w-full', 'max-w-4xl', 'max-h-[90vh]')}
                         style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
 
                         {/* Header modal */}

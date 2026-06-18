@@ -25,19 +25,11 @@ class InventarioMovimiento extends Model
     ];
 
     protected $fillable = [
-        'producto_id',
-        'bodega_id',
-        'tipo',
-        'doc_tipo',
-        'doc_id',
-        'cantidad',
-        'costo_unitario',
-        'costo_total',
-        'stock_anterior',
-        'stock_nuevo',
-        'usuario_id',
-        'empresa_id',
-        'notas',
+        'empresa_id', 'producto_id', 'bodega_id',
+        'tipo', 'doc_tipo', 'doc_id',
+        'cantidad', 'costo_unitario', 'costo_total',
+        'stock_anterior', 'stock_nuevo',
+        'usuario_id', 'notas',
     ];
 
     protected function casts(): array
@@ -59,7 +51,7 @@ class InventarioMovimiento extends Model
 
     public function bodega(): BelongsTo
     {
-        return $this->belongsTo(Bodega::class);
+        return $this->belongsTo(Bodega::class, 'bodega_id');
     }
 
     public function usuario(): BelongsTo

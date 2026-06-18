@@ -6,6 +6,7 @@ import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Search, ArrowUpDown, SlidersHorizontal, FileText, FileSpreadsheet } from 'lucide-react'
 import type { InventarioSaldo, Bodega, PaginatedData, PageProps } from '@/types'
+import { cn } from "../../../lib/utils";
 
 interface SaldoRow extends InventarioSaldo {
     producto_codigo?: string
@@ -74,10 +75,10 @@ export default function KardexSaldos() {
             />
 
             <div className="p-6">
-                <div className="flex items-center gap-3 mb-4 flex-wrap">
+                <div className={cn('flex', 'flex-wrap', 'items-center', 'gap-3', 'mb-4')}>
                     <Link href={route('inventario.kardex.index')}>
                         <Button variant="outline">
-                            <ArrowUpDown className="w-4 h-4" />
+                            <ArrowUpDown className={cn('w-4', 'h-4')} />
                             Ver Movimientos
                         </Button>
                     </Link>
@@ -87,15 +88,15 @@ export default function KardexSaldos() {
                             onMouseEnter={e => (e.currentTarget.style.background = 'var(--primary-hover)')}
                             onMouseLeave={e => (e.currentTarget.style.background = 'var(--primary)')}
                         >
-                            <SlidersHorizontal className="w-4 h-4" />
+                            <SlidersHorizontal className={cn('w-4', 'h-4')} />
                             Registrar Ajuste
                         </Button>
                     </Link>
 
                     <div className="relative">
-                        <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+                        <Search className={cn('top-2.5', 'left-3', 'absolute', 'w-4', 'h-4')} style={{ color: 'var(--text-muted)' }} />
                         <Input value={search} onChange={e => setSearch(e.target.value)}
-                            placeholder="Código o nombre..." className="pl-9 w-52" />
+                            placeholder="Código o nombre..." className={cn('pl-9', 'w-52')} />
                     </div>
 
                     <select value={bodegaId} onChange={e => setBodegaId(e.target.value)}
@@ -105,7 +106,7 @@ export default function KardexSaldos() {
                         {bodegas.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
                     </select>
 
-                    <label className="flex items-center gap-2 cursor-pointer select-none text-sm"
+                    <label className={cn('flex', 'items-center', 'gap-2', 'text-sm', 'cursor-pointer', 'select-none')}
                         style={{ color: 'var(--text-muted)' }}>
                         <input type="checkbox" checked={soloCriticos}
                             onChange={e => setSoloCriticos(e.target.checked)}
@@ -113,8 +114,8 @@ export default function KardexSaldos() {
                         Solo críticos
                     </label>
 
-                    <div className="flex items-center gap-2 ml-auto">
-                        <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium"
+                    <div className={cn('flex', 'items-center', 'gap-2', 'ml-auto')}>
+                        <button className={cn('flex', 'items-center', 'gap-1.5', 'px-3', 'py-1.5', 'rounded-md', 'font-medium', 'text-sm')}
                             style={{ background: '#DC2626', color: 'white', transition: 'background 0.2s' }}
                             onMouseEnter={e => (e.currentTarget.style.background = '#B91C1C')}
                             onMouseLeave={e => (e.currentTarget.style.background = '#DC2626')}
@@ -122,18 +123,17 @@ export default function KardexSaldos() {
                             <FileText className="w-4 h-4" />
                             PDF
                         </button>
-                        <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium"
+                        <button className={cn('flex', 'items-center', 'gap-1.5', 'px-3', 'py-1.5', 'rounded-md', 'font-medium', 'text-sm')}
                             style={{ background: '#16A34A', color: 'white', transition: 'background 0.2s' }}
                             onMouseEnter={e => (e.currentTarget.style.background = '#15803D')}
                             onMouseLeave={e => (e.currentTarget.style.background = '#16A34A')}
                             onClick={exportarExcel}>
-                            <FileSpreadsheet className="w-4 h-4" />
+                            <FileSpreadsheet className={cn('w-4', 'h-4')} />
                             Excel
                         </button>
                     </div>
                 </div>
 
-                {/* Tabla */}
                 <div className="rounded-xl border overflow-x-auto" style={{ borderColor: 'var(--border)' }}>
                     <table className="w-full text-xs">
                         <thead>
@@ -164,26 +164,26 @@ export default function KardexSaldos() {
 
                                 return (
                                     <tr key={saldo.id}
-                                        className="border-t transition-colors"
+                                        className={cn('border-t', 'transition-colors')}
                                         style={{
                                             borderColor: 'var(--border)',
                                             background: esCritico ? 'rgba(245, 158, 11, 0.05)' : undefined,
                                         }}>
-                                        <td className="px-3 py-2.5 font-mono" style={{ color: 'var(--text-muted)' }}>
+                                        <td className={cn('px-3', 'py-2.5', 'font-mono')} style={{ color: 'var(--text-muted)' }}>
                                             {codigo}
                                         </td>
-                                        <td className="px-3 py-2.5 max-w-[180px]">
-                                            <span className="font-medium truncate block" style={{ color: 'var(--text-main)' }}>
+                                        <td className={cn('px-3', 'py-2.5', 'max-w-45')}>
+                                            <span className={cn('block', 'font-medium', 'truncate')} style={{ color: 'var(--text-main)' }}>
                                                 {nombre}
                                             </span>
                                         </td>
-                                        <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>
+                                        <td className={cn('px-3', 'py-2.5', 'whitespace-nowrap')} style={{ color: 'var(--text-muted)' }}>
                                             {bodegaNombre}
                                         </td>
-                                        <td className="px-3 py-2.5 text-right font-mono">
-                                            <div className="flex items-center justify-end gap-1.5">
+                                        <td className={cn('px-3', 'py-2.5', 'font-mono', 'text-right')}>
+                                            <div className={cn('flex', 'justify-end', 'items-center', 'gap-1.5')}>
                                                 {esCritico && (
-                                                    <span className="px-1.5 py-0.5 rounded text-xs font-bold bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                                                    <span className={cn('bg-red-100', 'dark:bg-red-900/30', 'px-1.5', 'py-0.5', 'rounded', 'font-bold', 'text-red-700', 'dark:text-red-400', 'text-xs')}>
                                                         CRÍTICO
                                                     </span>
                                                 )}
@@ -201,16 +201,16 @@ export default function KardexSaldos() {
                                         <td className="px-3 py-2.5 text-right font-mono" style={{ color: 'var(--text-muted)' }}>
                                             {Number(saldo.costo_promedio).toFixed(4)}
                                         </td>
-                                        <td className="px-3 py-2.5 text-right font-mono font-medium" style={{ color: 'var(--text-main)' }}>
+                                        <td className={cn('px-3', 'py-2.5', 'font-mono', 'font-medium', 'text-right')} style={{ color: 'var(--text-main)' }}>
                                             {valorTotal.toFixed(2)}
                                         </td>
-                                        <td className="px-3 py-2.5">
+                                        <td className={cn('px-3', 'py-2.5')}>
                                             <Link href={route('inventario.kardex.ajuste', {
                                                 producto_id: saldo.producto_id,
                                                 bodega_id: saldo.bodega_id,
                                             })}>
                                                 <Button variant="ghost" size="icon" title="Registrar ajuste">
-                                                    <SlidersHorizontal className="w-3.5 h-3.5" />
+                                                    <SlidersHorizontal className={cn('w-3.5', 'h-3.5')} />
                                                 </Button>
                                             </Link>
                                         </td>
@@ -223,11 +223,11 @@ export default function KardexSaldos() {
 
                 {/* Paginación */}
                 {saldos.last_page > 1 && (
-                    <div className="flex items-center justify-between mt-4 text-sm">
+                    <div className={cn('flex', 'justify-between', 'items-center', 'mt-4', 'text-sm')}>
                         <p style={{ color: 'var(--text-muted)' }}>
                             Mostrando {saldos.from}–{saldos.to} de {saldos.total}
                         </p>
-                        <div className="flex gap-1">
+                        <div className={cn('flex', 'gap-1')}>
                             {saldos.links.map((link, i) => (
                                 link.url ? (
                                     <Link key={i} href={link.url}
@@ -236,7 +236,7 @@ export default function KardexSaldos() {
                                         dangerouslySetInnerHTML={{ __html: link.label }}
                                     />
                                 ) : (
-                                    <span key={i} className="px-3 py-1 rounded border text-xs opacity-40"
+                                    <span key={i} className={cn('opacity-40', 'px-3', 'py-1', 'border', 'rounded', 'text-xs')}
                                         style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}
                                         dangerouslySetInnerHTML={{ __html: link.label }} />
                                 )

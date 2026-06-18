@@ -11,24 +11,13 @@ class InventarioSaldo extends Model
 
     public $timestamps = false;
 
-    // Permite que touch() actualice updated_at
     const UPDATED_AT = 'updated_at';
 
-    protected $fillable = [
-        'producto_id',
-        'bodega_id',
-        'stock_actual',
-        'stock_reservado',
-        'costo_promedio',
-    ];
+    protected $fillable = ['producto_id', 'bodega_id', 'stock_actual', 'stock_reservado', 'costo_promedio'];
 
     protected function casts(): array
     {
-        return [
-            'stock_actual'    => 'decimal:4',
-            'stock_reservado' => 'decimal:4',
-            'costo_promedio'  => 'decimal:4',
-        ];
+        return ['stock_actual' => 'float', 'stock_reservado' => 'float', 'costo_promedio' => 'float'];
     }
 
     public function producto(): BelongsTo

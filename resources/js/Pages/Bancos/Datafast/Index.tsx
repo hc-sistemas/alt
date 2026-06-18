@@ -155,7 +155,7 @@ function LiquidarModal({ lote, bancos, onClose }: { lote: LoteRow; bancos: Props
 
     return (
         <div className="modal-overlay" onClick={onClose}>
-            <div className="modal-card max-w-md overflow-y-auto max-h-[90vh]" onClick={e => e.stopPropagation()}>
+            <div className="modal-card max-w-md" onClick={e => e.stopPropagation()}>
                 <div className="modal-header">
                     <h2>Liquidar Lote {lote.numero_lote}</h2>
                     <button className="modal-close" onClick={onClose}><X className="w-4 h-4" /></button>
