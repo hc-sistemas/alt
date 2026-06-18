@@ -10,11 +10,12 @@ import { toastExito, toastError } from '@/lib/toast'
 import type { ActivoFijo, PaginatedData, PageProps } from '@/types'
 import { cn } from "../../../lib/utils";
 
-interface Props extends PageProps {
+type Props = PageProps & {
     activos: PaginatedData<ActivoFijo>
     categorias: string[]
     estados: string[]
     filters: { search?: string; categoria?: string; estado?: string }
+    [key: string]: unknown
 }
 
 const CATEGORIA_LABELS: Record<string, string> = {
