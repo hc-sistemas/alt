@@ -505,15 +505,12 @@ class CompraController extends Controller
                 $compra->update(['estado' => 'anulada']);
                 DB::table('log_cambios_criticos')->insert([
                     'usuario_id'     => Auth::id(),
-                    'username'       => Auth::user()?->email ?? '',
                     'tabla'          => 'compras',
                     'registro_id'    => $compra->id,
                     'campo'          => 'estado',
                     'valor_anterior' => $estadoAnterior,
-                    'valor_nuevo'    => 'anulada',
-                    'motivo'         => $request->motivo,
-                    'ip'             => request()->ip(),
-                    'fecha'          => now(),
+                    'valor_nuevo'    => "anulada — {$request->motivo}",
+                    'ip_address'     => request()->ip(),
                 ]);
             });
             return back()->with('success',
@@ -629,15 +626,12 @@ class CompraController extends Controller
 
             DB::table('log_cambios_criticos')->insert([
                 'usuario_id'     => Auth::id(),
-                'username'       => Auth::user()?->email ?? '',
                 'tabla'          => 'compras',
                 'registro_id'    => $compra->id,
                 'campo'          => 'estado',
                 'valor_anterior' => $estadoAnterior,
-                'valor_nuevo'    => 'anulada',
-                'motivo'         => $request->motivo,
-                'ip'             => request()->ip(),
-                'fecha'          => now(),
+                'valor_nuevo'    => "anulada — {$request->motivo}",
+                'ip_address'     => request()->ip(),
             ]);
         });
 

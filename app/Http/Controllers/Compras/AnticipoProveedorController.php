@@ -252,15 +252,12 @@ class AnticipoProveedorController extends Controller
 
             DB::table('log_cambios_criticos')->insert([
                 'usuario_id'     => Auth::id(),
-                'username'       => Auth::user()?->email ?? '',
                 'tabla'          => 'anticipos_proveedores',
                 'registro_id'    => $anticipo->id,
                 'campo'          => 'estado',
                 'valor_anterior' => 'pendiente',
-                'valor_nuevo'    => 'anulado',
-                'motivo'         => $request->motivo,
-                'ip'             => $request->ip(),
-                'fecha'          => now(),
+                'valor_nuevo'    => "anulado — {$request->motivo}",
+                'ip_address'     => $request->ip(),
             ]);
         });
 
