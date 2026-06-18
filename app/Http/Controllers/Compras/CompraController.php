@@ -79,7 +79,7 @@ class CompraController extends Controller
         $productos = Producto::where('empresa_id', $empresaId)
             ->where('estado', true)
             ->orderBy('codigo')
-            ->get(['id', 'codigo', 'nombre', 'unidad', 'costo', 'iva_porcentaje']);
+            ->get(['id', 'codigo', 'nombre', 'unidad', 'costo', 'porcentaje_iva']);
 
         return Inertia::render('Compras/Compras/Index', [
             'compras'     => $compras,

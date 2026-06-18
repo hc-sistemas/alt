@@ -236,7 +236,6 @@ export interface Producto {
     pvp: number
     pvd: number
     descuento_maximo: number
-    iva_porcentaje: number
     porcentaje_iva: number
     tiene_ice: boolean
     porcentaje_ice: number
@@ -618,8 +617,8 @@ export interface Producto {
     pvd: number
     costo: number
     descuento_maximo: number
-    iva_porcentaje: number
-    ice_porcentaje: number
+    porcentaje_iva: number
+    porcentaje_ice: number
     stock_minimo: number
     stock_maximo: number | null
     cuenta_inventario_id: number | null

@@ -27,7 +27,7 @@ const TABS: { key: Tab; label: string }[] = [
 
 const TAB_FIELDS: Record<Tab, string[]> = {
     general:      ['codigo', 'nombre', 'tipo', 'unidad', 'descripcion', 'observaciones'],
-    precios:      ['pvp', 'pvd', 'costo', 'descuento_maximo', 'iva_porcentaje', 'ice_porcentaje'],
+    precios:      ['pvp', 'pvd', 'costo', 'descuento_maximo', 'porcentaje_iva', 'porcentaje_ice'],
     inventario:   ['stock_minimo', 'stock_maximo'],
     contabilidad: ['cuenta_inventario_id', 'cuenta_costo_id', 'cuenta_ventas_id'],
 }
@@ -51,8 +51,8 @@ export default function ProductoForm() {
         pvd:                  producto?.pvd?.toString() ?? '0',
         costo:                producto?.costo?.toString() ?? '0',
         descuento_maximo:     producto?.descuento_maximo?.toString() ?? '0',
-        iva_porcentaje:       producto?.iva_porcentaje?.toString() ?? '15',
-        ice_porcentaje:       producto?.ice_porcentaje?.toString() ?? '0',
+        porcentaje_iva:       producto?.porcentaje_iva?.toString() ?? '15',
+        porcentaje_ice:       producto?.porcentaje_ice?.toString() ?? '0',
         stock_minimo:         producto?.stock_minimo?.toString() ?? '0',
         stock_maximo:         producto?.stock_maximo?.toString() ?? '',
         cuenta_inventario_id: producto?.cuenta_inventario_id?.toString() ?? '',
@@ -320,23 +320,23 @@ export default function ProductoForm() {
                                 </div>
                                 <div className="space-y-1.5">
                                     <Label>IVA (%)</Label>
-                                    <select value={data.iva_porcentaje}
-                                        onChange={e => setData('iva_porcentaje', e.target.value)}
+                                    <select value={data.porcentaje_iva}
+                                        onChange={e => setData('porcentaje_iva', e.target.value)}
                                         className="input-field"
                                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
                                         <option value="0">0%</option>
                                         <option value="5">5%</option>
                                         <option value="15">15%</option>
                                     </select>
-                                    {errors.iva_porcentaje && <p className="text-xs text-red-400">{errors.iva_porcentaje}</p>}
+                                    {errors.porcentaje_iva && <p className="text-xs text-red-400">{errors.porcentaje_iva}</p>}
                                 </div>
                                 <div className="space-y-1.5">
                                     <Label>ICE (%)</Label>
                                     <Input type="number" min={0} step="0.01"
-                                        value={data.ice_porcentaje}
-                                        onChange={e => setData('ice_porcentaje', e.target.value)}
+                                        value={data.porcentaje_ice}
+                                        onChange={e => setData('porcentaje_ice', e.target.value)}
                                         placeholder="Ej: 0.00" />
-                                    {errors.ice_porcentaje && <p className="text-xs text-red-400">{errors.ice_porcentaje}</p>}
+                                    {errors.porcentaje_ice && <p className="text-xs text-red-400">{errors.porcentaje_ice}</p>}
                                 </div>
                             </div>
                         </>

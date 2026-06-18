@@ -19,7 +19,7 @@ import 'react-toastify/dist/ReactToastify.css'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type ProductoRow = Pick<Producto, 'id' | 'codigo' | 'nombre' | 'unidad' | 'costo' | 'iva_porcentaje'>
+type ProductoRow = Pick<Producto, 'id' | 'codigo' | 'nombre' | 'unidad' | 'costo' | 'porcentaje_iva'>
 
 interface Filtros {
     buscar?: string
@@ -386,7 +386,7 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, c
                     codigo:          p.codigo,
                     descripcion:     p.nombre,
                     precio_unitario: String(p.costo),
-                    porcentaje_iva:  String(p.iva_porcentaje),
+                    porcentaje_iva:  String(p.porcentaje_iva),
                 }
             }),
         }))
