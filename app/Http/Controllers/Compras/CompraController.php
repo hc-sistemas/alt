@@ -216,14 +216,14 @@ class CompraController extends Controller
                     if (empty($d->producto_id)) continue;
                     try {
                         $this->inventario->ingresarStock(
-                            productoId:  (int) $d->producto_id,
-                            bodegaId:    (int) $bodegaEfectiva,
-                            cantidad:    (float) $d->cantidad,
-                            costo:       (float) $d->precio_unitario,
-                            docTipo:     'COMPRA',
-                            docId:       $compra->id,
-                            docNumero:   $compra->num_documento,
-                            observacion: "Compra confirmada: {$compra->num_documento}",
+                            productoId:    (int) $d->producto_id,
+                            bodegaId:      (int) $bodegaEfectiva,
+                            cantidad:      (float) $d->cantidad,
+                            costoUnitario: (float) $d->precio_unitario,
+                            docTipo:       'COMPRA',
+                            docId:         $compra->id,
+                            docNumero:     $compra->num_documento,
+                            observacion:   "Compra confirmada: {$compra->num_documento}",
                         );
                         Producto::where('id', $d->producto_id)
                             ->update(['costo' => $d->precio_unitario, 'updated_at' => now()]);
