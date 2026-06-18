@@ -171,55 +171,7 @@ function DetalleRow({ detalle, idx, cuentas, onChange, onRemove, onAbrirModal }:
                             <line x1="21" y1="21" x2="16.65" y2="16.65"/>
                         </svg>
                     )}
-                    style={inputStyle}
-                    value={query}
-                    onChange={e => handleCodigoChange(e.target.value)}
-                    onFocus={() => query.length >= 2 && setShowDrop(true)}
-                    onBlur={() => setTimeout(() => setShowDrop(false), 150)}
-                    placeholder="Buscar…"
-                />
-                {showDrop && (
-                    <div ref={dropRef}
-                        className="absolute left-0 top-full mt-0.5 z-50 w-80 max-h-52 overflow-y-auto rounded-lg border shadow-xl"
-                        style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
-                        {filtered.length === 0 ? (
-                            <>
-                                <div className="px-3 py-2 text-xs" style={{ color: 'var(--text-muted)' }}>
-                                    Sin resultados en inventario
-                                </div>
-                                <button type="button"
-                                    className="w-full text-left px-3 py-2 text-xs border-t hover:opacity-80 transition-opacity"
-                                    style={{ borderColor: 'var(--border)', color: 'var(--primary)' }}
-                                    onMouseDown={() => { onChange(idx, 'codigo', query); setShowDrop(false) }}>
-                                    ✏️ Ingresar sin vincular
-                                </button>
-                            </>
-                        ) : (
-                            <>
-                                {filtered.map(p => (
-                                    <button key={p.id} type="button"
-                                        className="w-full text-left px-3 py-2 hover:opacity-80 transition-opacity border-b last:border-0"
-                                        style={{ borderColor: 'var(--border)' }}
-                                        onMouseDown={() => selectProducto(p)}>
-                                        <div className="flex items-baseline gap-1.5">
-                                            <span className="font-bold text-[10px]" style={{ color: 'var(--primary)' }}>{p.codigo}</span>
-                                            <span className="font-medium text-xs truncate" style={{ color: 'var(--text-main)' }}>{p.nombre}</span>
-                                        </div>
-                                        <div className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                                            {p.unidad} · ${Number(p.costo).toFixed(2)} · IVA {p.iva_porcentaje}%
-                                        </div>
-                                    </button>
-                                ))}
-                                <button type="button"
-                                    className="w-full text-left px-3 py-2 text-xs border-t hover:opacity-80 transition-opacity"
-                                    style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}
-                                    onMouseDown={() => { onChange(idx, 'codigo', query); setShowDrop(false) }}>
-                                    ✏️ Ingresar sin vincular
-                                </button>
-                            </>
-                        )}
-                    </div>
-                )}
+                </button>
             </div>
 
             {/* ── Descripción ── */}
