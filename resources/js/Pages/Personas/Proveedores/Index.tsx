@@ -157,7 +157,7 @@ export default function ProveedoresIndex() {
                                 <th className="w-10 px-2 py-2 font-medium text-center" style={{ color: 'var(--text-muted)' }}>No</th>
                                 <th className="w-24 px-2 py-2 font-medium text-left" style={{ color: 'var(--text-muted)' }}>Tipo</th>
                                 <th className="w-32 px-2 py-2 font-medium text-left" style={{ color: 'var(--text-muted)' }}>RUC/ID</th>
-                                <th className="min-w-[140px] px-2 py-2 font-medium text-left" style={{ color: 'var(--text-muted)' }}>Nombre</th>
+                                <th className="min-w-35 px-2 py-2 font-medium text-left" style={{ color: 'var(--text-muted)' }}>Nombre</th>
                                 <th className="w-24 px-2 py-2 font-medium text-left" style={{ color: 'var(--text-muted)' }}>País</th>
                                 <th className="w-24 px-2 py-2 font-medium text-left" style={{ color: 'var(--text-muted)' }}>Ciudad</th>
                                 <th className="w-28 px-2 py-2 font-medium text-left" style={{ color: 'var(--text-muted)' }}>Teléfono</th>

@@ -120,6 +120,7 @@ export interface PageProps {
     empresas_usuario: Partial<Empresa>[]
     flash: { success?: string; error?: string; warning?: string }
     ziggy?: Record<string, unknown>
+    [key: string]: unknown
 }
 
 // ── Inventario ────────────────────────────────────────────────────────────────
