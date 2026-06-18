@@ -41,7 +41,7 @@ class CategoriaProductoController extends Controller
             'nombre'      => ['required', 'string', 'max:150'],
             'descripcion' => ['nullable', 'string'],
             'parent_id'   => ['nullable', 'integer', 'exists:categorias_producto,id'],
-            'activo'      => ['boolean'],
+            'estado'      => ['boolean'],
         ]);
 
         $categoria = CategoriaProducto::create($data);
@@ -58,7 +58,7 @@ class CategoriaProductoController extends Controller
             'nombre'      => ['required', 'string', 'max:150'],
             'descripcion' => ['nullable', 'string'],
             'parent_id'   => ['nullable', 'integer', 'exists:categorias_producto,id'],
-            'activo'      => ['boolean'],
+            'estado'      => ['boolean'],
         ]);
 
         // Prevenir ciclos: parent_id no puede ser la misma categoría ni un hijo de ella

@@ -41,8 +41,8 @@ class ProductoController extends Controller
         return Inertia::render('Inventario/Productos/Index', [
             'productos'   => $query->paginate(20)->withQueryString(),
             'filters'     => $request->only(['search', 'marca_id', 'categoria_id', 'tipo', 'estado']),
-            'marcas'      => Marca::where('activo', true)->orderBy('nombre')->get(['id', 'nombre']),
-            'categorias'  => CategoriaProducto::where('activo', true)->orderBy('nombre')->get(['id', 'nombre', 'parent_id']),
+            'marcas'      => Marca::where('estado', true)->orderBy('nombre')->get(['id', 'nombre']),
+            'categorias'  => CategoriaProducto::where('estado', true)->orderBy('nombre')->get(['id', 'nombre', 'parent_id']),
         ]);
     }
 
@@ -52,9 +52,9 @@ class ProductoController extends Controller
 
         return Inertia::render('Inventario/Productos/Form', [
             'producto'  => null,
-            'marcas'    => Marca::where('activo', true)->orderBy('nombre')->get(['id', 'nombre']),
-            'categorias' => CategoriaProducto::where('activo', true)->orderBy('nombre')->get(['id', 'nombre', 'parent_id']),
-            'bodegas'   => Bodega::where('empresa_id', $empresaId)->where('activo', true)->orderBy('nombre')->get(['id', 'nombre', 'tipo']),
+            'marcas'    => Marca::where('estado', true)->orderBy('nombre')->get(['id', 'nombre']),
+            'categorias' => CategoriaProducto::where('estado', true)->orderBy('nombre')->get(['id', 'nombre', 'parent_id']),
+            'bodegas'   => Bodega::where('empresa_id', $empresaId)->where('estado', true)->orderBy('nombre')->get(['id', 'nombre', 'tipo']),
         ]);
     }
 
@@ -137,9 +137,9 @@ class ProductoController extends Controller
 
         return Inertia::render('Inventario/Productos/Form', [
             'producto'   => $producto,
-            'marcas'     => Marca::where('activo', true)->orderBy('nombre')->get(['id', 'nombre']),
-            'categorias' => CategoriaProducto::where('activo', true)->orderBy('nombre')->get(['id', 'nombre', 'parent_id']),
-            'bodegas'    => Bodega::where('empresa_id', $empresaId)->where('activo', true)->orderBy('nombre')->get(['id', 'nombre', 'tipo']),
+            'marcas'     => Marca::where('estado', true)->orderBy('nombre')->get(['id', 'nombre']),
+            'categorias' => CategoriaProducto::where('estado', true)->orderBy('nombre')->get(['id', 'nombre', 'parent_id']),
+            'bodegas'    => Bodega::where('empresa_id', $empresaId)->where('estado', true)->orderBy('nombre')->get(['id', 'nombre', 'tipo']),
         ]);
     }
 

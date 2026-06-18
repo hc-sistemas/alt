@@ -72,7 +72,7 @@ class CompraController extends Controller
             ->get(['id', 'codigo', 'nombre']);
 
         $bodegas = Bodega::where('empresa_id', $empresaId)
-            ->where('activo', true)
+            ->where('estado', true)
             ->orderBy('nombre')
             ->get(['id', 'nombre', 'tipo']);
 

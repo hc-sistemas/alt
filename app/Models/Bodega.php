@@ -17,13 +17,13 @@ class Bodega extends Model
         'nombre',
         'tipo',
         'descripcion',
-        'activo',
+        'estado',
     ];
 
     protected function casts(): array
     {
         return [
-            'activo' => 'boolean',
+            'estado' => 'boolean',
         ];
     }
 
@@ -39,7 +39,7 @@ class Bodega extends Model
 
     public function scopeActivas($query)
     {
-        return $query->where('activo', true);
+        return $query->where('estado', true);
     }
 
     public function scopeDeEmpresa($query, int $empresaId)

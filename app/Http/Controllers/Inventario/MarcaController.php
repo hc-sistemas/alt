@@ -36,7 +36,7 @@ class MarcaController extends Controller
         $data = $request->validate([
             'nombre'      => ['required', 'string', 'max:150'],
             'descripcion' => ['nullable', 'string'],
-            'activo'      => ['boolean'],
+            'estado'      => ['boolean'],
         ]);
 
         $marca = Marca::create($data);
@@ -52,7 +52,7 @@ class MarcaController extends Controller
         $data = $request->validate([
             'nombre'      => ['required', 'string', 'max:150'],
             'descripcion' => ['nullable', 'string'],
-            'activo'      => ['boolean'],
+            'estado'      => ['boolean'],
         ]);
 
         $marca->update($data);

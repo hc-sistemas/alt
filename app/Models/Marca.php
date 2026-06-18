@@ -13,13 +13,13 @@ class Marca extends Model
         'empresa_id',
         'nombre',
         'descripcion',
-        'activo',
+        'estado',
     ];
 
     protected function casts(): array
     {
         return [
-            'activo' => 'boolean',
+            'estado' => 'boolean',
         ];
     }
 
@@ -30,6 +30,6 @@ class Marca extends Model
 
     public function scopeActivas($query)
     {
-        return $query->where('activo', true);
+        return $query->where('estado', true);
     }
 }

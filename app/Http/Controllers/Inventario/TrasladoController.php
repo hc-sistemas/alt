@@ -41,7 +41,7 @@ class TrasladoController extends Controller
             ->withQueryString();
 
         $bodegas = Bodega::where('empresa_id', $empresaId)
-            ->where('activo', true)
+            ->where('estado', true)
             ->orderBy('nombre')
             ->get(['id', 'nombre']);
 
@@ -62,7 +62,7 @@ class TrasladoController extends Controller
                 ->orderBy('nombre')
                 ->get(['id', 'codigo', 'nombre']),
             'bodegas'   => Bodega::where('empresa_id', $empresaId)
-                ->where('activo', true)
+                ->where('estado', true)
                 ->orderBy('nombre')
                 ->get(['id', 'nombre', 'tipo']),
         ]);

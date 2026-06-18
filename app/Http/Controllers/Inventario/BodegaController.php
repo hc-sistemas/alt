@@ -48,7 +48,7 @@ class BodegaController extends Controller
             'tipo'            => ['required', 'string', 'in:' . implode(',', Bodega::TIPOS)],
             'centro_costo_id' => ['nullable', 'integer', 'exists:centros_costo,id'],
             'descripcion'     => ['nullable', 'string'],
-            'activo'          => ['boolean'],
+            'estado'          => ['boolean'],
         ]);
 
         // Validar que el centro de costo pertenezca a la misma empresa
@@ -78,7 +78,7 @@ class BodegaController extends Controller
             'tipo'            => ['required', 'string', 'in:' . implode(',', Bodega::TIPOS)],
             'centro_costo_id' => ['nullable', 'integer', 'exists:centros_costo,id'],
             'descripcion'     => ['nullable', 'string'],
-            'activo'          => ['boolean'],
+            'estado'          => ['boolean'],
         ]);
 
         // Validar que el centro de costo pertenezca a la misma empresa
