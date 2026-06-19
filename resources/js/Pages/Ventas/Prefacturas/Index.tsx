@@ -69,17 +69,18 @@ export default function Index() {
                 title="Prefacturas / Reservas"
                 description="Gestión de prefacturas y anticipos"
                 breadcrumbs={[{ label: 'Ventas' }, { label: 'Prefacturas' }]}
-                actions={
+            />
+
+            <div className="p-6 space-y-4">
+                <div className="flex items-center">
                     <Link href={route('ventas.prefacturas.create')}>
-                        <Button size="sm">
+                        <Button>
                             <Plus className="w-4 h-4" />
                             Nueva Prefactura
                         </Button>
                     </Link>
-                }
-            />
+                </div>
 
-            <div className="p-6 space-y-4">
                 {/* Filtros */}
                 <div
                     className="rounded-xl p-4 border"

@@ -37,6 +37,7 @@ interface Factura {
 }
 
 interface Filtros {
+    [key: string]: string | undefined
     fecha_desde?: string
     fecha_hasta?: string
     cliente?: string
@@ -70,7 +71,9 @@ function formaPagoResumen(pagos: FacturaPago[]): string {
 }
 
 function esMismoDia(fecha: string): boolean {
-    return fecha.startsWith(new Date().toISOString().slice(0, 10))
+    const hoy = new Date()
+    const hoyLocal = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`
+    return fecha.startsWith(hoyLocal)
 }
 
 // ── Componente ────────────────────────────────────────────────────────────────
@@ -131,17 +134,18 @@ export default function Index() {
                     { label: 'Ventas' },
                     { label: 'Facturas' },
                 ]}
-                actions={
+            />
+
+            <div className="p-6 space-y-4">
+
+                <div className="flex items-center">
                     <Link href={route('ventas.facturas.create')}>
-                        <Button size="sm">
+                        <Button>
                             <Plus className="w-4 h-4" />
                             Nueva Factura
                         </Button>
                     </Link>
-                }
-            />
-
-            <div className="p-6 space-y-4">
+                </div>
 
                 {/* Filtros */}
                 <div

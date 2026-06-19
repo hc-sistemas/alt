@@ -101,17 +101,17 @@ export default function Index() {
                 title="Proformas"
                 description="Gestión de proformas y cotizaciones"
                 breadcrumbs={[{ label: 'Ventas' }, { label: 'Proformas' }]}
-                actions={
+            />
+
+            <div className="p-6 space-y-4">
+                <div className="flex items-center">
                     <Link href={route('ventas.proformas.create')}>
-                        <Button size="sm">
+                        <Button>
                             <Plus className="w-4 h-4" />
                             Nueva Proforma
                         </Button>
                     </Link>
-                }
-            />
-
-            <div className="p-6 space-y-4">
+                </div>
                 {/* Filtros */}
                 <div
                     className="rounded-xl p-4 border"
