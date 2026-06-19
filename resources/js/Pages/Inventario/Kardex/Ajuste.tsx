@@ -12,15 +12,23 @@ import { toastExito, toastError } from '@/lib/toast'
 import type { PageProps } from '@/types'
 
 interface Props extends PageProps {
+    productos: { id: number; codigo: string; nombre: string }[]
     bodegas: { id: number; nombre: string }[]
     productoId: number | null
     bodegaId: number | null
+    redirect_to: string
 }
 
 export default function KardexAjuste() {
-    const { bodegas, productoId, bodegaId } = usePage<Props>().props
+    const { productos, bodegas, productoId, bodegaId, redirect_to } = usePage<Props>().props
 
-    const [productoFijado, setProductoFijado] = useState<Resultado | null>(null)
+    const productoInicial = productoId
+        ? productos.find(p => p.id === productoId) ?? null
+        : null
+
+    const [productoFijado, setProductoFijado] = useState<Resultado | null>(
+        productoInicial ? { ...productoInicial, marca: null, requiere_serie: false } : null
+    )
 
     const [saldoDisponible, setSaldoDisponible] = useState<number | null>(null)
     const [loadingSaldo, setLoadingSaldo] = useState(false)
@@ -32,6 +40,7 @@ export default function KardexAjuste() {
         cantidad:       '',
         costo_unitario: '',
         motivo:         '',
+        redirect_to:    redirect_to,
     })
 
     function limpiarProducto() {
@@ -65,7 +74,6 @@ export default function KardexAjuste() {
         post(route('inventario.kardex.storeAjuste'), {
             onSuccess: () => {
                 toastExito('Ajuste registrado correctamente')
-                router.visit(route('inventario.kardex.saldos'))
             },
             onError: (errs) => {
                 const msg = Object.values(errs)[0] ?? 'Error al registrar el ajuste'
@@ -246,7 +254,7 @@ export default function KardexAjuste() {
                         Registrar ajuste
                     </Button>
                     <Button type="button" variant="outline"
-                        onClick={() => router.visit(route('inventario.kardex.saldos'))}>
+                        onClick={() => router.visit(redirect_to)}>
                         Cancelar
                     </Button>
                 </div>

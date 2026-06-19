@@ -30,6 +30,7 @@ const navItems: NavItem[] = [
         nombre: 'Ventas', clave: 'ventas', icon: FileText,
         hijos: [
             { nombre: 'Facturas', href: '/ventas/facturas' },
+            { nombre: 'Prefacturas', href: '/ventas/prefacturas' },
             { nombre: 'Proformas', href: '/ventas/proformas' },
             { nombre: 'CxC', href: '/ventas/cxc' },
             { nombre: 'Notas de Crédito', href: '/ventas/notas-credito' },
@@ -48,7 +49,8 @@ const navItems: NavItem[] = [
         nombre: 'Inventario', clave: 'inventario', icon: Package,
         hijos: [
             { nombre: 'Productos', href: '/inventario/productos' },
-            { nombre: 'Kárdex', href: '/inventario/kardex/saldos' },
+            { nombre: 'Kárdex', href: '/inventario/kardex' },
+            { nombre: 'Saldos Inventario', href: '/inventario/kardex/saldos' },
             { nombre: 'Traslados', href: '/inventario/traslados' },
             { nombre: 'Activos Fijos', href: '/inventario/activos' },
             { nombre: 'Listas de Precio', href: '/inventario/listas-precio' },

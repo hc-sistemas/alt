@@ -299,6 +299,16 @@ export interface InventarioMovimiento {
     producto?: Producto
 }
 
+export interface KardexMovimiento extends InventarioMovimiento {
+    saldo_anterior: number
+    saldo_posterior: number
+    es_ingreso: boolean | null
+}
+
+export interface KardexMovimientoExtendido extends KardexMovimiento {
+    tipo_descriptivo: string
+}
+
 export interface TrasladoBodega {
     id: number
     empresa_id: number

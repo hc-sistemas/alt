@@ -11,15 +11,20 @@ class InventarioMovimiento extends Model
     public $timestamps = false;
     const CREATED_AT = 'created_at';
 
-    const TIPOS = ['entrada', 'salida', 'traslado', 'ajuste', 'reserva'];
+    const TIPOS = ['entrada', 'salida', 'traslado', 'ajuste', 'reserva', 'reserva_liberada'];
 
     protected $fillable = [
         'empresa_id', 'producto_id',
         'bodega_origen_id', 'bodega_destino_id',
         'tipo_movimiento', 'documento_tipo', 'documento_id', 'documento_numero',
         'cantidad', 'costo_unitario', 'costo_total',
-        'numero_serie', 'fecha', 'hora', 'usuario_id', 'observacion',
+        'numero_serie', 'fecha', 'hora', 'usuario_id', 'observacion', 'liberado_at',
     ];
+
+    protected function casts(): array
+    {
+        return ['liberado_at' => 'datetime'];
+    }
 
     public function producto(): BelongsTo
     {

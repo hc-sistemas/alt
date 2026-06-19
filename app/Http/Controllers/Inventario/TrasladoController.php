@@ -146,17 +146,19 @@ class TrasladoController extends Controller
                         );
                     }
 
-                    $this->inventario->reservarStock(
-                        (int) $detalleData['producto_id'],
-                        (int) $data['bodega_origen_id'],
-                        (float) $detalleData['cantidad_enviada']
-                    );
-
-                    TrasladoDetalle::create([
+                    $detalle = TrasladoDetalle::create([
                         'traslado_id'      => $traslado->id,
                         'producto_id'      => $detalleData['producto_id'],
                         'cantidad_enviada' => $detalleData['cantidad_enviada'],
                     ]);
+
+                    $this->inventario->reservarStock(
+                        (int) $detalleData['producto_id'],
+                        (int) $data['bodega_origen_id'],
+                        (float) $detalleData['cantidad_enviada'],
+                        'traslado_detalle',
+                        $detalle->id
+                    );
                 }
 
                 $this->auditoria->documento('crear', 'inventario', 'traslados_bodega', $traslado->id,
@@ -191,6 +193,12 @@ class TrasladoController extends Controller
 
         if ($traslado->empresa_id !== $empresaId) {
             abort(403);
+        }
+
+        $perfilNombre = strtolower(Auth::user()->perfil?->nombre ?? '');
+        $perfilesPermitidos = ['super_admin', 'admin', 'bodeguero'];
+        if (!in_array($perfilNombre, $perfilesPermitidos)) {
+            abort(403, 'No tienes permiso para realizar esta acción.');
         }
 
         if (!$traslado->isPendiente()) {
@@ -264,6 +272,12 @@ class TrasladoController extends Controller
             abort(403);
         }
 
+        $perfilNombre = strtolower(Auth::user()->perfil?->nombre ?? '');
+        $perfilesPermitidos = ['super_admin', 'admin', 'bodeguero'];
+        if (!in_array($perfilNombre, $perfilesPermitidos)) {
+            abort(403, 'No tienes permiso para realizar esta acción.');
+        }
+
         if (!$traslado->isPendiente()) {
             abort(422, 'Traslado no está pendiente.');
         }
@@ -280,7 +294,8 @@ class TrasladoController extends Controller
                     $this->inventario->liberarReserva(
                         (int) $detalle->producto_id,
                         (int) $traslado->bodega_origen_id,
-                        (float) $detalle->cantidad_enviada
+                        'traslado_detalle',
+                        $detalle->id
                     );
                 }
 
