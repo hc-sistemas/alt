@@ -549,6 +549,35 @@ export interface Importacion {
     observaciones: string | null
 }
 
+export interface RecepcionBodega {
+    id: number
+    empresa_id: number
+    compra_id: number
+    bodega_id: number
+    estado: 'pendiente' | 'completada' | 'parcial'
+    recibido_por: number | null
+    fecha_recepcion: string | null
+    observacion: string | null
+    created_at: string
+    updated_at: string
+    compra?: Compra
+    bodega?: Bodega
+    detalles?: RecepcionDetalle[]
+    recibidoPor?: Usuario
+}
+
+export interface RecepcionDetalle {
+    id: number
+    recepcion_id: number
+    compra_detalle_id: number
+    producto_id: number
+    cantidad_esperada: number
+    cantidad_recibida: number
+    estado: 'pendiente' | 'completado' | 'parcial'
+    producto?: Producto
+    compraDetalle?: CompraDetalle
+}
+
 export interface AnticipoProveedor {
     id: number
     empresa_id: number

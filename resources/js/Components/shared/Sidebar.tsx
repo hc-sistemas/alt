@@ -3,7 +3,7 @@ import { useState } from 'react'
 import {
     LayoutDashboard, FileText, ShoppingCart, Package, BookOpen,
     Landmark, Users, Wrench, BarChart2, Settings, Settings2, ClipboardList, ArrowLeftRight, ChevronDown,
-    ChevronLeft, ChevronRight, X, UserCircle
+    ChevronLeft, ChevronRight, X, UserCircle, PackageCheck
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { PageProps } from '@/types'
@@ -52,6 +52,7 @@ const navItems: NavItem[] = [
             { nombre: 'Kárdex', href: '/inventario/kardex' },
             { nombre: 'Saldos Inventario', href: '/inventario/kardex/saldos' },
             { nombre: 'Traslados', href: '/inventario/traslados' },
+            { nombre: 'Recepciones', href: '/inventario/recepciones' },
             { nombre: 'Activos Fijos', href: '/inventario/activos' },
             { nombre: 'Listas de Precio', href: '/inventario/listas-precio' },
         ],

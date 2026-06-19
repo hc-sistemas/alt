@@ -217,12 +217,18 @@ export default function UsuarioForm() {
                                 <Input type="password" value={data.codigo_aprobacion}
                                     onChange={e => setData('codigo_aprobacion', e.target.value)}
                                     placeholder="••••" maxLength={6} />
+                                {errors.codigo_aprobacion && (
+                                    <p className="text-xs text-red-400">{errors.codigo_aprobacion}</p>
+                                )}
                             </div>
                             <div className="space-y-1.5">
                                 <Label>Confirmar PIN</Label>
                                 <Input type="password" value={data.codigo_aprobacion_confirmation}
                                     onChange={e => setData('codigo_aprobacion_confirmation', e.target.value)}
                                     placeholder="••••" maxLength={6} />
+                                {errors.codigo_aprobacion_confirmation && (
+                                    <p className="text-xs text-red-400">{errors.codigo_aprobacion_confirmation}</p>
+                                )}
                             </div>
                         </div>
                     </section>

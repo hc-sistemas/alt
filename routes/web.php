@@ -14,6 +14,7 @@ use App\Http\Controllers\Inventario\KardexController;
 use App\Http\Controllers\Inventario\TrasladoController;
 use App\Http\Controllers\Inventario\ActivoFijoController;
 use App\Http\Controllers\Inventario\ListaPrecioController;
+use App\Http\Controllers\Inventario\RecepcionController;
 use App\Http\Controllers\Personas\ClienteController;
 use App\Http\Controllers\Personas\ProveedorController;
 use App\Http\Controllers\Personas\TransportistaController;
@@ -121,6 +122,14 @@ Route::middleware('auth')->group(function () {
         Route::get('listas-precio', [ListaPrecioController::class, 'index'])->name('listas.index');
         Route::put('listas-precio/{producto}', [ListaPrecioController::class, 'update'])->name('listas.update');
         Route::post('listas-precio/importar', [ListaPrecioController::class, 'importar'])->name('listas.importar');
+
+        // Recepciones de Bodega
+        Route::prefix('recepciones')->name('recepciones.')->group(function () {
+            Route::get('/buscar-producto', [RecepcionController::class, 'buscarProducto'])->name('buscar-producto');
+            Route::get('/', [RecepcionController::class, 'index'])->name('index');
+            Route::get('/{recepcion}', [RecepcionController::class, 'show'])->name('show');
+            Route::post('/{recepcion}/confirmar', [RecepcionController::class, 'confirmar'])->name('confirmar');
+        });
     });
 
     // Inventario — Configuración

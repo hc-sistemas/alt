@@ -47,7 +47,7 @@ export default function DescuentoEspecialModal({
                     'X-CSRF-TOKEN': getCsrf(),
                     Accept: 'application/json',
                 },
-                body: JSON.stringify({ tipo: 'descuento_extra_factura', codigo, motivo }),
+                body: JSON.stringify({ tipo: 'descuento_excedido', codigo, motivo }),
             })
             const data = await res.json() as { valido: boolean; aprobacion_id?: number; mensaje?: string }
             if (data.valido && data.aprobacion_id) {
