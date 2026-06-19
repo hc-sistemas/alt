@@ -23,6 +23,7 @@ interface CxPRow {
     fecha_emision: string | null
     fecha_vencimiento: string | null
     estado: 'pendiente' | 'parcial' | 'pagada'
+    compra_anulada: boolean
     urgencia: 'vencida' | 'critica' | 'proxima' | 'normal'
     color_urgencia: string
     dias_vencimiento: number
@@ -410,7 +411,7 @@ export default function CuentasPagarIndex() {
                             <option value="">Todas (pendiente + parcial)</option>
                             <option value="pendiente">Pendiente</option>
                             <option value="parcial">Parcial</option>
-                            <option value="pagada">Pagada</option>
+                            <option value="pagada">Pagada / Anulada</option>
                         </select>
 
                         <select value={proveedorId} onChange={e => setProveedorId(e.target.value)}
@@ -477,8 +478,8 @@ export default function CuentasPagarIndex() {
                         <div key={c.id}
                             className={cn(
                                 'group grid grid-cols-12 gap-3 px-4 py-3 border-b items-center text-sm transition-colors',
-                                URGENCIA_BORDER[c.urgencia],
-                                c.estado === 'pagada' && 'opacity-60',
+                                c.compra_anulada ? 'border-l-4 border-l-gray-400' : URGENCIA_BORDER[c.urgencia],
+                                (c.estado === 'pagada' || c.compra_anulada) && 'opacity-60',
                             )}
                             style={{ borderBottomColor: 'var(--border)', background: 'transparent' }}
                             onMouseEnter={e => (e.currentTarget.style.background = 'rgba(245,158,11,0.04)')}
@@ -515,26 +516,34 @@ export default function CuentasPagarIndex() {
                             <div className="col-span-1 flex justify-center">
                                 <DiasChip dias={c.dias_vencimiento} urgencia={c.urgencia} />
                             </div>
-                            <div className="col-span-1 flex justify-center">
-                                {c.estado === 'pendiente' && (
-                                    <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400">
-                                        Pendiente
+                            <div className="col-span-1 flex flex-col items-center gap-1">
+                                {c.compra_anulada ? (
+                                    <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                                        Anulada
                                     </span>
-                                )}
-                                {c.estado === 'parcial' && (
-                                    <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
-                                        Parcial
-                                    </span>
-                                )}
-                                {c.estado === 'pagada' && (
-                                    <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
-                                        Pagada
-                                    </span>
+                                ) : (
+                                    <>
+                                        {c.estado === 'pendiente' && (
+                                            <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400">
+                                                Pendiente
+                                            </span>
+                                        )}
+                                        {c.estado === 'parcial' && (
+                                            <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
+                                                Parcial
+                                            </span>
+                                        )}
+                                        {c.estado === 'pagada' && (
+                                            <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
+                                                Pagada
+                                            </span>
+                                        )}
+                                    </>
                                 )}
                             </div>
-                            {/* Acciones: Pagar + Anular (siempre visibles) */}
+                            {/* Acciones: Pagar + Anular (ocultas si la compra ya fue anulada) */}
                             <div className="col-span-1 flex justify-center items-center gap-1">
-                                {c.estado !== 'pagada' && bancos.length > 0 && (
+                                {!c.compra_anulada && c.estado !== 'pagada' && bancos.length > 0 && (
                                     <button
                                         onClick={() => setModalPago(c)}
                                         title="Registrar pago"
@@ -542,7 +551,7 @@ export default function CuentasPagarIndex() {
                                         <CreditCard className="w-4 h-4" />
                                     </button>
                                 )}
-                                {c.compra_id !== null && (
+                                {!c.compra_anulada && c.compra_id !== null && (
                                     <button
                                         onClick={() => iniciarAnulacion(c)}
                                         title="Anular compra asociada"

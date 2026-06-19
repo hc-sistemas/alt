@@ -47,6 +47,7 @@ class CuentaPagarController extends Controller
                 'fecha_emision'    => $c->fecha_emision?->format('d/m/Y'),
                 'fecha_vencimiento'=> $c->fecha_vencimiento?->format('d/m/Y'),
                 'estado'           => $c->estado,
+                'compra_anulada'   => $c->compra?->estado === 'anulada',
                 'urgencia'         => $c->urgencia,
                 'color_urgencia'   => $c->color_urgencia,
                 'dias_vencimiento' => $c->dias_vencimiento,
