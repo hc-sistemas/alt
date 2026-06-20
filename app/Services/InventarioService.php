@@ -8,10 +8,8 @@ use Illuminate\Support\Facades\DB;
 
 class InventarioService implements InventarioServiceInterface
 {
-    // Columnas reales de inventario_movimientos:
-    //   tipo, doc_tipo, doc_id, bodega_id, notas, stock_anterior, stock_nuevo
     // Columnas reales de inventario_saldos:
-    //   stock_actual (no 'cantidad'), stock_reservado, costo_promedio
+    //   cantidad, cantidad_reservada, costo_promedio
 
     public function ingresarStock(
         int $productoId,
@@ -29,7 +27,7 @@ class InventarioService implements InventarioServiceInterface
                 ->where('bodega_id', $bodegaId)
                 ->first();
 
-            $cantActual    = $saldoActual ? (float) $saldoActual->stock_actual    : 0;
+            $cantActual    = $saldoActual ? (float) $saldoActual->cantidad    : 0;
             $costoActual   = $saldoActual ? (float) $saldoActual->costo_promedio  : 0;
             $nuevaCant     = $cantActual + $cantidad;
             $costoPromedio = $nuevaCant > 0
@@ -40,31 +38,32 @@ class InventarioService implements InventarioServiceInterface
                 [
                     'producto_id'    => $productoId,
                     'bodega_id'      => $bodegaId,
-                    'stock_actual'   => $nuevaCant,
+                    'cantidad'   => $nuevaCant,
                     'costo_promedio' => round($costoPromedio, 4),
                     'updated_at'     => now(),
                 ],
                 ['producto_id', 'bodega_id'],
-                ['stock_actual', 'costo_promedio', 'updated_at']
+                ['cantidad', 'costo_promedio', 'updated_at']
             );
 
             $empresaId = DB::table('bodegas')->where('id', $bodegaId)->value('empresa_id');
 
             DB::table('inventario_movimientos')->insert([
-                'empresa_id'    => $empresaId,
-                'producto_id'   => $productoId,
-                'bodega_id'     => $bodegaId,
-                'tipo'          => 'entrada',
-                'doc_tipo'      => strtoupper($docTipo),
-                'doc_id'        => $docId,
-                'cantidad'      => $cantidad,
-                'costo_unitario'=> round($costoUnitario, 4),
-                'costo_total'   => round($cantidad * $costoUnitario, 4),
-                'stock_anterior'=> $cantActual,
-                'stock_nuevo'   => $nuevaCant,
-                'usuario_id'    => Auth::id(),
-                'notas'         => $observacion ?? $docNumero,
-                'created_at'    => now(),
+                'empresa_id'       => $empresaId,
+                'producto_id'      => $productoId,
+                'bodega_destino_id'=> $bodegaId,
+                'tipo_movimiento'  => 'entrada',
+                'documento_tipo'   => strtoupper($docTipo),
+                'documento_id'     => $docId,
+                'documento_numero' => $docNumero,
+                'cantidad'         => $cantidad,
+                'costo_unitario'   => round($costoUnitario, 4),
+                'costo_total'      => round($cantidad * $costoUnitario, 4),
+                'fecha'            => now()->toDateString(),
+                'hora'             => now()->toTimeString(),
+                'usuario_id'       => Auth::id(),
+                'observacion'      => $observacion,
+                'created_at'       => now(),
             ]);
         });
     }
@@ -84,7 +83,7 @@ class InventarioService implements InventarioServiceInterface
                 ->where('bodega_id', $bodegaId)
                 ->first();
 
-            $cantActual    = $saldo ? (float) $saldo->stock_actual    : 0;
+            $cantActual    = $saldo ? (float) $saldo->cantidad    : 0;
             $costoPromedio = $saldo ? (float) $saldo->costo_promedio  : 0;
             $nuevaCant     = max(0, $cantActual - $cantidad);
 
@@ -92,31 +91,32 @@ class InventarioService implements InventarioServiceInterface
                 [
                     'producto_id'    => $productoId,
                     'bodega_id'      => $bodegaId,
-                    'stock_actual'   => $nuevaCant,
+                    'cantidad'   => $nuevaCant,
                     'costo_promedio' => $costoPromedio,
                     'updated_at'     => now(),
                 ],
                 ['producto_id', 'bodega_id'],
-                ['stock_actual', 'updated_at']
+                ['cantidad', 'updated_at']
             );
 
             $empresaId = DB::table('bodegas')->where('id', $bodegaId)->value('empresa_id');
 
             DB::table('inventario_movimientos')->insert([
-                'empresa_id'    => $empresaId,
-                'producto_id'   => $productoId,
-                'bodega_id'     => $bodegaId,
-                'tipo'          => 'salida',
-                'doc_tipo'      => strtoupper($docTipo),
-                'doc_id'        => $docId,
-                'cantidad'      => $cantidad,
-                'costo_unitario'=> $costoPromedio,
-                'costo_total'   => round($cantidad * $costoPromedio, 4),
-                'stock_anterior'=> $cantActual,
-                'stock_nuevo'   => $nuevaCant,
-                'usuario_id'    => Auth::id(),
-                'notas'         => $observacion ?? $docNumero,
-                'created_at'    => now(),
+                'empresa_id'       => $empresaId,
+                'producto_id'      => $productoId,
+                'bodega_origen_id' => $bodegaId,
+                'tipo_movimiento'  => 'salida',
+                'documento_tipo'   => strtoupper($docTipo),
+                'documento_id'     => $docId,
+                'documento_numero' => $docNumero,
+                'cantidad'         => $cantidad,
+                'costo_unitario'   => $costoPromedio,
+                'costo_total'      => round($cantidad * $costoPromedio, 4),
+                'fecha'            => now()->toDateString(),
+                'hora'             => now()->toTimeString(),
+                'usuario_id'       => Auth::id(),
+                'observacion'      => $observacion,
+                'created_at'       => now(),
             ]);
         });
     }
@@ -126,7 +126,7 @@ class InventarioService implements InventarioServiceInterface
         DB::table('inventario_saldos')
             ->where('producto_id', $productoId)
             ->where('bodega_id', $bodegaId)
-            ->increment('stock_reservado', $cantidad, ['updated_at' => now()]);
+            ->increment('cantidad_reservada', $cantidad, ['updated_at' => now()]);
     }
 
     public function liberarReserva(int $productoId, int $bodegaId, float $cantidad): void
@@ -134,7 +134,7 @@ class InventarioService implements InventarioServiceInterface
         DB::table('inventario_saldos')
             ->where('producto_id', $productoId)
             ->where('bodega_id', $bodegaId)
-            ->decrement('stock_reservado', $cantidad, ['updated_at' => now()]);
+            ->decrement('cantidad_reservada', $cantidad, ['updated_at' => now()]);
     }
 
     public function getSaldoDisponible(int $productoId, int $bodegaId): float
@@ -146,7 +146,7 @@ class InventarioService implements InventarioServiceInterface
 
         if (!$saldo) return 0;
 
-        $reservado = isset($saldo->stock_reservado) ? (float) $saldo->stock_reservado : 0;
-        return max(0, (float) $saldo->stock_actual - $reservado);
+        $reservado = isset($saldo->cantidad_reservada) ? (float) $saldo->cantidad_reservada : 0;
+        return max(0, (float) $saldo->cantidad - $reservado);
     }
 }

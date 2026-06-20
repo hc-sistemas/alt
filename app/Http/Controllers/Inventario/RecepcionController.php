@@ -164,8 +164,8 @@ class RecepcionController extends Controller
         }
 
         $producto = Producto::where('empresa_id', $empresaId)
-            ->where('codigo', $codigo)
             ->where('estado', true)
+            ->where(fn($q) => $q->where('codigo', $codigo)->orWhere('codigo_externo', $codigo))
             ->first(['id', 'codigo', 'nombre', 'unidad']);
 
         return response()->json([
@@ -197,7 +197,8 @@ class RecepcionController extends Controller
             $algunoParcial    = false;
 
             foreach ($request->detalles as $d) {
-                $detalle = RecepcionDetalle::where('id', $d['id'])
+                $detalle = RecepcionDetalle::with('compraDetalle')
+                    ->where('id', $d['id'])
                     ->where('recepcion_id', $recepcion->id)
                     ->firstOrFail();
 
@@ -240,6 +241,10 @@ class RecepcionController extends Controller
                 'recibido_por'    => Auth::id(),
                 'fecha_recepcion' => now()->toDateString(),
             ]);
+
+            if ($estadoRecepcion === 'completada') {
+                $recepcion->compra->update(['estado' => 'activa']);
+            }
 
             $this->auditoria->documento(
                 'confirmar',

@@ -37,7 +37,7 @@ class CompraController extends Controller
     public function index(Request $request): Response
     {
         $empresaId = session('empresa_activa_id');
-        $query = Compra::with(['proveedor', 'centroCosto'])
+        $query = Compra::with(['proveedor', 'centroCosto', 'recepcionBodega:id,compra_id'])
             ->where('empresa_id', $empresaId);
 
         if ($request->filled('buscar')) {
@@ -185,11 +185,41 @@ class CompraController extends Controller
                         ['compra_id' => $compra->id]
                     ));
                 }
+
+                // Crear recepción pendiente automáticamente si hay productos y bodega seleccionada
+                $detallesProducto = collect($request->detalles)->filter(
+                    fn($d) => !empty($d['producto_id'])
+                );
+                if ($detallesProducto->isNotEmpty() && !empty($request->bodega_id)) {
+                    $recepcion = \App\Models\RecepcionBodega::create([
+                        'empresa_id' => $empresaId,
+                        'compra_id'  => $compra->id,
+                        'bodega_id'  => $request->bodega_id,
+                        'estado'     => 'pendiente',
+                    ]);
+
+                    foreach ($detallesProducto as $d) {
+                        $detalle = \App\Models\CompraDetalle::where('compra_id', $compra->id)
+                            ->where('producto_id', $d['producto_id'])
+                            ->first();
+
+                        if ($detalle) {
+                            \App\Models\RecepcionDetalle::create([
+                                'recepcion_id'      => $recepcion->id,
+                                'compra_detalle_id' => $detalle->id,
+                                'producto_id'       => $d['producto_id'],
+                                'cantidad_esperada' => $d['cantidad'],
+                                'cantidad_recibida' => 0,
+                                'estado'            => 'pendiente',
+                            ]);
+                        }
+                    }
+                }
             });
 
             return back()->with('success',
                 "Compra {$request->num_documento} ingresada. Pendiente de confirmación en bodega.");
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             return back()->with('error', $e->getMessage());
         }
     }
@@ -382,7 +412,7 @@ class CompraController extends Controller
     public function show(Compra $compra): Response
     {
         $compra->load(['proveedor', 'centroCosto', 'detalles.cuenta',
-                       'cuentaPagar', 'asiento', 'creadoPor']);
+                       'cuentaPagar', 'asiento', 'creadoPor', 'recepcionBodega']);
         return Inertia::render('Compras/Compras/Show', [
             'compra' => $compra,
         ]);

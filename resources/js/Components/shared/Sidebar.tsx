@@ -49,9 +49,12 @@ const navItems: NavItem[] = [
         nombre: 'Inventario', clave: 'inventario', icon: Package,
         hijos: [
             { nombre: 'Productos', href: '/inventario/productos' },
-            { nombre: 'Kárdex', href: '/inventario/kardex/saldos' },
+            { nombre: 'Kárdex', href: '/inventario/kardex' },
+            { nombre: 'Saldos de inventario', href: '/inventario/kardex/saldos' },
             { nombre: 'Traslados', href: '/inventario/traslados' },
             { nombre: 'Activos Fijos', href: '/inventario/activos' },
+            { nombre: 'Listas de Precio', href: '/inventario/listas' },
+            { nombre: 'Recepciones', href: '/inventario/recepciones' },
         ],
         subgrupos: [
             {

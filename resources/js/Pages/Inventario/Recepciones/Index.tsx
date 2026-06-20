@@ -70,7 +70,7 @@ function NuevaRecepcionModal({ bodegas, onClose }: NuevaRecepcionModalProps) {
     const buscar = useCallback((q: string) => {
         if (!q.trim()) { setResultados([]); return }
         setBuscando(true)
-        fetch(route('inventario.recepciones.buscar-compra') + '?q=' + encodeURIComponent(q), {
+        fetch(route('inventario.recepciones.buscarCompra') + '?q=' + encodeURIComponent(q), {
             headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
         })
             .then(r => r.json())
@@ -276,19 +276,8 @@ function NuevaRecepcionModal({ bodegas, onClose }: NuevaRecepcionModalProps) {
                                                     <td className="px-3 py-2 text-xs" style={{ color: 'var(--text-main)' }}>
                                                         {d.producto?.nombre ?? '—'}
                                                     </td>
-                                                    <td className="px-3 py-2 w-32">
-                                                        <input
-                                                            type="number"
-                                                            step="0.0001"
-                                                            min="0.0001"
-                                                            value={cantidades[d.id] ?? ''}
-                                                            onChange={e => setCantidades(prev => ({
-                                                                ...prev,
-                                                                [d.id]: parseFloat(e.target.value) || 0,
-                                                            }))}
-                                                            className="w-full px-2 py-1 border rounded text-xs text-right focus:outline-none focus:ring-1 focus:ring-amber-500"
-                                                            style={inputStyle}
-                                                        />
+                                                    <td className="px-3 py-2 w-32 text-right font-mono text-xs" style={{ color: 'var(--text-main)' }}>
+                                                        {Number(d.cantidad)}
                                                     </td>
                                                 </tr>
                                             ))}

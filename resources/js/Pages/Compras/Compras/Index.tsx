@@ -1193,28 +1193,11 @@ export default function ComprasIndex() {
     const abrirPdf = (url: string) => { setUrlPdf(url); setModalPdf(true) }
 
     function confirmarRecepcion(c: Compra) {
-        Swal.fire({
-            ...swalBase,
-            title: '¿Confirmar recepción de mercadería?',
-            html: `<p style="color:#6b7280;font-size:14px;margin-bottom:10px">
-                       <strong>${c.num_documento}</strong> — $${Number(c.total).toFixed(2)}
-                   </p>
-                   <p style="color:#374151;font-size:13px">
-                       Esta acción activará la factura, actualizará el inventario
-                       y generará la cuenta por pagar.
-                   </p>`,
-            confirmButtonText:  'Confirmar recepción',
-            cancelButtonText:   'Cancelar',
-            confirmButtonColor: '#10b981',
-            cancelButtonColor:  '#6b7280',
-        }).then(result => {
-            if (result.isConfirmed) {
-                router.post(route('compras.facturas.activar', c.id), {}, {
-                    onSuccess: () => notify.ok(`Factura ${c.num_documento} confirmada. Inventario y CxP actualizados.`),
-                    onError:   (e)  => notify.error(Object.values(e)[0] ?? 'Error al confirmar recepción'),
-                })
-            }
-        })
+        if ((c as any).recepcion_bodega) {
+            router.visit(route('inventario.recepciones.show', (c as any).recepcion_bodega.id))
+        } else {
+            notify.error('Esta compra no tiene una recepción de bodega asociada')
+        }
     }
 
     async function iniciarAnulacion(c: Compra) {
@@ -1379,6 +1362,7 @@ export default function ComprasIndex() {
                         <select value={estado} onChange={e => setEstado(e.target.value)}
                             className="input-field select-field" style={{ width: 'auto' }}>
                             <option value="">Todos los estados</option>
+                            <option value="pendiente">Pendiente</option>
                             <option value="activa">Activa</option>
                             <option value="anulada">Anulada</option>
                         </select>

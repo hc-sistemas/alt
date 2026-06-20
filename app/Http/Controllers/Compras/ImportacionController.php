@@ -156,7 +156,7 @@ class ImportacionController extends Controller
                         / $detalle->cantidad;
 
                     $saldo = InventarioSaldo::where('producto_id', $detalle->producto_id)->first();
-                    if ($saldo && $saldo->stock_actual > 0) {
+                    if ($saldo && $saldo->cantidad > 0) {
                         $saldo->increment('costo_promedio', round($costoPorUnitario, 4));
                     }
                 }

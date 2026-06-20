@@ -79,6 +79,11 @@ class Compra extends Model
         return $this->hasOne(CuentaPagar::class, 'compra_id');
     }
 
+    public function recepcionBodega(): HasOne
+    {
+        return $this->hasOne(RecepcionBodega::class, 'compra_id');
+    }
+
     public function scopeActivas(Builder $q): Builder
     {
         return $q->where('estado', 'activa');
