@@ -354,7 +354,7 @@ class MigrarProductos extends Command
                             DB::table('inventario_saldos')->updateOrInsert(
                                 ['producto_id' => $productoId, 'bodega_id' => $bodegaId],
                                 [
-                                    'stock_actual'   => $stock,
+                                    'cantidad'   => $stock,
                                     'costo_promedio' => $costo,
                                     'updated_at'     => now(),
                                 ]
@@ -581,7 +581,7 @@ class MigrarProductos extends Command
                 DB::table('inventario_saldos')->insertOrIgnore([
                     'producto_id'    => $productoId,
                     'bodega_id'      => $bodegaId,
-                    'stock_actual'   => $data['stock'],
+                    'cantidad'   => $data['stock'],
                     'costo_promedio' => $data['costo'],
                     'updated_at'     => now(),
                 ]);

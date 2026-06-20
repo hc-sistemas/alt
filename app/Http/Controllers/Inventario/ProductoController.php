@@ -5,13 +5,17 @@ namespace App\Http\Controllers\Inventario;
 use App\Http\Controllers\Controller;
 use App\Models\Bodega;
 use App\Models\CategoriaProducto;
+use App\Models\Empresa;
 use App\Models\InventarioSaldo;
 use App\Models\Marca;
+use App\Models\PlanCuenta;
 use App\Models\Producto;
 use App\Services\AuditoriaService;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -24,7 +28,7 @@ class ProductoController extends Controller
     {
         $empresaId = session('empresa_activa_id');
 
-        $query = Producto::with(['marca', 'categoria', 'bodegaDefault'])
+        $query = Producto::with(['marca', 'categoria'])
             ->where('empresa_id', $empresaId)
             ->when($request->search, fn($q) => $q->where(function ($q) use ($request) {
                 $q->where('codigo', 'ilike', "%{$request->search}%")
@@ -39,10 +43,10 @@ class ProductoController extends Controller
             ->orderBy('nombre');
 
         return Inertia::render('Inventario/Productos/Index', [
-            'productos'   => $query->paginate(20)->withQueryString(),
-            'filters'     => $request->only(['search', 'marca_id', 'categoria_id', 'tipo', 'estado']),
-            'marcas'      => Marca::where('estado', true)->orderBy('nombre')->get(['id', 'nombre']),
-            'categorias'  => CategoriaProducto::where('estado', true)->orderBy('nombre')->get(['id', 'nombre', 'parent_id']),
+            'productos'  => $query->paginate(20)->withQueryString(),
+            'filters'    => $request->only(['search', 'marca_id', 'categoria_id', 'tipo', 'estado']),
+            'marcas'     => Marca::where('estado', true)->orderBy('nombre')->get(['id', 'nombre']),
+            'categorias' => CategoriaProducto::where('estado', true)->orderBy('nombre')->get(['id', 'nombre', 'categoria_padre_id']),
         ]);
     }
 
@@ -51,10 +55,15 @@ class ProductoController extends Controller
         $empresaId = session('empresa_activa_id');
 
         return Inertia::render('Inventario/Productos/Form', [
-            'producto'  => null,
-            'marcas'    => Marca::where('estado', true)->orderBy('nombre')->get(['id', 'nombre']),
-            'categorias' => CategoriaProducto::where('estado', true)->orderBy('nombre')->get(['id', 'nombre', 'parent_id']),
-            'bodegas'   => Bodega::where('empresa_id', $empresaId)->where('estado', true)->orderBy('nombre')->get(['id', 'nombre', 'tipo']),
+            'producto'   => null,
+            'marcas'     => Marca::where('estado', true)->orderBy('nombre')->get(['id', 'nombre']),
+            'categorias' => CategoriaProducto::where('estado', true)->orderBy('nombre')->get(['id', 'nombre', 'categoria_padre_id']),
+            'bodegas'    => Bodega::where('empresa_id', $empresaId)->where('estado', true)->orderBy('nombre')->get(['id', 'nombre', 'tipo']),
+            'cuentas'    => PlanCuenta::whereNull('empresa_id')
+                ->where('permite_asientos', true)
+                ->where('estado', true)
+                ->orderBy('codigo')
+                ->get(['id', 'codigo', 'nombre']),
         ]);
     }
 
@@ -95,28 +104,33 @@ class ProductoController extends Controller
         $empresaId = session('empresa_activa_id');
 
         $data = $request->validate([
-            'codigo'              => ['required', 'string', 'max:50', Rule::unique('productos')->where('empresa_id', $empresaId)],
-            'nombre'              => ['required', 'string', 'max:255'],
-            'descripcion'         => ['nullable', 'string'],
-            'tipo'                => ['required', 'in:producto,servicio,combo'],
-            'unidad'              => ['required', 'string', 'max:20'],
-            'marca_id'            => ['nullable', 'integer', 'exists:marcas,id'],
-            'categoria_id'        => ['nullable', 'integer', 'exists:categorias_producto,id'],
-            'requiere_serie'      => ['boolean'],
-            'pvp'                 => ['numeric', 'min:0'],
-            'pvd'                 => ['numeric', 'min:0'],
-            'costo'               => ['numeric', 'min:0'],
-            'descuento_maximo'    => ['numeric', 'min:0', 'max:100'],
-            'porcentaje_iva'      => ['numeric', 'min:0'],
-            'porcentaje_ice'      => ['numeric', 'min:0'],
-            'stock_minimo'        => ['integer', 'min:0'],
-            'stock_maximo'        => ['nullable', 'integer', 'min:0'],
-            'cuenta_inventario_id' => ['nullable', 'integer'],
-            'cuenta_costo_id'     => ['nullable', 'integer'],
-            'cuenta_ventas_id'    => ['nullable', 'integer'],
-            'estado'              => ['boolean'],
-            'observaciones'       => ['nullable', 'string'],
+            'codigo'             => ['required', 'string', 'max:50', Rule::unique('productos')->where('empresa_id', $empresaId)],
+            'codigo_externo'     => ['nullable', 'string', 'max:100'],
+            'nombre'             => ['required', 'string', 'max:255'],
+            'descripcion'        => ['nullable', 'string'],
+            'tipo'               => ['required', 'in:producto,servicio,repuesto,insumo'],
+            'unidad'             => ['required', 'string', 'max:20'],
+            'marca_id'           => ['nullable', 'integer', 'exists:marcas,id'],
+            'categoria_id'       => ['nullable', 'integer', 'exists:categorias_producto,id'],
+            'requiere_serie'     => ['boolean'],
+            'pvp'                => ['numeric', 'min:0'],
+            'pvd'                => ['numeric', 'min:0'],
+            'costo'              => ['numeric', 'min:0'],
+            'descuento_maximo'   => ['numeric', 'min:0', 'max:100'],
+            'porcentaje_iva'     => ['numeric', 'min:0'],
+            'tiene_ice'          => ['boolean'],
+            'porcentaje_ice'     => ['numeric', 'min:0'],
+            'stock_minimo'       => ['nullable', 'integer', 'min:0'],
+            'stock_maximo'       => ['nullable', 'integer', 'min:0'],
+            'cuenta_inventario'  => ['nullable', 'string', 'max:20'],
+            'cuenta_costo_ventas' => ['nullable', 'string', 'max:20'],
+            'cuenta_ventas'      => ['nullable', 'string', 'max:20'],
+            'ref_importacion'    => ['nullable', 'string'],
+            'estado'             => ['boolean'],
         ]);
+
+        $data['stock_minimo'] = $data['stock_minimo'] ?? 0;
+        $data['stock_maximo'] = $data['stock_maximo'] ?? 0;
 
         $producto = Producto::create([...$data, 'empresa_id' => $empresaId]);
 
@@ -138,8 +152,13 @@ class ProductoController extends Controller
         return Inertia::render('Inventario/Productos/Form', [
             'producto'   => $producto,
             'marcas'     => Marca::where('estado', true)->orderBy('nombre')->get(['id', 'nombre']),
-            'categorias' => CategoriaProducto::where('estado', true)->orderBy('nombre')->get(['id', 'nombre', 'parent_id']),
+            'categorias' => CategoriaProducto::where('estado', true)->orderBy('nombre')->get(['id', 'nombre', 'categoria_padre_id']),
             'bodegas'    => Bodega::where('empresa_id', $empresaId)->where('estado', true)->orderBy('nombre')->get(['id', 'nombre', 'tipo']),
+            'cuentas' => PlanCuenta::whereNull('empresa_id')
+                ->where('permite_asientos', true)
+                ->where('estado', true)
+                ->orderBy('codigo')
+                ->get(['id', 'codigo', 'nombre']),
         ]);
     }
 
@@ -152,28 +171,33 @@ class ProductoController extends Controller
         }
 
         $data = $request->validate([
-            'codigo'              => ['required', 'string', 'max:50', Rule::unique('productos')->where('empresa_id', $empresaId)->ignore($producto->id)],
-            'nombre'              => ['required', 'string', 'max:255'],
-            'descripcion'         => ['nullable', 'string'],
-            'tipo'                => ['required', 'in:producto,servicio,combo'],
-            'unidad'              => ['required', 'string', 'max:20'],
-            'marca_id'            => ['nullable', 'integer', 'exists:marcas,id'],
-            'categoria_id'        => ['nullable', 'integer', 'exists:categorias_producto,id'],
-            'requiere_serie'      => ['boolean'],
-            'pvp'                 => ['numeric', 'min:0'],
-            'pvd'                 => ['numeric', 'min:0'],
-            'costo'               => ['numeric', 'min:0'],
-            'descuento_maximo'    => ['numeric', 'min:0', 'max:100'],
-            'porcentaje_iva'      => ['numeric', 'min:0'],
-            'porcentaje_ice'      => ['numeric', 'min:0'],
-            'stock_minimo'        => ['integer', 'min:0'],
-            'stock_maximo'        => ['nullable', 'integer', 'min:0'],
-            'cuenta_inventario_id' => ['nullable', 'integer'],
-            'cuenta_costo_id'     => ['nullable', 'integer'],
-            'cuenta_ventas_id'    => ['nullable', 'integer'],
-            'estado'              => ['boolean'],
-            'observaciones'       => ['nullable', 'string'],
+            'codigo'             => ['required', 'string', 'max:50', Rule::unique('productos')->where('empresa_id', $empresaId)->ignore($producto->id)],
+            'codigo_externo'     => ['nullable', 'string', 'max:100'],
+            'nombre'             => ['required', 'string', 'max:255'],
+            'descripcion'        => ['nullable', 'string'],
+            'tipo'               => ['required', 'in:producto,servicio,repuesto,insumo'],
+            'unidad'             => ['required', 'string', 'max:20'],
+            'marca_id'           => ['nullable', 'integer', 'exists:marcas,id'],
+            'categoria_id'       => ['nullable', 'integer', 'exists:categorias_producto,id'],
+            'requiere_serie'     => ['boolean'],
+            'pvp'                => ['numeric', 'min:0'],
+            'pvd'                => ['numeric', 'min:0'],
+            'costo'              => ['numeric', 'min:0'],
+            'descuento_maximo'   => ['numeric', 'min:0', 'max:100'],
+            'porcentaje_iva'     => ['numeric', 'min:0'],
+            'tiene_ice'          => ['boolean'],
+            'porcentaje_ice'     => ['numeric', 'min:0'],
+            'stock_minimo'       => ['nullable', 'integer', 'min:0'],
+            'stock_maximo'       => ['nullable', 'integer', 'min:0'],
+            'cuenta_inventario'  => ['nullable', 'string', 'max:20'],
+            'cuenta_costo_ventas' => ['nullable', 'string', 'max:20'],
+            'cuenta_ventas'      => ['nullable', 'string', 'max:20'],
+            'ref_importacion'    => ['nullable', 'string'],
+            'estado'             => ['boolean'],
         ]);
+
+        $data['stock_minimo'] = $data['stock_minimo'] ?? 0;
+        $data['stock_maximo'] = $data['stock_maximo'] ?? 0;
 
         $producto->update($data);
 
@@ -184,6 +208,27 @@ class ProductoController extends Controller
             ->with('success', 'Producto actualizado correctamente.');
     }
 
+    public function reporteLista(Request $request): HttpResponse
+    {
+        $empresaId = session('empresa_activa_id');
+        $empresa   = Empresa::findOrFail($empresaId);
+
+        $productos = Producto::with(['marca', 'categoria'])
+            ->where('empresa_id', $empresaId)
+            ->orderBy('nombre')
+            ->get();
+
+        $pdf = Pdf::loadView('reportes.inventario.productos', [
+            'productos' => $productos,
+            'empresa'   => $empresa,
+            'usuario'   => auth()->user(),
+        ])->setPaper('a3', 'landscape');
+
+        return $request->boolean('download')
+            ? $pdf->download('productos.pdf')
+            : $pdf->stream('productos.pdf');
+    }
+
     public function destroy(Producto $producto): RedirectResponse|JsonResponse
     {
         $empresaId = session('empresa_activa_id');
@@ -192,9 +237,8 @@ class ProductoController extends Controller
             abort(403);
         }
 
-        // Verificar stock registrado
         $saldo = InventarioSaldo::where('producto_id', $producto->id)
-            ->where('stock_actual', '>', 0)
+            ->where('cantidad', '>', 0)
             ->exists();
 
         if ($saldo) {
@@ -203,7 +247,6 @@ class ProductoController extends Controller
             ], 422);
         }
 
-        // Verificar series activas (no vendidas)
         if ($producto->series()->where('estado', '!=', 'vendido')->exists()) {
             $count = $producto->series()->where('estado', '!=', 'vendido')->count();
             return response()->json([

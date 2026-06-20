@@ -5,9 +5,13 @@ namespace App\Http\Controllers\Inventario;
 use App\Http\Controllers\Controller;
 use App\Models\ActivoDepreciacion;
 use App\Models\ActivoFijo;
+use App\Models\Empresa;
+use App\Models\PlanCuenta;
 use App\Services\AuditoriaService;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
@@ -26,15 +30,13 @@ class ActivoFijoController extends Controller
                 $q->where('codigo', 'ilike', "%{$request->search}%")
                   ->orWhere('nombre', 'ilike', "%{$request->search}%");
             }))
-            ->when($request->categoria, fn($q) => $q->where('categoria', $request->categoria))
             ->when($request->estado, fn($q) => $q->where('estado', $request->estado))
             ->orderBy('codigo');
 
         return Inertia::render('Inventario/Activos/Index', [
-            'activos'    => $query->paginate(20)->withQueryString(),
-            'categorias' => ActivoFijo::CATEGORIAS,
-            'estados'    => ActivoFijo::ESTADOS,
-            'filters'    => $request->only(['search', 'categoria', 'estado']),
+            'activos' => $query->paginate(20)->withQueryString(),
+            'estados' => ActivoFijo::ESTADOS,
+            'filters' => $request->only(['search', 'estado']),
         ]);
     }
 
@@ -42,7 +44,11 @@ class ActivoFijoController extends Controller
     {
         return Inertia::render('Inventario/Activos/Form', [
             'activoFijo' => null,
-            'categorias' => ActivoFijo::CATEGORIAS,
+            'cuentas'    => PlanCuenta::where('permite_asientos', true)
+                ->where('estado', true)
+                ->where('codigo', 'like', '1.2%')
+                ->orderBy('codigo')
+                ->get(['id', 'codigo', 'nombre']),
         ]);
     }
 
@@ -54,22 +60,17 @@ class ActivoFijoController extends Controller
             'codigo'            => ['required', 'string', 'max:50', Rule::unique('activos_fijos')->where('empresa_id', $empresaId)],
             'nombre'            => ['required', 'string', 'max:255'],
             'descripcion'       => ['nullable', 'string'],
-            'categoria'         => ['required', Rule::in(ActivoFijo::CATEGORIAS)],
-            'ubicacion'         => ['nullable', 'string', 'max:255'],
             'fecha_adquisicion' => ['required', 'date'],
-            'valor_adquisicion' => ['required', 'numeric', 'min:0'],
-            'valor_residual'    => ['nullable', 'numeric', 'min:0'],
-            'vida_util_años'    => ['required', 'integer', 'min:1', 'max:100'],
-            'cuenta_activo_id'       => ['nullable', 'integer'],
-            'cuenta_depreciacion_id' => ['nullable', 'integer'],
-            'notas'             => ['nullable', 'string'],
+            'costo_adquisicion' => ['required', 'numeric', 'min:0'],
+            'valor_residual'    => ['nullable', 'numeric', 'min:0', 'lt:costo_adquisicion'],
+            'vida_util_anios'   => ['required', 'integer', 'min:1', 'max:100'],
+            'cuenta_id'         => ['nullable', 'integer'],
         ]);
 
         $data['empresa_id']             = $empresaId;
-        $data['metodo_depreciacion']    = 'lineal';
         $data['depreciacion_acumulada'] = 0;
         $data['valor_residual']         = $data['valor_residual'] ?? 0;
-        $data['valor_libro']            = $data['valor_adquisicion'];
+        $data['valor_en_libros']        = $data['costo_adquisicion'];
         $data['estado']                 = 'activo';
 
         $activo = ActivoFijo::create($data);
@@ -83,7 +84,7 @@ class ActivoFijoController extends Controller
 
     public function show(ActivoFijo $activoFijo): Response
     {
-        abort_if($activoFijo->empresa_id !== session('empresa_activa_id'), 403);
+        abort_if((int) $activoFijo->empresa_id !== (int) session('empresa_activa_id'), 403);
 
         return Inertia::render('Inventario/Activos/Show', [
             'activo' => $activoFijo->load([
@@ -94,17 +95,21 @@ class ActivoFijoController extends Controller
 
     public function edit(ActivoFijo $activoFijo): Response
     {
-        abort_if($activoFijo->empresa_id !== session('empresa_activa_id'), 403);
+        abort_if((int) $activoFijo->empresa_id !== (int) session('empresa_activa_id'), 403);
 
         return Inertia::render('Inventario/Activos/Form', [
             'activoFijo' => $activoFijo,
-            'categorias' => ActivoFijo::CATEGORIAS,
+            'cuentas'    => PlanCuenta::where('permite_asientos', true)
+                ->where('estado', true)
+                ->where('codigo', 'like', '1.2%')
+                ->orderBy('codigo')
+                ->get(['id', 'codigo', 'nombre']),
         ]);
     }
 
     public function update(Request $request, ActivoFijo $activoFijo): RedirectResponse
     {
-        abort_if($activoFijo->empresa_id !== session('empresa_activa_id'), 403);
+        abort_if((int) $activoFijo->empresa_id !== (int) session('empresa_activa_id'), 403);
 
         if ($activoFijo->estado !== 'activo') {
             abort(422, 'No se puede editar un activo dado de baja o vendido.');
@@ -116,19 +121,32 @@ class ActivoFijoController extends Controller
             'codigo'            => ['required', 'string', 'max:50', Rule::unique('activos_fijos')->where('empresa_id', $empresaId)->ignore($activoFijo->id)],
             'nombre'            => ['required', 'string', 'max:255'],
             'descripcion'       => ['nullable', 'string'],
-            'categoria'         => ['required', Rule::in(ActivoFijo::CATEGORIAS)],
-            'ubicacion'         => ['nullable', 'string', 'max:255'],
             'fecha_adquisicion' => ['required', 'date'],
-            'valor_adquisicion' => ['required', 'numeric', 'min:0'],
-            'valor_residual'    => ['nullable', 'numeric', 'min:0'],
-            'vida_util_años'    => ['required', 'integer', 'min:1', 'max:100'],
-            'cuenta_activo_id'       => ['nullable', 'integer'],
-            'cuenta_depreciacion_id' => ['nullable', 'integer'],
-            'notas'             => ['nullable', 'string'],
+            'costo_adquisicion' => ['required', 'numeric', 'min:0'],
+            'valor_residual'    => ['nullable', 'numeric', 'min:0', 'lt:costo_adquisicion'],
+            'vida_util_anios'   => ['required', 'integer', 'min:1', 'max:100'],
+            'cuenta_id'         => ['nullable', 'integer'],
         ]);
 
-        $data['valor_residual'] = $data['valor_residual'] ?? 0;
-        $data['valor_libro']    = $data['valor_adquisicion'] - $activoFijo->depreciacion_acumulada;
+        $primeraDepreciacion = ActivoDepreciacion::where('activo_id', $activoFijo->id)
+            ->orderBy('periodo_año')
+            ->orderBy('periodo_mes')
+            ->first();
+
+        if ($primeraDepreciacion) {
+            $fechaAdq   = \Carbon\Carbon::parse($data['fecha_adquisicion']);
+            $periodoAdq = $fechaAdq->year * 12 + $fechaAdq->month;
+            $primerPer  = $primeraDepreciacion->periodo_año * 12 + $primeraDepreciacion->periodo_mes;
+
+            if ($periodoAdq > $primerPer) {
+                return back()->withErrors([
+                    'fecha_adquisicion' => "No se puede establecer una fecha de adquisición posterior a la primera depreciación registrada ({$primeraDepreciacion->periodo_año}/{$primeraDepreciacion->periodo_mes}).",
+                ]);
+            }
+        }
+
+        $data['valor_residual']  = $data['valor_residual'] ?? 0;
+        $data['valor_en_libros'] = $data['costo_adquisicion'] - $activoFijo->depreciacion_acumulada;
 
         $activoFijo->update($data);
 
@@ -141,7 +159,7 @@ class ActivoFijoController extends Controller
 
     public function destroy(ActivoFijo $activoFijo): RedirectResponse
     {
-        abort_if($activoFijo->empresa_id !== session('empresa_activa_id'), 403);
+        abort_if((int) $activoFijo->empresa_id !== (int) session('empresa_activa_id'), 403);
 
         if ($activoFijo->depreciaciones()->exists()) {
             abort(422, 'No se puede eliminar: tiene depreciaciones registradas.');
@@ -155,9 +173,29 @@ class ActivoFijoController extends Controller
         return back()->with('success', 'Activo eliminado correctamente.');
     }
 
+    public function reporteLista(Request $request): HttpResponse
+    {
+        $empresaId = session('empresa_activa_id');
+        $empresa   = Empresa::findOrFail($empresaId);
+
+        $activos = ActivoFijo::where('empresa_id', $empresaId)
+            ->orderBy('codigo')
+            ->get();
+
+        $pdf = Pdf::loadView('reportes.inventario.activos', [
+            'activos' => $activos,
+            'empresa' => $empresa,
+            'usuario' => auth()->user(),
+        ])->setPaper('a3', 'landscape');
+
+        return $request->boolean('download')
+            ? $pdf->download('activos_fijos.pdf')
+            : $pdf->stream('activos_fijos.pdf');
+    }
+
     public function depreciar(Request $request, ActivoFijo $activoFijo): RedirectResponse
     {
-        abort_if($activoFijo->empresa_id !== session('empresa_activa_id'), 403);
+        abort_if((int) $activoFijo->empresa_id !== (int) session('empresa_activa_id'), 403);
 
         $data = $request->validate([
             'periodo_año' => ['required', 'integer', 'min:2000', 'max:2100'],
@@ -168,7 +206,7 @@ class ActivoFijoController extends Controller
             abort(422, 'El activo no está en estado activo.');
         }
 
-        $disponible = (float) $activoFijo->valor_libro - (float) $activoFijo->valor_residual;
+        $disponible = (float) $activoFijo->valor_en_libros - (float) $activoFijo->valor_residual;
         if ($disponible <= 0) {
             abort(422, 'El activo ya está totalmente depreciado.');
         }
@@ -182,25 +220,54 @@ class ActivoFijoController extends Controller
             abort(422, "Ya existe una depreciación para {$data['periodo_año']}/{$data['periodo_mes']}.");
         }
 
-        $monto          = min($activoFijo->depreciacionMensual(), $disponible);
-        $nuevaAcumulada = (float) $activoFijo->depreciacion_acumulada + $monto;
-        $nuevoValorLibro = (float) $activoFijo->valor_adquisicion - $nuevaAcumulada;
+        $hoy          = now();
+        $periodoMax   = $hoy->year * 12 + $hoy->month;
+        $nuevoPeriodo = $data['periodo_año'] * 12 + $data['periodo_mes'];
+
+        if ($nuevoPeriodo > $periodoMax) {
+            abort(422, 'No se puede registrar una depreciación para un período futuro.');
+        }
+
+        $fechaAdq    = \Carbon\Carbon::parse($activoFijo->fecha_adquisicion);
+        $anioAdq     = (int) $fechaAdq->format('Y');
+        $mesAdq      = (int) $fechaAdq->format('n');
+        $periodoAdq  = $anioAdq * 12 + $mesAdq;
+
+        if ($nuevoPeriodo < $periodoAdq) {
+            abort(422, "No se puede depreciar antes de la fecha de adquisición ({$anioAdq}/{$mesAdq}).");
+        }
+
+        $ultimaDepreciacion = ActivoDepreciacion::where('activo_id', $activoFijo->id)
+            ->orderByDesc('periodo_año')
+            ->orderByDesc('periodo_mes')
+            ->first();
+
+        if ($ultimaDepreciacion) {
+            $ultimoPeriodo = $ultimaDepreciacion->periodo_año * 12 + $ultimaDepreciacion->periodo_mes;
+            if ($nuevoPeriodo <= $ultimoPeriodo) {
+                abort(422, "Debe registrar períodos en orden cronológico. El último registrado es {$ultimaDepreciacion->periodo_año}/{$ultimaDepreciacion->periodo_mes}.");
+            }
+        }
+
+        $monto           = min($activoFijo->depreciacionMensual(), $disponible);
+        $nuevaAcumulada  = (float) $activoFijo->depreciacion_acumulada + $monto;
+        $nuevoValorLibro = (float) $activoFijo->costo_adquisicion - $nuevaAcumulada;
 
         DB::transaction(function () use ($activoFijo, $data, $monto, $nuevaAcumulada, $nuevoValorLibro) {
             ActivoDepreciacion::create([
-                'activo_id'                        => $activoFijo->id,
-                'periodo_año'                      => $data['periodo_año'],
-                'periodo_mes'                      => $data['periodo_mes'],
-                'monto'                            => $monto,
-                'depreciacion_acumulada_al_periodo' => $nuevaAcumulada,
-                'valor_libro_al_periodo'            => $nuevoValorLibro,
+                'activo_id'                         => $activoFijo->id,
+                'periodo_año'                       => $data['periodo_año'],
+                'periodo_mes'                       => $data['periodo_mes'],
+                'monto'                             => $monto,
+                'depreciacion_acumulada_al_periodo'  => $nuevaAcumulada,
+                'valor_libro_al_periodo'             => $nuevoValorLibro,
             ]);
 
             $nuevoEstado = $nuevoValorLibro <= (float) $activoFijo->valor_residual ? 'dado_de_baja' : 'activo';
 
             $activoFijo->update([
                 'depreciacion_acumulada' => $nuevaAcumulada,
-                'valor_libro'            => $nuevoValorLibro,
+                'valor_en_libros'        => $nuevoValorLibro,
                 'estado'                 => $nuevoEstado,
             ]);
         });

@@ -2,26 +2,18 @@ import { Head, Link, router, usePage } from '@inertiajs/react'
 import { useEffect, useRef, useState } from 'react'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
+import PdfPreviewModal from '@/Components/shared/PdfPreviewModal'
 import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Plus, Search, Pencil, Trash2, Eye, FileText, FileSpreadsheet } from 'lucide-react'
 import { confirmarEliminar } from '@/lib/swal'
 import { toastExito, toastError } from '@/lib/toast'
 import type { ActivoFijo, PaginatedData, PageProps } from '@/types'
-import { cn } from "../../../lib/utils";
 
-type Props = PageProps & {
+interface Props extends PageProps {
     activos: PaginatedData<ActivoFijo>
-    categorias: string[]
     estados: string[]
-    filters: { search?: string; categoria?: string; estado?: string }
-    [key: string]: unknown
-}
-
-const CATEGORIA_LABELS: Record<string, string> = {
-    terreno: 'Terreno', edificio: 'Edificio', vehiculo: 'Vehículo',
-    equipo_computo: 'Eq. Cómputo', maquinaria: 'Maquinaria',
-    muebles: 'Muebles', instalaciones: 'Instalaciones', otro: 'Otro',
+    filters: { search?: string; estado?: string }
 }
 
 const ESTADO_COLORES: Record<string, string> = {
@@ -34,37 +26,36 @@ const ESTADO_LABELS: Record<string, string> = {
     activo: 'Activo', dado_de_baja: 'Baja', vendido: 'Vendido',
 }
 
-function fmt(v: number | string | null | undefined) {
-    if (v === null || v === undefined) return '—'
+function fmt(v: number | string) {
     return Number(v).toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 export default function ActivosIndex() {
-    const { activos, categorias, estados, filters } = usePage<Props>().props
+    const { activos, estados, filters } = usePage<Props>().props
 
-    const [search, setSearch]       = useState(filters.search ?? '')
-    const [categoria, setCategoria] = useState(filters.categoria ?? '')
-    const [estado, setEstado]       = useState(filters.estado ?? '')
+    const [search, setSearch] = useState(filters.search ?? '')
+    const [estado, setEstado] = useState(filters.estado ?? '')
+    const [pdfModal, setPdfModal] = useState(false)
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const isFirstRender = useRef(true)
 
     useEffect(() => {
+        if (isFirstRender.current) { isFirstRender.current = false; return }
         if (debounceRef.current) clearTimeout(debounceRef.current)
         debounceRef.current = setTimeout(() => {
             router.get(route('inventario.activos.index'), {
-                search:    search || undefined,
-                categoria: categoria || undefined,
-                estado:    estado || undefined,
+                search: search || undefined,
+                estado: estado || undefined,
             }, { preserveState: true, replace: true })
         }, 400)
         return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
-    }, [search, categoria, estado])
+    }, [search, estado])
 
     async function exportarExcel() {
         const XLSX = await import('xlsx')
         const filas = activos.data.map(a => ({
             'Código':                 a.codigo,
             'Nombre':                 a.nombre,
-            'Categoría':              CATEGORIA_LABELS[a.categoria ?? ''] ?? (a.categoria ?? '—'),
             'Fecha Adquisición':      a.fecha_adquisicion,
             'Costo Adquisición':      Number(a.costo_adquisicion),
             'Depreciación Acumulada': Number(a.depreciacion_acumulada),
@@ -114,32 +105,23 @@ export default function ActivosIndex() {
                 <div className="flex items-center gap-3 mb-4 flex-wrap">
                     <Link href={route('inventario.activos.create')}>
                         <Button>
-                            <Plus className={cn('w-4', 'h-4')} />
+                            <Plus className="w-4 h-4" />
                             Nuevo Activo
                         </Button>
                     </Link>
 
                     <div className="relative">
-                        <Search className={cn('top-2.5', 'left-3', 'absolute', 'w-4', 'h-4')} style={{ color: 'var(--text-muted)' }} />
+                        <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
                         <Input
                             value={search}
                             onChange={e => setSearch(e.target.value)}
                             placeholder="Código o nombre..."
-                            className={cn('pl-9', 'w-52')}
+                            className="pl-9 w-52"
                         />
                     </div>
 
-                    <select value={categoria} onChange={e => setCategoria(e.target.value)}
-                        className="input-field"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
-                        <option value="">Todas las categorías</option>
-                        {categorias.map(c => (
-                            <option key={c} value={c}>{CATEGORIA_LABELS[c] ?? c}</option>
-                        ))}
-                    </select>
-
                     <select value={estado} onChange={e => setEstado(e.target.value)}
-                        className="input-field"
+                        className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm"
                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
                         <option value="">Todos los estados</option>
                         {estados.map(e => (
@@ -147,32 +129,31 @@ export default function ActivosIndex() {
                         ))}
                     </select>
 
-                    <div className={cn('flex', 'items-center', 'gap-2', 'ml-auto')}>
-                        <a href={route('inventario.activos.index')} target="_blank" rel="noreferrer"
-                            className={cn('flex', 'items-center', 'gap-1.5', 'px-3', 'py-1.5', 'rounded-md', 'font-medium', 'text-sm')}
+                    <div className="flex items-center gap-2 ml-auto">
+                        <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium"
                             style={{ background: '#DC2626', color: 'white', transition: 'background 0.2s' }}
                             onMouseEnter={e => (e.currentTarget.style.background = '#B91C1C')}
-                            onMouseLeave={e => (e.currentTarget.style.background = '#DC2626')}>
+                            onMouseLeave={e => (e.currentTarget.style.background = '#DC2626')}
+                            onClick={() => setPdfModal(true)}>
                             <FileText className="w-4 h-4" />
                             PDF
-                        </a>
-                        <button className={cn('flex', 'items-center', 'gap-1.5', 'px-3', 'py-1.5', 'rounded-md', 'font-medium', 'text-sm')}
+                        </button>
+                        <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium"
                             style={{ background: '#16A34A', color: 'white', transition: 'background 0.2s' }}
                             onMouseEnter={e => (e.currentTarget.style.background = '#15803D')}
                             onMouseLeave={e => (e.currentTarget.style.background = '#16A34A')}
                             onClick={exportarExcel}>
-                            <FileSpreadsheet className={cn('w-4', 'h-4')} />
+                            <FileSpreadsheet className="w-4 h-4" />
                             Excel
                         </button>
                     </div>
                 </div>
 
-                {/* Tabla */}
                 <div className="rounded-xl border overflow-x-auto" style={{ borderColor: 'var(--border)' }}>
                     <table className="w-full text-xs">
                         <thead>
                             <tr style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
-                                {['Código', 'Nombre', 'Categoría', 'Fecha Adq.', 'Costo Adq.', 'Dep. Acumulada', 'Valor Libros', 'Estado', ''].map(h => (
+                                {['Código', 'Nombre', 'Fecha Adq.', 'Costo Adq.', 'Dep. Acumulada', 'Valor Libros', 'Estado', ''].map(h => (
                                     <th key={h} className="text-left px-3 py-3 font-medium text-xs uppercase tracking-wider whitespace-nowrap"
                                         style={{ color: 'var(--text-muted)' }}>{h}</th>
                                 ))}
@@ -181,7 +162,7 @@ export default function ActivosIndex() {
                         <tbody>
                             {activos.data.length === 0 ? (
                                 <tr>
-                                    <td colSpan={9} className="text-center py-16" style={{ color: 'var(--text-muted)' }}>
+                                    <td colSpan={8} className="text-center py-16" style={{ color: 'var(--text-muted)' }}>
                                         <p className="font-medium text-sm" style={{ color: 'var(--text-main)' }}>
                                             No hay activos registrados
                                         </p>
@@ -195,49 +176,46 @@ export default function ActivosIndex() {
                                     <tr key={activo.id}
                                         className={`border-t transition-colors ${totDepreciado ? 'bg-amber-50/40 dark:bg-amber-900/10' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'}`}
                                         style={{ borderColor: 'var(--border)' }}>
-                                        <td className={cn('px-3', 'py-2.5', 'font-mono', 'font-medium')} style={{ color: 'var(--text-muted)' }}>
+                                        <td className="px-3 py-2.5 font-mono font-medium" style={{ color: 'var(--text-muted)' }}>
                                             {activo.codigo}
                                         </td>
-                                        <td className="px-3 py-2.5 max-w-40 truncate font-medium" style={{ color: 'var(--text-main)' }}
+                                        <td className="px-3 py-2.5 max-w-[200px] truncate font-medium" style={{ color: 'var(--text-main)' }}
                                             title={activo.nombre}>
                                             {activo.nombre}
                                         </td>
-                                        <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>
-                                            {CATEGORIA_LABELS[activo.categoria ?? ''] ?? (activo.categoria ?? '—')}
-                                        </td>
                                         <td className="px-3 py-2.5 whitespace-nowrap font-mono" style={{ color: 'var(--text-muted)' }}>
-                                            {activo.fecha_adquisicion}
+                                            {activo.fecha_adquisicion?.split('T')[0]}
                                         </td>
                                         <td className="px-3 py-2.5 text-right font-mono" style={{ color: 'var(--text-main)' }}>
                                             {fmt(activo.costo_adquisicion)}
                                         </td>
-                                        <td className={cn('px-3', 'py-2.5', 'font-mono', 'text-right')} style={{ color: 'var(--text-muted)' }}>
+                                        <td className="px-3 py-2.5 text-right font-mono" style={{ color: 'var(--text-muted)' }}>
                                             {fmt(activo.depreciacion_acumulada)}
                                         </td>
-                                        <td className={cn('px-3', 'py-2.5', 'font-mono', 'font-semibold', 'text-right')}
+                                        <td className="px-3 py-2.5 text-right font-mono font-semibold"
                                             style={{ color: totDepreciado ? '#F59E0B' : 'var(--text-main)' }}>
                                             {fmt(activo.valor_en_libros)}
                                         </td>
-                                        <td className={cn('px-3', 'py-2.5')}>
+                                        <td className="px-3 py-2.5">
                                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${ESTADO_COLORES[activo.estado] ?? ''}`}>
                                                 {ESTADO_LABELS[activo.estado] ?? activo.estado}
                                             </span>
                                         </td>
-                                        <td className={cn('px-3', 'py-2.5')}>
-                                            <div className={cn('flex', 'justify-end', 'items-center', 'gap-1')}>
+                                        <td className="px-3 py-2.5">
+                                            <div className="flex items-center justify-end gap-1">
                                                 <Link href={route('inventario.activos.show', activo.id)}>
                                                     <Button variant="ghost" size="icon" title="Ver detalle">
-                                                        <Eye className={cn('w-3.5', 'h-3.5')} />
+                                                        <Eye className="w-3.5 h-3.5" />
                                                     </Button>
                                                 </Link>
                                                 <Link href={route('inventario.activos.edit', activo.id)}>
                                                     <Button variant="ghost" size="icon" title="Editar">
-                                                        <Pencil className={cn('w-3.5', 'h-3.5')} />
+                                                        <Pencil className="w-3.5 h-3.5" />
                                                     </Button>
                                                 </Link>
                                                 <Button variant="ghost" size="icon" title="Eliminar"
                                                     onClick={() => eliminar(activo)}>
-                                                    <Trash2 className={cn('w-3.5', 'h-3.5', 'text-red-400')} />
+                                                    <Trash2 className="w-3.5 h-3.5 text-red-400" />
                                                 </Button>
                                             </div>
                                         </td>
@@ -248,13 +226,12 @@ export default function ActivosIndex() {
                     </table>
                 </div>
 
-                {/* Paginación */}
                 {activos.last_page > 1 && (
-                    <div className={cn('flex', 'justify-between', 'items-center', 'mt-4', 'text-sm')}>
+                    <div className="flex items-center justify-between mt-4 text-sm">
                         <p style={{ color: 'var(--text-muted)' }}>
                             Mostrando {activos.from}–{activos.to} de {activos.total}
                         </p>
-                        <div className={cn('flex', 'gap-1')}>
+                        <div className="flex gap-1">
                             {activos.links.map((link, i) => (
                                 link.url ? (
                                     <Link key={i} href={link.url}
@@ -263,7 +240,7 @@ export default function ActivosIndex() {
                                         dangerouslySetInnerHTML={{ __html: link.label }}
                                     />
                                 ) : (
-                                    <span key={i} className={cn('opacity-40', 'px-3', 'py-1', 'border', 'rounded', 'text-xs')}
+                                    <span key={i} className="px-3 py-1 rounded border text-xs opacity-40"
                                         style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}
                                         dangerouslySetInnerHTML={{ __html: link.label }} />
                                 )
@@ -272,6 +249,13 @@ export default function ActivosIndex() {
                     </div>
                 )}
             </div>
+            <PdfPreviewModal
+                abierto={pdfModal}
+                onCerrar={() => setPdfModal(false)}
+                url={pdfModal ? route('inventario.activos.reporte.lista') : ''}
+                titulo="Activos Fijos"
+                nombreDescarga="activos_fijos.pdf"
+            />
         </AppLayout>
     )
 }

@@ -12,15 +12,23 @@ import { toastExito, toastError } from '@/lib/toast'
 import type { PageProps } from '@/types'
 
 interface Props extends PageProps {
+    productos: { id: number; codigo: string; nombre: string }[]
     bodegas: { id: number; nombre: string }[]
     productoId: number | null
     bodegaId: number | null
+    redirect_to: string
 }
 
 export default function KardexAjuste() {
-    const { bodegas, productoId, bodegaId } = usePage<Props>().props
+    const { productos, bodegas, productoId, bodegaId, redirect_to } = usePage<Props>().props
 
-    const [productoFijado, setProductoFijado] = useState<Resultado | null>(null)
+    const productoInicial = productoId
+        ? productos.find(p => p.id === productoId) ?? null
+        : null
+
+    const [productoFijado, setProductoFijado] = useState<Resultado | null>(
+        productoInicial ? { ...productoInicial, marca: null, requiere_serie: false } : null
+    )
 
     const [saldoDisponible, setSaldoDisponible] = useState<number | null>(null)
     const [loadingSaldo, setLoadingSaldo] = useState(false)
@@ -32,6 +40,7 @@ export default function KardexAjuste() {
         cantidad:       '',
         costo_unitario: '',
         motivo:         '',
+        redirect_to:    redirect_to,
     })
 
     function limpiarProducto() {
@@ -65,7 +74,6 @@ export default function KardexAjuste() {
         post(route('inventario.kardex.storeAjuste'), {
             onSuccess: () => {
                 toastExito('Ajuste registrado correctamente')
-                router.visit(route('inventario.kardex.saldos'))
             },
             onError: (errs) => {
                 const msg = Object.values(errs)[0] ?? 'Error al registrar el ajuste'
@@ -146,7 +154,7 @@ export default function KardexAjuste() {
                             <span style={{ color: 'var(--text-muted)' }}>Cargando...</span>
                         ) : (
                             <span className="font-bold font-mono" style={{ color: 'var(--primary)' }}>
-                                {saldoDisponible !== null ? saldoDisponible.toFixed(4) : '—'}
+                                {saldoDisponible !== null ? saldoDisponible.toFixed(0) : '—'}
                             </span>
                         )}
                     </div>
@@ -200,7 +208,7 @@ export default function KardexAjuste() {
                     {stockInsuficiente && (
                         <div className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
                             <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                            La cantidad supera el stock disponible ({saldoDisponible?.toFixed(4)}). El servidor rechazará la operación.
+                            La cantidad supera el stock disponible ({saldoDisponible?.toFixed(0)}). El servidor rechazará la operación.
                         </div>
                     )}
                 </div>
@@ -212,7 +220,7 @@ export default function KardexAjuste() {
                         <Input
                             type="number"
                             min={0}
-                            step="0.0001"
+                            step="0.01"
                             value={data.costo_unitario}
                             onChange={e => setData('costo_unitario', e.target.value)}
                             placeholder="Costo unitario del producto ingresado"
@@ -246,7 +254,7 @@ export default function KardexAjuste() {
                         Registrar ajuste
                     </Button>
                     <Button type="button" variant="outline"
-                        onClick={() => router.visit(route('inventario.kardex.saldos'))}>
+                        onClick={() => router.visit(redirect_to)}>
                         Cancelar
                     </Button>
                 </div>

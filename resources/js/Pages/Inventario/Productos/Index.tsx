@@ -2,27 +2,29 @@ import { Head, Link, router, usePage } from '@inertiajs/react'
 import { useEffect, useRef, useState } from 'react'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
+import PdfPreviewModal from '@/Components/shared/PdfPreviewModal'
 import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Plus, Search, Pencil, Trash2, FileText, FileSpreadsheet } from 'lucide-react'
 import { confirmarEliminar } from '@/lib/swal'
 import { toastExito, toastError } from '@/lib/toast'
-import type { Marca, CategoriaProducto, Producto, PaginatedData, PageProps } from '@/types'
+import type { Producto, PaginatedData, PageProps } from '@/types'
 
 interface Props extends PageProps {
     productos: PaginatedData<Producto>
     filters: { search?: string; marca_id?: string; categoria_id?: string; tipo?: string; estado?: string }
     marcas: { id: number; nombre: string }[]
-    categorias: { id: number; nombre: string; parent_id: number | null }[]
+    categorias: { id: number; nombre: string; categoria_padre_id: number | null }[]
 }
 
 const TIPO_COLORES: Record<string, string> = {
     producto: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
     servicio: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
-    combo:    'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+    repuesto: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+    insumo:   'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400',
 }
 
-const TIPO_LABELS: Record<string, string> = { producto: 'Producto', servicio: 'Servicio', combo: 'Combo' }
+const TIPO_LABELS: Record<string, string> = { producto: 'Producto', servicio: 'Servicio', repuesto: 'Repuesto', insumo: 'Insumo' }
 
 export default function ProductosIndex() {
     const { productos, filters, marcas, categorias } = usePage<Props>().props
@@ -32,9 +34,12 @@ export default function ProductosIndex() {
     const [catId, setCatId]         = useState(filters.categoria_id ?? '')
     const [tipo, setTipo]           = useState(filters.tipo ?? '')
     const [estado, setEstado]       = useState(filters.estado ?? '')
+    const [pdfModal, setPdfModal]   = useState(false)
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const isFirstRender = useRef(true)
 
     useEffect(() => {
+        if (isFirstRender.current) { isFirstRender.current = false; return }
         if (debounceRef.current) clearTimeout(debounceRef.current)
         debounceRef.current = setTimeout(() => {
             router.get(route('inventario.productos.index'), {
@@ -122,30 +127,31 @@ export default function ProductosIndex() {
 
                     <select value={marcaId} onChange={e => setMarcaId(e.target.value)}
                         className="input-field"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
                         <option value="">Todas las marcas</option>
                         {marcas.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}
                     </select>
 
                     <select value={catId} onChange={e => setCatId(e.target.value)}
                         className="input-field"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
                         <option value="">Todas las categorías</option>
                         {categorias.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
                     </select>
 
                     <select value={tipo} onChange={e => setTipo(e.target.value)}
                         className="input-field"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
                         <option value="">Todos los tipos</option>
                         <option value="producto">Producto</option>
                         <option value="servicio">Servicio</option>
-                        <option value="combo">Combo</option>
+                        <option value="repuesto">Repuesto</option>
+                        <option value="insumo">Insumo</option>
                     </select>
 
                     <select value={estado} onChange={e => setEstado(e.target.value)}
                         className="input-field"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
                         <option value="">Todos los estados</option>
                         <option value="activo">Activos</option>
                         <option value="inactivo">Inactivos</option>
@@ -156,7 +162,7 @@ export default function ProductosIndex() {
                             style={{ background: '#DC2626', color: 'white', transition: 'background 0.2s' }}
                             onMouseEnter={e => (e.currentTarget.style.background = '#B91C1C')}
                             onMouseLeave={e => (e.currentTarget.style.background = '#DC2626')}
-                            onClick={() => {}}>
+                            onClick={() => setPdfModal(true)}>
                             <FileText className="w-4 h-4" />
                             PDF
                         </button>
@@ -278,6 +284,14 @@ export default function ProductosIndex() {
                     </div>
                 )}
             </div>
+
+            <PdfPreviewModal
+                abierto={pdfModal}
+                onCerrar={() => setPdfModal(false)}
+                url={pdfModal ? route('inventario.productos.reporte.lista') : ''}
+                titulo="Listado de Productos"
+                nombreDescarga="productos.pdf"
+            />
         </AppLayout>
     )
 }

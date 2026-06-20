@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Head, Link, usePage, useForm } from '@inertiajs/react'
+import { Head, Link, router, usePage, useForm } from '@inertiajs/react'
 import { toast, ToastContainer } from 'react-toastify'
 import AppLayout from '@/Layouts/AppLayout'
 import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
-import { ChevronLeft, Ban, ShoppingCart, ExternalLink, X, Printer, XCircle, Download } from 'lucide-react'
+import { ChevronLeft, Ban, ShoppingCart, ExternalLink, X, Printer, XCircle, Download, PackageCheck } from 'lucide-react'
 import { formatFecha } from '@/utils/contabilidad'
 import type {
     Compra, Proveedor, CentroCosto, AsientoContable,
@@ -19,6 +19,7 @@ interface CompraShow extends Compra {
     cuenta_pagar?: CuentaPagar
     asiento?: AsientoContable
     creado_por?: { id: number; name: string; email: string }
+    recepcion_bodega?: { id: number; compra_id: number }
 }
 
 interface Props extends PageProps {
@@ -133,10 +134,15 @@ export default function CompraShow() {
                                 <h1 className="text-xl font-bold font-mono" style={{ color: 'var(--text-main)' }}>
                                     {compra.num_documento}
                                 </h1>
-                                {compra.estado === 'activa'
-                                    ? <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">Activa</span>
-                                    : <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400">Anulada</span>
-                                }
+                                {compra.estado === 'pendiente' && (
+                                    <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">Pendiente</span>
+                                )}
+                                {compra.estado === 'activa' && (
+                                    <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">Activa</span>
+                                )}
+                                {compra.estado === 'anulada' && (
+                                    <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400">Anulada</span>
+                                )}
                             </div>
                             <p className="text-sm mt-0.5" style={{ color: 'var(--text-muted)' }}>
                                 {compra.tipo_documento} · Emitida {formatFecha(compra.fecha_emision)}
@@ -155,6 +161,20 @@ export default function CompraShow() {
                             style={{ background: '#ef4444' }}>
                             <Printer size={15} /> PDF
                         </button>
+                        {compra.estado === 'pendiente' && (
+                            <button
+                                onClick={() => {
+                                    if (compra.recepcion_bodega) {
+                                        router.visit(route('inventario.recepciones.show', compra.recepcion_bodega.id))
+                                    } else {
+                                        notify.error('Esta compra no tiene una recepción de bodega asociada')
+                                    }
+                                }}
+                                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90"
+                                style={{ background: '#10b981' }}>
+                                <PackageCheck size={15} /> Confirmar recepción
+                            </button>
+                        )}
                         {compra.estado === 'activa' && puedeAnular && (
                             <button onClick={confirmarAnulacion}
                                 className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90"

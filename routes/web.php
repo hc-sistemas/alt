@@ -23,6 +23,8 @@ use App\Http\Controllers\Inventario\ProductoController;
 use App\Http\Controllers\Inventario\KardexController;
 use App\Http\Controllers\Inventario\TrasladoController;
 use App\Http\Controllers\Inventario\ActivoFijoController;
+use App\Http\Controllers\Inventario\ListaPrecioController;
+use App\Http\Controllers\Inventario\RecepcionController;
 use App\Http\Controllers\Personas\ClienteController;
 use App\Http\Controllers\Personas\ProveedorController as PersonasProveedorController;
 use App\Http\Controllers\Personas\TransportistaController;
@@ -209,6 +211,19 @@ Route::middleware('auth')->group(function () {
         Route::resource('activos', ActivoFijoController::class)->except(['show']);
         Route::get('activos/{activoFijo}', [ActivoFijoController::class, 'show'])->name('activos.show');
         Route::post('activos/{activoFijo}/depreciar', [ActivoFijoController::class, 'depreciar'])->name('activos.depreciar');
+
+        // Listas de Precio
+        Route::get('listas', [ListaPrecioController::class, 'index'])->name('listas.index');
+        Route::put('listas/{producto}', [ListaPrecioController::class, 'update'])->name('listas.update');
+        Route::post('listas/importar', [ListaPrecioController::class, 'importar'])->name('listas.importar');
+
+        // Recepciones de Bodega
+        Route::get('recepciones', [RecepcionController::class, 'index'])->name('recepciones.index');
+        Route::get('recepciones/buscar-compra', [RecepcionController::class, 'buscarCompra'])->name('recepciones.buscarCompra');
+        Route::get('recepciones/buscar-producto', [RecepcionController::class, 'buscarProducto'])->name('recepciones.buscarProducto');
+        Route::post('recepciones', [RecepcionController::class, 'store'])->name('recepciones.store');
+        Route::get('recepciones/{recepcion}', [RecepcionController::class, 'show'])->name('recepciones.show');
+        Route::post('recepciones/{recepcion}/confirmar', [RecepcionController::class, 'confirmar'])->name('recepciones.confirmar');
     });
 
     // Inventario — Configuración

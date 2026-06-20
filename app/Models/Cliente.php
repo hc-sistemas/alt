@@ -4,44 +4,68 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Cliente extends Model
 {
-    use SoftDeletes;
 
     protected $table = 'clientes';
 
     protected $fillable = [
         'empresa_id',
-        'ruc_cedula',
-        'nombre',
-        'direccion',
-        'telefono',
+        'tipo_identificacion',
+        'identificacion',
+        'razon_social',
+        'nombre_comercial',
         'email',
+        'telefono',
+        'celular',
+        'direccion',
         'ciudad',
+        'provincia',
         'pais',
         'tiene_credito',
         'dias_credito',
-        'cupo_credito',
-        'es_agente_retencion',
+        'cupo_maximo',
+        'agente_retencion',
+        'es_cliente_nuevo',
         'estado',
-        'observaciones',
     ];
 
     protected function casts(): array
     {
         return [
-            'tiene_credito' => 'boolean',
-            'es_agente_retencion' => 'boolean',
-            'estado' => 'boolean',
-            'cupo_credito' => 'decimal:2',
+            'tiene_credito'    => 'boolean',
+            'agente_retencion' => 'boolean',
+            'es_cliente_nuevo' => 'boolean',
+            'estado'           => 'boolean',
+            'cupo_maximo'      => 'decimal:2',
         ];
     }
 
     public function empresa(): BelongsTo
     {
         return $this->belongsTo(Empresa::class);
+    }
+
+    public function facturas(): HasMany
+    {
+        return $this->hasMany(Factura::class, 'cliente_id');
+    }
+
+    public function cuentasCobrar(): HasMany
+    {
+        return $this->hasMany(CuentaCobrar::class, 'cliente_id');
+    }
+
+    public function prefacturas(): HasMany
+    {
+        return $this->hasMany(Prefactura::class, 'cliente_id');
+    }
+
+    public function proformas(): HasMany
+    {
+        return $this->hasMany(Proforma::class, 'cliente_id');
     }
 
     public function scopeActivos($query)
@@ -52,5 +76,10 @@ class Cliente extends Model
     public function scopePorEmpresa($query, int $empresaId)
     {
         return $query->where('empresa_id', $empresaId);
+    }
+
+    public function getNombreDisplayAttribute(): string
+    {
+        return $this->nombre_comercial ?? $this->razon_social;
     }
 }

@@ -111,7 +111,7 @@ class UsuarioController extends Controller
             unset($data['password']);
         }
 
-        if (isset($data['codigo_aprobacion'])) {
+        if (!empty($data['codigo_aprobacion'])) {
             $data['codigo_aprobacion'] = Hash::make($data['codigo_aprobacion']);
         } else {
             unset($data['codigo_aprobacion']);

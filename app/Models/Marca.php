@@ -3,29 +3,17 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Marca extends Model
 {
     protected $table = 'marcas';
+    public $timestamps = false;
 
-    protected $fillable = [
-        'empresa_id',
-        'nombre',
-        'descripcion',
-        'estado',
-    ];
+    protected $fillable = ['nombre', 'logo', 'icono', 'estado'];
 
     protected function casts(): array
     {
-        return [
-            'estado' => 'boolean',
-        ];
-    }
-
-    public function empresa(): BelongsTo
-    {
-        return $this->belongsTo(Empresa::class);
+        return ['estado' => 'boolean'];
     }
 
     public function scopeActivas($query)

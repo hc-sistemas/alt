@@ -15,12 +15,13 @@ interface Props extends PageProps {
     filters: { search?: string }
 }
 
-const emptyForm = { nombre: '', descripcion: '', activo: true }
+const emptyForm = { nombre: '', estado: true }
 
 export default function MarcasIndex() {
     const { marcas, filters } = usePage<Props>().props
     const [search, setSearch] = useState(filters.search ?? '')
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const isFirstRender = useRef(true)
 
     const [modalOpen, setModalOpen] = useState(false)
     const [editando, setEditando] = useState<Marca | null>(null)
@@ -30,6 +31,7 @@ export default function MarcasIndex() {
     const [errorEliminar, setErrorEliminar] = useState<string | null>(null)
 
     useEffect(() => {
+        if (isFirstRender.current) { isFirstRender.current = false; return }
         if (debounceRef.current) clearTimeout(debounceRef.current)
         debounceRef.current = setTimeout(() => {
             router.get(route('inventario.config.marcas.index'), { search }, { preserveState: true, replace: true })
@@ -47,7 +49,7 @@ export default function MarcasIndex() {
 
     function abrirEditar(marca: Marca) {
         setEditando(marca)
-        setForm({ nombre: marca.nombre, descripcion: marca.descripcion ?? '', activo: marca.activo })
+        setForm({ nombre: marca.nombre, estado: marca.estado })
         setErrors({})
         setErrorEliminar(null)
         setModalOpen(true)
@@ -143,7 +145,7 @@ export default function MarcasIndex() {
                     <table className="w-full text-sm">
                         <thead>
                             <tr style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
-                                {['Nombre', 'Descripción', 'Estado', ''].map(h => (
+                                {['Nombre', 'Estado', ''].map(h => (
                                     <th key={h} className="text-left px-4 py-3 font-medium text-xs uppercase tracking-wider"
                                         style={{ color: 'var(--text-muted)' }}>{h}</th>
                                 ))}
@@ -152,7 +154,7 @@ export default function MarcasIndex() {
                         <tbody>
                             {marcas.data.length === 0 ? (
                                 <tr>
-                                    <td colSpan={4} className="text-center py-12 text-sm" style={{ color: 'var(--text-muted)' }}>
+                                    <td colSpan={3} className="text-center py-12 text-sm" style={{ color: 'var(--text-muted)' }}>
                                         No hay marcas registradas.
                                     </td>
                                 </tr>
@@ -163,16 +165,13 @@ export default function MarcasIndex() {
                                     <td className="px-4 py-3 font-medium" style={{ color: 'var(--text-main)' }}>
                                         {marca.nombre}
                                     </td>
-                                    <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-muted)' }}>
-                                        {marca.descripcion ?? '—'}
-                                    </td>
                                     <td className="px-4 py-3">
                                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                                            marca.activo
+                                            marca.estado
                                                 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
                                                 : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
                                         }`}>
-                                            {marca.activo ? 'Activo' : 'Inactivo'}
+                                            {marca.estado ? 'Activo' : 'Inactivo'}
                                         </span>
                                     </td>
                                     <td className="px-4 py-3">
@@ -191,7 +190,6 @@ export default function MarcasIndex() {
                     </table>
                 </div>
 
-                {/* Paginación */}
                 {marcas.last_page > 1 && (
                     <div className="flex items-center justify-between mt-4 text-sm">
                         <p style={{ color: 'var(--text-muted)' }}>
@@ -217,7 +215,6 @@ export default function MarcasIndex() {
                 )}
             </div>
 
-            {/* Modal crear/editar */}
             {modalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
                     <div className="absolute inset-0 bg-black/60" onClick={cerrarModal} />
@@ -227,7 +224,7 @@ export default function MarcasIndex() {
                             <h3 className="text-base font-semibold" style={{ color: 'var(--text-main)' }}>
                                 {editando ? 'Editar marca' : 'Nueva marca'}
                             </h3>
-                            <button onClick={cerrarModal} className="modal-close">
+                            <button onClick={cerrarModal} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700">
                                 <X className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
                             </button>
                         </div>
@@ -242,30 +239,19 @@ export default function MarcasIndex() {
                                 />
                                 {errors.nombre && <p className="text-xs text-red-400">{errors.nombre}</p>}
                             </div>
-                            <div className="space-y-1.5">
-                                <Label>Descripción</Label>
-                                <textarea
-                                    value={form.descripcion}
-                                    onChange={e => setForm(f => ({ ...f, descripcion: e.target.value }))}
-                                    rows={2}
-                                    placeholder="Descripción opcional..."
-                                    className="input-field"
-                                    style={{ borderColor: 'var(--border)', color: 'var(--text-main)' }}
-                                />
-                            </div>
                             <div className="flex items-center gap-3">
                                 <button
                                     type="button"
-                                    onClick={() => setForm(f => ({ ...f, activo: !f.activo }))}
-                                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${form.activo ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'}`}
+                                    onClick={() => setForm(f => ({ ...f, estado: !f.estado }))}
+                                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${form.estado ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'}`}
                                 >
-                                    <span className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${form.activo ? 'translate-x-6' : 'translate-x-1'}`} />
+                                    <span className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${form.estado ? 'translate-x-6' : 'translate-x-1'}`} />
                                 </button>
                                 <Label>Activo</Label>
                             </div>
                         </div>
 
-                        <div className="modal-footer">
+                        <div className="flex gap-3 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
                             <Button onClick={guardar} loading={procesando}>
                                 <Save className="w-4 h-4" />
                                 {editando ? 'Guardar cambios' : 'Crear marca'}

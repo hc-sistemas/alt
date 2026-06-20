@@ -37,13 +37,13 @@ class CompraDetalle extends Model
         return $this->belongsTo(Compra::class);
     }
 
-    public function cuenta(): BelongsTo
-    {
-        return $this->belongsTo(PlanCuenta::class, 'cuenta_id');
-    }
-
     public function producto(): BelongsTo
     {
         return $this->belongsTo(Producto::class, 'producto_id');
+    }
+
+    public function cuenta(): BelongsTo
+    {
+        return $this->belongsTo(PlanCuenta::class, 'cuenta_id');
     }
 }

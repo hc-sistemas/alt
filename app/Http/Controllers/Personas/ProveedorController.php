@@ -24,8 +24,7 @@ class ProveedorController extends Controller
         $query = Proveedor::where('empresa_id', $empresaId)
             ->when($request->search, fn($q) => $q->where(function ($q) use ($request) {
                 $q->where('identificacion', 'ilike', "%{$request->search}%")
-                  ->orWhere('razon_social', 'ilike', "%{$request->search}%")
-                  ->orWhere('nombre_comercial', 'ilike', "%{$request->search}%");
+                  ->orWhere('razon_social', 'ilike', "%{$request->search}%");
             }))
             ->when($request->tipo && $request->tipo !== 'todos', fn($q) =>
                 $q->where('tipo', $request->tipo)
@@ -37,7 +36,7 @@ class ProveedorController extends Controller
 
         return Inertia::render('Personas/Proveedores/Index', [
             'proveedores' => $query->paginate(20)->withQueryString(),
-            'filters' => $request->only(['search', 'tipo', 'estado']),
+            'filters'     => $request->only(['search', 'tipo', 'estado']),
         ]);
     }
 
@@ -52,8 +51,7 @@ class ProveedorController extends Controller
 
         $data = $request->validated();
         if ($data['tipo'] === 'nacional') {
-            $data['divisa'] = null;
-            $data['pais'] = 'Ecuador';
+            $data['pais'] = 'ECUADOR';
         }
 
         $proveedor = Proveedor::create([
@@ -79,8 +77,7 @@ class ProveedorController extends Controller
     {
         $data = $request->validated();
         if ($data['tipo'] === 'nacional') {
-            $data['divisa'] = null;
-            $data['pais'] = 'Ecuador';
+            $data['pais'] = 'ECUADOR';
         }
 
         $proveedor->update($data);
@@ -110,10 +107,14 @@ class ProveedorController extends Controller
             'tipo'        => 'lista',
         ]);
 
-        return $pdf->download('proveedores_' . now()->format('Ymd_His') . '.pdf');
+        $nombre = 'proveedores_' . now()->format('Ymd_His') . '.pdf';
+
+        return $request->boolean('download')
+            ? $pdf->download($nombre)
+            : $pdf->stream($nombre);
     }
 
-    public function reporteIndividual(Proveedor $proveedor): HttpResponse
+    public function reporteIndividual(Request $request, Proveedor $proveedor): HttpResponse
     {
         $empresa = \App\Models\Empresa::find(session('empresa_activa_id'));
 
@@ -124,17 +125,40 @@ class ProveedorController extends Controller
             'tipo'      => 'individual',
         ]);
 
-        return $pdf->download('proveedor_' . ($proveedor->ruc_cedula ?? $proveedor->id) . '.pdf');
+        $nombre = 'proveedor_' . ($proveedor->identificacion ?? $proveedor->id) . '.pdf';
+
+        return $request->boolean('download')
+            ? $pdf->download($nombre)
+            : $pdf->stream($nombre);
     }
 
     public function destroy(Proveedor $proveedor): RedirectResponse
     {
         $nombre = $proveedor->razon_social;
-        $proveedor->delete();
+
+        $tieneDocumentos = $proveedor->compras()->exists()
+            || $proveedor->cuentasPagar()->exists();
+
+        if ($tieneDocumentos) {
+            $proveedor->update(['estado' => false]);
+
+            $this->auditoria->documento('desactivar', 'personas', 'proveedores', $proveedor->id,
+                "Proveedor {$nombre} desactivado (tiene documentos asociados)");
+
+            return back()->with('flash', [
+                'type'    => 'warning',
+                'message' => 'El proveedor tiene documentos asociados y fue desactivado en lugar de eliminado.',
+            ]);
+        }
 
         $this->auditoria->documento('eliminar', 'personas', 'proveedores', $proveedor->id,
             "Proveedor {$nombre} eliminado");
 
-        return back()->with('success', 'Proveedor eliminado correctamente.');
+        $proveedor->delete();
+
+        return back()->with('flash', [
+            'type'    => 'success',
+            'message' => 'Proveedor eliminado correctamente.',
+        ]);
     }
 }

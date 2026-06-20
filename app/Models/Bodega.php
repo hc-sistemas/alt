@@ -8,23 +8,17 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class Bodega extends Model
 {
     protected $table = 'bodegas';
+    public $timestamps = false;
 
     const TIPOS = ['general', 'importacion', 'taller', 'reserva', 'cuarentena'];
 
     protected $fillable = [
-        'empresa_id',
-        'centro_costo_id',
-        'nombre',
-        'tipo',
-        'descripcion',
-        'estado',
+        'empresa_id', 'centro_costo_id', 'nombre', 'tipo', 'es_virtual', 'estado',
     ];
 
     protected function casts(): array
     {
-        return [
-            'estado' => 'boolean',
-        ];
+        return ['estado' => 'boolean', 'es_virtual' => 'boolean'];
     }
 
     public function empresa(): BelongsTo

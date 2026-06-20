@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Proveedor extends Model
 {
+
     protected $table = 'proveedores';
 
     protected $fillable = [
