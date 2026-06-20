@@ -334,7 +334,15 @@ function NuevaCompraModal({ proveedores, centros, cuentas, onClose }: NuevaCompr
     function submit(e: React.FormEvent) {
         e.preventDefault()
         post(route('compras.facturas.store'), {
-            onSuccess: () => { notify.ok(`Compra ${data.num_documento} registrada`); onClose() },
+            onSuccess: (page) => {
+                const flash = (page as any).props?.flash
+                if (flash?.error) {
+                    notify.error(flash.error)
+                } else {
+                    notify.ok(`Compra ${data.num_documento} registrada`)
+                }
+                onClose()
+            },
             onError:   (errs) => notify.error('Error: ' + Object.values(errs).join(', ')),
         })
     }

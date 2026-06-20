@@ -125,8 +125,10 @@ class CompraController extends Controller
 
                 $total = $subtotal0 + $subtotalIva + $totalIva;
 
-                $fechaVenc = $request->dias_credito > 0
-                    ? now()->addDays($request->dias_credito)->toDateString()
+                $diasCredito = (int) ($request->dias_credito ?? 0);
+
+                $fechaVenc = $diasCredito > 0
+                    ? now()->addDays($diasCredito)->toDateString()
                     : $request->fecha_emision;
 
                 $compra = Compra::create([
@@ -140,7 +142,7 @@ class CompraController extends Controller
                     'fecha_emision'       => $request->fecha_emision,
                     'fecha_registro'      => now()->toDateString(),
                     'fecha_vencimiento'   => $fechaVenc,
-                    'dias_credito'        => $request->dias_credito ?? 0,
+                    'dias_credito'        => $diasCredito,
                     'subtotal_0'          => $subtotal0,
                     'subtotal_iva'        => $subtotalIva,
                     'total_iva'           => $totalIva,
@@ -194,7 +196,7 @@ class CompraController extends Controller
                     }
                 }
 
-                if ($request->dias_credito > 0) {
+                if ($diasCredito > 0) {
                     CuentaPagar::create([
                         'empresa_id'        => $empresaId,
                         'proveedor_id'      => $request->proveedor_id,
@@ -218,13 +220,13 @@ class CompraController extends Controller
                     );
                     $compra->update(['asiento_id' => $asiento->id]);
                 } catch (\Exception) {
-                    // No bloquear si el período contable está cerrado
+                    // Asiento contable no es bloqueante (período cerrado, parámetros faltantes)
                 }
             });
 
             return back()->with('success',
                 "Compra {$request->num_documento} registrada correctamente.");
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             return back()->with('error', $e->getMessage());
         }
     }

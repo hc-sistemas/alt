@@ -125,7 +125,9 @@ Route::middleware('auth')->group(function () {
 
         // Recepciones de Bodega
         Route::prefix('recepciones')->name('recepciones.')->group(function () {
+            Route::get('/buscar-compra', [RecepcionController::class, 'buscarCompra'])->name('buscar-compra');
             Route::get('/buscar-producto', [RecepcionController::class, 'buscarProducto'])->name('buscar-producto');
+            Route::post('/', [RecepcionController::class, 'store'])->name('store');
             Route::get('/', [RecepcionController::class, 'index'])->name('index');
             Route::get('/{recepcion}', [RecepcionController::class, 'show'])->name('show');
             Route::post('/{recepcion}/confirmar', [RecepcionController::class, 'confirmar'])->name('confirmar');

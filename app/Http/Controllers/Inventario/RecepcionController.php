@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Inventario;
 
 use App\Http\Controllers\Controller;
+use App\Models\Bodega;
+use App\Models\Compra;
 use App\Models\Producto;
 use App\Models\RecepcionBodega;
 use App\Models\RecepcionDetalle;
@@ -42,9 +44,15 @@ class RecepcionController extends Controller
 
         $recepciones = $query->orderByDesc('created_at')->paginate(20)->withQueryString();
 
+        $bodegas = Bodega::where('empresa_id', $empresaId)
+            ->where('estado', true)
+            ->orderBy('nombre')
+            ->get(['id', 'nombre']);
+
         return Inertia::render('Inventario/Recepciones/Index', [
             'recepciones' => $recepciones,
             'filtros'     => $request->only(['estado', 'fecha_desde', 'fecha_hasta']),
+            'bodegas'     => $bodegas,
         ]);
     }
 
@@ -67,6 +75,83 @@ class RecepcionController extends Controller
         return Inertia::render('Inventario/Recepciones/Show', [
             'recepcion' => $recepcion,
         ]);
+    }
+
+    public function buscarCompra(Request $request): JsonResponse
+    {
+        $empresaId = session('empresa_activa_id');
+        $q = $request->input('q', '');
+
+        $compras = Compra::with([
+            'proveedor:id,razon_social',
+            'detalles' => fn($qb) => $qb->whereNotNull('producto_id')->with('producto:id,codigo,nombre'),
+        ])
+        ->where('empresa_id', $empresaId)
+        ->where('estado', 'activa')
+        ->where('num_documento', 'ilike', "%{$q}%")
+        ->whereHas('detalles', fn($qb) => $qb->whereNotNull('producto_id'))
+        ->orderByDesc('fecha_emision')
+        ->limit(10)
+        ->get(['id', 'num_documento', 'fecha_emision', 'proveedor_id']);
+
+        return response()->json($compras);
+    }
+
+    public function store(Request $request): RedirectResponse
+    {
+        $empresaId = session('empresa_activa_id');
+
+        $request->validate([
+            'compra_id'                    => 'required|integer|exists:compras,id',
+            'bodega_id'                    => 'required|integer|exists:bodegas,id',
+            'detalles'                     => 'required|array|min:1',
+            'detalles.*.compra_detalle_id' => 'required|integer|exists:compra_detalles,id',
+            'detalles.*.producto_id'       => 'required|integer|exists:productos,id',
+            'detalles.*.cantidad_esperada' => 'required|numeric|min:0.0001',
+        ]);
+
+        $compra = Compra::where('empresa_id', $empresaId)
+            ->where('id', $request->compra_id)
+            ->firstOrFail();
+
+        $yaExiste = RecepcionBodega::where('compra_id', $compra->id)
+            ->where('bodega_id', $request->bodega_id)
+            ->exists();
+
+        if ($yaExiste) {
+            return back()->with('error', 'Ya existe una recepción para esta compra en esa bodega.');
+        }
+
+        DB::transaction(function () use ($request, $compra, $empresaId) {
+            $recepcion = RecepcionBodega::create([
+                'empresa_id' => $empresaId,
+                'compra_id'  => $compra->id,
+                'bodega_id'  => $request->bodega_id,
+                'estado'     => 'pendiente',
+            ]);
+
+            foreach ($request->detalles as $d) {
+                RecepcionDetalle::create([
+                    'recepcion_id'      => $recepcion->id,
+                    'compra_detalle_id' => $d['compra_detalle_id'],
+                    'producto_id'       => $d['producto_id'],
+                    'cantidad_esperada' => $d['cantidad_esperada'],
+                    'cantidad_recibida' => 0,
+                    'estado'            => 'pendiente',
+                ]);
+            }
+
+            $this->auditoria->documento(
+                'crear',
+                'inventario',
+                'recepciones_bodega',
+                $recepcion->id,
+                "Recepción manual creada desde compra #{$compra->num_documento}"
+            );
+        });
+
+        return redirect()->route('inventario.recepciones.index')
+            ->with('success', 'Recepción creada correctamente.');
     }
 
     public function buscarProducto(Request $request): JsonResponse
