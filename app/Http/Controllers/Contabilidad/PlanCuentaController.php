@@ -23,14 +23,6 @@ class PlanCuentaController extends Controller
 
         return Inertia::render('Contabilidad/PlanCuentas/Index', [
             'cuentas' => $cuentas,
-            'stats'   => [
-                'total'        => PlanCuenta::count(),
-                'activas'      => PlanCuenta::where('estado', true)->count(),
-                'con_asientos' => PlanCuenta::where('total_asientos', '>', 0)->count(),
-                'sin_uso'      => PlanCuenta::where('permite_asientos', true)
-                                            ->where('total_asientos', 0)
-                                            ->count(),
-            ],
             'todasLasCuentas' => PlanCuenta::orderBy('codigo')
                                            ->get(['id', 'codigo', 'nombre', 'tipo', 'nivel', 'padre_id']),
         ]);

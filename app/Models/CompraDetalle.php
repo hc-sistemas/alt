@@ -46,4 +46,9 @@ class CompraDetalle extends Model
     {
         return $this->belongsTo(PlanCuenta::class, 'cuenta_id');
     }
+
+    public function producto(): BelongsTo
+    {
+        return $this->belongsTo(Producto::class, 'producto_id');
+    }
 }

@@ -56,35 +56,60 @@ export default function EjerciciosIndex() {
 
     const confirmarCierre = async (ejercicio: EjercicioContable) => {
         injectSwalStyles()
-        const { value: motivo } = await Swal.fire({
+        const { value: result } = await Swal.fire({
             ...swalBase,
             title: `Cerrar ${ejercicio.periodo_label}`,
             html: `
                 <div style="text-align:left">
                     <div style="background:#fef3c7;border:1px solid #fcd34d;
                                 border-radius:10px;padding:14px;margin-bottom:16px">
-                        <p style="font-weight:700;color:#92400e;margin:0 0 6px 0;font-size:0.9rem">
+                        <p style="font-weight:700;color:#92400e;margin:0 0 6px 0;
+                                  font-size:0.9rem">
                             ⚠️ Acción con impacto permanente
                         </p>
-                        <p style="color:#78350f;font-size:0.82rem;margin:0;line-height:1.5">
+                        <p style="color:#78350f;font-size:0.82rem;margin:0;
+                                  line-height:1.5">
                             Una vez cerrado <strong>${ejercicio.periodo_label}</strong>,
-                            nadie podrá crear ni anular asientos en ese período.
+                            nadie podrá crear ni anular asientos en ese mes.
                             Solo el Super Admin podrá reabrirlo.
                         </p>
                     </div>
-                    <label style="font-weight:600;color:#374151;font-size:0.875rem;
-                                  display:block;margin-bottom:6px">
-                        Motivo del cierre <span style="color:#ef4444">*</span>
-                    </label>
-                    <textarea id="motivo-cierre"
-                        style="width:100%;border:2px solid #e5e7eb;border-radius:8px;
-                               padding:10px;font-size:0.875rem;resize:vertical;
-                               min-height:80px;box-sizing:border-box;font-family:inherit"
-                        placeholder="ej: Cierre mensual, conciliación bancaria completada...">
-                    </textarea>
-                    <p style="font-size:0.75rem;color:#9ca3af;margin:4px 0 0 0">
-                        Mínimo 10 caracteres
-                    </p>
+
+                    <div style="margin-bottom:14px">
+                        <label style="font-weight:600;color:#374151;font-size:0.875rem;
+                                      display:block;margin-bottom:6px">
+                            Fecha de cierre <span style="color:#ef4444">*</span>
+                        </label>
+                        <input
+                            type="date"
+                            id="fecha-cierre"
+                            value="${new Date().toISOString().split('T')[0]}"
+                            max="${new Date().toISOString().split('T')[0]}"
+                            style="width:100%;border:2px solid #e5e7eb;border-radius:8px;
+                                   padding:8px 12px;font-size:0.875rem;
+                                   box-sizing:border-box;font-family:inherit"
+                        />
+                        <p style="font-size:0.75rem;color:#9ca3af;margin:4px 0 0 0">
+                            No puede ser una fecha futura
+                        </p>
+                    </div>
+
+                    <div>
+                        <label style="font-weight:600;color:#374151;font-size:0.875rem;
+                                      display:block;margin-bottom:6px">
+                            Motivo del cierre <span style="color:#ef4444">*</span>
+                        </label>
+                        <textarea id="motivo-cierre"
+                            style="width:100%;border:2px solid #e5e7eb;border-radius:8px;
+                                   padding:10px;font-size:0.875rem;resize:vertical;
+                                   min-height:80px;box-sizing:border-box;font-family:inherit"
+                            placeholder="ej: Cierre mensual julio 2026,
+conciliación bancaria completada..."
+                        ></textarea>
+                        <p style="font-size:0.75rem;color:#9ca3af;margin:4px 0 0 0">
+                            Mínimo 10 caracteres
+                        </p>
+                    </div>
                 </div>
             `,
             icon: 'warning',
@@ -96,19 +121,38 @@ export default function EjerciciosIndex() {
             reverseButtons: true,
             focusCancel: true,
             preConfirm: () => {
-                const m = (document.getElementById('motivo-cierre') as HTMLTextAreaElement)?.value
-                if (!m || m.length < 10) {
+                const fecha  = (document.getElementById('fecha-cierre') as HTMLInputElement)?.value
+                const motivo = (document.getElementById('motivo-cierre') as HTMLTextAreaElement)?.value
+
+                if (!fecha) {
+                    Swal.showValidationMessage('La fecha de cierre es obligatoria')
+                    return false
+                }
+                if (fecha > new Date().toISOString().split('T')[0]) {
+                    Swal.showValidationMessage('La fecha no puede ser futura')
+                    return false
+                }
+                if (!motivo || motivo.length < 10) {
                     Swal.showValidationMessage('El motivo debe tener al menos 10 caracteres')
                     return false
                 }
-                return m
+                return { fecha, motivo }
             },
         })
 
-        if (motivo) {
+        if (result) {
             router.patch(
                 route('contabilidad.ejercicios.cerrar', ejercicio.id),
-                { motivo },
+                {
+                    motivo:       result.motivo,
+                    fecha_cierre: result.fecha,
+                },
+                {
+                    onSuccess: () => notify.success(
+                        `Período ${ejercicio.periodo_label} cerrado correctamente`
+                    ),
+                    onError: () => notify.error('Error al cerrar el período'),
+                }
             )
         }
     }
@@ -172,7 +216,7 @@ export default function EjerciciosIndex() {
                     <div className="flex items-center gap-2 flex-wrap">
                         <button
                             onClick={() => setModalAbierto(true)}
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white transition-all hover:opacity-90 hover:-translate-y-0.5"
+                            className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5"
                             style={{ background: 'var(--primary)' }}
                         >
                             <Plus size={15} />
@@ -317,34 +361,24 @@ export default function EjerciciosIndex() {
 
             {/* Modal abrir período */}
             {modalAbierto && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-                     style={{ background: 'rgba(0,0,0,0.55)' }}
-                     onClick={() => setModalAbierto(false)}>
-                    <div className="w-full max-w-md rounded-2xl p-6 shadow-2xl"
-                         style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}
-                         onClick={e => e.stopPropagation()}>
+                <div className="modal-overlay" onClick={() => setModalAbierto(false)}>
+                    <div className="modal-card max-w-md" onClick={e => e.stopPropagation()}>
 
-                        <div className="flex items-center justify-between mb-5">
-                            <h2 className="text-lg font-bold flex items-center gap-2"
-                                style={{ color: 'var(--text-main)' }}>
+                        <div className="modal-header">
+                            <h2>
                                 <Plus size={20} style={{ color: 'var(--primary)' }} />
                                 Abrir Período Contable
                             </h2>
-                            <button onClick={() => setModalAbierto(false)}
-                                    className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+                            <button className="modal-close" onClick={() => setModalAbierto(false)}>×</button>
                         </div>
 
-                        <div className="space-y-4">
+                        <div className="modal-body" style={{ gap: '1rem' }}>
                             <div>
                                 <Label>Año <span className="text-red-500">*</span></Label>
                                 <select
                                     value={form.anio}
                                     onChange={e => setForm(f => ({ ...f, anio: parseInt(e.target.value) }))}
-                                    className="mt-1 w-full rounded-lg px-3 py-2 text-sm border
-                                               focus:outline-none focus:ring-1 focus:ring-amber-500
-                                               dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600"
-                                    style={{ borderColor: 'var(--border)', background: 'var(--bg-card)',
-                                             color: 'var(--text-main)' }}
+                                    className="input-field select-field mt-1"
                                 >
                                     {aniosDisponibles.map(a => (
                                         <option key={a} value={a}>{a}</option>
@@ -357,11 +391,7 @@ export default function EjerciciosIndex() {
                                 <select
                                     value={form.mes}
                                     onChange={e => setForm(f => ({ ...f, mes: parseInt(e.target.value) }))}
-                                    className="mt-1 w-full rounded-lg px-3 py-2 text-sm border
-                                               focus:outline-none focus:ring-1 focus:ring-amber-500
-                                               dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600"
-                                    style={{ borderColor: 'var(--border)', background: 'var(--bg-card)',
-                                             color: 'var(--text-main)' }}
+                                    className="input-field select-field mt-1"
                                 >
                                     {Object.entries(MESES).map(([num, nombre]) => (
                                         <option key={num} value={num}>{nombre}</option>
@@ -396,7 +426,7 @@ export default function EjerciciosIndex() {
                             )}
                         </div>
 
-                        <div className="flex gap-3 mt-6">
+                        <div className="modal-footer">
                             <Button variant="outline" onClick={() => setModalAbierto(false)} className="flex-1">
                                 Cancelar
                             </Button>

@@ -115,12 +115,12 @@ export interface AuthUser {
 }
 
 export interface PageProps {
-    [key: string]: unknown
     auth: { user: AuthUser | null }
     empresa_activa?: Partial<Empresa> | null
     empresas_usuario: Partial<Empresa>[]
     flash: { success?: string; error?: string; warning?: string }
     ziggy?: Record<string, unknown>
+    [key: string]: unknown
 }
 
 // ── Inventario ────────────────────────────────────────────────────────────────
@@ -143,6 +143,7 @@ export interface ActivoFijo {
     nombre: string
     descripcion: string | null
     codigo: string | null
+    categoria?: string
     fecha_adquisicion: string
     costo_adquisicion: number
     vida_util_anios: number
@@ -268,7 +269,8 @@ export interface InventarioSaldo {
     id: number
     producto_id: number
     bodega_id: number
-    cantidad: number
+    stock_actual: number
+    stock_reservado: number
     costo_promedio: number
     updated_at: string
     producto?: Producto
@@ -279,34 +281,21 @@ export interface InventarioMovimiento {
     id: number
     empresa_id: number
     producto_id: number
-    bodega_origen_id: number | null
-    bodega_destino_id: number | null
-    tipo_movimiento: 'entrada' | 'salida' | 'traslado' | 'ajuste' | 'reserva'
-    documento_tipo: string | null
-    documento_id: number | null
-    documento_numero: string | null
+    bodega_id: number
+    tipo: 'entrada' | 'salida' | 'traslado_entrada' | 'traslado_salida' | 'ajuste_positivo' | 'ajuste_negativo' | 'reserva' | 'liberacion'
+    doc_tipo: string | null
+    doc_id: number | null
     cantidad: number
     costo_unitario: number
     costo_total: number
-    numero_serie: string | null
-    fecha: string
-    hora: string | null
+    stock_anterior: number
+    stock_nuevo: number
     usuario_id: number | null
-    observacion: string | null
+    notas: string | null
     created_at: string
-    bodega_origen?: Bodega
-    bodega_destino?: Bodega
+    bodega?: Bodega
     producto?: Producto
-}
-
-export interface KardexMovimiento extends InventarioMovimiento {
-    saldo_anterior: number
-    saldo_posterior: number
-    es_ingreso: boolean | null
-}
-
-export interface KardexMovimientoExtendido extends KardexMovimiento {
-    tipo_descriptivo: string
+    usuario?: { nombre: string }
 }
 
 export interface TrasladoBodega {
@@ -426,6 +415,238 @@ export interface AsientoStats {
     manuales: number
 }
 
+// ── Inventario / Activos Fijos ────────────────────────────────────────────────
+
+export interface ActivoDepreciacion {
+    id: number
+    activo_id: number
+    periodo_año: number
+    periodo_mes: number
+    monto: number
+    depreciacion_acumulada_al_periodo: number
+    valor_libro_al_periodo: number
+    created_at: string
+}
+
+export interface ActivoFijo {
+    id: number
+    empresa_id: number
+    empresa?: Empresa
+    codigo: string
+    nombre: string
+    descripcion: string | null
+    categoria: string
+    ubicacion: string | null
+    fecha_adquisicion: string
+    valor_adquisicion: number
+    valor_residual: number
+    vida_util_años: number
+    metodo_depreciacion: string
+    depreciacion_acumulada: number
+    valor_libro: number
+    estado: 'activo' | 'dado_de_baja' | 'vendido'
+    cuenta_activo_id: number | null
+    cuenta_depreciacion_id: number | null
+    notas: string | null
+    depreciaciones?: ActivoDepreciacion[]
+    created_at: string
+    updated_at: string
+    deleted_at: string | null
+}
+
+// ── Personas ──────────────────────────────────────────────────────────────────
+
+export interface Cliente {
+    id: number
+    empresa_id: number
+    ruc_cedula: string
+    nombre: string
+    direccion?: string
+    telefono?: string
+    email?: string
+    ciudad?: string
+    pais: string
+    tiene_credito: boolean
+    dias_credito?: number
+    cupo_credito?: number
+    es_agente_retencion: boolean
+    estado: boolean
+    observaciones?: string
+    created_at?: string
+    updated_at?: string
+}
+
+export interface Transportista {
+    id: number
+    empresa_id: number
+    razon_social: string
+    ruc: string
+    placa?: string
+    contacto?: string
+    telefono?: string
+    estado: boolean
+    created_at?: string
+    updated_at?: string
+}
+
+// ── Inventario ────────────────────────────────────────────────────────────────
+
+export interface Marca {
+    id: number
+    empresa_id: number | null
+    empresa?: Empresa
+    nombre: string
+    descripcion: string | null
+    activo: boolean
+    created_at: string
+    updated_at: string
+}
+
+export interface CategoriaProducto {
+    id: number
+    empresa_id: number | null
+    parent_id: number | null
+    padre?: CategoriaProducto
+    hijos?: CategoriaProducto[]
+    nombre: string
+    descripcion: string | null
+    activo: boolean
+    created_at: string
+    updated_at: string
+}
+
+export interface Bodega {
+    id: number
+    empresa_id: number
+    empresa?: Empresa
+    centro_costo_id: number | null
+    centro_costo?: CentroCosto
+    nombre: string
+    tipo: 'general' | 'importacion' | 'taller' | 'reserva' | 'cuarentena'
+    descripcion: string | null
+    activo: boolean
+    created_at: string
+    updated_at: string
+}
+
+export interface TrasladoItem {
+    id: number
+    traslado_id: number
+    producto_id: number
+    producto?: Producto
+    cantidad_enviada: number
+    cantidad_recibida: number | null
+    notas: string | null
+    created_at: string
+    updated_at: string
+}
+
+export interface Traslado {
+    id: number
+    empresa_id: number
+    bodega_origen_id: number
+    bodega_origen?: Bodega
+    bodega_destino_id: number
+    bodega_destino?: Bodega
+    estado: 'pendiente' | 'confirmado' | 'anulado'
+    usuario_origen_id: number
+    usuario_origen?: Usuario
+    usuario_destino_id: number | null
+    usuario_destino?: Usuario
+    fecha_traslado: string
+    fecha_confirmacion: string | null
+    notas_origen: string | null
+    notas_destino: string | null
+    items?: TrasladoItem[]
+    created_at: string
+    updated_at: string
+}
+
+export interface InventarioSaldo {
+    id: number
+    producto_id: number
+    producto?: Producto
+    bodega_id: number
+    bodega?: Bodega
+    stock_actual: number
+    stock_reservado: number
+    costo_promedio: number
+    updated_at: string
+    stock_minimo?: number
+}
+
+export interface InventarioMovimiento {
+    id: number
+    producto_id: number
+    producto?: Producto
+    bodega_id: number
+    bodega?: Bodega
+    tipo: 'entrada' | 'salida' | 'traslado_entrada' | 'traslado_salida' |
+          'ajuste_positivo' | 'ajuste_negativo' | 'reserva' | 'liberacion'
+    doc_tipo: string | null
+    doc_id: number | null
+    cantidad: number
+    costo_unitario: number | null
+    costo_total: number | null
+    stock_anterior: number
+    stock_nuevo: number
+    usuario_id: number
+    usuario?: Usuario
+    empresa_id: number
+    notas: string | null
+    created_at: string
+}
+
+export interface Producto {
+    id: number
+    empresa_id: number
+    empresa?: Empresa
+    marca_id: number | null
+    marca?: Marca
+    categoria_id: number | null
+    categoria?: CategoriaProducto
+    bodega_default_id: number | null
+    bodega_default?: Bodega
+    codigo: string
+    nombre: string
+    descripcion: string | null
+    tipo: 'producto' | 'servicio' | 'combo'
+    unidad: string
+    requiere_serie: boolean
+    pvp: number
+    pvd: number
+    costo: number
+    descuento_maximo: number
+    porcentaje_iva: number
+    porcentaje_ice: number
+    stock_minimo: number
+    stock_maximo: number | null
+    cuenta_inventario_id: number | null
+    cuenta_costo_id: number | null
+    cuenta_ventas_id: number | null
+    estado: boolean
+    observaciones: string | null
+    created_at: string
+    updated_at: string
+    deleted_at: string | null
+}
+
+export interface ProductoSerie {
+    id: number
+    producto_id: number
+    producto?: Producto
+    bodega_id: number
+    bodega?: Bodega
+    numero_serie: string
+    estado: 'disponible' | 'vendido' | 'reservado' | 'defectuoso'
+    doc_entrada_tipo: string | null
+    doc_entrada_id: number | null
+    doc_salida_tipo: string | null
+    doc_salida_id: number | null
+    created_at: string
+    updated_at: string
+}
+
 export interface PaginatedData<T> {
     data: T[]
     links: { url: string | null; label: string; active: boolean }[]
@@ -437,26 +658,25 @@ export interface PaginatedData<T> {
     to: number
 }
 
-// ── Compras ──────────────────────────────────────────────────────────────────
+// ── Compras ───────────────────────────────────────────────────────────────────
 
 export interface Proveedor {
     id: number
     empresa_id: number
     tipo: 'nacional' | 'internacional'
-    tipo_identificacion: '04' | '05' | '06'
+    tipo_identificacion: string
     identificacion: string
     razon_social: string
-    nombre_comercial?: string | null
-    email?: string | null
-    telefono?: string | null
-    direccion?: string | null
-    ciudad?: string | null
+    nombre_comercial: string | null
+    email: string | null
+    telefono: string | null
+    direccion: string | null
+    ciudad: string | null
     pais: string
     divisa: string
     tiene_credito: boolean
     dias_credito: number
     estado: boolean
-    deleted_at?: string | null
     nombre_display?: string
     saldo_pendiente?: number
 }
@@ -503,9 +723,22 @@ export interface Compra {
     asiento_id: number | null
     tiene_pago: boolean
     concepto: string | null
-    estado: 'activa' | 'anulada'
+    estado: 'pendiente' | 'activa' | 'anulada'
     created_at: string
     detalles?: CompraDetalle[]
+}
+
+export interface EtiquetaDetalleData {
+    id: number
+    producto_id: number
+    codigo: string
+    nombre: string
+    descripcion: string
+    cantidad: number
+    ultimo_correlativo: number
+    desde: number
+    hasta: number
+    num_etiquetas: number
 }
 
 export interface CuentaPagar {
@@ -549,35 +782,6 @@ export interface Importacion {
     observaciones: string | null
 }
 
-export interface RecepcionBodega {
-    id: number
-    empresa_id: number
-    compra_id: number
-    bodega_id: number
-    estado: 'pendiente' | 'completada' | 'parcial'
-    recibido_por: number | null
-    fecha_recepcion: string | null
-    observacion: string | null
-    created_at: string
-    updated_at: string
-    compra?: Compra
-    bodega?: Bodega
-    detalles?: RecepcionDetalle[]
-    recibidoPor?: Usuario
-}
-
-export interface RecepcionDetalle {
-    id: number
-    recepcion_id: number
-    compra_detalle_id: number
-    producto_id: number
-    cantidad_esperada: number
-    cantidad_recibida: number
-    estado: 'pendiente' | 'completado' | 'parcial'
-    producto?: Producto
-    compraDetalle?: CompraDetalle
-}
-
 export interface AnticipoProveedor {
     id: number
     empresa_id: number
@@ -590,4 +794,219 @@ export interface AnticipoProveedor {
     num_transferencia: string | null
     asiento_id: number | null
     estado: 'pendiente' | 'cruzado'
+}
+
+// ── Bancos ────────────────────────────────────────────────────────────────────
+
+export interface BancoCaja {
+    id: number
+    empresa_id: number
+    cuenta_id: number | null
+    cuenta?: PlanCuenta
+    tipo: 'banco' | 'caja' | 'caja_chica' | 'tarjeta'
+    tipo_label?: string
+    tipo_color?: string
+    nombre: string
+    num_cuenta: string | null
+    tipo_cuenta: string | null
+    saldo_inicial: number
+    saldo_actual: number
+    estado: boolean
+}
+
+export interface MovimientoBancario {
+    id: number
+    empresa_id: number
+    banco_caja_id: number
+    banco_caja?: BancoCaja
+    tipo: 'ingreso' | 'egreso'
+    sub_tipo: string | null
+    sub_tipo_label?: string
+    fecha: string
+    monto: number
+    persona_tipo: string | null
+    persona_id: number | null
+    beneficiario: string | null
+    num_documento: string | null
+    num_cheque: string | null
+    descripcion: string | null
+    documento_tipo: string | null
+    documento_id: number | null
+    cuenta_contrapartida_id: number | null
+    asiento_id: number | null
+    conciliado: boolean
+    es_postfechado: boolean
+    anulado: boolean
+    created_at: string
+}
+
+export interface CierreCaja {
+    id: number
+    empresa_id: number
+    banco_caja_id: number
+    banco_caja?: BancoCaja
+    centro_costo_id: number | null
+    fecha: string
+    usuario_apertura_id: number | null
+    usuario_cierre_id: number | null
+    monto_inicial: number
+    total_facturado: number
+    total_cobrado: number
+    total_efectivo: number
+    total_tarjeta: number
+    total_cheque: number
+    total_transferencia: number
+    diferencia: number
+    observaciones: string | null
+    estado: 'abierto' | 'cerrado'
+    hora_apertura: string | null
+    hora_cierre: string | null
+}
+
+export interface DatafastLote {
+    id: number
+    empresa_id: number
+    banco_caja_id: number
+    banco_caja?: BancoCaja
+    numero_lote: string
+    fecha: string
+    total_vouchers: number
+    asiento_id: number | null
+    estado: 'pendiente' | 'liquidado'
+    liquidacion?: DatafastLiquidacion
+}
+
+export interface DatafastLiquidacion {
+    id: number
+    lote_id: number
+    fecha_deposito: string
+    valor_bruto: number
+    comision_datafast: number
+    retencion_iva: number
+    retencion_ir: number
+    valor_neto: number
+    banco_destino_id: number | null
+    asiento_id: number | null
+}
+
+export interface ConciliacionBancaria {
+    id: number
+    empresa_id: number
+    banco_caja_id: number
+    banco_caja?: BancoCaja
+    fecha_corte: string
+    saldo_banco: number
+    saldo_sistema: number
+    diferencia: number
+    descripcion: string | null
+    estado: 'pendiente' | 'conciliada'
+    created_at: string
+    partidas?: PartidaTransito[]
+}
+
+export interface PartidaTransito {
+    id: number
+    conciliacion_id: number
+    tipo: 'sistema' | 'banco'
+    fecha: string | null
+    descripcion: string | null
+    monto: number | null
+    movimiento_id: number | null
+    conciliada: boolean
+}
+
+// ── RRHH ────────────────────────────────────────────────────────────────────
+
+export interface PuestoTrabajo {
+    id: number
+    empresa_id: number
+    nombre: string
+    cargo: string | null
+    departamento: string | null
+    estado: boolean
+}
+
+export interface Horario {
+    id: number
+    descripcion: string
+    hora_entrada: string
+    hora_salida: string
+    tolerancia_minutos: number
+    lunes: boolean
+    martes: boolean
+    miercoles: boolean
+    jueves: boolean
+    viernes: boolean
+    sabado: boolean
+    domingo: boolean
+}
+
+export interface Colaborador {
+    id: number
+    empresa_id: number
+    puesto_id: number | null
+    horario_id: number | null
+    cedula_ruc: string
+    apellidos: string
+    nombres: string
+    nombre_completo?: string
+    email: string | null
+    telefono: string | null
+    celular: string | null
+    direccion: string | null
+    fecha_nacimiento: string | null
+    sexo: string | null
+    estado_civil: string | null
+    fecha_ingreso: string
+    fecha_salida: string | null
+    tipo_contrato: 'indefinido' | 'plazo_fijo' | 'honorarios' | null
+    cargo: string | null
+    departamento: string | null
+    comision_porcentaje: number
+    sueldo_base: number
+    decimo_tercero: 'acumula' | 'mensualiza'
+    decimo_cuarto: 'acumula' | 'mensualiza'
+    fondos_reserva: 'acumula' | 'mensualiza'
+    banco: string | null
+    tipo_cuenta: 'ahorros' | 'corriente' | null
+    numero_cuenta: string | null
+    usuario_id: number | null
+    estado: boolean
+    created_at: string
+    updated_at: string
+    puesto?: PuestoTrabajo
+    horario?: Horario
+}
+
+export interface Asistencia {
+    id: number
+    colaborador_id: number
+    fecha: string
+    hora_entrada: string | null
+    hora_salida: string | null
+    minutos_atraso: number
+    horas_extra: number
+    tipo_extra: 'suplementaria' | 'extraordinaria' | null
+    ip_entrada: string | null
+    ip_salida: string | null
+    observacion: string | null
+    colaborador?: Colaborador
+}
+
+export interface HorasExtrasAprobacion {
+    id: number
+    colaborador_id: number
+    asistencia_id: number | null
+    fecha: string
+    horas_solicitadas: number
+    horas_aprobadas: number | null
+    tipo: 'suplementaria' | 'extraordinaria'
+    valor_calculado: number
+    estado: 'pendiente' | 'aprobado' | 'rechazado'
+    aprobado_por: number | null
+    fecha_aprobacion: string | null
+    observacion: string | null
+    created_at: string
+    colaborador?: Colaborador
+    aprobado_por_usuario?: Usuario
 }

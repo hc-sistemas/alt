@@ -1,40 +1,37 @@
 <?php
-
 namespace App\Exports;
 
+use App\Exports\Concerns\EstiloAcademico;
 use App\Models\PlanCuenta;
 use Maatwebsite\Excel\Concerns\FromCollection;
+use Maatwebsite\Excel\Concerns\WithColumnWidths;
+use Maatwebsite\Excel\Concerns\WithEvents;
 use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\WithStyles;
-use Maatwebsite\Excel\Concerns\WithColumnWidths;
 use Maatwebsite\Excel\Concerns\WithTitle;
-use Maatwebsite\Excel\Concerns\WithEvents;
 use Maatwebsite\Excel\Events\AfterSheet;
-use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
-use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
+use PhpOffice\PhpSpreadsheet\Style\Fill;
+use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 class PlanCuentasExport implements
     FromCollection, WithHeadings, WithStyles,
     WithColumnWidths, WithTitle, WithEvents
 {
+    use EstiloAcademico;
+
     private int $totalRows = 0;
 
-    private array $coloresTipo = [
-        'activo'     => ['header' => '1E40AF', 'bg' => 'DBEAFE', 'text' => '1E3A8A'],
-        'pasivo'     => ['header' => '991B1B', 'bg' => 'FEE2E2', 'text' => '7F1D1D'],
-        'patrimonio' => ['header' => '6B21A8', 'bg' => 'EDE9FE', 'text' => '4C1D95'],
-        'ingreso'    => ['header' => '065F46', 'bg' => 'D1FAE5', 'text' => '064E3B'],
-        'gasto'      => ['header' => '92400E', 'bg' => 'FEF3C7', 'text' => '78350F'],
-    ];
+    private const BG_NIVEL1 = 'D4DCE6'; // azul muy suave — grupo principal
+    private const BG_NIVEL2 = 'E8ECF2'; // gris-azul — subcuenta de grupo
 
     public function collection()
     {
         $cuentas = PlanCuenta::orderBy('codigo')->get();
         $this->totalRows = $cuentas->count();
 
-        return $cuentas->map(fn ($c) => [
+        return $cuentas->map(fn($c) => [
             $c->codigo,
             str_repeat('  ', $c->nivel - 1) . $c->nombre,
             ucfirst($c->tipo),
@@ -48,38 +45,19 @@ class PlanCuentasExport implements
     public function headings(): array
     {
         return [
-            'Código',
-            'Nombre de Cuenta',
-            'Tipo',
-            'Nivel',
-            'Permite Asientos',
-            'Estado',
-            'Total Asientos',
+            'Código', 'Nombre de Cuenta', 'Tipo',
+            'Nivel', 'Permite Asientos', 'Estado', 'Total Asientos',
         ];
     }
 
     public function columnWidths(): array
     {
-        return [
-            'A' => 18,
-            'B' => 55,
-            'C' => 14,
-            'D' => 8,
-            'E' => 18,
-            'F' => 12,
-            'G' => 16,
-        ];
+        return ['A'=>18,'B'=>55,'C'=>14,'D'=>8,'E'=>18,'F'=>12,'G'=>16];
     }
 
-    public function title(): string
-    {
-        return 'Plan de Cuentas';
-    }
+    public function title(): string { return 'Plan de Cuentas'; }
 
-    public function styles(Worksheet $sheet): array
-    {
-        return [];
-    }
+    public function styles(Worksheet $sheet): array { return []; }
 
     public function registerEvents(): array
     {
@@ -88,149 +66,106 @@ class PlanCuentasExport implements
                 $sheet   = $event->sheet->getDelegate();
                 $lastRow = $this->totalRows + 3;
 
-                // Insertar 2 filas arriba para título
                 $sheet->insertNewRowBefore(1, 2);
 
-                // Título principal
+                // Título
                 $sheet->mergeCells('A1:G1');
-                $sheet->setCellValue('A1', 'ERP Altamira — Plan de Cuentas Contable');
+                $sheet->setCellValue('A1', 'Altamira Light & Sound — Plan de Cuentas Contable');
                 $sheet->getStyle('A1')->applyFromArray([
-                    'font' => [
-                        'bold'  => true,
-                        'size'  => 14,
-                        'color' => ['rgb' => 'F59E0B'],
-                    ],
-                    'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT],
+                    'font' => ['bold' => true, 'size' => 12, 'color' => ['rgb' => self::H_TEXTO]],
                 ]);
 
-                // Subtítulo con fecha
                 $sheet->mergeCells('A2:G2');
                 $sheet->setCellValue('A2',
-                    'Generado el ' . now()->format('d/m/Y H:i') .
-                    ' · Total: ' . $this->totalRows . ' cuentas'
+                    'Generado: ' . now()->format('d/m/Y H:i') .
+                    '   |   Total: ' . $this->totalRows . ' cuentas'
                 );
                 $sheet->getStyle('A2')->applyFromArray([
-                    'font' => ['size' => 9, 'color' => ['rgb' => '9CA3AF']],
+                    'font' => ['size' => 8, 'italic' => true, 'color' => ['rgb' => self::H_MUTED]],
                 ]);
 
                 // Encabezado fila 3
-                $sheet->getStyle('A3:G3')->applyFromArray([
-                    'font' => [
-                        'bold'  => true,
-                        'color' => ['rgb' => 'FFFFFF'],
-                        'size'  => 10,
-                    ],
-                    'fill' => [
-                        'fillType'   => Fill::FILL_SOLID,
-                        'startColor' => ['rgb' => 'F59E0B'],
-                    ],
-                    'alignment' => [
-                        'horizontal' => Alignment::HORIZONTAL_CENTER,
-                        'vertical'   => Alignment::VERTICAL_CENTER,
-                    ],
-                    'borders' => [
-                        'allBorders' => [
-                            'borderStyle' => Border::BORDER_THIN,
-                            'color'       => ['rgb' => 'D97706'],
-                        ],
-                    ],
-                ]);
-                $sheet->getRowDimension(3)->setRowHeight(24);
+                $sheet->getStyle('A3:G3')->applyFromArray($this->estiloHeaderAcad());
+                $sheet->getRowDimension(3)->setRowHeight(22);
 
-                // Estilos por fila de datos
+                // Filas de datos
                 for ($row = 4; $row <= $lastRow; $row++) {
-                    $tipo   = strtolower($sheet->getCell("C{$row}")->getValue());
-                    $nivel  = (int) $sheet->getCell("D{$row}")->getValue();
-                    $colors = $this->coloresTipo[$tipo] ?? [
-                        'header' => '374151',
-                        'bg'     => 'F9FAFB',
-                        'text'   => '1F2937',
-                    ];
+                    $nivel = (int) $sheet->getCell("D{$row}")->getValue();
 
                     if ($nivel === 1) {
+                        // Cuenta principal — fondo azul muy suave, bold
                         $sheet->getStyle("A{$row}:G{$row}")->applyFromArray([
-                            'font' => [
-                                'bold'  => true,
-                                'size'  => 11,
-                                'color' => ['rgb' => 'FFFFFF'],
-                            ],
-                            'fill' => [
-                                'fillType'   => Fill::FILL_SOLID,
-                                'startColor' => ['rgb' => $colors['header']],
-                            ],
+                            'font' => ['bold' => true, 'size' => 10, 'color' => ['rgb' => self::H_TEXTO]],
+                            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => self::BG_NIVEL1]],
                         ]);
                     } elseif ($nivel === 2) {
                         $sheet->getStyle("A{$row}:G{$row}")->applyFromArray([
-                            'font' => [
-                                'bold'  => true,
-                                'color' => ['rgb' => $colors['text']],
-                            ],
-                            'fill' => [
-                                'fillType'   => Fill::FILL_SOLID,
-                                'startColor' => ['rgb' => $colors['bg']],
-                            ],
+                            'font' => ['bold' => true, 'color' => ['rgb' => self::H_TEXTO]],
+                            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => self::BG_NIVEL2]],
                         ]);
                     } else {
-                        $bg = ($row % 2 === 0) ? 'F9FAFB' : 'FFFFFF';
+                        $bg = ($row % 2 === 0) ? self::H_PAR : self::H_IMP;
                         $sheet->getStyle("A{$row}:G{$row}")->getFill()
                             ->setFillType(Fill::FILL_SOLID)
                             ->getStartColor()->setRGB($bg);
-                        $sheet->getStyle("A{$row}")->getFont()
-                            ->getColor()->setRGB('F59E0B');
                     }
 
-                    $sheet->getStyle("A{$row}")->getFont()->setBold(true);
+                    // Código — acento azul bold siempre
+                    $sheet->getStyle("A{$row}")->applyFromArray([
+                        'font' => ['bold' => true, 'color' => ['rgb' => self::H_ACENTO]],
+                    ]);
 
+                    // Estado — texto plano
+                    $estado = $sheet->getCell("F{$row}")->getValue();
+                    $sheet->getStyle("F{$row}")->applyFromArray([
+                        'font' => [
+                            'bold'  => true,
+                            'color' => ['rgb' => $estado === 'Activa' ? self::H_TEXTO : self::H_MUTED],
+                        ],
+                        'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
+                    ]);
+
+                    // Permite asientos — centrado
+                    $sheet->getStyle("E{$row}")->getAlignment()
+                        ->setHorizontal(Alignment::HORIZONTAL_CENTER);
+
+                    // Total asientos — centrado
                     $sheet->getStyle("G{$row}")->getAlignment()
                         ->setHorizontal(Alignment::HORIZONTAL_CENTER);
 
-                    $estado = $sheet->getCell("F{$row}")->getValue();
-                    $color  = $estado === 'Activa' ? '059669' : 'DC2626';
-                    $sheet->getStyle("F{$row}")->getFont()
-                        ->setBold(true)->getColor()->setRGB($color);
+                    // Nivel — centrado
+                    $sheet->getStyle("D{$row}")->getAlignment()
+                        ->setHorizontal(Alignment::HORIZONTAL_CENTER);
 
-                    $permiteAsientos = $sheet->getCell("E{$row}")->getValue();
-                    $sheet->getStyle("E{$row}")->getFont()
-                        ->getColor()->setRGB($permiteAsientos === 'Sí' ? '059669' : '9CA3AF');
-
+                    // Borde inferior suave
                     $sheet->getStyle("A{$row}:G{$row}")->getBorders()
-                        ->getBottom()->setBorderStyle(Border::BORDER_THIN)
-                        ->getColor()->setRGB('E5E7EB');
+                        ->getBottom()->setBorderStyle(Border::BORDER_HAIR)
+                        ->getColor()->setRGB(self::H_BORDE);
 
                     $sheet->getRowDimension($row)->setRowHeight(16);
                 }
 
-                // Fila de totales final
+                // Fila total
                 $totalRow = $lastRow + 1;
                 $sheet->mergeCells("A{$totalRow}:F{$totalRow}");
                 $sheet->setCellValue("A{$totalRow}", 'TOTAL DE CUENTAS');
                 $sheet->setCellValue("G{$totalRow}", $this->totalRows);
-                $sheet->getStyle("A{$totalRow}:G{$totalRow}")->applyFromArray([
-                    'font' => [
-                        'bold'  => true,
-                        'size'  => 11,
-                        'color' => ['rgb' => 'FFFFFF'],
-                    ],
-                    'fill' => [
-                        'fillType'   => Fill::FILL_SOLID,
-                        'startColor' => ['rgb' => '1F2937'],
-                    ],
-                    'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
-                ]);
+                $sheet->getStyle("A{$totalRow}:G{$totalRow}")->applyFromArray(
+                    $this->estiloTotalAcad()
+                );
+                $sheet->getStyle("A{$totalRow}")->getAlignment()
+                    ->setHorizontal(Alignment::HORIZONTAL_LEFT);
+                $sheet->getStyle("G{$totalRow}")->getAlignment()
+                    ->setHorizontal(Alignment::HORIZONTAL_CENTER);
                 $sheet->getRowDimension($totalRow)->setRowHeight(20);
 
-                // Borde exterior de toda la tabla
+                // Borde exterior
                 $sheet->getStyle("A3:G{$totalRow}")->getBorders()
                     ->getOutline()->setBorderStyle(Border::BORDER_MEDIUM)
-                    ->getColor()->setRGB('F59E0B');
+                    ->getColor()->setRGB(self::H_NAVY);
 
-                // Autofilter y congelar encabezado
                 $sheet->setAutoFilter("A3:G{$lastRow}");
                 $sheet->freezePane('A4');
-
-                // Columna D (Nivel) centrada
-                $sheet->getStyle("D3:D{$totalRow}")->getAlignment()
-                    ->setHorizontal(Alignment::HORIZONTAL_CENTER);
             },
         ];
     }

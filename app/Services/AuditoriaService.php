@@ -17,15 +17,14 @@ class AuditoriaService
     ): void {
         DB::table('log_documentos')->insert([
             'usuario_id'  => Auth::id(),
-            'username'    => Auth::user()?->username ?? Auth::user()?->email ?? 'sistema',
             'accion'      => $accion,
             'modulo'      => $modulo,
             'tabla'       => $tabla,
             'registro_id' => $registroId,
             'descripcion' => $descripcion,
-            'ip_address'  => Request::ip(),   // ← era 'ip'
+            'ip_address'  => Request::ip(),
             'empresa_id'  => session('empresa_activa_id'),
-            'created_at'  => now(),           // ← era 'fecha'
+            'created_at'  => now(),
         ]);
     }
 
@@ -33,12 +32,12 @@ class AuditoriaService
     {
         DB::table('log_sesiones')->insert([
             'usuario_id' => Auth::id(),
-            'username'   => $email ?? Auth::user()?->username ?? Auth::user()?->email ?? 'sistema',
+            'email'      => $email ?? Auth::user()?->email,
             'tipo'       => $tipo,
-            'ip'         => Request::ip(),
+            'ip_address' => Request::ip(),
             'user_agent' => Request::userAgent(),
-            // empresa_id eliminado — no existe en log_sesiones
-            'fecha'      => now(),
+            'empresa_id' => $empresaId ?? session('empresa_activa_id'),
+            'created_at' => now(),
         ]);
     }
 }

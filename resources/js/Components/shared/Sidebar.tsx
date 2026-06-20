@@ -1,9 +1,9 @@
 import { Link, usePage } from '@inertiajs/react'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
     LayoutDashboard, FileText, ShoppingCart, Package, BookOpen,
     Landmark, Users, Wrench, BarChart2, Settings, Settings2, ClipboardList, ArrowLeftRight, ChevronDown,
-    ChevronLeft, ChevronRight, X, UserCircle, PackageCheck
+    ChevronLeft, ChevronRight, X, UserCircle
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { PageProps } from '@/types'
@@ -30,7 +30,6 @@ const navItems: NavItem[] = [
         nombre: 'Ventas', clave: 'ventas', icon: FileText,
         hijos: [
             { nombre: 'Facturas', href: '/ventas/facturas' },
-            { nombre: 'Prefacturas', href: '/ventas/prefacturas' },
             { nombre: 'Proformas', href: '/ventas/proformas' },
             { nombre: 'CxC', href: '/ventas/cxc' },
             { nombre: 'Notas de Crédito', href: '/ventas/notas-credito' },
@@ -41,20 +40,18 @@ const navItems: NavItem[] = [
         hijos: [
             { nombre: 'Facturas de Compra', href: '/compras/facturas' },
             { nombre: 'Proveedores',        href: '/compras/proveedores' },
-            { nombre: 'Cuentas por Pagar',  href: '/compras/cuentas-pagar' },
-            { nombre: 'Importaciones',      href: '/compras/importaciones' },
+            { nombre: 'Cuentas por Pagar',      href: '/compras/cuentas-pagar' },
+            { nombre: 'Anticipos Proveedores', href: '/compras/anticipos' },
+            { nombre: 'Importaciones',         href: '/compras/importaciones' },
         ]
     },
     {
         nombre: 'Inventario', clave: 'inventario', icon: Package,
         hijos: [
             { nombre: 'Productos', href: '/inventario/productos' },
-            { nombre: 'Kárdex', href: '/inventario/kardex' },
-            { nombre: 'Saldos Inventario', href: '/inventario/kardex/saldos' },
+            { nombre: 'Kárdex', href: '/inventario/kardex/saldos' },
             { nombre: 'Traslados', href: '/inventario/traslados' },
-            { nombre: 'Recepciones', href: '/inventario/recepciones' },
             { nombre: 'Activos Fijos', href: '/inventario/activos' },
-            { nombre: 'Listas de Precio', href: '/inventario/listas-precio' },
         ],
         subgrupos: [
             {
@@ -73,20 +70,29 @@ const navItems: NavItem[] = [
             { nombre: 'Ejercicios', href: '/contabilidad/ejercicios' },
             { nombre: 'Asientos', href: '/contabilidad/asientos' },
             { nombre: 'Plan de Cuentas', href: '/contabilidad/plan-cuentas' },
+            { nombre: 'Parámetros Contables', href: '/contabilidad/parametros' },
+            { nombre: 'Reportes Contables', href: '/contabilidad/reportes' },
         ]
     },
     {
         nombre: 'Bancos', clave: 'bancos', icon: Landmark,
         hijos: [
-            { nombre: 'Movimientos', href: '/bancos/movimientos' },
-            { nombre: 'Cajas', href: '/bancos/cajas' },
+            { nombre: 'Bancos y Cajas',        href: '/bancos/catalogo'        },
+            { nombre: 'Movimientos',            href: '/bancos/movimientos'     },
+            { nombre: 'Cajas',                  href: '/bancos/cajas'           },
+            { nombre: 'Datafast',               href: '/bancos/datafast'        },
+            { nombre: 'Conciliación Bancaria',  href: '/bancos/conciliaciones'  },
+            { nombre: 'Cheques',                href: '/bancos/cheques'          },
+            { nombre: 'Reportes',               href: '/bancos/reportes'         },
         ]
     },
     {
         nombre: 'RRHH', clave: 'rrhh', icon: Users,
         hijos: [
-            { nombre: 'Colaboradores', href: '/rrhh/colaboradores' },
-            { nombre: 'Nómina', href: '/rrhh/nomina' },
+            { nombre: 'Colaboradores',  href: '/rrhh/colaboradores'  },
+            { nombre: 'Asistencia',     href: '/rrhh/asistencia'     },
+            { nombre: 'Horas Extras',   href: '/rrhh/horas-extras'   },
+            { nombre: 'Nómina',         href: '/rrhh/nomina'         },
         ]
     },
     {
@@ -115,6 +121,21 @@ const navItems: NavItem[] = [
     },
 ]
 
+function getInitialOpen(currentUrl: string): string[] {
+    const open = new Set(['configuracion', 'inventario-config'])
+    for (const item of navItems) {
+        if (!item.hijos && !item.subgrupos) continue
+        const hasActive =
+            (item.hijos?.some(h => currentUrl.startsWith(h.href)) ?? false) ||
+            (item.subgrupos?.some(sg => sg.hijos.some(h => currentUrl.startsWith(h.href))) ?? false)
+        if (hasActive) open.add(item.clave)
+        item.subgrupos?.forEach(sg => {
+            if (sg.hijos.some(h => currentUrl.startsWith(h.href))) open.add(sg.clave)
+        })
+    }
+    return [...open]
+}
+
 interface Props {
     collapsed: boolean
     onCollapse: (v: boolean) => void
@@ -124,22 +145,43 @@ interface Props {
 
 export default function Sidebar({ collapsed, onCollapse, mobileOpen, onMobileClose }: Props) {
     const { url } = usePage<PageProps>()
-    const [openSections, setOpenSections] = useState<string[]>(() => {
-        try {
-            const saved = localStorage.getItem('sidebar_open_modules')
-            return saved ? JSON.parse(saved) : ['configuracion', 'inventario-config']
-        } catch {
-            return ['configuracion', 'inventario-config']
-        }
-    })
+    const [openSections, setOpenSections] = useState<string[]>(() => getInitialOpen(url))
 
     const toggleSection = (clave: string) => {
         setOpenSections(prev => {
-            const next = prev.includes(clave) ? prev.filter(s => s !== clave) : [...prev, clave]
-            localStorage.setItem('sidebar_open_modules', JSON.stringify(next))
-            return next
+            if (prev.includes(clave)) {
+                const item = navItems.find(i => i.clave === clave)
+                const hasActive =
+                    (item?.hijos?.some(h => url.startsWith(h.href)) ?? false) ||
+                    (item?.subgrupos?.some(sg => sg.hijos.some(h => url.startsWith(h.href))) ?? false)
+                if (hasActive) return prev
+                return prev.filter(s => s !== clave)
+            }
+            return [...prev, clave]
         })
     }
+
+    useEffect(() => {
+        const handle = () => {
+            const path = window.location.pathname
+            setOpenSections(prev => {
+                const next = new Set(prev)
+                for (const item of navItems) {
+                    if (!item.hijos && !item.subgrupos) continue
+                    const hasActive =
+                        (item.hijos?.some(h => path.startsWith(h.href)) ?? false) ||
+                        (item.subgrupos?.some(sg => sg.hijos.some(h => path.startsWith(h.href))) ?? false)
+                    if (hasActive) next.add(item.clave)
+                    item.subgrupos?.forEach(sg => {
+                        if (sg.hijos.some(h => path.startsWith(h.href))) next.add(sg.clave)
+                    })
+                }
+                return [...next]
+            })
+        }
+        document.addEventListener('inertia:navigate', handle)
+        return () => document.removeEventListener('inertia:navigate', handle)
+    }, [])
 
     const isActive = (href: string) => url.startsWith(href)
 

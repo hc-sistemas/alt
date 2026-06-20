@@ -6,6 +6,16 @@ use App\Http\Controllers\Dashboard\DashboardController;
 use App\Http\Controllers\Configuracion\UsuarioController;
 use App\Http\Controllers\Configuracion\PermisoController;
 use App\Http\Controllers\Configuracion\EmpresaController;
+use App\Http\Controllers\Contabilidad\PlanCuentaController;
+use App\Http\Controllers\Contabilidad\EjercicioContableController;
+use App\Http\Controllers\Contabilidad\AsientoContableController;
+use App\Http\Controllers\Contabilidad\ParametroContableController;
+use App\Http\Controllers\Contabilidad\ReporteContableController;
+use App\Http\Controllers\Compras\ProveedorController as ComprasProveedorController;
+use App\Http\Controllers\Compras\CompraController;
+use App\Http\Controllers\Compras\CuentaPagarController;
+use App\Http\Controllers\Compras\AnticipoProveedorController;
+use App\Http\Controllers\Compras\ImportacionController;
 use App\Http\Controllers\Inventario\MarcaController;
 use App\Http\Controllers\Inventario\CategoriaProductoController;
 use App\Http\Controllers\Inventario\BodegaController;
@@ -13,18 +23,16 @@ use App\Http\Controllers\Inventario\ProductoController;
 use App\Http\Controllers\Inventario\KardexController;
 use App\Http\Controllers\Inventario\TrasladoController;
 use App\Http\Controllers\Inventario\ActivoFijoController;
-use App\Http\Controllers\Inventario\ListaPrecioController;
-use App\Http\Controllers\Inventario\RecepcionController;
 use App\Http\Controllers\Personas\ClienteController;
-use App\Http\Controllers\Personas\ProveedorController;
+use App\Http\Controllers\Personas\ProveedorController as PersonasProveedorController;
 use App\Http\Controllers\Personas\TransportistaController;
-use App\Http\Controllers\Contabilidad\PlanCuentaController;
-use App\Http\Controllers\Contabilidad\EjercicioContableController;
-use App\Http\Controllers\Contabilidad\AsientoContableController;
-use App\Http\Controllers\Compras\ProveedorController as ComprasProveedorController;
-use App\Http\Controllers\Compras\CompraController;
-use App\Http\Controllers\Compras\CuentaPagarController;
-use App\Http\Controllers\Compras\ImportacionController;
+use App\Http\Controllers\Bancos\BancoCajaController;
+use App\Http\Controllers\Bancos\MovimientoBancarioController;
+use App\Http\Controllers\Bancos\CierreCajaController;
+use App\Http\Controllers\Bancos\DatafastController;
+use App\Http\Controllers\Bancos\ConciliacionController;
+use App\Http\Controllers\Bancos\ChequesController;
+use App\Http\Controllers\Bancos\BancoReporteController;
 use App\Http\Controllers\Ventas\AprobacionController;
 use App\Http\Controllers\Ventas\FacturaController;
 use App\Http\Controllers\Ventas\ProformaController;
@@ -33,6 +41,9 @@ use App\Http\Controllers\Ventas\NotaCreditoController;
 use App\Http\Controllers\Ventas\RetencionController;
 use App\Http\Controllers\Ventas\GuiaRemisionController;
 use App\Http\Controllers\Ventas\CuentaCobrarController;
+use App\Http\Controllers\RRHH\ColaboradorController;
+use App\Http\Controllers\RRHH\AsistenciaController;
+use App\Http\Controllers\RRHH\HorasExtrasController;
 use Illuminate\Support\Facades\Route;
 
 // Auth
@@ -72,6 +83,20 @@ Route::middleware('auth')->group(function () {
         Route::post('/limite', [PermisoController::class, 'actualizarLimite'])->name('limite');
     });
 
+    // Configuración - Empresa
+    Route::prefix('configuracion/empresa')->name('configuracion.empresa.')->group(function () {
+        Route::get('/', [EmpresaController::class, 'index'])->name('index');
+        Route::put('/', [EmpresaController::class, 'update'])->name('update');
+        Route::patch('/secuencial/{secuencial}', [EmpresaController::class, 'actualizarSecuencial'])->name('secuencial');
+    });
+
+    // Contabilidad - Parámetros Contables
+    Route::prefix('contabilidad/parametros')->name('contabilidad.parametros.')->group(function () {
+        Route::get('/',     [ParametroContableController::class, 'index'])         ->name('index');
+        Route::post('/',    [ParametroContableController::class, 'update'])        ->name('update');
+        Route::post('/auto',[ParametroContableController::class, 'autoconfigurar'])->name('auto');
+    });
+
     // Contabilidad - Plan de Cuentas
     Route::prefix('contabilidad/plan-cuentas')->name('contabilidad.plan-cuentas.')->group(function () {
         Route::get('/', [PlanCuentaController::class, 'index'])->name('index');
@@ -82,23 +107,92 @@ Route::middleware('auth')->group(function () {
         Route::delete('/{cuenta}', [PlanCuentaController::class, 'destroy'])->name('destroy');
     });
 
-    // Configuración - Empresa
-    Route::prefix('configuracion/empresa')->name('configuracion.empresa.')->group(function () {
-        Route::get('/', [EmpresaController::class, 'index'])->name('index');
-        Route::put('/', [EmpresaController::class, 'update'])->name('update');
-        Route::patch('/secuencial/{secuencial}', [EmpresaController::class, 'actualizarSecuencial'])->name('secuencial');
+    // Contabilidad - Ejercicios
+    Route::prefix('contabilidad/ejercicios')->name('contabilidad.ejercicios.')->group(function () {
+        Route::get('/',                      [EjercicioContableController::class, 'index']) ->name('index');
+        Route::post('/',                     [EjercicioContableController::class, 'store']) ->name('store');
+        Route::patch('/{ejercicio}/cerrar',  [EjercicioContableController::class, 'cerrar'])->name('cerrar');
+        Route::patch('/{ejercicio}/reabrir', [EjercicioContableController::class, 'reabrir'])->name('reabrir');
+    });
+
+    // Contabilidad - Reportes
+    Route::prefix('contabilidad/reportes')->name('contabilidad.reportes.')->group(function () {
+        Route::get('/',             [ReporteContableController::class, 'index'])      ->name('index');
+        Route::get('/libro-diario', [ReporteContableController::class, 'libroDiario'])->name('libro-diario');
+        Route::get('/mayor',        [ReporteContableController::class, 'mayor'])      ->name('mayor');
+    });
+
+    // Contabilidad - Asientos
+    Route::prefix('contabilidad/asientos')->name('contabilidad.asientos.')->group(function () {
+        Route::get('/',                    [AsientoContableController::class, 'index'])        ->name('index');
+        Route::post('/',                   [AsientoContableController::class, 'store'])        ->name('store');
+        Route::get('/exportar-excel',      [AsientoContableController::class, 'exportarExcel'])->name('exportar-excel');
+        Route::get('/reporte-pdf',         [AsientoContableController::class, 'reportePdf'])   ->name('reporte-pdf');
+        Route::get('/libro-diario',        [AsientoContableController::class, 'libroDiario'])  ->name('libro-diario');
+        Route::get('/mayor-cuenta',        [AsientoContableController::class, 'mayorCuenta'])  ->name('mayor-cuenta');
+        Route::get('/{asiento}',           [AsientoContableController::class, 'show'])         ->name('show');
+        Route::get('/{asiento}/pdf',       [AsientoContableController::class, 'imprimirPdf'])  ->name('pdf');
+        Route::patch('/{asiento}/anular',  [AsientoContableController::class, 'anular'])       ->name('anular');
+        Route::delete('/{asiento}',        [AsientoContableController::class, 'destroy'])      ->name('destroy');
+    });
+
+    // Compras - Proveedores
+    Route::prefix('compras/proveedores')->name('compras.proveedores.')->group(function () {
+        Route::get('/',                     [ComprasProveedorController::class, 'index'])       ->name('index');
+        Route::post('/',                    [ComprasProveedorController::class, 'store'])       ->name('store');
+        Route::put('/{proveedor}',          [ComprasProveedorController::class, 'update'])      ->name('update');
+        Route::patch('/{proveedor}/toggle', [ComprasProveedorController::class, 'toggleEstado'])->name('toggle');
+        Route::get('/pdf',                  [ComprasProveedorController::class, 'pdf'])         ->name('pdf');
+        Route::get('/excel',                [ComprasProveedorController::class, 'excel'])       ->name('excel');
+    });
+
+    // Compras - Facturas
+    Route::prefix('compras/facturas')->name('compras.facturas.')->group(function () {
+        Route::get('/',                  [CompraController::class, 'index']) ->name('index');
+        Route::post('/',                 [CompraController::class, 'store']) ->name('store');
+        Route::get('/pdf',               [CompraController::class, 'pdf'])   ->name('pdf');
+        Route::get('/excel',             [CompraController::class, 'excel']) ->name('excel');
+        Route::get('/{compra}',                    [CompraController::class, 'show'])              ->name('show');
+        Route::get('/{compra}/pdf',               [CompraController::class, 'pdfIndividual'])    ->name('pdf-individual');
+        Route::patch('/{compra}/anular',          [CompraController::class, 'anular'])            ->name('anular');
+        Route::post('/{compra}/activar',          [CompraController::class, 'activar'])           ->name('activar');
+        Route::get('/{compra}/etiquetas-data',      [CompraController::class, 'etiquetasData'])       ->name('etiquetas-data');
+        Route::post('/{compra}/etiquetas-pdf',     [CompraController::class, 'generarEtiquetasPdf']) ->name('etiquetas-pdf');
+        Route::get('/{compra}/verificar-anulacion',[CompraController::class, 'verificarAnulacion'])  ->name('verificar-anulacion');
+    });
+
+    // Compras - CxP
+    Route::prefix('compras/cuentas-pagar')->name('compras.cxp.')->group(function () {
+        Route::get('/',                          [CuentaPagarController::class, 'index'])->name('index');
+        Route::get('/pdf',                       [CuentaPagarController::class, 'pdf'])  ->name('pdf');
+        Route::get('/excel',                     [CuentaPagarController::class, 'excel'])->name('excel');
+        Route::post('/{cuentaPagar}/pagar',      [CuentaPagarController::class, 'pagar'])->name('pagar');
+    });
+
+    // Compras - Anticipos Proveedores
+    Route::prefix('compras/anticipos')->name('compras.anticipos.')->group(function () {
+        Route::get('/',                    [AnticipoProveedorController::class, 'index'])->name('index');
+        Route::post('/',                   [AnticipoProveedorController::class, 'store'])->name('store');
+        Route::patch('/{anticipo}/cruzar', [AnticipoProveedorController::class, 'cruzar'])->name('cruzar');
+        Route::patch('/{anticipo}/anular', [AnticipoProveedorController::class, 'anular'])->name('anular');
+    });
+
+    // Compras - Importaciones
+    Route::prefix('compras/importaciones')->name('compras.importaciones.')->group(function () {
+        Route::get('/',                         [ImportacionController::class, 'index'])   ->name('index');
+        Route::post('/',                        [ImportacionController::class, 'store'])   ->name('store');
+        Route::put('/{importacion}',            [ImportacionController::class, 'update'])  ->name('update');
+        Route::patch('/{importacion}/liquidar', [ImportacionController::class, 'liquidar'])->name('liquidar');
     });
 
     // Inventario — Productos + Kárdex
     Route::prefix('inventario')->name('inventario.')->group(function () {
         Route::get('productos/buscar', [ProductoController::class, 'buscar'])->name('productos.buscar');
-        Route::get('productos/reporte/lista', [ProductoController::class, 'reporteLista'])->name('productos.reporte.lista');
         Route::resource('productos', ProductoController::class)->except(['show']);
 
         // Kárdex — rutas estáticas antes de las dinámicas para evitar colisiones
         Route::get('kardex/saldo', [KardexController::class, 'getSaldo'])->name('kardex.getSaldo');
         Route::get('kardex/saldos', [KardexController::class, 'saldos'])->name('kardex.saldos');
-        Route::get('kardex/reporte/saldos', [KardexController::class, 'reporteSaldos'])->name('kardex.reporte.saldos');
         Route::get('kardex/ajuste', [KardexController::class, 'ajuste'])->name('kardex.ajuste');
         Route::post('kardex/ajuste', [KardexController::class, 'storeAjuste'])->name('kardex.storeAjuste');
         Route::get('kardex', [KardexController::class, 'index'])->name('kardex.index');
@@ -106,32 +200,15 @@ Route::middleware('auth')->group(function () {
         // Traslados
         Route::get('traslados', [TrasladoController::class, 'index'])->name('traslados.index');
         Route::get('traslados/nuevo', [TrasladoController::class, 'create'])->name('traslados.create');
-        Route::get('traslados/productos-en-bodega', [TrasladoController::class, 'productosEnBodega'])->name('traslados.productosEnBodega');
         Route::post('traslados', [TrasladoController::class, 'store'])->name('traslados.store');
         Route::post('traslados/{traslado}/confirmar', [TrasladoController::class, 'confirmar'])->name('traslados.confirmar');
         Route::post('traslados/{traslado}/anular', [TrasladoController::class, 'anular'])->name('traslados.anular');
         Route::get('traslados/{traslado}', [TrasladoController::class, 'show'])->name('traslados.show');
 
         // Activos Fijos
-        Route::get('activos/reporte/lista', [ActivoFijoController::class, 'reporteLista'])->name('activos.reporte.lista');
-        Route::resource('activos', ActivoFijoController::class)->except(['show'])->parameters(['activos' => 'activoFijo']);
+        Route::resource('activos', ActivoFijoController::class)->except(['show']);
         Route::get('activos/{activoFijo}', [ActivoFijoController::class, 'show'])->name('activos.show');
         Route::post('activos/{activoFijo}/depreciar', [ActivoFijoController::class, 'depreciar'])->name('activos.depreciar');
-
-        // Listas de Precio
-        Route::get('listas-precio', [ListaPrecioController::class, 'index'])->name('listas.index');
-        Route::put('listas-precio/{producto}', [ListaPrecioController::class, 'update'])->name('listas.update');
-        Route::post('listas-precio/importar', [ListaPrecioController::class, 'importar'])->name('listas.importar');
-
-        // Recepciones de Bodega
-        Route::prefix('recepciones')->name('recepciones.')->group(function () {
-            Route::get('/buscar-compra', [RecepcionController::class, 'buscarCompra'])->name('buscar-compra');
-            Route::get('/buscar-producto', [RecepcionController::class, 'buscarProducto'])->name('buscar-producto');
-            Route::post('/', [RecepcionController::class, 'store'])->name('store');
-            Route::get('/', [RecepcionController::class, 'index'])->name('index');
-            Route::get('/{recepcion}', [RecepcionController::class, 'show'])->name('show');
-            Route::post('/{recepcion}/confirmar', [RecepcionController::class, 'confirmar'])->name('confirmar');
-        });
     });
 
     // Inventario — Configuración
@@ -150,10 +227,10 @@ Route::middleware('auth')->group(function () {
         Route::get('clientes/{cliente}/reporte', [ClienteController::class, 'reporteIndividual'])->name('clientes.reporte.individual');
 
         // Proveedores — rutas estáticas primero
-        Route::get('proveedores/reporte/lista', [ProveedorController::class, 'reporteLista'])->name('proveedores.reporte.lista');
-        Route::resource('proveedores', ProveedorController::class)
+        Route::get('proveedores/reporte/lista', [PersonasProveedorController::class, 'reporteLista'])->name('proveedores.reporte.lista');
+        Route::resource('proveedores', PersonasProveedorController::class)
             ->parameters(['proveedores' => 'proveedor']);
-        Route::get('proveedores/{proveedor}/reporte', [ProveedorController::class, 'reporteIndividual'])->name('proveedores.reporte.individual');
+        Route::get('proveedores/{proveedor}/reporte', [PersonasProveedorController::class, 'reporteIndividual'])->name('proveedores.reporte.individual');
 
         // Transportistas — rutas estáticas primero
         Route::get('transportistas/reporte/lista', [TransportistaController::class, 'reporteLista'])->name('transportistas.reporte.lista');
@@ -161,111 +238,83 @@ Route::middleware('auth')->group(function () {
         Route::get('transportistas/{transportista}/reporte', [TransportistaController::class, 'reporteIndividual'])->name('transportistas.reporte.individual');
     });
 
-    // Contabilidad - Ejercicios
-    Route::prefix('contabilidad/ejercicios')->name('contabilidad.ejercicios.')->group(function () {
-        Route::get('/',                      [EjercicioContableController::class, 'index']) ->name('index');
-        Route::post('/',                     [EjercicioContableController::class, 'store']) ->name('store');
-        Route::patch('/{ejercicio}/cerrar',  [EjercicioContableController::class, 'cerrar'])->name('cerrar');
-        Route::patch('/{ejercicio}/reabrir', [EjercicioContableController::class, 'reabrir'])->name('reabrir');
+    // Bancos - Catálogo bancos y cajas
+    Route::prefix('bancos/catalogo')->name('bancos.catalogo.')->group(function () {
+        Route::get('/',                 [BancoCajaController::class, 'index'])       ->name('index');
+        Route::post('/',                [BancoCajaController::class, 'store'])       ->name('store');
+        Route::put('/{banco}',          [BancoCajaController::class, 'update'])      ->name('update');
+        Route::patch('/{banco}/toggle', [BancoCajaController::class, 'toggleEstado'])->name('toggle');
+        Route::delete('/{banco}',       [BancoCajaController::class, 'destroy'])     ->name('destroy');
     });
 
-    // Contabilidad - Asientos
-    Route::prefix('contabilidad/asientos')->name('contabilidad.asientos.')->group(function () {
-        Route::get('/',                    [AsientoContableController::class, 'index'])        ->name('index');
-        Route::post('/',                   [AsientoContableController::class, 'store'])        ->name('store');
-        Route::get('/exportar-excel',      [AsientoContableController::class, 'exportarExcel'])->name('exportar-excel');
-        Route::get('/reporte-pdf',         [AsientoContableController::class, 'reportePdf'])   ->name('reporte-pdf');
-        Route::get('/{asiento}',           [AsientoContableController::class, 'show'])         ->name('show');
-        Route::get('/{asiento}/pdf',       [AsientoContableController::class, 'imprimirPdf'])  ->name('pdf');
-        Route::patch('/{asiento}/anular',  [AsientoContableController::class, 'anular'])       ->name('anular');
-        Route::delete('/{asiento}',        [AsientoContableController::class, 'destroy'])      ->name('destroy');
+    // Bancos - Movimientos
+    Route::prefix('bancos/movimientos')->name('bancos.movimientos.')->group(function () {
+        Route::get('/',                      [MovimientoBancarioController::class, 'index'])      ->name('index');
+        Route::post('/',                     [MovimientoBancarioController::class, 'store'])      ->name('store');
+        Route::patch('/{movimiento}/anular', [MovimientoBancarioController::class, 'anular'])     ->name('anular');
+        Route::get('/exportar-xml',          [MovimientoBancarioController::class, 'exportarXml'])->name('exportar-xml');
     });
 
-    // Compras - Proveedores
-    Route::prefix('compras/proveedores')->name('compras.proveedores.')->group(function () {
-        Route::get('/',                     [ComprasProveedorController::class, 'index'])       ->name('index');
-        Route::post('/',                    [ComprasProveedorController::class, 'store'])       ->name('store');
-        Route::put('/{proveedor}',          [ComprasProveedorController::class, 'update'])      ->name('update');
-        Route::patch('/{proveedor}/toggle', [ComprasProveedorController::class, 'toggleEstado'])->name('toggle');
+    // Bancos - Cajas
+    Route::prefix('bancos/cajas')->name('bancos.cajas.')->group(function () {
+        Route::get('/',                  [CierreCajaController::class, 'index']) ->name('index');
+        Route::post('/abrir',            [CierreCajaController::class, 'abrir']) ->name('abrir');
+        Route::patch('/{cierre}/cerrar', [CierreCajaController::class, 'cerrar'])->name('cerrar');
     });
 
-    // Compras - Facturas
-    Route::prefix('compras/facturas')->name('compras.facturas.')->group(function () {
-        Route::get('/',                  [CompraController::class, 'index']) ->name('index');
-        Route::post('/',                 [CompraController::class, 'store']) ->name('store');
-        Route::get('/{compra}',          [CompraController::class, 'show'])  ->name('show');
-        Route::patch('/{compra}/anular', [CompraController::class, 'anular'])->name('anular');
+    // Bancos - Datafast
+    Route::prefix('bancos/datafast')->name('bancos.datafast.')->group(function () {
+        Route::get('/',                  [DatafastController::class, 'index'])    ->name('index');
+        Route::post('/lote',             [DatafastController::class, 'storeLote'])->name('lote');
+        Route::patch('/{lote}/liquidar', [DatafastController::class, 'liquidar']) ->name('liquidar');
     });
 
-    // Compras - CxP
-    Route::get('compras/cuentas-pagar',
-        [CuentaPagarController::class, 'index'])->name('compras.cxp.index');
-
-    // Compras - Importaciones
-    Route::prefix('compras/importaciones')->name('compras.importaciones.')->group(function () {
-        Route::get('/',                         [ImportacionController::class, 'index'])   ->name('index');
-        Route::post('/',                        [ImportacionController::class, 'store'])   ->name('store');
-        Route::put('/{importacion}',            [ImportacionController::class, 'update'])  ->name('update');
-        Route::patch('/{importacion}/liquidar', [ImportacionController::class, 'liquidar'])->name('liquidar');
+    // Bancos - Conciliaciones
+    Route::prefix('bancos/conciliaciones')->name('bancos.conciliaciones.')->group(function () {
+        Route::get('/',                             [ConciliacionController::class, 'index'])           ->name('index');
+        Route::post('/',                            [ConciliacionController::class, 'store'])           ->name('store');
+        Route::get('/{conciliacion}',               [ConciliacionController::class, 'show'])            ->name('show');
+        Route::patch('/{conciliacion}/conciliar',   [ConciliacionController::class, 'marcarConciliada'])->name('conciliar');
     });
 
-    // Ventas — validación de aprobaciones (fuera del prefix para mantener URL /api/ventas/...)
-    Route::post('/api/ventas/validar-aprobacion', [AprobacionController::class, 'validar'])
-        ->name('ventas.validar-aprobacion');
+    // Bancos - Cheques
+    Route::prefix('bancos/cheques')->name('bancos.cheques.')->group(function () {
+        Route::get('/',                      [ChequesController::class, 'index'])        ->name('index');
+        Route::post('/',                     [ChequesController::class, 'store'])        ->name('store');
+        Route::patch('/{cheque}/estado',     [ChequesController::class, 'cambiarEstado'])->name('estado');
+    });
 
-    // Ventas
-    Route::prefix('ventas')->name('ventas.')->group(function () {
+    // Bancos - Reportes
+    Route::prefix('bancos/reportes')->name('bancos.reportes.')->group(function () {
+        Route::get('/',                [BancoReporteController::class, 'index'])             ->name('index');
+        Route::get('/estado-cuenta',   [BancoReporteController::class, 'estadoCuenta'])      ->name('estado-cuenta');
+        Route::get('/movimientos',     [BancoReporteController::class, 'reporteMovimientos']) ->name('movimientos');
+        Route::get('/caja-chica',      [BancoReporteController::class, 'reporteCajaChica'])  ->name('caja-chica');
+    });
 
-        // Facturas
-        Route::get('/facturas',                          [FacturaController::class, 'index'])        ->name('facturas.index');
-        Route::get('/facturas/crear',                    [FacturaController::class, 'create'])       ->name('facturas.create');
-        Route::post('/facturas/cliente-guardar',         [FacturaController::class, 'clienteGuardar'])->name('facturas.cliente-guardar');
-        Route::post('/facturas',                         [FacturaController::class, 'store'])        ->name('facturas.store');
-        Route::get('/facturas/{factura}',                [FacturaController::class, 'show'])         ->name('facturas.show');
-        Route::post('/facturas/{factura}/anular',        [FacturaController::class, 'anular'])       ->name('facturas.anular');
-        Route::post('/facturas/{factura}/enviar-sri',    [FacturaController::class, 'enviarSri'])    ->name('facturas.enviar-sri');
+    // ── RRHH ──────────────────────────────────────────────────────────────────
+    Route::prefix('rrhh')->name('rrhh.')->group(function () {
 
-        // Proformas
-        Route::get('/proformas',                         [ProformaController::class, 'index'])           ->name('proformas.index');
-        Route::get('/proformas/crear',                   [ProformaController::class, 'create'])          ->name('proformas.create');
-        Route::post('/proformas',                        [ProformaController::class, 'store'])           ->name('proformas.store');
-        Route::get('/proformas/{proforma}',              [ProformaController::class, 'show'])            ->name('proformas.show');
-        Route::delete('/proformas/{proforma}',           [ProformaController::class, 'destroy'])         ->name('proformas.destroy');
-        Route::post('/proformas/{proforma}/convertir',   [ProformaController::class, 'convertirAFactura'])->name('proformas.convertir');
+        // Colaboradores
+        Route::prefix('colaboradores')->name('colaboradores.')->group(function () {
+            Route::get('/',                          [ColaboradorController::class, 'index'])  ->name('index');
+            Route::post('/',                         [ColaboradorController::class, 'store'])  ->name('store');
+            Route::put('/{colaborador}',             [ColaboradorController::class, 'update']) ->name('update');
+            Route::patch('/{colaborador}/toggle',    [ColaboradorController::class, 'toggle']) ->name('toggle');
+        });
 
-        // Prefacturas
-        Route::get('/prefacturas',                       [PrefacturaController::class, 'index'])           ->name('prefacturas.index');
-        Route::get('/prefacturas/crear',                 [PrefacturaController::class, 'create'])          ->name('prefacturas.create');
-        Route::post('/prefacturas',                      [PrefacturaController::class, 'store'])           ->name('prefacturas.store');
-        Route::get('/prefacturas/{prefactura}',          [PrefacturaController::class, 'show'])            ->name('prefacturas.show');
-        Route::post('/prefacturas/{prefactura}/abonar',  [PrefacturaController::class, 'abonar'])          ->name('prefacturas.abonar');
-        Route::post('/prefacturas/{prefactura}/convertir',[PrefacturaController::class, 'convertirAFactura'])->name('prefacturas.convertir');
+        // Asistencia — Timbre digital
+        Route::prefix('asistencia')->name('asistencia.')->group(function () {
+            Route::get('/',        [AsistenciaController::class, 'index'])           ->name('index');
+            Route::post('/entrada',[AsistenciaController::class, 'registrarEntrada'])->name('entrada');
+            Route::post('/salida', [AsistenciaController::class, 'registrarSalida']) ->name('salida');
+        });
 
-        // Notas de Crédito
-        Route::get('/notas-credito',                          [NotaCreditoController::class, 'index'])    ->name('notas-credito.index');
-        Route::get('/notas-credito/crear',                    [NotaCreditoController::class, 'create'])   ->name('notas-credito.create');
-        Route::post('/notas-credito',                         [NotaCreditoController::class, 'store'])    ->name('notas-credito.store');
-        Route::get('/notas-credito/{notaCredito}',            [NotaCreditoController::class, 'show'])     ->name('notas-credito.show');
-        Route::post('/notas-credito/{notaCredito}/enviar-sri',[NotaCreditoController::class, 'enviarSri'])->name('notas-credito.enviar-sri');
-
-        // Retenciones
-        Route::get('/retenciones',                         [RetencionController::class, 'index'])    ->name('retenciones.index');
-        Route::get('/retenciones/crear',                   [RetencionController::class, 'create'])   ->name('retenciones.create');
-        Route::post('/retenciones',                        [RetencionController::class, 'store'])    ->name('retenciones.store');
-        Route::get('/retenciones/{retencion}',             [RetencionController::class, 'show'])     ->name('retenciones.show');
-        Route::post('/retenciones/{retencion}/enviar-sri', [RetencionController::class, 'enviarSri'])->name('retenciones.enviar-sri');
-
-        // Guías de Remisión
-        Route::get('/guias-remision',                            [GuiaRemisionController::class, 'index'])    ->name('guias-remision.index');
-        Route::get('/guias-remision/crear',                      [GuiaRemisionController::class, 'create'])   ->name('guias-remision.create');
-        Route::post('/guias-remision',                           [GuiaRemisionController::class, 'store'])    ->name('guias-remision.store');
-        Route::get('/guias-remision/{guiaRemision}',             [GuiaRemisionController::class, 'show'])     ->name('guias-remision.show');
-        Route::post('/guias-remision/{guiaRemision}/enviar-sri', [GuiaRemisionController::class, 'enviarSri'])->name('guias-remision.enviar-sri');
-
-        // Cuentas por Cobrar
-        Route::get('/cxc',                             [CuentaCobrarController::class, 'index'])         ->name('cxc.index');
-        Route::get('/cxc/{cuentaCobrar}',              [CuentaCobrarController::class, 'show'])          ->name('cxc.show');
-        Route::post('/cxc/{cuentaCobrar}/cobrar',      [CuentaCobrarController::class, 'registrarCobro'])->name('cxc.cobrar');
-        Route::post('/cxc/{cuentaCobrar}/castigar',    [CuentaCobrarController::class, 'castigo'])       ->name('cxc.castigar');
+        // Horas Extras — Panel de aprobación
+        Route::prefix('horas-extras')->name('horas-extras.')->group(function () {
+            Route::get('/',                            [HorasExtrasController::class, 'index'])   ->name('index');
+            Route::patch('/{horaExtra}/aprobar',       [HorasExtrasController::class, 'aprobar']) ->name('aprobar');
+            Route::patch('/{horaExtra}/rechazar',      [HorasExtrasController::class, 'rechazar'])->name('rechazar');
+        });
     });
 });

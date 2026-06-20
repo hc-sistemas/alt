@@ -10,23 +10,15 @@ import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
 import {
     Plus, Pencil, ToggleLeft, ToggleRight, Search, X,
-    Users, Globe, Building2, AlertCircle, ShoppingCart,
+    FileText, Download, Users, ShoppingCart,
 } from 'lucide-react'
 import type { Proveedor, PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface ProveedorStats {
-    total: number
-    nacionales: number
-    internacionales: number
-    con_saldo: number
-}
-
 interface Props extends PageProps {
     proveedores: Proveedor[]
-    stats: ProveedorStats
 }
 
 // ─── Notify ───────────────────────────────────────────────────────────────────
@@ -58,23 +50,6 @@ const swalBase = {
     showCancelButton: true, reverseButtons: true, focusCancel: true,
     customClass: { popup: 'swal-pop', title: 'swal-title', confirmButton: 'swal-confirm', cancelButton: 'swal-cancel' },
     didOpen: injectSwalCss,
-}
-
-// ─── StatCard ─────────────────────────────────────────────────────────────────
-
-function StatCard({ label, value, icon: Icon, cls, valueCls }: {
-    label: string; value: number | string; icon: React.ElementType; cls: string; valueCls: string
-}) {
-    return (
-        <div className="rounded-xl border p-4 flex items-center gap-3 hover:shadow-md transition-shadow"
-            style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
-            <div className={cn('rounded-lg p-2.5 shrink-0', cls)}><Icon className="w-5 h-5" /></div>
-            <div className="min-w-0">
-                <p className={cn('text-2xl font-bold leading-none mb-1', valueCls)}>{value}</p>
-                <p className="text-xs leading-none" style={{ color: 'var(--text-muted)' }}>{label}</p>
-            </div>
-        </div>
-    )
 }
 
 // ─── Badge Tipo ───────────────────────────────────────────────────────────────
@@ -139,29 +114,21 @@ function ProveedorModal({ proveedor, onClose }: ModalProps) {
         }
     }
 
-    const inputStyle = { background: 'var(--bg-card)', color: 'var(--text-main)', borderColor: 'var(--border)' }
-
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-            <div className="relative w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-xl shadow-2xl"
-                style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal-card max-w-2xl" onClick={e => e.stopPropagation()}>
 
                 {/* Header */}
-                <div className="sticky top-0 z-10 flex items-center justify-between px-6 pt-5 pb-4"
-                    style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
+                <div className="modal-header">
                     <div>
-                        <h2 className="font-semibold text-base" style={{ color: 'var(--text-main)' }}>
-                            {isEditar ? 'Editar proveedor' : 'Nuevo proveedor'}
-                        </h2>
+                        <h2>{isEditar ? 'Editar proveedor' : 'Nuevo proveedor'}</h2>
                         {isEditar && (
-                            <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
                                 {proveedor!.identificacion} — {proveedor!.razon_social}
                             </p>
                         )}
                     </div>
-                    <button onClick={onClose} className="p-1.5 rounded-lg hover:opacity-70 transition-opacity"
-                        style={{ color: 'var(--text-muted)' }}>
+                    <button className="modal-close" onClick={onClose}>
                         <X className="w-4 h-4" />
                     </button>
                 </div>
@@ -189,7 +156,8 @@ function ProveedorModal({ proveedor, onClose }: ModalProps) {
                     </div>
                 )}
 
-                <form onSubmit={submit} className="p-6 space-y-4">
+                <form onSubmit={submit}>
+                <div className="modal-body" style={{ gap: '1rem' }}>
                     {/* Identificación */}
                     {!isEditar && (
                         <div className="grid grid-cols-3 gap-3">
@@ -197,8 +165,7 @@ function ProveedorModal({ proveedor, onClose }: ModalProps) {
                                 <Label>Tipo ID <span className="text-red-400">*</span></Label>
                                 <select value={data.tipo_identificacion}
                                     onChange={e => setData('tipo_identificacion', e.target.value)}
-                                    className="w-full h-9 px-3 border rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
-                                    style={inputStyle}>
+                                    className="input-field select-field">
                                     {tab === 'nacional'
                                         ? <>
                                             <option value="RUC">RUC</option>
@@ -310,18 +277,18 @@ function ProveedorModal({ proveedor, onClose }: ModalProps) {
                         )}
                     </div>
 
-                    {/* Botones */}
-                    <div className="flex gap-2 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
-                        <Button type="submit" disabled={processing}>
-                            {isEditar
-                                ? <><Pencil className="w-4 h-4" /> Guardar cambios</>
-                                : <><Plus className="w-4 h-4" /> Crear proveedor</>
-                            }
-                        </Button>
-                        <Button type="button" variant="outline" onClick={onClose}>
-                            Cancelar
-                        </Button>
-                    </div>
+                </div>
+                <div className="modal-footer">
+                    <Button type="submit" disabled={processing}>
+                        {isEditar
+                            ? <><Pencil className="w-4 h-4" /> Guardar cambios</>
+                            : <><Plus className="w-4 h-4" /> Crear proveedor</>
+                        }
+                    </Button>
+                    <Button type="button" variant="outline" onClick={onClose}>
+                        Cancelar
+                    </Button>
+                </div>
                 </form>
             </div>
         </div>
@@ -331,10 +298,13 @@ function ProveedorModal({ proveedor, onClose }: ModalProps) {
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function ProveedoresIndex() {
-    const { proveedores, stats, flash } = usePage<Props>().props
+    const { proveedores, flash } = usePage<Props>().props
 
     const [busqueda, setBusqueda] = useState('')
     const [modal, setModal] = useState<{ open: boolean; proveedor?: Proveedor }>({ open: false })
+    const [modalPdf, setModalPdf] = useState(false)
+    const [urlPdf,   setUrlPdf]   = useState('')
+    const abrirPdf = (url: string) => { setUrlPdf(url); setModalPdf(true) }
 
     useEffect(() => {
         if (flash?.success) notify.ok(flash.success)
@@ -402,47 +372,33 @@ export default function ProveedoresIndex() {
                         </p>
                     </div>
                 </div>
-                <div className="flex items-center gap-2 flex-wrap">
-                    <button onClick={() => setModal({ open: true })}
-                        className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-white transition-colors"
-                        style={{ background: 'var(--primary)' }}
-                        onMouseEnter={e => (e.currentTarget.style.background = 'var(--primary-hover)')}
-                        onMouseLeave={e => (e.currentTarget.style.background = 'var(--primary)')}>
-                        <Plus size={15} /> Nuevo Proveedor
-                    </button>
-                </div>
-            </div>
-
-            {/* Stats */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 px-6 py-4">
-                <StatCard label="Total" value={stats.total} icon={Users}
-                    cls="bg-slate-500/15 text-slate-600 dark:text-slate-400"
-                    valueCls="text-slate-600 dark:text-slate-400" />
-                <StatCard label="Nacionales" value={stats.nacionales} icon={Building2}
-                    cls="bg-blue-500/15 text-blue-600 dark:text-blue-400"
-                    valueCls="text-blue-600 dark:text-blue-400" />
-                <StatCard label="Internacionales" value={stats.internacionales} icon={Globe}
-                    cls="bg-purple-500/15 text-purple-600 dark:text-purple-400"
-                    valueCls="text-purple-600 dark:text-purple-400" />
-                <StatCard label="Con saldo" value={stats.con_saldo} icon={AlertCircle}
-                    cls="bg-orange-500/15 text-orange-600 dark:text-orange-400"
-                    valueCls="text-orange-600 dark:text-orange-400" />
-            </div>
-
-            {/* Toolbar */}
-            <div className="flex flex-wrap items-center gap-2 px-6 pb-4">
-                <div className="relative flex-1 min-w-48 max-w-sm">
-                    <Search className="absolute top-1/2 left-2.5 w-4 h-4 -translate-y-1/2 pointer-events-none"
-                        style={{ color: 'var(--text-muted)' }} />
-                    <Input className="pl-8 pr-8" placeholder="Buscar por nombre, RUC, email…"
-                        value={busqueda} onChange={e => setBusqueda(e.target.value)} />
-                    {busqueda && (
-                        <button onClick={() => setBusqueda('')}
-                            className="absolute top-1/2 right-2.5 -translate-y-1/2 hover:opacity-70 transition-opacity"
-                            style={{ color: 'var(--text-muted)' }}>
-                            <X className="w-3.5 h-3.5" />
+                {/* Toolbar */}
+                <div className="flex items-center justify-between gap-3 mb-6">
+                    <div className="flex items-center gap-2">
+                        <button onClick={() => setModal({ open: true })} className="btn-primary flex items-center gap-2 whitespace-nowrap">
+                            <Plus size={15} /> Nuevo Proveedor
                         </button>
-                    )}
+
+                        <div className="input-with-icon">
+                            <Search size={14} className="input-icon" />
+                            <input type="text" value={busqueda}
+                                onChange={e => setBusqueda(e.target.value)}
+                                placeholder="Buscar por nombre, RUC, email…"
+                                className="input-field w-52" />
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => abrirPdf(route('compras.proveedores.pdf'))}
+                            className="btn-pdf flex items-center gap-2 whitespace-nowrap">
+                            <FileText size={15} /> PDF
+                        </button>
+                        <a href={route('compras.proveedores.excel')}
+                           className="btn-excel flex items-center gap-2 whitespace-nowrap">
+                            <Download size={15} /> Excel
+                        </a>
+                    </div>
                 </div>
             </div>
 
@@ -550,6 +506,39 @@ export default function ProveedoresIndex() {
                     proveedor={modal.proveedor}
                     onClose={() => setModal({ open: false })}
                 />
+            )}
+
+            {/* ── Modal PDF ── */}
+            {modalPdf && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+                     style={{ background: 'rgba(0,0,0,0.85)' }}
+                     onClick={() => setModalPdf(false)}>
+                    <div className="w-full max-w-5xl rounded-2xl overflow-hidden shadow-2xl flex flex-col"
+                         style={{ background: 'var(--bg-card)', height: '90vh' }}
+                         onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between px-4 py-3 border-b shrink-0"
+                             style={{ borderColor: 'var(--border)' }}>
+                            <h3 className="font-semibold text-sm flex items-center gap-2"
+                                style={{ color: 'var(--text-main)' }}>
+                                <FileText size={16} style={{ color: '#ef4444' }} />
+                                Reporte de Proveedores
+                            </h3>
+                            <div className="flex items-center gap-2">
+                                <a href={urlPdf} download target="_blank"
+                                   className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-all hover:opacity-90"
+                                   style={{ background: '#ef4444' }}>
+                                    <Download size={13} /> Descargar
+                                </a>
+                                <button onClick={() => setModalPdf(false)}
+                                    className="px-3 py-1.5 rounded-lg text-xs font-semibold border hover:opacity-80"
+                                    style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
+                                    ✕ Cerrar
+                                </button>
+                            </div>
+                        </div>
+                        <iframe src={urlPdf} className="flex-1 w-full border-0" title="Reporte PDF Proveedores" />
+                    </div>
+                </div>
             )}
 
             <ToastContainer position="top-right" autoClose={3500} hideProgressBar={false}

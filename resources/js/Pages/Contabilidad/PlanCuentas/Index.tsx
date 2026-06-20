@@ -13,16 +13,14 @@ import {
     ToggleLeft, ToggleRight, Download, Search, X,
     ChevronsUpDown, ChevronsDownUp, BookOpen,
     TrendingUp, TrendingDown, DollarSign, Shield, BarChart3,
-    CheckCircle, AlertCircle,
 } from 'lucide-react'
-import type { PlanCuenta, PlanCuentaStats, PageProps } from '@/types'
+import type { PlanCuenta, PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
 
 // ─── Types & Config ───────────────────────────────────────────────────────────
 
 interface Props extends PageProps {
     cuentas: PlanCuenta[]
-    stats: PlanCuentaStats
     todasLasCuentas: PlanCuenta[]
 }
 
@@ -210,33 +208,6 @@ const swalConfig = {
             didOpen: injectSwalStyles,
         }
     },
-}
-
-// ─── Stat Card ────────────────────────────────────────────────────────────────
-
-interface StatCardProps {
-    label: string
-    value: number
-    icon: React.ElementType
-    iconClass: string
-    valueClass: string
-}
-
-function StatCard({ label, value, icon: Icon, iconClass, valueClass }: StatCardProps) {
-    return (
-        <div
-            className="rounded-xl border p-4 flex items-center gap-3 transition-shadow hover:shadow-md"
-            style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
-        >
-            <div className={cn('rounded-lg p-2.5 shrink-0', iconClass)}>
-                <Icon className="w-5 h-5" />
-            </div>
-            <div className="min-w-0">
-                <p className={cn('text-2xl font-bold leading-none mb-1', valueClass)}>{value}</p>
-                <p className="text-xs leading-none" style={{ color: 'var(--text-muted)' }}>{label}</p>
-            </div>
-        </div>
-    )
 }
 
 // ─── Modal unificado crear / editar ──────────────────────────────────────────
@@ -811,7 +782,7 @@ function CuentaNode({
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function PlanCuentasIndex() {
-    const { cuentas, stats, todasLasCuentas, flash } = usePage<Props>().props
+    const { cuentas, todasLasCuentas, flash } = usePage<Props>().props
 
     const [busqueda, setBusqueda]   = useState('')
     const [expandidos, setExpandidos] = useState<Set<number>>(() => new Set(cuentas.map(c => c.id)))
@@ -885,82 +856,53 @@ export default function PlanCuentasIndex() {
                 ]}
             />
 
-            {/* Stats — 2x2 mobile, 4x1 desktop */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 px-6 py-4">
-                <StatCard
-                    label="Total cuentas"
-                    value={stats.total}
-                    icon={BookOpen}
-                    iconClass="bg-blue-500/15 text-blue-600 dark:text-blue-400"
-                    valueClass="text-blue-600 dark:text-blue-400"
-                />
-                <StatCard
-                    label="Activas"
-                    value={stats.activas}
-                    icon={CheckCircle}
-                    iconClass="bg-green-500/15 text-green-600 dark:text-green-400"
-                    valueClass="text-green-600 dark:text-green-400"
-                />
-                <StatCard
-                    label="Con asientos"
-                    value={stats.con_asientos}
-                    icon={AlertCircle}
-                    iconClass="bg-amber-500/15 text-amber-600 dark:text-amber-400"
-                    valueClass="text-amber-600 dark:text-amber-400"
-                />
-                <StatCard
-                    label="Sin uso"
-                    value={stats.sin_uso}
-                    icon={AlertCircle}
-                    iconClass="bg-gray-500/15 text-gray-500 dark:text-gray-400"
-                    valueClass="text-gray-500 dark:text-gray-400"
-                />
-            </div>
+            {/* Toolbar: [Nueva Cuenta] [Expandir] [Colapsar] [Buscar] | [Excel] */}
+            <div className="flex items-center justify-between gap-3 px-6 pb-4">
+                <div className="flex flex-wrap items-center gap-2">
+                    <Button size="sm" onClick={() => setModal({ open: true, padre: null })}>
+                        <Plus className="w-4 h-4" />
+                        Nueva cuenta
+                    </Button>
 
-            {/* Toolbar: [Nueva Cuenta] [Buscar] [Expandir] [Colapsar] [Exportar] */}
-            <div className="flex flex-wrap items-center gap-2 px-6 pb-4">
-                <Button size="sm" onClick={() => setModal({ open: true, padre: null })}>
-                    <Plus className="w-4 h-4" />
-                    Nueva cuenta
-                </Button>
+                    <Button variant="outline" size="sm" onClick={expandirTodo} title="Expandir todo">
+                        <ChevronsUpDown className="w-3.5 h-3.5" />
+                        Expandir
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={colapsarTodo} title="Colapsar todo">
+                        <ChevronsDownUp className="w-3.5 h-3.5" />
+                        Colapsar
+                    </Button>
 
-                <div className="relative flex-1 min-w-48 max-w-sm">
-                    <Search
-                        className="absolute top-1/2 left-2.5 w-4 h-4 -translate-y-1/2 pointer-events-none"
-                        style={{ color: 'var(--text-muted)' }}
-                    />
-                    <Input
-                        className="pl-8 pr-8"
-                        placeholder="Buscar por código o nombre…"
-                        value={busqueda}
-                        onChange={e => setBusqueda(e.target.value)}
-                    />
-                    {busqueda && (
-                        <button
-                            onClick={() => setBusqueda('')}
-                            className="absolute top-1/2 right-2.5 -translate-y-1/2 hover:opacity-70 transition-opacity"
+                    <div className="relative min-w-48 max-w-sm">
+                        <Search
+                            className="absolute top-1/2 left-2.5 w-4 h-4 -translate-y-1/2 pointer-events-none"
                             style={{ color: 'var(--text-muted)' }}
-                        >
-                            <X className="w-3.5 h-3.5" />
-                        </button>
-                    )}
+                        />
+                        <Input
+                            className="pl-8 pr-8"
+                            placeholder="Buscar por código o nombre…"
+                            value={busqueda}
+                            onChange={e => setBusqueda(e.target.value)}
+                        />
+                        {busqueda && (
+                            <button
+                                onClick={() => setBusqueda('')}
+                                className="absolute top-1/2 right-2.5 -translate-y-1/2 hover:opacity-70 transition-opacity"
+                                style={{ color: 'var(--text-muted)' }}
+                            >
+                                <X className="w-3.5 h-3.5" />
+                            </button>
+                        )}
+                    </div>
                 </div>
 
-                <Button variant="outline" size="sm" onClick={expandirTodo} title="Expandir todo">
-                    <ChevronsUpDown className="w-3.5 h-3.5" />
-                    Expandir
-                </Button>
-                <Button variant="outline" size="sm" onClick={colapsarTodo} title="Colapsar todo">
-                    <ChevronsDownUp className="w-3.5 h-3.5" />
-                    Colapsar
-                </Button>
-
-                <a href={route('contabilidad.plan-cuentas.exportar')}>
-                    <Button variant="outline" size="sm">
+                <div className="flex items-center gap-2">
+                    <a href={route('contabilidad.plan-cuentas.exportar')}
+                       className="btn-excel flex items-center gap-2 whitespace-nowrap">
                         <Download className="w-3.5 h-3.5" />
-                        Exportar .xlsx
-                    </Button>
-                </a>
+                        Excel
+                    </a>
+                </div>
             </div>
 
             {/* Árbol */}

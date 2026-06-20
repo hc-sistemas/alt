@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { router, usePage, Link } from '@inertiajs/react'
 import { ToastContainer } from 'react-toastify'
 import Swal from 'sweetalert2'
@@ -8,10 +8,10 @@ import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import {
     BookOpen, Plus, Search, Eye, XCircle, CheckCircle,
-    AlertTriangle, User, X, FileText, Zap, Download, Printer,
+    AlertTriangle, User, X, FileText, Zap, Download,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { AsientoContable, AsientoStats, EjercicioContable, PlanCuenta, PageProps } from '@/types'
+import type { AsientoContable, EjercicioContable, PlanCuenta, PageProps } from '@/types'
 import { notify, formatMoney, formatFecha, swalBase, injectSwalStyles } from '@/utils/contabilidad'
 import 'react-toastify/dist/ReactToastify.css'
 
@@ -40,7 +40,6 @@ interface Props extends PageProps {
     cuentas: PlanCuenta[]
     periodoActivo: EjercicioContable | null
     filtros: Record<string, string>
-    stats: AsientoStats
 }
 
 const PARTIDA_VACIA: Partida = { cuenta_id: '', descripcion: '', debe: '', haber: '' }
@@ -51,7 +50,7 @@ const TIPO_BADGE = {
 }
 
 export default function AsientosIndex() {
-    const { asientos, ejercicios, cuentas, periodoActivo, filtros, stats, flash, auth }
+    const { asientos, ejercicios, cuentas, periodoActivo, filtros, flash, auth }
         = usePage<Props>().props
     const perfil = auth.user?.perfil ?? ''
     const puedeCrear = ['super_admin', 'admin', 'contador'].includes(perfil)
@@ -64,6 +63,12 @@ export default function AsientosIndex() {
     const [ejercicioId, setEjercicioId] = useState(filtros.ejercicio_id ?? '')
     const [fechaDesde, setFechaDesde] = useState(filtros.fecha_desde ?? '')
     const [fechaHasta, setFechaHasta] = useState(filtros.fecha_hasta ?? '')
+
+    // Modal PDF
+    const [modalPdf, setModalPdf] = useState(false)
+    const [urlPdf,   setUrlPdf]   = useState('')
+
+    const abrirPdf = (url: string) => { setUrlPdf(url); setModalPdf(true) }
 
     // Modal nuevo asiento
     const [modalAbierto, setModalAbierto] = useState(false)
@@ -235,70 +240,71 @@ export default function AsientosIndex() {
                         </div>
                     </div>
 
-                    {/* Fila 2 — Botones debajo del título */}
-                    <div className="flex items-center gap-2 flex-wrap">
+                    {/* Toolbar */}
+                    <div className="flex items-center justify-between gap-3 mb-6">
+                        <div className="flex items-center gap-2 flex-wrap">
+                            {/* Nuevo asiento */}
+                            {puedeCrear && (
+                                <button
+                                    onClick={() => {
+                                        if (!periodoActivo) {
+                                            notify.error('No hay período activo.')
+                                            return
+                                        }
+                                        setModalAbierto(true)
+                                    }}
+                                    className="btn-primary flex items-center gap-2 whitespace-nowrap"
+                                >
+                                    <Plus size={15} />
+                                    Nuevo Asiento Manual
+                                </button>
+                            )}
 
-                        {/* Nuevo asiento */}
-                        {puedeCrear && (
+                            {/* Buscar */}
+                            <div className="input-with-icon">
+                                <Search size={14} className="input-icon" />
+                                <input type="text" value={buscar}
+                                    onChange={e => setBuscar(e.target.value)}
+                                    onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
+                                    placeholder="Número, concepto, referencia…"
+                                    className="input-field w-52" />
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                            {/* PDF */}
+                            <button
+                                onClick={() => abrirPdf(
+                                    `${route('contabilidad.asientos.reporte-pdf')}` +
+                                    `?ejercicio_id=${ejercicioId}` +
+                                    `&fecha_desde=${fechaDesde}` +
+                                    `&fecha_hasta=${fechaHasta}`
+                                )}
+                                className="btn-pdf flex items-center gap-2 whitespace-nowrap">
+                                <FileText size={15} />
+                                PDF
+                            </button>
+
+                            {/* Excel */}
                             <button
                                 onClick={() => {
-                                    if (!periodoActivo) {
-                                        notify.error('No hay período activo.')
-                                        return
-                                    }
-                                    setModalAbierto(true)
+                                    const params = new URLSearchParams({
+                                        ejercicio_id: ejercicioId,
+                                        fecha_desde:  fechaDesde,
+                                        fecha_hasta:  fechaHasta,
+                                        tipo:         tipo,
+                                        estado:       estado,
+                                    })
+                                    window.location.href =
+                                        route('contabilidad.asientos.exportar-excel') + '?' + params
                                 }}
-                                className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white transition-all hover:opacity-90 hover:-translate-y-0.5"
-                                style={{ background: 'var(--primary)' }}
-                            >
-                                <Plus size={15} />
-                                Nuevo Asiento Manual
+                                className="btn-excel flex items-center gap-2 whitespace-nowrap">
+                                <Download size={15} />
+                                Excel
                             </button>
-                        )}
-
-                        {/* Exportar Excel */}
-                        <a
-                            href={`${route('contabilidad.asientos.exportar-excel')}?ejercicio_id=${ejercicioId}&fecha_desde=${fechaDesde}&fecha_hasta=${fechaHasta}`}
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border transition-all hover:opacity-80"
-                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)' }}
-                        >
-                            <Download size={15} />
-                            Exportar .xlsx
-                        </a>
-
-                        {/* PDF reporte */}
-                        <a
-                            href={route('contabilidad.asientos.reporte-pdf')}
-                            target="_blank"
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border transition-all hover:opacity-80"
-                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)' }}
-                        >
-                            <Printer size={15} />
-                            PDF
-                        </a>
+                        </div>
                     </div>
                 </div>
-                {/* Stats */}
-                <div className={cn('gap-4', 'grid', 'grid-cols-2', 'md:grid-cols-4')}>
-                    {([
-                        { label: 'Total', value: stats.total, color: '#3b82f6', Icon: FileText },
-                        { label: 'Activos', value: stats.activos, color: '#10b981', Icon: CheckCircle },
-                        { label: 'Anulados', value: stats.anulados, color: '#ef4444', Icon: XCircle },
-                        { label: 'Manuales', value: stats.manuales, color: '#F59E0B', Icon: User },
-                    ] as const).map(({ label, value, color, Icon }) => (
-                        <div key={label}
-                            className={cn('p-4', 'border', 'rounded-xl')}
-                            style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
-                            <div className={cn('flex', 'justify-between', 'items-center', 'mb-2')}>
-                                <p className={cn('font-medium', 'text-xs', 'uppercase', 'tracking-wider')}
-                                    style={{ color: 'var(--text-muted)' }}>{label}</p>
-                                <Icon size={15} style={{ color }} />
-                            </div>
-                            <p className={cn('font-bold', 'text-2xl')} style={{ color }}>{value}</p>
-                        </div>
-                    ))}
-                </div>
-
                 {/* Banner período */}
                 {periodoActivo ? (
                     <div className={cn('flex', 'items-center', 'gap-2', 'px-4', 'py-2', 'border', 'rounded-xl', 'text-sm')}
@@ -328,49 +334,21 @@ export default function AsientosIndex() {
                 {/* Filtros */}
                 <div className={cn('space-y-3', 'p-4', 'border', 'rounded-xl')}
                     style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
-                    <div className={cn('gap-3', 'grid', 'grid-cols-1', 'md:grid-cols-3', 'lg:grid-cols-6')}>
-                        <div className={cn('relative', 'lg:col-span-2')}>
-                            <Search size={13} className={cn('top-1/2', 'left-3', 'absolute', '-translate-y-1/2')}
-                                style={{ color: 'var(--text-muted)' }} />
-                            <input
-                                type="text"
-                                value={buscar}
-                                onChange={e => setBuscar(e.target.value)}
-                                onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
-                                placeholder="Número, concepto, referencia…"
-                                className={cn('dark:bg-gray-800', 'py-2', 'pr-3', 'pl-9', 'border', 'dark:border-gray-600', 'rounded-lg', 'focus:outline-none', 'focus:ring-1', 'focus:ring-amber-500', 'w-full', 'dark:text-gray-100', 'text-sm')}
-                                style={{
-                                    borderColor: 'var(--border)', background: 'var(--bg-main)',
-                                    color: 'var(--text-main)'
-                                }}
-                            />
-                        </div>
+                    <div className={cn('gap-3', 'grid', 'grid-cols-1', 'md:grid-cols-2', 'lg:grid-cols-4')}>
                         <select value={tipo} onChange={e => setTipo(e.target.value)}
-                            className={cn('dark:bg-gray-800', 'px-3', 'py-2', 'border', 'dark:border-gray-600', 'rounded-lg', 'focus:outline-none', 'dark:text-gray-100', 'text-sm')}
-                            style={{
-                                borderColor: 'var(--border)', background: 'var(--bg-main)',
-                                color: 'var(--text-main)'
-                            }}>
+                            className="input-field select-field">
                             <option value="">Todos los tipos</option>
                             <option value="manual">Manuales</option>
                             <option value="automatico">Automáticos</option>
                         </select>
                         <select value={estado} onChange={e => setEstado(e.target.value)}
-                            className={cn('dark:bg-gray-800', 'px-3', 'py-2', 'border', 'dark:border-gray-600', 'rounded-lg', 'focus:outline-none', 'dark:text-gray-100', 'text-sm')}
-                            style={{
-                                borderColor: 'var(--border)', background: 'var(--bg-main)',
-                                color: 'var(--text-main)'
-                            }}>
+                            className="input-field select-field">
                             <option value="">Todos los estados</option>
                             <option value="activo">Activos</option>
                             <option value="anulado">Anulados</option>
                         </select>
                         <select value={ejercicioId} onChange={e => setEjercicioId(e.target.value)}
-                            className={cn('dark:bg-gray-800', 'px-3', 'py-2', 'border', 'dark:border-gray-600', 'rounded-lg', 'focus:outline-none', 'dark:text-gray-100', 'text-sm')}
-                            style={{
-                                borderColor: 'var(--border)', background: 'var(--bg-main)',
-                                color: 'var(--text-main)'
-                            }}>
+                            className="input-field select-field">
                             <option value="">Todos los períodos</option>
                             {ejercicios.map(e => (
                                 <option key={e.id} value={e.id}>{e.periodo_label}</option>
@@ -388,21 +366,13 @@ export default function AsientosIndex() {
                             <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Desde:</span>
                             <input type="date" value={fechaDesde}
                                 onChange={e => setFechaDesde(e.target.value)}
-                                className={cn('dark:bg-gray-800', 'px-2', 'py-1.5', 'border', 'dark:border-gray-600', 'rounded-lg', 'focus:outline-none', 'dark:text-gray-100', 'text-sm')}
-                                style={{
-                                    borderColor: 'var(--border)', background: 'var(--bg-main)',
-                                    color: 'var(--text-main)'
-                                }} />
+                                className="input-field" style={{ width: 'auto' }} />
                         </div>
                         <div className={cn('flex', 'items-center', 'gap-2')}>
                             <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Hasta:</span>
                             <input type="date" value={fechaHasta}
                                 onChange={e => setFechaHasta(e.target.value)}
-                                className={cn('dark:bg-gray-800', 'px-2', 'py-1.5', 'border', 'dark:border-gray-600', 'rounded-lg', 'focus:outline-none', 'dark:text-gray-100', 'text-sm')}
-                                style={{
-                                    borderColor: 'var(--border)', background: 'var(--bg-main)',
-                                    color: 'var(--text-main)'
-                                }} />
+                                className="input-field" style={{ width: 'auto' }} />
                         </div>
                     </div>
                 </div>
@@ -566,12 +536,12 @@ export default function AsientosIndex() {
             {modalAbierto && (
                 <div className={cn('z-50', 'fixed', 'inset-0', 'flex', 'justify-center', 'items-center', 'p-4')}
                     style={{ background: 'rgba(0,0,0,0.6)' }}>
-                    <div className={cn('flex', 'flex-col', 'shadow-2xl', 'rounded-2xl', 'w-full', 'max-w-3xl', 'max-h-[90vh]')}
+                    <div className={cn('flex', 'flex-col', 'shadow-2xl', 'rounded-2xl', 'w-full', 'max-w-4xl', 'max-h-[90vh]')}
                         style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
 
                         {/* Header modal */}
-                        <div className={cn('flex', 'justify-between', 'items-center', 'px-6', 'py-4', 'border-b', 'shrink-0')}
-                            style={{ borderColor: 'var(--border)' }}>
+                        <div className={cn('flex', 'justify-between', 'items-center', 'px-6', 'py-4', 'shrink-0')}
+                            style={{ borderBottom: '2px solid var(--primary)' }}>
                             <div>
                                 <h2 className={cn('flex', 'items-center', 'gap-2', 'font-bold', 'text-lg')}
                                     style={{ color: 'var(--text-main)' }}>
@@ -585,7 +555,10 @@ export default function AsientosIndex() {
                                 )}
                             </div>
                             <button onClick={cerrarModal}
-                                className={cn('p-1', 'text-gray-400', 'hover:text-gray-600', 'text-xl', 'leading-none')}>×</button>
+                                className={cn('flex', 'justify-center', 'items-center', 'rounded-full', 'w-8', 'h-8', 'text-lg', 'leading-none', 'transition-colors')}
+                                style={{ color: 'var(--text-muted)' }}
+                                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--border)'; }}
+                                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}>×</button>
                         </div>
 
                         <div className={cn('flex-1', 'space-y-4', 'px-6', 'py-4', 'overflow-y-auto')}>
@@ -607,11 +580,7 @@ export default function AsientosIndex() {
                                         type="date"
                                         value={fecha}
                                         onChange={e => setFecha(e.target.value)}
-                                        className={cn('dark:bg-gray-800', 'mt-1', 'px-3', 'py-2', 'border', 'dark:border-gray-600', 'rounded-lg', 'focus:outline-none', 'focus:ring-1', 'focus:ring-amber-500', 'w-full', 'dark:text-gray-100', 'text-sm')}
-                                        style={{
-                                            borderColor: 'var(--border)', background: 'var(--bg-card)',
-                                            color: 'var(--text-main)'
-                                        }}
+                                        className="input-field mt-1"
                                     />
                                 </div>
                             </div>
@@ -657,12 +626,7 @@ export default function AsientosIndex() {
                                                     }}
                                                     onFocus={() => setDropdownOpen(idx)}
                                                     placeholder="Buscar cuenta..."
-                                                    className={cn('dark:bg-gray-800', 'px-2', 'py-1.5', 'border', 'dark:border-gray-600', 'rounded-lg', 'focus:outline-none', 'focus:ring-1', 'focus:ring-amber-500', 'w-full', 'dark:text-gray-100', 'text-xs')}
-                                                    style={{
-                                                        borderColor: 'var(--border)',
-                                                        background: 'var(--bg-main)',
-                                                        color: 'var(--text-main)'
-                                                    }}
+                                                    className="input-field text-xs"
                                                 />
                                                 {dropdownOpen === idx && (
                                                     <div className={cn('top-full', 'right-0', 'left-0', 'z-50', 'absolute', 'shadow-xl', 'mt-1', 'border', 'rounded-lg', 'overflow-hidden')}
@@ -707,12 +671,7 @@ export default function AsientosIndex() {
                                                 value={p.descripcion}
                                                 onChange={e => actualizarPartida(idx, 'descripcion', e.target.value)}
                                                 placeholder="Detalle..."
-                                                className={cn('col-span-3', 'dark:bg-gray-800', 'px-2', 'py-1.5', 'border', 'dark:border-gray-600', 'rounded-lg', 'focus:outline-none', 'focus:ring-1', 'focus:ring-amber-500', 'dark:text-gray-100', 'text-xs')}
-                                                style={{
-                                                    borderColor: 'var(--border)',
-                                                    background: 'var(--bg-main)',
-                                                    color: 'var(--text-main)'
-                                                }}
+                                                className="input-field col-span-3 text-xs"
                                             />
 
                                             {/* Debe */}
@@ -727,12 +686,7 @@ export default function AsientosIndex() {
                                                         actualizarPartida(idx, 'haber', '')
                                                 }}
                                                 placeholder="0.00"
-                                                className={cn('col-span-2', 'dark:bg-gray-800', 'px-2', 'py-1.5', 'border', 'dark:border-gray-600', 'rounded-lg', 'focus:outline-none', 'focus:ring-1', 'focus:ring-amber-500', 'tabular-nums', 'dark:text-gray-100', 'text-xs', 'text-right')}
-                                                style={{
-                                                    borderColor: 'var(--border)',
-                                                    background: 'var(--bg-main)',
-                                                    color: 'var(--text-main)'
-                                                }}
+                                                className="input-field col-span-2 tabular-nums text-xs text-right"
                                             />
 
                                             {/* Haber */}
@@ -747,12 +701,7 @@ export default function AsientosIndex() {
                                                         actualizarPartida(idx, 'debe', '')
                                                 }}
                                                 placeholder="0.00"
-                                                className={cn('col-span-2', 'dark:bg-gray-800', 'px-2', 'py-1.5', 'border', 'dark:border-gray-600', 'rounded-lg', 'focus:outline-none', 'focus:ring-1', 'focus:ring-amber-500', 'tabular-nums', 'dark:text-gray-100', 'text-xs', 'text-right')}
-                                                style={{
-                                                    borderColor: 'var(--border)',
-                                                    background: 'var(--bg-main)',
-                                                    color: 'var(--text-main)'
-                                                }}
+                                                className="input-field col-span-2 tabular-nums text-xs text-right"
                                             />
 
                                             {/* Eliminar fila */}
@@ -814,8 +763,8 @@ export default function AsientosIndex() {
                         </div>
 
                         {/* Footer modal */}
-                        <div className={cn('flex', 'gap-3', 'px-6', 'py-4', 'border-t', 'shrink-0')}
-                            style={{ borderColor: 'var(--border)' }}>
+                        <div className={cn('flex', 'gap-3', 'px-6', 'py-4', 'border-t', 'rounded-b-2xl', 'shrink-0')}
+                            style={{ borderColor: 'var(--border)', background: 'color-mix(in srgb, var(--bg-main) 60%, var(--bg-card))' }}>
                             <Button variant="outline" onClick={cerrarModal} className="flex-1">
                                 Cancelar
                             </Button>
@@ -845,6 +794,31 @@ export default function AsientosIndex() {
                     fontWeight: '500', boxShadow: '0 8px 32px rgba(0,0,0,0.18)'
                 }}
             />
+
+            {/* ── Modal PDF ── */}
+            {modalPdf && (
+                <div className="modal-overlay" style={{ background: 'rgba(0,0,0,0.85)' }} onClick={() => setModalPdf(false)}>
+                    <div className="modal-card max-w-5xl flex flex-col" style={{ height: '90vh' }} onClick={e => e.stopPropagation()}>
+                        <div className="modal-header shrink-0">
+                            <h2>
+                                <FileText size={16} style={{ color: '#ef4444' }} />
+                                Reporte de Asientos Contables
+                            </h2>
+                            <div className="flex items-center gap-2">
+                                <a href={urlPdf} download target="_blank"
+                                   className="btn-primary text-xs py-1.5 px-3"
+                                   style={{ background: '#ef4444', boxShadow: 'none', textDecoration: 'none' }}>
+                                    <Download size={13} /> Descargar
+                                </a>
+                                <button onClick={() => setModalPdf(false)} className="btn-secondary text-xs py-1.5 px-3">
+                                    ✕ Cerrar
+                                </button>
+                            </div>
+                        </div>
+                        <iframe src={urlPdf} className="flex-1 w-full border-0" title="Reporte PDF Asientos" />
+                    </div>
+                </div>
+            )}
         </AppLayout>
     )
 }

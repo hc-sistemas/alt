@@ -8,9 +8,11 @@ interface InventarioServiceInterface
         int $productoId,
         int $bodegaId,
         float $cantidad,
-        float $costo,
+        float $costoUnitario,
         string $docTipo,
-        int $docId
+        int $docId,
+        ?string $docNumero = null,
+        ?string $observacion = null,
     ): void;
 
     public function egresarStock(
@@ -18,14 +20,22 @@ interface InventarioServiceInterface
         int $bodegaId,
         float $cantidad,
         string $docTipo,
-        int $docId
+        int $docId,
+        ?string $docNumero = null,
+        ?string $observacion = null,
     ): void;
 
-    public function reservarStock(int $productoId, int $bodegaId, float $cantidad, string $docTipo, int $docId): void;
+    public function reservarStock(
+        int $productoId,
+        int $bodegaId,
+        float $cantidad
+    ): void;
 
-    public function liberarReserva(int $productoId, int $bodegaId, string $docTipo, int $docId): void;
-
-    public function confirmarSalida(int $productoId, int $bodegaId, string $docTipo, int $docId): void;
+    public function liberarReserva(
+        int $productoId,
+        int $bodegaId,
+        float $cantidad
+    ): void;
 
     public function getSaldoDisponible(int $productoId, int $bodegaId): float;
 }

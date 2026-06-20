@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { router, usePage, Link } from '@inertiajs/react'
 import { ToastContainer } from 'react-toastify'
 import Swal from 'sweetalert2'
@@ -10,7 +11,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { PageProps } from '@/types'
-import { notify, formatMoney, swalBase, injectSwalStyles } from '@/utils/contabilidad'
+import { notify, formatMoney, formatFecha, swalBase, injectSwalStyles } from '@/utils/contabilidad'
 import 'react-toastify/dist/ReactToastify.css'
 
 interface CuentaRef {
@@ -76,6 +77,9 @@ export default function AsientoShow() {
     const perfil = auth.user?.perfil ?? ''
     const puedeAnular = ['super_admin', 'admin', 'contador'].includes(perfil)
     const cuadrado = Math.abs(asiento.total_debe - asiento.total_haber) < 0.0001
+
+    const [modalPdf, setModalPdf] = useState(false)
+    const [urlPdf,   setUrlPdf]   = useState('')
 
     const confirmarAnulacion = async () => {
         injectSwalStyles()
@@ -153,24 +157,15 @@ export default function AsientoShow() {
                                 Volver
                             </Button>
                         </Link>
-                        <a href={route('contabilidad.asientos.pdf', asiento.id)}
-                           target="_blank"
-                           rel="noopener noreferrer"
-                           className="inline-flex items-center gap-2 px-4 py-2 rounded-md
-                                      text-sm font-medium border transition-colors
-                                      hover:opacity-80 hover:-translate-y-0.5"
-                           style={{ borderColor: 'var(--border)', color: 'var(--text-main)' }}>
+                        <button
+                            onClick={() => { setUrlPdf(route('contabilidad.asientos.pdf', asiento.id)); setModalPdf(true) }}
+                            className="inline-flex items-center gap-2 px-4 py-2 rounded-md
+                                       text-sm font-medium border transition-colors
+                                       hover:opacity-80 hover:-translate-y-0.5"
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)' }}>
                             <Printer size={15} />
                             Imprimir PDF
-                        </a>
-                        <a href={`${route('contabilidad.asientos.exportar-excel')}?ejercicio_id=${asiento.ejercicio_id ?? ''}`}
-                           className="inline-flex items-center gap-2 px-4 py-2 rounded-md
-                                      text-sm font-medium border transition-colors
-                                      hover:opacity-80 hover:-translate-y-0.5"
-                           style={{ borderColor: 'var(--border)', color: 'var(--text-main)' }}>
-                            <Download size={15} />
-                            Exportar .xlsx
-                        </a>
+                        </button>
                         {puedeAnular && asiento.estado === 1 && (
                             <Button
                                 onClick={confirmarAnulacion}
@@ -281,7 +276,7 @@ export default function AsientoShow() {
                             <p className="text-xs uppercase tracking-wider mb-1"
                                style={{ color: 'var(--text-muted)' }}>Fecha</p>
                             <p className="text-sm font-semibold" style={{ color: 'var(--text-main)' }}>
-                                {asiento.fecha}
+                                {formatFecha(asiento.fecha)}
                             </p>
                         </div>
                         <div>
@@ -398,6 +393,38 @@ export default function AsientoShow() {
                     </div>
                 </div>
             </div>
+
+            {modalPdf && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+                     style={{ background: 'rgba(0,0,0,0.85)' }}
+                     onClick={() => setModalPdf(false)}>
+                    <div className="w-full max-w-4xl rounded-2xl overflow-hidden shadow-2xl flex flex-col"
+                         style={{ background: 'var(--bg-card)', height: '90vh' }}
+                         onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between px-4 py-3 border-b shrink-0"
+                             style={{ borderColor: 'var(--border)' }}>
+                            <h3 className="font-semibold text-sm flex items-center gap-2"
+                                style={{ color: 'var(--text-main)' }}>
+                                <Printer size={16} style={{ color: 'var(--primary)' }} />
+                                Asiento {asiento.numero}
+                            </h3>
+                            <div className="flex items-center gap-2">
+                                <a href={urlPdf} download target="_blank"
+                                   className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-all hover:opacity-90"
+                                   style={{ background: 'var(--primary)' }}>
+                                    <Download size={13} /> Descargar
+                                </a>
+                                <button onClick={() => setModalPdf(false)}
+                                    className="px-3 py-1.5 rounded-lg text-xs font-semibold border hover:opacity-80"
+                                    style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
+                                    ✕ Cerrar
+                                </button>
+                            </div>
+                        </div>
+                        <iframe src={urlPdf} className="flex-1 w-full border-0" title="PDF Asiento" />
+                    </div>
+                </div>
+            )}
 
             <ToastContainer position="top-right" autoClose={3500}
                 hideProgressBar={false} newestOnTop closeOnClick
