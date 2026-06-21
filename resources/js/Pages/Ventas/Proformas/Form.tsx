@@ -603,7 +603,7 @@ export default function Form() {
                     <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--text-muted)' }}>Observaciones</p>
                     <textarea
                         rows={3}
-                        className="w-full rounded-md border px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-[var(--primary)] transition-shadow"
+                        className="w-full rounded-md border px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-(--primary) transition-shadow"
                         style={{ background: 'transparent', borderColor: 'var(--border)', color: 'var(--text-main)' }}
                         placeholder="Observaciones adicionales para la proforma..."
                         value={observaciones}

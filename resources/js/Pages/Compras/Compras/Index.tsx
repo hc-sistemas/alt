@@ -10,16 +10,16 @@ import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
 import { formatFecha } from '@/utils/contabilidad'
 import {
-    Plus, Search, X, FileText, Download, ChevronLeft, ChevronRight,
+    Plus, Search, X, FileText, Download, ChevronLeft, ChevronRight, ChevronDown,
     Eye, ShoppingCart, Trash2, CreditCard,
-    Barcode, CheckCircle, XCircle,
+    Barcode, CheckCircle, XCircle, RefreshCw,
 } from 'lucide-react'
-import type { Compra, Proveedor, CentroCosto, PlanCuenta, Bodega, PageProps, PaginatedData, Producto, EtiquetaDetalleData } from '@/types'
+import type { Compra, Proveedor, CentroCosto, PlanCuenta, Bodega, PageProps, PaginatedData, Producto, EtiquetaDetalleData, EtiquetaGrupoProducto } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type ProductoRow = Pick<Producto, 'id' | 'codigo' | 'nombre' | 'unidad' | 'costo' | 'porcentaje_iva'>
+type ProductoRow = Pick<Producto, 'id' | 'codigo' | 'nombre' | 'unidad' | 'costo' | 'porcentaje_iva' | 'tipo' | 'pvp'>
 
 interface Filtros {
     buscar?: string
@@ -1018,7 +1018,6 @@ interface EtiquetasModalProps {
 function EtiquetasModal({ compra, onClose, abrirPdf }: EtiquetasModalProps) {
     const [cargando,  setCargando]  = useState(true)
     const [detalles,  setDetalles]  = useState<EtiquetaDetalleData[]>([])
-    const [reimprimir, setReimprimir] = useState(false)
     const [generando, setGenerando] = useState(false)
 
     useEffect(() => {
@@ -1038,15 +1037,6 @@ function EtiquetasModal({ compra, onClose, abrirPdf }: EtiquetasModalProps) {
             })
     }, [compra.id])
 
-    function actualizar(idx: number, field: 'desde' | 'num_etiquetas', value: number) {
-        setDetalles(prev => prev.map((d, i) => {
-            if (i !== idx) return d
-            if (field === 'desde')        return { ...d, desde: value, hasta: value + d.num_etiquetas - 1 }
-            if (field === 'num_etiquetas') return { ...d, num_etiquetas: value, hasta: d.desde + value - 1 }
-            return d
-        }))
-    }
-
     async function generar() {
         setGenerando(true)
         try {
@@ -1060,10 +1050,8 @@ function EtiquetasModal({ compra, onClose, abrirPdf }: EtiquetasModalProps) {
                         detalle_id:    d.id,
                         codigo:        d.codigo,
                         descripcion:   d.descripcion,
-                        desde:         d.desde,
                         num_etiquetas: d.num_etiquetas,
                     })),
-                    reimprimir,
                 }),
             })
             if (!res.ok) {
@@ -1082,9 +1070,11 @@ function EtiquetasModal({ compra, onClose, abrirPdf }: EtiquetasModalProps) {
         }
     }
 
+    const totalEtiquetas = detalles.reduce((sum, d) => sum + d.num_etiquetas, 0)
+
     return (
         <div className="modal-overlay" onClick={onClose}>
-            <div className="modal-card max-w-2xl" onClick={e => e.stopPropagation()}>
+            <div className="modal-card max-w-lg" onClick={e => e.stopPropagation()}>
                 <div className="modal-header">
                     <h2 className="flex items-center gap-2" style={{ color: 'var(--text-main)' }}>
                         <Barcode className="w-5 h-5" style={{ color: 'var(--primary)' }} />
@@ -1102,51 +1092,72 @@ function EtiquetasModal({ compra, onClose, abrirPdf }: EtiquetasModalProps) {
                         </p>
                     ) : (
                         <>
-                            <div className="border rounded-xl overflow-hidden" style={{ borderColor: 'var(--border)' }}>
-                                <table className="w-full text-xs">
-                                    <thead>
-                                        <tr style={{ background: 'rgba(245,158,11,0.05)', borderBottom: '1px solid var(--border)' }}>
-                                            {['Producto', 'Última etiq.', 'Desde', 'Hasta', '# Etiquetas'].map(h => (
-                                                <th key={h} className="text-center px-3 py-2 font-semibold uppercase tracking-wider"
-                                                    style={{ color: 'var(--text-muted)' }}>{h}</th>
-                                            ))}
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {detalles.map((d, i) => (
-                                            <tr key={d.id} className="border-t" style={{ borderColor: 'var(--border)' }}>
-                                                <td className="px-3 py-2">
-                                                    <p className="font-mono font-bold text-[11px]" style={{ color: 'var(--primary)' }}>{d.codigo}</p>
-                                                    <p className="text-[10px] truncate" style={{ color: 'var(--text-muted)', maxWidth: '200px' }}>{d.descripcion}</p>
-                                                </td>
-                                                <td className="px-2 py-2 text-center font-mono" style={{ color: 'var(--text-muted)' }}>
-                                                    {d.ultimo_correlativo || '—'}
-                                                </td>
-                                                <td className="px-2 py-2 text-center">
-                                                    <input type="number" min={1} value={d.desde}
-                                                        onChange={e => actualizar(i, 'desde', parseInt(e.target.value) || 1)}
-                                                        className="input-field w-20 text-center text-xs" />
-                                                </td>
-                                                <td className="px-2 py-2 text-center font-mono font-bold" style={{ color: 'var(--text-main)' }}>
-                                                    {d.hasta}
-                                                </td>
-                                                <td className="px-2 py-2 text-center">
-                                                    <input type="number" min={1} value={d.num_etiquetas}
-                                                        onChange={e => actualizar(i, 'num_etiquetas', parseInt(e.target.value) || 1)}
-                                                        className="input-field w-20 text-center text-xs" />
-                                                </td>
+                            {/* Tabla: CÓDIGO | PRODUCTO | CANT. | ÚLT. ETIQUETA */}
+                            <div>
+                                <p className="text-xs font-semibold uppercase tracking-wider mb-2"
+                                    style={{ color: 'var(--text-muted)' }}>
+                                    Productos en esta factura
+                                </p>
+                                <div className="border rounded-xl overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+                                    <table className="w-full text-xs">
+                                        <thead>
+                                            <tr style={{ background: 'rgba(245,158,11,0.05)', borderBottom: '1px solid var(--border)' }}>
+                                                <th className="px-3 py-2 font-semibold uppercase tracking-wider text-left"
+                                                    style={{ color: 'var(--text-muted)' }}>Código</th>
+                                                <th className="px-3 py-2 font-semibold uppercase tracking-wider text-left"
+                                                    style={{ color: 'var(--text-muted)' }}>Producto</th>
+                                                <th className="px-2 py-2 font-semibold uppercase tracking-wider text-center"
+                                                    style={{ color: 'var(--text-muted)' }}>Cant.</th>
+                                                <th className="px-2 py-2 font-semibold uppercase tracking-wider text-center"
+                                                    style={{ color: 'var(--text-muted)' }}>Últ. etiq.</th>
+                                                <th className="px-2 py-2 font-semibold uppercase tracking-wider text-center"
+                                                    style={{ color: 'var(--text-muted)' }}>Desde</th>
+                                                <th className="px-2 py-2 font-semibold uppercase tracking-wider text-center"
+                                                    style={{ color: 'var(--text-muted)' }}>Hasta</th>
                                             </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
+                                        </thead>
+                                        <tbody>
+                                            {detalles.map(d => (
+                                                <tr key={d.id} className="border-t" style={{ borderColor: 'var(--border)' }}>
+                                                    <td className="px-3 py-2 font-mono font-bold text-[11px]"
+                                                        style={{ color: 'var(--primary)' }}>
+                                                        {d.codigo}
+                                                    </td>
+                                                    <td className="px-3 py-2 text-[11px] truncate"
+                                                        style={{ color: 'var(--text-main)', maxWidth: '160px' }}>
+                                                        {d.nombre}
+                                                    </td>
+                                                    <td className="px-2 py-2 font-bold text-center text-[11px]"
+                                                        style={{ color: 'var(--text-main)' }}>
+                                                        {d.num_etiquetas}
+                                                    </td>
+                                                    <td className="px-2 py-2 text-center font-mono text-[11px]"
+                                                        style={{ color: 'var(--text-muted)' }}>
+                                                        {d.ultima_etiqueta_prefijo > 0 ? d.ultima_etiqueta_prefijo : '—'}
+                                                    </td>
+                                                    <td className="px-2 py-2 text-center font-mono text-[11px]"
+                                                        style={{ color: 'var(--text-main)' }}>
+                                                        {d.desde}
+                                                    </td>
+                                                    <td className="px-2 py-2 text-center font-mono text-[11px]"
+                                                        style={{ color: 'var(--text-main)' }}>
+                                                        {d.hasta}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
 
-                            <label className="flex items-center gap-2 cursor-pointer text-sm" style={{ color: 'var(--text-muted)' }}>
-                                <input type="checkbox" checked={reimprimir}
-                                    onChange={e => setReimprimir(e.target.checked)}
-                                    className="rounded" />
-                                Re-imprimir — no registra nuevo rango, usa los correlativos indicados
-                            </label>
+                            {/* Total */}
+                            <div className="flex justify-between items-center text-sm pt-1"
+                                style={{ borderTop: '1px solid var(--border)', paddingTop: '0.75rem' }}>
+                                <span style={{ color: 'var(--text-muted)' }}>Total de etiquetas a generar</span>
+                                <span className="font-bold text-base" style={{ color: 'var(--primary)' }}>
+                                    {totalEtiquetas}
+                                </span>
+                            </div>
                         </>
                     )}
                 </div>
@@ -1155,7 +1166,7 @@ function EtiquetasModal({ compra, onClose, abrirPdf }: EtiquetasModalProps) {
                     {!cargando && detalles.length > 0 && (
                         <button onClick={generar} disabled={generando} className="btn-primary flex items-center gap-2">
                             <Barcode className="w-4 h-4" />
-                            {generando ? 'Generando…' : 'Generar Etiquetas'}
+                            {generando ? 'Generando…' : 'Generar'}
                         </button>
                     )}
                     <button type="button" className="btn-secondary" onClick={onClose}>Cancelar</button>
@@ -1179,6 +1190,217 @@ type ModalState =
     | { type: 'none' }
     | { type: 'nueva' }
     | { type: 'etiquetas'; compra: Compra }
+    | { type: 'reimprimir-etiquetas'; compra: Compra }
+
+// ─── Modal Reimprimir Etiquetas ───────────────────────────────────────────────
+
+interface ReimprimirEtiquetasModalProps {
+    compra: Compra
+    onClose: () => void
+    abrirPdf: (url: string) => void
+}
+
+function ReimprimirEtiquetasModal({ compra, onClose, abrirPdf }: ReimprimirEtiquetasModalProps) {
+    const [cargando,      setCargando]      = useState(true)
+    const [grupos,        setGrupos]        = useState<EtiquetaGrupoProducto[]>([])
+    const [expandidos,    setExpandidos]    = useState<Set<string>>(new Set())
+    const [seleccionadas, setSeleccionadas] = useState<Set<string>>(new Set())
+    const [enviando,      setEnviando]      = useState(false)
+
+    useEffect(() => {
+        fetch(route('compras.facturas.etiquetas-listado', compra.id), {
+            headers: { Accept: 'application/json' },
+        })
+            .then(async r => {
+                const json = await r.json() as { productos?: EtiquetaGrupoProducto[]; error?: string }
+                if (!r.ok || json.error) throw new Error(json.error ?? `Error ${r.status}`)
+                const prods = json.productos ?? []
+                setGrupos(prods)
+                if (prods.length > 0) setExpandidos(new Set([prods[0].codigo]))
+                setCargando(false)
+            })
+            .catch((err: unknown) => {
+                notify.error(err instanceof Error ? err.message : 'Error al cargar etiquetas')
+                onClose()
+            })
+    }, [compra.id])
+
+    const totalEtiquetas    = grupos.reduce((s, g) => s + g.etiquetas.length, 0)
+    const cantSeleccionadas = seleccionadas.size
+
+    function toggleExpand(codigo: string) {
+        setExpandidos(prev => {
+            const next = new Set(prev)
+            next.has(codigo) ? next.delete(codigo) : next.add(codigo)
+            return next
+        })
+    }
+
+    function toggleEtiqueta(cod: string) {
+        setSeleccionadas(prev => {
+            const next = new Set(prev)
+            next.has(cod) ? next.delete(cod) : next.add(cod)
+            return next
+        })
+    }
+
+    function seleccionarGrupo(grupo: EtiquetaGrupoProducto) {
+        setSeleccionadas(prev => {
+            const next = new Set(prev)
+            grupo.etiquetas.forEach(e => next.add(e))
+            return next
+        })
+    }
+
+    function limpiarGrupo(grupo: EtiquetaGrupoProducto) {
+        setSeleccionadas(prev => {
+            const next = new Set(prev)
+            grupo.etiquetas.forEach(e => next.delete(e))
+            return next
+        })
+    }
+
+    async function enviar() {
+        if (cantSeleccionadas === 0 || enviando) return
+        setEnviando(true)
+        try {
+            const csrf = document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content ?? ''
+            const res  = await fetch(route('compras.facturas.etiquetas-reimprimir-seleccion', compra.id), {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf },
+                body:    JSON.stringify({ etiquetas: [...seleccionadas] }),
+            })
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ message: 'Error desconocido' })) as { message?: string }
+                notify.error(err.message ?? 'Error al generar PDF')
+                return
+            }
+            const blob = await res.blob()
+            abrirPdf(URL.createObjectURL(blob))
+            onClose()
+        } catch {
+            notify.error('Error al conectar con el servidor')
+        } finally {
+            setEnviando(false)
+        }
+    }
+
+    return (
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal-card max-w-xl" onClick={e => e.stopPropagation()}>
+                <div className="modal-header">
+                    <h2 className="flex items-center gap-2" style={{ color: 'var(--text-main)' }}>
+                        <RefreshCw className="w-5 h-5" style={{ color: 'var(--primary)' }} />
+                        Reimprimir Etiquetas — {compra.num_documento}
+                    </h2>
+                    <button className="modal-close" onClick={onClose}><X className="w-4 h-4" /></button>
+                </div>
+
+                <div className="modal-body" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
+                    {cargando ? (
+                        <p className="text-center py-8 text-sm" style={{ color: 'var(--text-muted)' }}>Cargando etiquetas…</p>
+                    ) : grupos.length === 0 ? (
+                        <p className="text-center py-8 text-sm" style={{ color: 'var(--text-muted)' }}>
+                            No hay etiquetas generadas para esta factura.
+                        </p>
+                    ) : (
+                        <div className="space-y-3">
+                            {grupos.map(grupo => {
+                                const expandido  = expandidos.has(grupo.codigo)
+                                const todosSelec = grupo.etiquetas.every(e => seleccionadas.has(e))
+                                return (
+                                    <div key={grupo.codigo} className="border rounded-xl overflow-hidden"
+                                        style={{ borderColor: 'var(--border)' }}>
+
+                                        {/* Header accordion */}
+                                        <button
+                                            onClick={() => toggleExpand(grupo.codigo)}
+                                            className="w-full flex items-center gap-2 px-4 py-2.5 text-left text-sm font-semibold transition-colors hover:opacity-80"
+                                            style={{ background: 'rgba(245,158,11,0.06)', color: 'var(--text-main)' }}>
+                                            <ChevronDown
+                                                className={cn('w-4 h-4 shrink-0 transition-transform', !expandido && '-rotate-90')}
+                                                style={{ color: 'var(--primary)' }} />
+                                            <span className="font-mono" style={{ color: 'var(--primary)' }}>{grupo.codigo}</span>
+                                            <span className="font-normal truncate" style={{ color: 'var(--text-muted)' }}>
+                                                — {grupo.nombre}
+                                            </span>
+                                            <span className="ml-auto shrink-0 text-xs font-normal"
+                                                style={{ color: 'var(--text-muted)' }}>
+                                                {grupo.etiquetas.length} etiq.
+                                            </span>
+                                        </button>
+
+                                        {expandido && (
+                                            <div className="px-4 py-3 space-y-3"
+                                                style={{ borderTop: '1px solid var(--border)' }}>
+
+                                                {/* Grid de checkboxes */}
+                                                <div className="grid grid-cols-3 gap-x-2 gap-y-1.5">
+                                                    {grupo.etiquetas.map(cod => (
+                                                        <label key={cod}
+                                                            className="flex items-center gap-1.5 cursor-pointer group">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={seleccionadas.has(cod)}
+                                                                onChange={() => toggleEtiqueta(cod)}
+                                                                className="w-3.5 h-3.5 shrink-0 accent-amber-500"
+                                                            />
+                                                            <span className="font-mono text-[10px] truncate group-hover:opacity-70"
+                                                                style={{ color: 'var(--text-main)' }}>
+                                                                {cod}
+                                                            </span>
+                                                        </label>
+                                                    ))}
+                                                </div>
+
+                                                {/* Botones de grupo */}
+                                                <div className="flex gap-2 pt-1"
+                                                    style={{ borderTop: '1px solid var(--border)' }}>
+                                                    <button
+                                                        onClick={() => seleccionarGrupo(grupo)}
+                                                        disabled={todosSelec}
+                                                        className="btn-secondary text-xs px-2.5 py-1 disabled:opacity-40">
+                                                        Seleccionar todos
+                                                    </button>
+                                                    <button
+                                                        onClick={() => limpiarGrupo(grupo)}
+                                                        className="btn-secondary text-xs px-2.5 py-1">
+                                                        Quitar selección
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )
+                            })}
+                        </div>
+                    )}
+                </div>
+
+                <div className="modal-footer flex items-center justify-between">
+                    <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                        Seleccionadas:{' '}
+                        <strong style={{ color: cantSeleccionadas > 0 ? 'var(--primary)' : 'var(--text-muted)' }}>
+                            {cantSeleccionadas}
+                        </strong>
+                        {' '}de {totalEtiquetas}
+                    </span>
+                    <div className="flex gap-2">
+                        <button className="btn-secondary" onClick={onClose}>Cancelar</button>
+                        <button
+                            className="btn-primary"
+                            disabled={cantSeleccionadas === 0 || enviando}
+                            onClick={enviar}>
+                            {enviando ? 'Generando…' : 'Reimprimir Seleccionadas'}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    )
+}
+
+// ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function ComprasIndex() {
     const { compras, proveedores, centros, cuentas, bodegas, productos, filtros, flash } = usePage<Props>().props
@@ -1191,6 +1413,10 @@ export default function ComprasIndex() {
     const [modalPdf, setModalPdf] = useState(false)
     const [urlPdf,   setUrlPdf]   = useState('')
     const abrirPdf = (url: string) => { setUrlPdf(url); setModalPdf(true) }
+
+    function reimprimir(c: Compra) {
+        setModal({ type: 'reimprimir-etiquetas', compra: c })
+    }
 
     function confirmarRecepcion(c: Compra) {
         if ((c as any).recepcion_bodega) {
@@ -1485,13 +1711,24 @@ export default function ComprasIndex() {
                             <div className="col-span-2 flex justify-end items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                 {c.estado === 'pendiente' && (
                                     <>
-                                        <button
-                                            onClick={() => setModal({ type: 'etiquetas', compra: c })}
-                                            title="Generar etiquetas"
-                                            className="h-7 w-7 flex items-center justify-center rounded hover:bg-amber-500/20 transition-colors"
-                                            style={{ color: 'var(--primary)' }}>
-                                            <Barcode className="w-4 h-4" />
-                                        </button>
+                                        {c.tiene_productos_codificados > 0 && (
+                                            <>
+                                                <button
+                                                    onClick={() => setModal({ type: 'etiquetas', compra: c })}
+                                                    title="Generar etiquetas"
+                                                    className="h-7 w-7 flex items-center justify-center rounded hover:bg-amber-500/20 transition-colors"
+                                                    style={{ color: 'var(--primary)' }}>
+                                                    <Barcode className="w-4 h-4" />
+                                                </button>
+                                                <button
+                                                    onClick={() => reimprimir(c)}
+                                                    disabled={!c.has_etiquetas}
+                                                    title={c.has_etiquetas ? 'Reimprimir etiquetas' : 'No hay etiquetas generadas'}
+                                                    className="h-7 w-7 flex items-center justify-center rounded hover:bg-blue-500/20 text-blue-500 dark:text-blue-400 transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent">
+                                                    <RefreshCw className="w-4 h-4" />
+                                                </button>
+                                            </>
+                                        )}
                                         <button
                                             onClick={() => confirmarRecepcion(c)}
                                             title="Confirmar recepción manual"
@@ -1513,13 +1750,15 @@ export default function ComprasIndex() {
                                 )}
                                 {c.estado === 'activa' && (
                                     <>
-                                        <button
-                                            onClick={() => setModal({ type: 'etiquetas', compra: c })}
-                                            title="Re-imprimir etiquetas"
-                                            className="h-7 w-7 flex items-center justify-center rounded hover:bg-amber-500/20 transition-colors"
-                                            style={{ color: 'var(--primary)' }}>
-                                            <Barcode className="w-4 h-4" />
-                                        </button>
+                                        {c.tiene_productos_codificados > 0 && (
+                                            <button
+                                                onClick={() => reimprimir(c)}
+                                                disabled={!c.has_etiquetas}
+                                                title={c.has_etiquetas ? 'Reimprimir etiquetas' : 'No hay etiquetas generadas'}
+                                                className="h-7 w-7 flex items-center justify-center rounded hover:bg-blue-500/20 text-blue-500 dark:text-blue-400 transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent">
+                                                <RefreshCw className="w-4 h-4" />
+                                            </button>
+                                        )}
                                         <Link href={route('compras.facturas.show', c.id)}
                                             title="Ver detalle"
                                             className="h-7 w-7 flex items-center justify-center rounded hover:bg-blue-500/20 text-blue-500 dark:text-blue-400 transition-colors">
@@ -1592,6 +1831,13 @@ export default function ComprasIndex() {
             )}
             {modal.type === 'etiquetas' && (
                 <EtiquetasModal
+                    compra={modal.compra}
+                    onClose={() => setModal({ type: 'none' })}
+                    abrirPdf={abrirPdf}
+                />
+            )}
+            {modal.type === 'reimprimir-etiquetas' && (
+                <ReimprimirEtiquetasModal
                     compra={modal.compra}
                     onClose={() => setModal({ type: 'none' })}
                     abrirPdf={abrirPdf}

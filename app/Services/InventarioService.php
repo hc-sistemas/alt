@@ -49,21 +49,20 @@ class InventarioService implements InventarioServiceInterface
             $empresaId = DB::table('bodegas')->where('id', $bodegaId)->value('empresa_id');
 
             DB::table('inventario_movimientos')->insert([
-                'empresa_id'       => $empresaId,
-                'producto_id'      => $productoId,
-                'bodega_destino_id'=> $bodegaId,
-                'tipo_movimiento'  => 'entrada',
-                'documento_tipo'   => strtoupper($docTipo),
-                'documento_id'     => $docId,
-                'documento_numero' => $docNumero,
-                'cantidad'         => $cantidad,
-                'costo_unitario'   => round($costoUnitario, 4),
-                'costo_total'      => round($cantidad * $costoUnitario, 4),
-                'fecha'            => now()->toDateString(),
-                'hora'             => now()->toTimeString(),
-                'usuario_id'       => Auth::id(),
-                'observacion'      => $observacion,
-                'created_at'       => now(),
+                'empresa_id'     => $empresaId,
+                'producto_id'    => $productoId,
+                'bodega_id'      => $bodegaId,
+                'tipo'           => 'entrada',
+                'doc_tipo'       => strtoupper($docTipo),
+                'doc_id'         => $docId,
+                'cantidad'       => $cantidad,
+                'costo_unitario' => round($costoUnitario, 4),
+                'costo_total'    => round($cantidad * $costoUnitario, 4),
+                'stock_anterior' => $cantActual,
+                'stock_nuevo'    => $nuevaCant,
+                'usuario_id'     => Auth::id(),
+                'notas'          => $observacion,
+                'created_at'     => now(),
             ]);
         });
     }
@@ -102,21 +101,20 @@ class InventarioService implements InventarioServiceInterface
             $empresaId = DB::table('bodegas')->where('id', $bodegaId)->value('empresa_id');
 
             DB::table('inventario_movimientos')->insert([
-                'empresa_id'       => $empresaId,
-                'producto_id'      => $productoId,
-                'bodega_origen_id' => $bodegaId,
-                'tipo_movimiento'  => 'salida',
-                'documento_tipo'   => strtoupper($docTipo),
-                'documento_id'     => $docId,
-                'documento_numero' => $docNumero,
-                'cantidad'         => $cantidad,
-                'costo_unitario'   => $costoPromedio,
-                'costo_total'      => round($cantidad * $costoPromedio, 4),
-                'fecha'            => now()->toDateString(),
-                'hora'             => now()->toTimeString(),
-                'usuario_id'       => Auth::id(),
-                'observacion'      => $observacion,
-                'created_at'       => now(),
+                'empresa_id'     => $empresaId,
+                'producto_id'    => $productoId,
+                'bodega_id'      => $bodegaId,
+                'tipo'           => 'salida',
+                'doc_tipo'       => strtoupper($docTipo),
+                'doc_id'         => $docId,
+                'cantidad'       => $cantidad,
+                'costo_unitario' => $costoPromedio,
+                'costo_total'    => round($cantidad * $costoPromedio, 4),
+                'stock_anterior' => $cantActual,
+                'stock_nuevo'    => $nuevaCant,
+                'usuario_id'     => Auth::id(),
+                'notas'          => $observacion,
+                'created_at'     => now(),
             ]);
         });
     }

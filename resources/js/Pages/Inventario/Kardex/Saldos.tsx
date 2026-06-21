@@ -49,12 +49,12 @@ export default function KardexSaldos() {
             const nombre     = s.producto_nombre ?? s.producto?.nombre ?? '—'
             const codigo     = s.producto_codigo ?? s.producto?.codigo ?? '—'
             const bodega     = s.bodega?.nombre ?? `Bodega #${s.bodega_id}`
-            const valorTotal = Number(s.cantidad) * Number(s.costo_promedio)
+            const valorTotal = Number(s.stock_actual) * Number(s.costo_promedio)
             return {
                 'Código Producto': codigo,
                 'Producto':        nombre,
                 'Bodega':          bodega,
-                'Cantidad':        Number(s.cantidad),
+                'Cantidad':        Number(s.stock_actual),
                 'Costo Promedio':  Number(s.costo_promedio),
                 'Valor Total':     Number(valorTotal.toFixed(2)),
             }
@@ -154,9 +154,9 @@ export default function KardexSaldos() {
                                     </td>
                                 </tr>
                             ) : saldos.data.map(saldo => {
-                                const valorTotal = Number(saldo.cantidad) * Number(saldo.costo_promedio)
+                                const valorTotal = Number(saldo.stock_actual) * Number(saldo.costo_promedio)
                                 const esCritico = saldo.producto_stock_minimo !== undefined &&
-                                    Number(saldo.cantidad) <= Number(saldo.producto_stock_minimo)
+                                    Number(saldo.stock_actual) <= Number(saldo.producto_stock_minimo)
                                 const nombre = saldo.producto_nombre ?? saldo.producto?.nombre ?? '—'
                                 const codigo = saldo.producto_codigo ?? saldo.producto?.codigo ?? '—'
                                 const bodegaNombre = saldo.bodega?.nombre ?? `Bodega #${saldo.bodega_id}`
@@ -171,7 +171,7 @@ export default function KardexSaldos() {
                                         <td className="px-3 py-2.5 font-mono" style={{ color: 'var(--text-muted)' }}>
                                             {codigo}
                                         </td>
-                                        <td className="px-3 py-2.5 max-w-[180px]">
+                                        <td className="px-3 py-2.5 max-w-45">
                                             <span className="font-medium truncate block" style={{ color: 'var(--text-main)' }}>
                                                 {nombre}
                                             </span>
@@ -187,7 +187,7 @@ export default function KardexSaldos() {
                                                     </span>
                                                 )}
                                                 <span style={{ color: esCritico ? '#EF4444' : 'var(--text-main)' }}>
-                                                    {Number(saldo.cantidad).toFixed(0)}
+                                                    {Number(saldo.stock_actual).toFixed(0)}
                                                 </span>
                                             </div>
                                         </td>

@@ -101,7 +101,7 @@ export default function KardexIndex() {
             <div className="p-6 space-y-6">
                 {/* Cabecera de filtros */}
                 <div className="flex gap-3 flex-wrap items-end">
-                    <div className="flex-1 min-w-[220px]">
+                    <div className="flex-1 min-w-55">
                         <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>BUSCAR POR</label>
                         <div className="relative">
                             <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
@@ -354,7 +354,7 @@ function ProductoKardexBlock({
                                 <td className={`${tdBase} whitespace-nowrap`} style={{ color: 'var(--text-muted)' }}>
                                     {m.documento_numero ?? (m.documento_id ? `#${m.documento_id}` : '—')}
                                 </td>
-                                <td className={`${tdBase} max-w-[140px] truncate`}
+                                <td className={`${tdBase} max-w-35 truncate`}
                                     style={{ color: 'var(--text-muted)', borderRight: groupBorder }}
                                     title={m.observacion ?? ''}>
                                     {m.observacion ?? '—'}

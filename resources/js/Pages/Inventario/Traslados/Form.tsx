@@ -226,7 +226,7 @@ export default function TrasladoForm() {
                                 const insuf    = item.stock_disponible !== null && cantidad > item.stock_disponible
                                 return (
                                     <tr key={i} className="border-t" style={{ borderColor: 'var(--border)' }}>
-                                        <td className="px-4 py-2.5 min-w-[260px]">
+                                        <td className="px-4 py-2.5 min-w-65">
                                             {item.producto_nombre ? (
                                                 <div className="flex items-center gap-2 px-3 py-2 rounded-md border"
                                                     style={{ borderColor: 'var(--primary)', background: 'rgba(245,158,11,0.06)' }}>

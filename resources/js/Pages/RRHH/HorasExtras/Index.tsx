@@ -19,7 +19,7 @@ interface ColaboradorItem {
     sueldo_base: number
 }
 
-interface HoraExtra extends HorasExtrasAprobacion {
+type HoraExtra = Omit<HorasExtrasAprobacion, 'colaborador' | 'aprobado_por_usuario'> & {
     colaborador?: { id: number; apellidos: string; nombres: string; sueldo_base: number }
     aprobado_por_usuario?: { nombre: string }
 }

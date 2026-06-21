@@ -340,7 +340,7 @@ function LiquidarModal({ importacion, onClose }: {
         router.patch(route('compras.importaciones.liquidar', importacion.id), {
             metodo_prorrateo:  metodo,
             fecha_liquidacion: fechaLiquidacion,
-            costos_extra:      costosValidos,
+            costos_extra:      costosValidos as unknown as { [key: string]: string }[],
         }, {
             onSuccess: () => { notify.ok(`Importación "${importacion.nombre}" liquidada`); onClose() },
             onError:   (errs) => { notify.error('Error: ' + Object.values(errs).join(', ')); setProcessing(false) },

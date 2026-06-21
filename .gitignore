@@ -33,3 +33,6 @@ _ide_helper_models.php
 Sistema Altamira.pdf
 database/altamira_schema.sql
 *.backup
+
+# Backups locales de BD
+database/backup_*.sql

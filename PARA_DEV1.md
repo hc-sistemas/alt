@@ -1,7 +1,7 @@
 # Handoff Dev2 → Dev1
 
 **Rama:** `feature/dev2-contabilidad-compras`  
-**Fecha:** 2026-06-18
+**Fecha:** 2026-06-21
 
 ---
 
@@ -18,6 +18,7 @@ Todo el trabajo de Dev2: Contabilidad, Compras, Inventario, Bancos, Personas y R
 | Contabilidad / Parámetros contables | ✅ |
 | Contabilidad / Reportes (libro diario, mayor) | ✅ |
 | Compras / Facturas de compra | ✅ |
+| Compras / Etiquetas de productos | ✅ |
 | Compras / Proveedores | ✅ |
 | Compras / Cuentas por Pagar | ✅ |
 | Compras / Anticipos proveedores | ✅ |
@@ -69,7 +70,7 @@ Siempre verificar con `information_schema.columns` o tinker antes de usar un nom
 
 ## Base de datos
 
-El archivo `database/altamira_dump_dev2.sql` es el dump completo de la BD de producción al 2026-06-18.
+El archivo `database/altamira_dump_dev2.sql` es el dump completo de la BD de producción al 2026-06-21.
 
 Para restaurar en local:
 ```bash
@@ -138,6 +139,43 @@ SESSION_DRIVER=file
 QUEUE_CONNECTION=sync
 APP_URL=http://127.0.0.1:8000
 ```
+
+---
+
+## Etiquetas de productos (Compras)
+
+### Comportamiento
+- **Generar Etiquetas**: modal con desglose por producto, correlativo independiente por prefijo de categoría. Correlativos calculados como `DESDE = max(etiqueta_num) + 1` en `etiquetas_productos`.
+- **Reimprimir Etiquetas**: checklist agrupado por producto, selección individual de etiquetas dañadas/extraviadas.
+- **Formato**: térmico 90×35 mm, una etiqueta por página, código de barras CODE128.
+- **Botón oculto**: si la factura solo tiene líneas de gasto/servicio (`producto_id = NULL`), los botones Etiquetas y Reimprimir se ocultan — no es un error, es correcto.
+
+### Campo en la query del index
+`CompraController::index()` usa `withCount` con alias `tiene_productos_codificados` (0 = sin productos, >0 = tiene):
+```php
+->withCount(['detalles as tiene_productos_codificados' => fn($q) => $q->whereNotNull('producto_id')])
+```
+
+---
+
+## Comando reset de datos de prueba
+
+Para revertir todas las facturas `activa` a `pendiente` (uso exclusivo en desarrollo):
+
+```bash
+php artisan altamira:reset-facturas-pendiente
+php artisan altamira:reset-facturas-pendiente --force  # sin confirmación
+```
+
+Qué hace (dentro de una transacción):
+1. Elimina movimientos de inventario de esas compras
+2. Recalcula `inventario_saldos.stock_actual`
+3. Elimina `cuentas_pagar` asociadas
+4. Nula `compras.asiento_id` y elimina los asientos contables (cascade a `asiento_detalles`)
+5. Revierte `compras.estado = 'pendiente'`
+6. `TRUNCATE etiquetas_productos`
+
+**NO exponer como ruta web ni usar en producción.**
 
 ---
 

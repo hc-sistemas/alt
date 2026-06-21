@@ -23,7 +23,7 @@ export default function VentasMensuales({ data = dataVacia }: Props) {
                     <XAxis dataKey="mes" tick={{ fontSize: 11, fill: '#94A3B8' }} axisLine={false} tickLine={false} />
                     <YAxis tickFormatter={formatY} tick={{ fontSize: 11, fill: '#94A3B8' }} axisLine={false} tickLine={false} />
                     <Tooltip
-                        formatter={(value: number) => [`$${value.toLocaleString()}`, '']}
+                        formatter={(value) => [`$${Number(value).toLocaleString()}`, '']}
                         contentStyle={{
                             background: '#1E293B',
                             border: '1px solid #334155',

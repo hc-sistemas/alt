@@ -18,8 +18,6 @@ export function confirmarEliminar(nombre: string): Promise<boolean> {
         background: isDark ? '#1E293B' : '#FFFFFF',
         color: isDark ? '#F1F5F9' : '#0F172A',
 
-        borderRadius: '12px',
-
         customClass: {
             popup: 'swal-altamira',
             confirmButton: 'swal-btn-confirm',

@@ -261,7 +261,7 @@ export default function Form() {
                     <Label style={{ color: 'var(--text-main)' }}>Motivo de la Nota de Crédito *</Label>
                     <textarea
                         rows={3}
-                        className="mt-2 w-full rounded-md border px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-[var(--primary)] transition-shadow"
+                        className="mt-2 w-full rounded-md border px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-(--primary) transition-shadow"
                         style={{ background: 'transparent', borderColor: 'var(--border)', color: 'var(--text-main)' }}
                         placeholder="Indique el motivo de la devolución o nota de crédito..."
                         value={motivo}

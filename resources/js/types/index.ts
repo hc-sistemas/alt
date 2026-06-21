@@ -11,6 +11,9 @@ export interface Empresa {
     obligado_contabilidad: boolean
     contribuyente_especial: boolean
     numero_resolucion_agente_retencion?: string
+    direccion_matriz?: string | null
+    email_notificaciones?: string | null
+    telefono?: string | null
     estado: boolean
 }
 
@@ -298,6 +301,23 @@ export interface InventarioMovimiento {
     usuario?: { nombre: string }
 }
 
+export interface KardexMovimientoExtendido {
+    id: number
+    fecha: string
+    hora: string | null
+    tipo: string
+    tipo_descriptivo: string
+    documento_tipo: string | null
+    documento_numero: string | null
+    documento_id: number | null
+    observacion: string | null
+    es_ingreso: boolean | null
+    cantidad: number
+    costo_unitario: number
+    costo_total: number
+    saldo_posterior: number
+}
+
 export interface TrasladoBodega {
     id: number
     empresa_id: number
@@ -459,6 +479,14 @@ export interface PaginatedData<T> {
     total: number
     from: number
     to: number
+    meta?: {
+        current_page: number
+        last_page: number
+        per_page: number
+        total: number
+        from: number
+        to: number
+    }
 }
 
 // ── Compras ───────────────────────────────────────────────────────────────────
@@ -527,8 +555,16 @@ export interface Compra {
     tiene_pago: boolean
     concepto: string | null
     estado: 'pendiente' | 'activa' | 'anulada'
+    has_etiquetas: boolean
+    tiene_productos_codificados: number
     created_at: string
     detalles?: CompraDetalle[]
+}
+
+export interface EtiquetaGrupoProducto {
+    codigo: string
+    nombre: string
+    etiquetas: string[]
 }
 
 export interface EtiquetaDetalleData {
@@ -538,7 +574,8 @@ export interface EtiquetaDetalleData {
     nombre: string
     descripcion: string
     cantidad: number
-    ultimo_correlativo: number
+    prefijo: string
+    ultima_etiqueta_prefijo: number
     desde: number
     hasta: number
     num_etiquetas: number

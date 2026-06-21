@@ -41,4 +41,15 @@ class EtiquetaProducto extends Model
     {
         return (int) static::where('producto_id', $productoId)->max('correlativo_hasta');
     }
+
+    public static function ultimoCorrelativoPorPrefijo(string $prefijo): int
+    {
+        return (int) (static::where('codigo_producto', 'LIKE', $prefijo . '-%')
+            ->max('correlativo_hasta') ?? 0);
+    }
+
+    public static function extraerPrefijo(string $codigo): string
+    {
+        return explode('-', $codigo)[0];
+    }
 }

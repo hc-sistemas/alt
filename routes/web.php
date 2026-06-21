@@ -158,9 +158,12 @@ Route::middleware('auth')->group(function () {
         Route::get('/{compra}/pdf',               [CompraController::class, 'pdfIndividual'])    ->name('pdf-individual');
         Route::patch('/{compra}/anular',          [CompraController::class, 'anular'])            ->name('anular');
         Route::post('/{compra}/activar',          [CompraController::class, 'activar'])           ->name('activar');
-        Route::get('/{compra}/etiquetas-data',      [CompraController::class, 'etiquetasData'])       ->name('etiquetas-data');
-        Route::post('/{compra}/etiquetas-pdf',     [CompraController::class, 'generarEtiquetasPdf']) ->name('etiquetas-pdf');
-        Route::get('/{compra}/verificar-anulacion',[CompraController::class, 'verificarAnulacion'])  ->name('verificar-anulacion');
+        Route::get('/{compra}/etiquetas-data',                  [CompraController::class, 'etiquetasData'])           ->name('etiquetas-data');
+        Route::post('/{compra}/etiquetas-pdf',                  [CompraController::class, 'generarEtiquetasPdf'])     ->name('etiquetas-pdf');
+        Route::get('/{compra}/etiquetas-reimprimir',            [CompraController::class, 'reimprimirEtiquetasPdf'])  ->name('etiquetas-reimprimir');
+        Route::get('/{compra}/etiquetas-listado',               [CompraController::class, 'etiquetasListado'])         ->name('etiquetas-listado');
+        Route::post('/{compra}/etiquetas-reimprimir-seleccion', [CompraController::class, 'reimprimirSeleccion'])      ->name('etiquetas-reimprimir-seleccion');
+        Route::get('/{compra}/verificar-anulacion',             [CompraController::class, 'verificarAnulacion'])       ->name('verificar-anulacion');
     });
 
     // Compras - CxP
