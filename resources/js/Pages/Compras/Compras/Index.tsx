@@ -386,7 +386,7 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, c
                     codigo:          p.codigo,
                     descripcion:     p.nombre,
                     precio_unitario: String(p.costo),
-                    porcentaje_iva:  String(p.porcentaje_iva),
+                    porcentaje_iva:  Number(p.porcentaje_iva),
                 }
             }),
         }))

@@ -33,7 +33,7 @@ class TrasladoController extends Controller
 
         $resultados = InventarioSaldo::with('producto.marca')
             ->where('bodega_id', $bodegaId)
-            ->where('cantidad', '>', 0)
+            ->where('stock_actual', '>', 0)
             ->whereHas('producto', function ($q) use ($empresaId, $query) {
                 $q->where('empresa_id', $empresaId)
                   ->where('estado', true)
@@ -52,7 +52,7 @@ class TrasladoController extends Controller
                 'nombre'         => $s->producto->nombre,
                 'marca'          => $s->producto->marca?->nombre,
                 'requiere_serie' => $s->producto->requiere_serie,
-                'disponible'     => (float) $s->cantidad,
+                'disponible'     => (float) $s->stock_actual,
             ]);
 
         return response()->json(['resultados' => $resultados]);

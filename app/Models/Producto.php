@@ -29,6 +29,7 @@ class Producto extends Model
             'costo'          => 'float',
             'pvp'            => 'float',
             'pvd'            => 'float',
+            'porcentaje_iva' => 'float',
         ];
     }
 

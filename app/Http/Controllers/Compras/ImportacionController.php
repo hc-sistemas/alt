@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Compras;
 use App\Http\Controllers\Controller;
 use App\Models\Importacion;
 use App\Models\InventarioSaldo;
+use App\Models\Producto;
 use App\Models\Proveedor;
 use App\Models\Compra;
 use Illuminate\Http\RedirectResponse;
@@ -106,7 +107,7 @@ class ImportacionController extends Controller
         }
 
         $request->validate([
-            'metodo_prorrateo'           => 'required|in:cantidad,precio,peso',
+            'metodo_prorrateo'           => 'required|in:cantidad,precio',
             'fecha_liquidacion'          => 'required|date',
             'costos_extra'               => 'nullable|array',
             'costos_extra.*.descripcion' => 'required_with:costos_extra|string|max:200',
@@ -133,15 +134,17 @@ class ImportacionController extends Controller
 
         $bases = $compras->map(fn($compra) => match ($metodo) {
             'cantidad' => (float) $compra->detalles->sum('cantidad'),
-            'peso'     => (float) $compra->detalles->sum('peso_total'),
             default    => (float) $compra->total,
         });
 
         $baseTotal = (float) $bases->sum();
 
-        DB::transaction(function () use ($compras, $bases, $baseTotal, $totalCostosExtra) {
-            if ($baseTotal <= 0) return;
+        if ($baseTotal <= 0) {
+            return back()->with('error',
+                'No se puede prorratear: las compras asociadas no tienen cantidad ni valor registrado.');
+        }
 
+        DB::transaction(function () use ($compras, $bases, $baseTotal, $totalCostosExtra) {
             $compras->each(function ($compra, $idx) use ($bases, $baseTotal, $totalCostosExtra) {
                 $proporcion    = $bases[$idx] / $baseTotal;
                 $costoAsignado = $totalCostosExtra * $proporcion;
@@ -154,11 +157,17 @@ class ImportacionController extends Controller
 
                     $costoPorUnitario = ($costoAsignado * ($detalle->cantidad / $cantidadTotal))
                         / $detalle->cantidad;
+                    $costoPorUnitarioRedondeado = round($costoPorUnitario, 4);
 
                     $saldo = InventarioSaldo::where('producto_id', $detalle->producto_id)->first();
-                    if ($saldo && $saldo->cantidad > 0) {
-                        $saldo->increment('costo_promedio', round($costoPorUnitario, 4));
+                    if ($saldo && $saldo->stock_actual > 0) {
+                        $saldo->increment('costo_promedio', $costoPorUnitarioRedondeado);
                     }
+
+                    // Error 2: actualizar también productos.costo con el costo aterrizado
+                    $nuevoCosto = round((float) $detalle->precio_unitario + $costoPorUnitario, 4);
+                    Producto::where('id', $detalle->producto_id)
+                        ->update(['costo' => $nuevoCosto]);
                 }
             });
         });

@@ -313,7 +313,7 @@ function LiquidarModal({ importacion, onClose }: {
     importacion: ImportacionRow
     onClose: () => void
 }) {
-    const [metodo,          setMetodo]    = useState<'cantidad' | 'precio' | 'peso'>('cantidad')
+    const [metodo,          setMetodo]    = useState<'cantidad' | 'precio'>('cantidad')
     const [fechaLiquidacion, setFecha]   = useState(new Date().toISOString().slice(0, 10))
     const [costos,          setCostos]   = useState<CostoExtra[]>([{ descripcion: '', monto: '' }])
     const [processing,      setProcessing] = useState(false)
@@ -425,7 +425,6 @@ function LiquidarModal({ importacion, onClose }: {
                             className="input-field select-field">
                             <option value="cantidad">Por cantidad (unidades)</option>
                             <option value="precio">Por precio (valor)</option>
-                            <option value="peso">Por peso</option>
                         </select>
                     </div>
 
