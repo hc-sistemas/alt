@@ -187,6 +187,7 @@ Route::middleware('auth')->group(function () {
     Route::prefix('compras/importaciones')->name('compras.importaciones.')->group(function () {
         Route::get('/',                         [ImportacionController::class, 'index'])   ->name('index');
         Route::post('/',                        [ImportacionController::class, 'store'])   ->name('store');
+        Route::get('/{importacion}/detalle',    [ImportacionController::class, 'detalle']) ->name('detalle');
         Route::put('/{importacion}',            [ImportacionController::class, 'update'])  ->name('update');
         Route::patch('/{importacion}/liquidar', [ImportacionController::class, 'liquidar'])->name('liquidar');
     });

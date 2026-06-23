@@ -7,6 +7,7 @@ use App\Models\InventarioSaldo;
 use App\Models\Producto;
 use App\Models\Proveedor;
 use App\Models\Compra;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -27,13 +28,16 @@ class ImportacionController extends Controller
                 'id'                => $i->id,
                 'nombre'            => $i->nombre,
                 'num_invoice'       => $i->num_invoice,
+                'agente_aduanero'   => $i->agente_aduanero,
                 'proveedor'         => $i->proveedor?->razon_social,
                 'pais_embarque'     => $i->pais_embarque,
                 'costo_fob'         => $i->costo_fob,
+                'divisa'            => $i->divisa,
                 'total_costos_extra'=> $i->total_costos_extra,
                 'costo_total'       => $i->costo_total,
-                'fecha_partida'     => $i->fecha_partida?->format('d/m/Y'),
-                'fecha_llegada'     => $i->fecha_llegada?->format('d/m/Y'),
+                'metodo_prorrateo'  => $i->metodo_prorrateo,
+                'fecha_partida'     => $i->fecha_partida?->format('Y-m-d'),
+                'fecha_llegada'     => $i->fecha_llegada?->format('Y-m-d'),
                 'fecha_liquidacion' => $i->fecha_liquidacion?->format('d/m/Y'),
                 'estado'            => $i->estado,
                 'estado_label'      => $i->estado_label,
@@ -186,5 +190,52 @@ class ImportacionController extends Controller
         return back()->with('success',
             "Importación {$importacion->nombre} liquidada. " .
             'Costo total: $' . number_format($costoTotal, 2));
+    }
+
+    public function detalle(Importacion $importacion): JsonResponse
+    {
+        $empresaId = session('empresa_activa_id');
+        if ($importacion->empresa_id !== $empresaId) abort(403);
+
+        $compras = Compra::where('importacion_id', $importacion->id)
+            ->with(['detalles.producto'])
+            ->get();
+
+        $productos = $compras
+            ->where('gasto_no_deducible', false)
+            ->flatMap(fn($c) => $c->detalles)
+            ->filter(fn($d) => $d->producto_id !== null)
+            ->map(fn($d) => [
+                'codigo'          => $d->producto?->codigo ?? '—',
+                'nombre'          => $d->descripcion,
+                'cantidad'        => (float) $d->cantidad,
+                'precio_unitario' => (float) $d->precio_unitario,
+                'subtotal'        => (float) $d->subtotal,
+                'costo_actual'    => $d->producto ? (float) $d->producto->costo : null,
+            ])
+            ->values();
+
+        $gastos = $compras
+            ->where('gasto_no_deducible', true)
+            ->map(fn($c) => [
+                'concepto'      => $c->concepto ?: $c->num_documento,
+                'num_documento' => $c->num_documento,
+                'monto'         => (float) $c->total,
+            ])
+            ->values();
+
+        $totalGastosFact = $gastos->sum('monto');
+
+        return response()->json([
+            'productos' => $productos,
+            'gastos'    => $gastos,
+            'totales'   => [
+                'fob'    => (float) $importacion->costo_fob,
+                'gastos' => $totalGastosFact > 0
+                    ? $totalGastosFact
+                    : (float) $importacion->total_costos_extra,
+                'total'  => (float) $importacion->costo_total,
+            ],
+        ]);
     }
 }
