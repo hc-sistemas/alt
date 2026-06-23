@@ -352,4 +352,75 @@ Route::middleware('auth')->group(function () {
             Route::get('/{id}/zip',                [NominaController::class, 'pdfMasivo'])     ->name('pdf-masivo');
         });
     });
+
+    // ── Ventas ─────────────────────────────────────────────────────────────────
+
+    // Ventas - Aprobaciones
+    Route::post('ventas/aprobacion/validar', [AprobacionController::class, 'validar'])->name('ventas.aprobacion.validar');
+
+    // Ventas - Facturas
+    Route::prefix('ventas/facturas')->name('ventas.facturas.')->group(function () {
+        Route::get('/',                       [FacturaController::class, 'index'])          ->name('index');
+        Route::get('/crear',                  [FacturaController::class, 'create'])         ->name('create');
+        Route::post('/',                      [FacturaController::class, 'store'])          ->name('store');
+        Route::get('/{factura}',              [FacturaController::class, 'show'])           ->name('show');
+        Route::patch('/{factura}/anular',     [FacturaController::class, 'anular'])         ->name('anular');
+        Route::post('/{factura}/enviar-sri',  [FacturaController::class, 'enviarSri'])      ->name('enviar-sri');
+        Route::post('/cliente-guardar',       [FacturaController::class, 'clienteGuardar']) ->name('cliente-guardar');
+    });
+
+    // Ventas - Prefacturas
+    Route::prefix('ventas/prefacturas')->name('ventas.prefacturas.')->group(function () {
+        Route::get('/',                                  [PrefacturaController::class, 'index'])              ->name('index');
+        Route::get('/crear',                             [PrefacturaController::class, 'create'])             ->name('create');
+        Route::post('/',                                 [PrefacturaController::class, 'store'])              ->name('store');
+        Route::get('/{prefactura}',                      [PrefacturaController::class, 'show'])               ->name('show');
+        Route::post('/{prefactura}/abonar',              [PrefacturaController::class, 'abonar'])             ->name('abonar');
+        Route::post('/{prefactura}/convertir-a-factura', [PrefacturaController::class, 'convertirAFactura']) ->name('convertir');
+    });
+
+    // Ventas - Proformas
+    Route::prefix('ventas/proformas')->name('ventas.proformas.')->group(function () {
+        Route::get('/',                                 [ProformaController::class, 'index'])             ->name('index');
+        Route::get('/crear',                            [ProformaController::class, 'create'])            ->name('create');
+        Route::post('/',                                [ProformaController::class, 'store'])             ->name('store');
+        Route::get('/{proforma}',                       [ProformaController::class, 'show'])              ->name('show');
+        Route::delete('/{proforma}',                    [ProformaController::class, 'destroy'])           ->name('destroy');
+        Route::post('/{proforma}/convertir-a-factura',  [ProformaController::class, 'convertirAFactura'])->name('convertir');
+    });
+
+    // Ventas - Notas de Crédito
+    Route::prefix('ventas/notas-credito')->name('ventas.notas-credito.')->group(function () {
+        Route::get('/',                            [NotaCreditoController::class, 'index'])     ->name('index');
+        Route::get('/crear',                       [NotaCreditoController::class, 'create'])    ->name('create');
+        Route::post('/',                           [NotaCreditoController::class, 'store'])     ->name('store');
+        Route::get('/{notaCredito}',               [NotaCreditoController::class, 'show'])      ->name('show');
+        Route::post('/{notaCredito}/enviar-sri',   [NotaCreditoController::class, 'enviarSri']) ->name('enviar-sri');
+    });
+
+    // Ventas - Cuentas por Cobrar
+    Route::prefix('ventas/cxc')->name('ventas.cxc.')->group(function () {
+        Route::get('/',                             [CuentaCobrarController::class, 'index'])          ->name('index');
+        Route::get('/{cuentaCobrar}',               [CuentaCobrarController::class, 'show'])           ->name('show');
+        Route::post('/{cuentaCobrar}/cobrar',       [CuentaCobrarController::class, 'registrarCobro']) ->name('cobrar');
+        Route::patch('/{cuentaCobrar}/castigo',     [CuentaCobrarController::class, 'castigo'])        ->name('castigo');
+    });
+
+    // Ventas - Retenciones
+    Route::prefix('ventas/retenciones')->name('ventas.retenciones.')->group(function () {
+        Route::get('/',                           [RetencionController::class, 'index'])     ->name('index');
+        Route::get('/crear',                      [RetencionController::class, 'create'])    ->name('create');
+        Route::post('/',                          [RetencionController::class, 'store'])     ->name('store');
+        Route::get('/{retencion}',                [RetencionController::class, 'show'])      ->name('show');
+        Route::post('/{retencion}/enviar-sri',    [RetencionController::class, 'enviarSri']) ->name('enviar-sri');
+    });
+
+    // Ventas - Guías de Remisión
+    Route::prefix('ventas/guias-remision')->name('ventas.guias-remision.')->group(function () {
+        Route::get('/',                            [GuiaRemisionController::class, 'index'])     ->name('index');
+        Route::get('/crear',                       [GuiaRemisionController::class, 'create'])    ->name('create');
+        Route::post('/',                           [GuiaRemisionController::class, 'store'])     ->name('store');
+        Route::get('/{guiaRemision}',              [GuiaRemisionController::class, 'show'])      ->name('show');
+        Route::post('/{guiaRemision}/enviar-sri',  [GuiaRemisionController::class, 'enviarSri']) ->name('enviar-sri');
+    });
 });
