@@ -339,8 +339,16 @@ class CompraController extends Controller
 
     // ── Etiquetas — generar PDF y guardar en BD ──────────────────────────────────
 
-    public function generarEtiquetasPdf(Request $request, Compra $compra): \Illuminate\Http\Response
+    public function generarEtiquetasPdf(Request $request, Compra $compra): \Illuminate\Http\Response|\Illuminate\Http\JsonResponse
     {
+        // Candado: una factura genera etiquetas UNA sola vez
+        if (EtiquetaProducto::where('compra_id', $compra->id)->exists()) {
+            abort(response()->json([
+                'error'  => true,
+                'mensaje' => 'Esta factura ya tiene etiquetas generadas. Use la opción Reimprimir para volver a imprimirlas.',
+            ], 422));
+        }
+
         $request->validate([
             'productos'                 => 'required|array|min:1',
             'productos.*.producto_id'   => 'required|integer',

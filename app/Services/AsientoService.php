@@ -332,6 +332,93 @@ class AsientoService
         );
     }
 
+    // ══════════════════════════════════════════════════════════
+    // NÓMINA — Dev 2
+    // ══════════════════════════════════════════════════════════
+
+    /**
+     * Genera el asiento contable de nómina al pasar a estado "procesado".
+     *
+     * Siempre cuadra porque:
+     *   DEBE  = gastos_sueldos_neto + gasto_aporte_patronal
+     *   HABER = iess_personal + iess_patronal + recuperacion_prestamos + neto_por_pagar
+     *
+     * gastos_sueldos_neto = total_ingresos - descuento_atrasos - otros_egresos
+     */
+    public function nomina(\App\Models\Nomina $nomina): AsientoContable
+    {
+        $empresaId = $nomina->empresa_id;
+        $periodo   = $nomina->periodo_label;
+
+        $detalles = $nomina->detalles()->with('colaborador')->get();
+
+        $sumSueldosNeto    = 0.0;
+        $sumAportePatronal = 0.0;
+        $sumIessPersonal   = 0.0;
+        $sumPrestamos      = 0.0;
+        $sumNeto           = 0.0;
+
+        foreach ($detalles as $d) {
+            $sumSueldosNeto    += (float)$d->total_ingresos - (float)$d->descuento_atrasos - (float)$d->otros_egresos;
+            $sumAportePatronal += round((float)$d->sueldo_base * 0.1115, 2);
+            $sumIessPersonal   += (float)$d->aporte_personal_iess;
+            $sumPrestamos      += (float)$d->descuento_prestamos + (float)$d->descuento_anticipos;
+            $sumNeto           += (float)$d->neto_pagar;
+        }
+
+        $sumSueldosNeto    = round($sumSueldosNeto, 2);
+        $sumAportePatronal = round($sumAportePatronal, 2);
+
+        // Cuenta IESS personal (2.1.4.03) — búsqueda directa en plan_cuentas
+        $cuentaIessPersonalId = PlanCuenta::where('codigo', '2.1.4.03')->value('id');
+        if (!$cuentaIessPersonalId) {
+            throw new \Exception('Cuenta 2.1.4.03 (IESS Aporte Personal) no encontrada en el plan de cuentas.');
+        }
+
+        $partidas = [];
+
+        if ($sumSueldosNeto > 0) {
+            $partidas[] = ['cuenta_id' => $this->cuentaId('cta_sueldos_salarios', $empresaId),
+                'debe' => $sumSueldosNeto, 'haber' => 0,
+                'descripcion' => "Nómina {$periodo} — sueldos y horas extras"];
+        }
+        if ($sumAportePatronal > 0) {
+            $partidas[] = ['cuenta_id' => $this->cuentaId('cta_aporte_patronal', $empresaId),
+                'debe' => $sumAportePatronal, 'haber' => 0,
+                'descripcion' => "Nómina {$periodo} — aporte patronal IESS 11.15%"];
+        }
+        if ($sumIessPersonal > 0) {
+            $partidas[] = ['cuenta_id' => $cuentaIessPersonalId,
+                'debe' => 0, 'haber' => round($sumIessPersonal, 2),
+                'descripcion' => "Nómina {$periodo} — IESS personal 9.45%"];
+        }
+        if ($sumAportePatronal > 0) {
+            $partidas[] = ['cuenta_id' => $this->cuentaId('cta_iess_por_pagar', $empresaId),
+                'debe' => 0, 'haber' => $sumAportePatronal,
+                'descripcion' => "Nómina {$periodo} — IESS patronal por pagar"];
+        }
+        if ($sumPrestamos > 0) {
+            $partidas[] = ['cuenta_id' => $this->cuentaId('cta_anticipos_empleados', $empresaId),
+                'debe' => 0, 'haber' => round($sumPrestamos, 2),
+                'descripcion' => "Nómina {$periodo} — recuperación préstamos y anticipos"];
+        }
+        if ($sumNeto > 0) {
+            $partidas[] = ['cuenta_id' => $this->cuentaId('cta_nomina_por_pagar', $empresaId),
+                'debe' => 0, 'haber' => round($sumNeto, 2),
+                'descripcion' => "Nómina {$periodo} — neto a pagar"];
+        }
+
+        return $this->crear(
+            empresaId:     $empresaId,
+            concepto:      "Nómina {$periodo}",
+            partidas:      $partidas,
+            documentoTipo: 'NOM',
+            documentoId:   $nomina->id,
+            documentoRef:  "NOM-{$nomina->anio}-{$nomina->mes}",
+            esAutomatico:  true,
+        );
+    }
+
     public function ajusteInventario(
         int    $empresaId,
         int    $documentoId,

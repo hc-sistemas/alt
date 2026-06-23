@@ -881,3 +881,71 @@ export interface RecepcionBodega {
     recibidoPor?: { id: number; nombre: string }
     detalles?: RecepcionDetalle[]
 }
+
+// ── Nómina ───────────────────────────────────────────────────────────────────
+
+export interface PrestamoEmpleado {
+    id: number
+    colaborador_id: number
+    tipo: 'anticipo' | 'prestamo'
+    monto_total: number
+    saldo: number
+    cuota: number
+    fecha: string
+    descripcion: string | null
+    estado: 'activo' | 'pagado'
+    created_by: number | null
+    created_at: string
+    colaborador?: Colaborador
+}
+
+export interface NominaDetalle {
+    id: number
+    nomina_id: number
+    colaborador_id: number
+    sueldo_base: number
+    horas_extras_50: number
+    horas_extras_100: number
+    comisiones: number
+    otros_ingresos: number
+    total_ingresos: number
+    aporte_personal_iess: number
+    descuento_atrasos: number
+    descuento_prestamos: number
+    descuento_anticipos: number
+    otros_egresos: number
+    total_egresos: number
+    neto_pagar: number
+    tipo_pago: 'transferencia' | 'cheque' | 'efectivo' | null
+    num_cuenta: string | null
+    banco: string | null
+    estado: 'borrador' | 'procesado' | 'pagado'
+    modificado_manualmente: boolean
+    created_at: string
+    colaborador?: Colaborador
+}
+
+export interface Nomina {
+    id: number
+    empresa_id: number
+    periodo_tipo: 'mensual' | 'quincenal'
+    anio: number
+    mes: number
+    quincena: number | null
+    fecha_emision: string
+    estado: 'borrador' | 'procesado' | 'pagado'
+    total_ingresos: number
+    total_egresos: number
+    total_neto: number
+    asiento_id: number | null
+    generado_por: number
+    procesado_por: number | null
+    pagado_por: number | null
+    created_at: string
+    periodo_label?: string
+    detalles_count?: number
+    detalles?: NominaDetalle[]
+    generadoPor?: { id: number; nombre: string }
+    procesadoPor?: { id: number; nombre: string }
+    pagadoPor?: { id: number; nombre: string }
+}

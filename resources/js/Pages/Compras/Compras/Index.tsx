@@ -1713,20 +1713,22 @@ export default function ComprasIndex() {
                                     <>
                                         {c.tiene_productos_codificados > 0 && (
                                             <>
-                                                <button
-                                                    onClick={() => setModal({ type: 'etiquetas', compra: c })}
-                                                    title="Generar etiquetas"
-                                                    className="h-7 w-7 flex items-center justify-center rounded hover:bg-amber-500/20 transition-colors"
-                                                    style={{ color: 'var(--primary)' }}>
-                                                    <Barcode className="w-4 h-4" />
-                                                </button>
-                                                <button
-                                                    onClick={() => reimprimir(c)}
-                                                    disabled={!c.has_etiquetas}
-                                                    title={c.has_etiquetas ? 'Reimprimir etiquetas' : 'No hay etiquetas generadas'}
-                                                    className="h-7 w-7 flex items-center justify-center rounded hover:bg-blue-500/20 text-blue-500 dark:text-blue-400 transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent">
-                                                    <RefreshCw className="w-4 h-4" />
-                                                </button>
+                                                {!c.has_etiquetas ? (
+                                                    <button
+                                                        onClick={() => setModal({ type: 'etiquetas', compra: c })}
+                                                        title="Generar etiquetas"
+                                                        className="h-7 w-7 flex items-center justify-center rounded hover:bg-amber-500/20 transition-colors"
+                                                        style={{ color: 'var(--primary)' }}>
+                                                        <Barcode className="w-4 h-4" />
+                                                    </button>
+                                                ) : (
+                                                    <button
+                                                        onClick={() => reimprimir(c)}
+                                                        title="Reimprimir etiquetas"
+                                                        className="h-7 w-7 flex items-center justify-center rounded hover:bg-blue-500/20 text-blue-500 dark:text-blue-400 transition-colors">
+                                                        <RefreshCw className="w-4 h-4" />
+                                                    </button>
+                                                )}
                                             </>
                                         )}
                                         <button

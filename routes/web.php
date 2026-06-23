@@ -46,6 +46,7 @@ use App\Http\Controllers\Ventas\CuentaCobrarController;
 use App\Http\Controllers\RRHH\ColaboradorController;
 use App\Http\Controllers\RRHH\AsistenciaController;
 use App\Http\Controllers\RRHH\HorasExtrasController;
+use App\Http\Controllers\RRHH\NominaController;
 use Illuminate\Support\Facades\Route;
 
 // Auth
@@ -333,6 +334,19 @@ Route::middleware('auth')->group(function () {
             Route::get('/',                            [HorasExtrasController::class, 'index'])   ->name('index');
             Route::patch('/{horaExtra}/aprobar',       [HorasExtrasController::class, 'aprobar']) ->name('aprobar');
             Route::patch('/{horaExtra}/rechazar',      [HorasExtrasController::class, 'rechazar'])->name('rechazar');
+        });
+
+        // Nómina
+        Route::prefix('nomina')->name('nomina.')->group(function () {
+            Route::get('/',                        [NominaController::class, 'index'])         ->name('index');
+            Route::post('/generar',                [NominaController::class, 'generar'])       ->name('generar');
+            Route::get('/{id}',                    [NominaController::class, 'show'])          ->name('show');
+            Route::put('/{id}/detalle/{did}',      [NominaController::class, 'update'])        ->name('update');
+            Route::post('/{id}/procesar',          [NominaController::class, 'procesar'])      ->name('procesar');
+            Route::post('/{id}/pagar',             [NominaController::class, 'pagar'])         ->name('pagar');
+            Route::delete('/{id}',                 [NominaController::class, 'destroy'])       ->name('destroy');
+            Route::get('/{id}/pdf/{did}',          [NominaController::class, 'pdfIndividual']) ->name('pdf-individual');
+            Route::get('/{id}/zip',                [NominaController::class, 'pdfMasivo'])     ->name('pdf-masivo');
         });
     });
 });
