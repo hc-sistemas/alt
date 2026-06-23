@@ -1013,9 +1013,10 @@ interface EtiquetasModalProps {
     compra: Compra
     onClose: () => void
     abrirPdf: (url: string) => void
+    onGenerada: (compraId: number) => void
 }
 
-function EtiquetasModal({ compra, onClose, abrirPdf }: EtiquetasModalProps) {
+function EtiquetasModal({ compra, onClose, abrirPdf, onGenerada }: EtiquetasModalProps) {
     const [cargando,  setCargando]  = useState(true)
     const [detalles,  setDetalles]  = useState<EtiquetaDetalleData[]>([])
     const [generando, setGenerando] = useState(false)
@@ -1062,6 +1063,7 @@ function EtiquetasModal({ compra, onClose, abrirPdf }: EtiquetasModalProps) {
             const blob = await res.blob()
             const url  = URL.createObjectURL(blob)
             abrirPdf(url)
+            onGenerada(compra.id)
             onClose()
         } catch {
             notify.error('Error al conectar con el servidor')
@@ -1405,6 +1407,14 @@ function ReimprimirEtiquetasModal({ compra, onClose, abrirPdf }: ReimprimirEtiqu
 export default function ComprasIndex() {
     const { compras, proveedores, centros, cuentas, bodegas, productos, filtros, flash } = usePage<Props>().props
 
+    // Estado local de filas — permite actualizar una fila sin recargar la página
+    const [comprasData, setComprasData] = useState(compras.data)
+    const actualizarCompra = (id: number, cambios: Partial<Compra>) =>
+        setComprasData(prev => prev.map(c => c.id === id ? { ...c, ...cambios } : c))
+
+    // Sincronizar cuando Inertia actualiza los props (filtros, paginación)
+    useEffect(() => { setComprasData(compras.data) }, [compras])
+
     const [modal, setModal] = useState<ModalState>({ type: 'none' })
     const [buscar, setBuscar]       = useState(filtros.buscar ?? '')
     const [estado, setEstado]       = useState(filtros.estado ?? '')
@@ -1489,17 +1499,20 @@ export default function ComprasIndex() {
             })
             if (!result.isConfirmed) return
             router.patch(route('compras.facturas.anular', c.id), { motivo: result.value as string }, {
-                onSuccess: () => notify.ok(`Compra ${c.num_documento} anulada correctamente.`),
-                onError:   (e)  => notify.error(Object.values(e)[0] ?? 'Error al anular'),
+                onSuccess: () => {
+                    notify.ok(`Compra ${c.num_documento} anulada correctamente.`)
+                    actualizarCompra(c.id, { estado: 'anulada' })
+                },
+                onError: (e) => notify.error(Object.values(e)[0] ?? 'Error al anular'),
             })
             return
         }
 
-        // ── Escenario B: con pago bancario ──────────────────────────────────────
+        // ── Escenario B: tiene pago — debe anularse el pago primero ────────────
         if (escData.escenario === 'B') {
-            const result = await Swal.fire({
-                ...swalBase,
-                title: 'Anular compra con pago',
+            void Swal.fire({
+                icon: 'warning',
+                title: 'Anula el pago primero',
                 html: `<p style="color:#6b7280;font-size:13px;margin-bottom:12px">
                            <strong>${c.num_documento}</strong> — $${Number(c.total).toFixed(2)}
                        </p>
@@ -1507,25 +1520,46 @@ export default function ComprasIndex() {
                            <p style="font-size:12px;color:#92400e;font-weight:600;margin-bottom:4px">Pago registrado</p>
                            <p style="font-size:12px;color:#78350f">
                                Banco/Caja: <b>${escData.banco}</b><br>
-                               Monto a reversar: <b>$${escData.monto.toFixed(2)}</b>
+                               Monto: <b>$${escData.monto.toFixed(2)}</b>
                            </p>
                        </div>
-                       <p style="color:#374151;font-size:13px">${escData.mensaje}</p>`,
-                input: 'textarea',
-                inputPlaceholder: 'Motivo de la anulación (mínimo 10 caracteres)…',
-                inputAttributes: { rows: '3', style: 'font-size:13px' },
-                confirmButtonText: 'Anular y reversar pago',
-                cancelButtonText:  'Cancelar',
-                confirmButtonColor: '#ef4444',
-                cancelButtonColor:  '#6b7280',
-                inputValidator: (v) => (!v || v.trim().length < 10) ? 'El motivo debe tener al menos 10 caracteres.' : null,
-            })
-            if (!result.isConfirmed) return
-            router.patch(route('compras.facturas.anular', c.id), { motivo: result.value as string }, {
-                onSuccess: () => notify.ok(`Compra ${c.num_documento} anulada. Pago revertido.`),
-                onError:   (e)  => notify.error(Object.values(e)[0] ?? 'Error al anular'),
+                       <p style="color:#374151;font-size:13px">
+                           Usa el botón <b style="color:#f59e0b">Anular Pago</b> (ícono amarillo) y luego podrás anular la factura.
+                       </p>`,
+                confirmButtonText: 'Entendido',
+                confirmButtonColor: '#f59e0b',
+                showCancelButton: false,
+                customClass: { popup: 'swal-pop', title: 'swal-title', confirmButton: 'swal-confirm' },
+                didOpen: injectSwalCss,
             })
         }
+    }
+
+    async function anularPago(c: Compra) {
+        const result = await Swal.fire({
+            ...swalBase,
+            title: 'Anular pago registrado',
+            html: `<p style="color:#6b7280;font-size:14px;margin-bottom:12px">
+                       <strong>${c.num_documento}</strong> — $${Number(c.total).toFixed(2)}
+                   </p>
+                   <p style="color:#374151;font-size:13px;line-height:1.6">
+                       Se revertirá el movimiento bancario y la deuda volverá a
+                       <strong>Cuentas por Pagar</strong> como pendiente.<br><br>
+                       <strong>La factura seguirá activa.</strong>
+                   </p>`,
+            confirmButtonText: 'Anular pago',
+            cancelButtonText:  'Cancelar',
+            confirmButtonColor: '#f59e0b',
+            cancelButtonColor:  '#6b7280',
+        })
+        if (!result.isConfirmed) return
+        router.post(route('compras.facturas.anular-pago', c.id), {}, {
+            onSuccess: () => {
+                notify.ok(`Pago de ${c.num_documento} anulado. Factura sigue activa.`)
+                actualizarCompra(c.id, { tiene_pago: false })
+            },
+            onError: (e) => notify.error(Object.values(e)[0] ?? 'Error al anular pago'),
+        })
     }
 
     useEffect(() => {
@@ -1643,7 +1677,7 @@ export default function ComprasIndex() {
                         <span className="col-span-2 text-right">Acción</span>
                     </div>
 
-                    {compras.data.length === 0 && (
+                    {comprasData.length === 0 && (
                         <div className="py-20 text-center">
                             <ShoppingCart className="opacity-20 mx-auto mb-3 w-10 h-10" style={{ color: 'var(--text-muted)' }} />
                             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
@@ -1652,7 +1686,7 @@ export default function ComprasIndex() {
                         </div>
                     )}
 
-                    {compras.data.map(c => (
+                    {comprasData.map(c => (
                         <div key={c.id}
                             className={cn(
                                 'group grid grid-cols-12 gap-2 px-4 py-3 border-b items-center text-sm transition-colors',
@@ -1766,9 +1800,18 @@ export default function ComprasIndex() {
                                             className="h-7 w-7 flex items-center justify-center rounded hover:bg-blue-500/20 text-blue-500 dark:text-blue-400 transition-colors">
                                             <Eye className="w-4 h-4" />
                                         </Link>
+                                        {c.tiene_pago && (
+                                            <button
+                                                onClick={() => anularPago(c)}
+                                                title="Anular pago registrado"
+                                                className="h-7 w-7 flex items-center justify-center rounded hover:bg-amber-500/20 transition-colors"
+                                                style={{ color: '#f59e0b' }}>
+                                                <CreditCard className="w-4 h-4" />
+                                            </button>
+                                        )}
                                         <button
                                             onClick={() => iniciarAnulacion(c)}
-                                            title="Anular compra activa"
+                                            title="Anular factura"
                                             className="h-7 w-7 flex items-center justify-center rounded hover:bg-red-500/20 text-red-500 dark:text-red-400 transition-colors">
                                             <XCircle className="w-4 h-4" />
                                         </button>
@@ -1836,6 +1879,7 @@ export default function ComprasIndex() {
                     compra={modal.compra}
                     onClose={() => setModal({ type: 'none' })}
                     abrirPdf={abrirPdf}
+                    onGenerada={(id) => actualizarCompra(id, { has_etiquetas: true })}
                 />
             )}
             {modal.type === 'reimprimir-etiquetas' && (

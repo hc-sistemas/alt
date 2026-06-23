@@ -82,9 +82,18 @@ class CuentaPagarController extends Controller
             return back()->with('error', 'Esta cuenta ya está pagada.');
         }
 
-        DB::transaction(function () use ($request, $cuentaPagar) {
+        $banco = BancoCaja::findOrFail($request->banco_caja_id);
+
+        if ((float) $banco->saldo_actual < (float) $request->monto_pago) {
+            return back()->with('error',
+                "Saldo insuficiente en {$banco->nombre}. " .
+                'Disponible: $' . number_format((float) $banco->saldo_actual, 2) . '. ' .
+                'Requerido: $' . number_format((float) $request->monto_pago, 2) . '.'
+            );
+        }
+
+        DB::transaction(function () use ($request, $cuentaPagar, $banco) {
             $monto  = (float) $request->monto_pago;
-            $banco  = BancoCaja::findOrFail($request->banco_caja_id);
 
             $nuevoSaldo  = max(0, (float) $cuentaPagar->saldo - $monto);
             $nuevoEstado = $nuevoSaldo <= 0 ? 'pagada' : 'parcial';

@@ -186,3 +186,50 @@ Admin: admin@altamira.com / Altamira2026*
 Vendedor: vendedor@altamira.com / Vendedor2026*
 PIN aprobación: 1234
 ```
+
+---
+
+## Actualización 23/06/2026
+
+### Para importar BD actualizada:
+```bash
+psql -U postgres -d altamira \
+  -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+psql -U postgres -d altamira \
+  -f database/altamira_dump_dev2.sql
+```
+
+### Cambios importantes para Dev 1:
+
+**NUEVAS REGLAS DE NEGOCIO que debes respetar:**
+- Al activar una factura → siempre crear CxP si `dias_credito > 0`
+- Al registrar egreso en banco → verificar saldo suficiente primero
+- Anular pago ≠ Anular factura (son endpoints distintos)
+
+**ENDPOINTS ACTUALIZADOS:**
+- `POST /compras/facturas/{id}/activar`
+  → ahora genera CxP + asiento + movimiento inventario automáticamente
+- `POST /compras/facturas/{id}/anular-pago` (**NUEVO**)
+  → solo anula el pago, factura sigue activa
+- `PATCH /compras/facturas/{id}/anular`
+  → anula la factura completa (3 escenarios A/B/C); bloquea si tiene pago activo
+
+**Flujo correcto de anulación:**
+1. Si factura tiene `tiene_pago = true` → primero llamar a `anular-pago`
+2. Luego llamar a `anular` con motivo
+
+**DATOS DE PRUEBA DISPONIBLES:**
+- 11 proveedores (7 nacionales + 4 internacionales)
+- 5 importaciones con productos reales (SHURE, YAMAHA, CHAUVET, PEKIN)
+- 8 colaboradores con nóminas de prueba
+- 7 bancos/cajas con saldos y cuentas contables asignadas
+- Plan de cuentas: 669 cuentas (catálogo compartido `empresa_id = NULL`)
+
+**BANCOS — campo nuevo:**
+- `bancos_cajas.cuenta_id` asignado automáticamente según tipo:
+  `banco→1.1.1.3 | caja→1.1.1.1 | caja_chica→1.1.1.2 | tarjeta→1.1.1.5`
+- Todo egreso bancario valida saldo suficiente antes de procesar
+
+**ANULACIÓN DE COMPRAS — escenario B corregido:**
+- Antes: escenario B revertía pago Y anulaba factura en un solo paso
+- Ahora: escenario B bloquea la anulación de factura si hay pago — debe usarse el endpoint `/anular-pago` primero

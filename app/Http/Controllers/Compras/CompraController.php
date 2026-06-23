@@ -12,6 +12,7 @@ use App\Models\Empresa;
 use App\Models\MovimientoBancario;
 use App\Models\Proveedor;
 use App\Models\PlanCuenta;
+use App\Models\RecepcionBodega;
 use App\Models\CentroCosto;
 use App\Models\Producto;
 use App\Services\AsientoService;
@@ -24,7 +25,9 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
+use Illuminate\Http\Response as HttpResponse;
 use Maatwebsite\Excel\Facades\Excel;
+use Picqer\Barcode\BarcodeGenerator;
 use Picqer\Barcode\BarcodeGeneratorPNG;
 
 class CompraController extends Controller
@@ -202,7 +205,7 @@ class CompraController extends Controller
                     ]);
 
                     foreach ($detallesProducto as $d) {
-                        $detalle = \App\Models\CompraDetalle::where('compra_id', $compra->id)
+                        $detalle = CompraDetalle::where('compra_id', $compra->id)
                             ->where('producto_id', $d['producto_id'])
                             ->first();
 
@@ -312,8 +315,8 @@ class CompraController extends Controller
                     tipo:       $compra->gasto_no_deducible ? 'gasto' : 'inventario',
                 );
                 $compra->update(['asiento_id' => $asiento->id]);
-            } catch (\Exception) {
-                // No bloquear si período contable cerrado
+            } catch (\Throwable $e) {
+                \Log::warning("Asiento compra {$compra->num_documento}: {$e->getMessage()}");
             }
         });
 
@@ -363,7 +366,7 @@ class CompraController extends Controller
 
     // ── Etiquetas — generar PDF y guardar en BD ──────────────────────────────────
 
-    public function generarEtiquetasPdf(Request $request, Compra $compra): \Illuminate\Http\Response|\Illuminate\Http\JsonResponse
+    public function generarEtiquetasPdf(Request $request, Compra $compra): HttpResponse|JsonResponse
     {
         // Candado: una factura genera etiquetas UNA sola vez
         if (EtiquetaProducto::where('compra_id', $compra->id)->exists()) {
@@ -422,16 +425,16 @@ class CompraController extends Controller
             }
 
             // Crear recepción pendiente si no existe ya una para esta compra
-            $yaExisteRecepcion = \App\Models\RecepcionBodega::where('compra_id', $compra->id)->exists();
+            $yaExisteRecepcion = RecepcionBodega::where('compra_id', $compra->id)->exists();
 
             if (!$yaExisteRecepcion) {
                 $bodegaEfectiva = $compra->bodega_id
-                    ?? \App\Models\Bodega::where('empresa_id', $empresaId)
+                    ?? Bodega::where('empresa_id', $empresaId)
                         ->where('tipo', 'general')
                         ->value('id');
 
                 if ($bodegaEfectiva) {
-                    $recepcion = \App\Models\RecepcionBodega::create([
+                    $recepcion = RecepcionBodega::create([
                         'empresa_id' => $empresaId,
                         'compra_id'  => $compra->id,
                         'bodega_id'  => $bodegaEfectiva,
@@ -465,7 +468,7 @@ class CompraController extends Controller
                     'codigo_barras' => $codigoBarras,
                     'descripcion'   => $r['descripcion'],
                     'barcode_png'   => base64_encode(
-                        $generator->getBarcode($codigoBarras, BarcodeGeneratorPNG::TYPE_CODE_128, 2, 60)
+                        $generator->getBarcode($codigoBarras, BarcodeGenerator::TYPE_CODE_128, 2, 60)
                     ),
                 ];
             }
@@ -552,7 +555,7 @@ class CompraController extends Controller
             $codigoProducto = $pos !== false ? substr((string) $codigoBarras, 0, $pos) : (string) $codigoBarras;
             $descripcion    = $descripcionPorCodigo[$codigoProducto] ?? $codigoProducto;
 
-            $png = $generator->getBarcode((string) $codigoBarras, BarcodeGeneratorPNG::TYPE_CODE_128, 2, 60);
+            $png = $generator->getBarcode((string) $codigoBarras, BarcodeGenerator::TYPE_CODE_128, 2, 60);
             if (!$png) continue;
 
             $etiquetas[] = [
@@ -598,7 +601,7 @@ class CompraController extends Controller
                     'codigo_barras' => $codigoBarras,
                     'descripcion'   => $descripcion,
                     'barcode_png'   => base64_encode(
-                        $generator->getBarcode($codigoBarras, BarcodeGeneratorPNG::TYPE_CODE_128, 2, 60)
+                        $generator->getBarcode($codigoBarras, BarcodeGenerator::TYPE_CODE_128, 2, 60)
                     ),
                 ];
             }
@@ -699,7 +702,7 @@ class CompraController extends Controller
                 $banco = $movPago?->bancoCaja?->nombre ?? '—';
                 return response()->json([
                     'escenario' => 'B',
-                    'mensaje'   => "Esta factura tiene un pago de \${$monto} en {$banco}. Se revertirá automáticamente.",
+                    'mensaje'   => "Esta factura tiene un pago de \${$monto} en {$banco}. Debes usar el botón \"Anular Pago\" primero y luego podrás anular la factura.",
                     'monto'     => $monto,
                     'banco'     => $banco,
                 ]);
@@ -728,6 +731,11 @@ class CompraController extends Controller
 
         if ($compra->estaAnulada()) {
             return back()->with('error', 'Esta compra ya está anulada.');
+        }
+
+        if ($compra->tiene_pago) {
+            return back()->with('error',
+                "Primero debes anular el pago registrado para poder anular la factura {$compra->num_documento}.");
         }
 
         $empresaId      = session('empresa_activa_id');
@@ -798,47 +806,6 @@ class CompraController extends Controller
                 }
             }
 
-            // Escenario B: revertir pago bancario activo
-            $movPago = MovimientoBancario::where('documento_tipo', 'COMPRA')
-                ->where('documento_id', $compra->id)
-                ->where('tipo', 'egreso')
-                ->where('anulado', false)
-                ->first();
-
-            if ($movPago) {
-                MovimientoBancario::create([
-                    'empresa_id'     => $empresaId,
-                    'banco_caja_id'  => $movPago->banco_caja_id,
-                    'tipo'           => 'ingreso',
-                    'sub_tipo'       => $movPago->sub_tipo,
-                    'fecha'          => now()->toDateString(),
-                    'monto'          => $movPago->monto,
-                    'persona_tipo'   => 'proveedor',
-                    'persona_id'     => $compra->proveedor_id,
-                    'num_documento'  => $compra->num_documento,
-                    'descripcion'    => "Reversión pago — Anulación {$compra->num_documento}: {$request->motivo}",
-                    'documento_tipo' => 'ANULACION_COMPRA',
-                    'documento_id'   => $compra->id,
-                    'created_by'     => Auth::id(),
-                ]);
-                DB::table('bancos_cajas')
-                    ->where('id', $movPago->banco_caja_id)
-                    ->increment('saldo_actual', (float) $movPago->monto);
-                $movPago->update(['anulado' => true]);
-
-                if ($movPago->asiento_id) {
-                    try {
-                        $movPago->loadMissing('asiento.detalles');
-                        $this->asientoService->anular(
-                            $movPago->asiento,
-                            "Reversión pago — Anulación {$compra->num_documento}"
-                        );
-                    } catch (\Exception $e) {
-                        \Log::warning("Asiento pago no revertido: {$e->getMessage()}");
-                    }
-                }
-            }
-
             // Revertir asiento de la compra
             if ($compra->asiento_id && $compra->asiento) {
                 try {
@@ -870,6 +837,75 @@ class CompraController extends Controller
         });
 
         return back()->with('success', "Compra {$compra->num_documento} anulada correctamente.");
+    }
+
+    // ── Anular solo el pago (la factura sigue activa) ───────────────────────────
+
+    public function anularPago(Compra $compra): RedirectResponse
+    {
+        if (!$compra->tiene_pago) {
+            return back()->with('error', 'Esta factura no tiene un pago registrado.');
+        }
+        if ($compra->estaAnulada()) {
+            return back()->with('error', 'No se puede anular el pago de una factura anulada.');
+        }
+
+        $empresaId = session('empresa_activa_id');
+
+        DB::transaction(function () use ($compra, $empresaId) {
+            // 1. Buscar y revertir movimiento bancario de pago
+            $movPago = MovimientoBancario::where('documento_tipo', 'COMPRA')
+                ->where('documento_id', $compra->id)
+                ->where('tipo', 'egreso')
+                ->where('anulado', false)
+                ->first();
+
+            if ($movPago) {
+                MovimientoBancario::create([
+                    'empresa_id'     => $empresaId,
+                    'banco_caja_id'  => $movPago->banco_caja_id,
+                    'tipo'           => 'ingreso',
+                    'sub_tipo'       => $movPago->sub_tipo,
+                    'fecha'          => now()->toDateString(),
+                    'monto'          => $movPago->monto,
+                    'persona_tipo'   => 'proveedor',
+                    'persona_id'     => $compra->proveedor_id,
+                    'num_documento'  => $compra->num_documento,
+                    'descripcion'    => "Reversión pago anulado — {$compra->num_documento}",
+                    'documento_tipo' => 'ANULACION_PAGO',
+                    'documento_id'   => $compra->id,
+                    'created_by'     => Auth::id(),
+                ]);
+                DB::table('bancos_cajas')
+                    ->where('id', $movPago->banco_caja_id)
+                    ->increment('saldo_actual', (float) $movPago->monto);
+                $movPago->update(['anulado' => true]);
+
+                if ($movPago->asiento_id) {
+                    try {
+                        $movPago->loadMissing('asiento.detalles');
+                        $this->asientoService->anular(
+                            $movPago->asiento,
+                            "Reversión pago — {$compra->num_documento}"
+                        );
+                    } catch (\Exception $e) {
+                        \Log::warning("Asiento pago no revertido: {$e->getMessage()}");
+                    }
+                }
+            }
+
+            // 2. Restaurar CxP a pendiente con saldo completo
+            CuentaPagar::where('compra_id', $compra->id)->update([
+                'estado' => 'pendiente',
+                'saldo'  => $compra->total,
+            ]);
+
+            // 3. Marcar factura sin pago — estado sigue 'activa'
+            $compra->update(['tiene_pago' => false]);
+        });
+
+        return back()->with('success',
+            "Pago de {$compra->num_documento} anulado. La factura sigue activa y la deuda fue restaurada en Cuentas por Pagar.");
     }
 
     public function pdf(Request $request): \Illuminate\Http\Response

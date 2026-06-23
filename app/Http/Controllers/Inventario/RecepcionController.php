@@ -5,11 +5,13 @@ namespace App\Http\Controllers\Inventario;
 use App\Http\Controllers\Controller;
 use App\Models\Bodega;
 use App\Models\Compra;
+use App\Models\CuentaPagar;
 use App\Models\EtiquetaProducto;
 use App\Models\Producto;
 use App\Models\RecepcionBodega;
 use App\Models\RecepcionDetalle;
 use App\Models\RecepcionEscaneo;
+use App\Services\AsientoService;
 use App\Services\AuditoriaService;
 use App\Services\Contracts\InventarioServiceInterface;
 use Illuminate\Http\JsonResponse;
@@ -24,7 +26,8 @@ class RecepcionController extends Controller
 {
     public function __construct(
         private InventarioServiceInterface $inventario,
-        private AuditoriaService $auditoria
+        private AuditoriaService $auditoria,
+        private AsientoService $asientoService,
     ) {}
 
     public function index(Request $request): Response
@@ -270,10 +273,11 @@ class RecepcionController extends Controller
             return back()->with('error', 'Esta recepción ya fue procesada.');
         }
 
-        DB::transaction(function () use ($recepcion) {
+        DB::transaction(function () use ($recepcion, $empresaId) {
             $detalles = $recepcion->detalles;
-            $todosCompletados = true;
-            $algunoParcial    = false;
+            $todosCompletados  = true;
+            $algunoParcial     = false;
+            $cantidadesRecibidas = []; // producto_id => cantidad_recibida
 
             foreach ($detalles as $detalle) {
                 $cantEscaneos = RecepcionEscaneo::where('recepcion_detalle_id', $detalle->id)->count();
@@ -284,7 +288,7 @@ class RecepcionController extends Controller
                 } elseif ($cantEscaneos > 0) {
                     $estadoDetalle = 'parcial';
                     $todosCompletados = false;
-                    $algunoParcial = true;
+                    $algunoParcial    = true;
                 } else {
                     $estadoDetalle = 'pendiente';
                     $todosCompletados = false;
@@ -294,6 +298,10 @@ class RecepcionController extends Controller
                     'cantidad_recibida' => $cantEscaneos,
                     'estado'            => $estadoDetalle,
                 ]);
+
+                if ($detalle->producto_id && $cantEscaneos > 0) {
+                    $cantidadesRecibidas[$detalle->producto_id] = $cantEscaneos;
+                }
             }
 
             $estadoRecepcion = $todosCompletados ? 'completada' : ($algunoParcial ? 'parcial' : 'pendiente');
@@ -305,7 +313,67 @@ class RecepcionController extends Controller
             ]);
 
             if ($estadoRecepcion === 'completada') {
-                $recepcion->compra->update(['estado' => 'activa']);
+                $compra = $recepcion->compra->fresh();
+                $eraCompraPendiente = $compra->estaPendiente();
+
+                $compra->update(['estado' => 'activa']);
+
+                // Solo ejecutar efectos financieros si la compra era pendiente
+                // (si ya estaba activa, CompraController::activar() ya los procesó)
+                if ($eraCompraPendiente) {
+                    $compra->load('detalles');
+
+                    // Ingresar stock por unidades físicamente recibidas
+                    foreach ($cantidadesRecibidas as $productoId => $cantRecibida) {
+                        $cd = $compra->detalles->firstWhere('producto_id', $productoId);
+                        $costo = $cd ? (float) $cd->precio_unitario : 0;
+                        try {
+                            $this->inventario->ingresarStock(
+                                productoId:    (int) $productoId,
+                                bodegaId:      (int) $recepcion->bodega_id,
+                                cantidad:      (float) $cantRecibida,
+                                costoUnitario: $costo,
+                                docTipo:       'COMPRA',
+                                docId:         $compra->id,
+                                docNumero:     $compra->num_documento,
+                                observacion:   "Recepción #{$recepcion->id}: {$compra->num_documento}",
+                            );
+                            Producto::where('id', $productoId)
+                                ->update(['costo' => $costo, 'updated_at' => now()]);
+                        } catch (\Exception $e) {
+                            \Log::warning("Stock recepción #{$recepcion->id} prod {$productoId}: {$e->getMessage()}");
+                        }
+                    }
+
+                    // CxP solo si no existe ya para esta compra
+                    if ($compra->dias_credito > 0 && !$compra->cuentaPagar()->exists()) {
+                        CuentaPagar::create([
+                            'empresa_id'        => $empresaId,
+                            'proveedor_id'      => $compra->proveedor_id,
+                            'compra_id'         => $compra->id,
+                            'monto'             => $compra->total,
+                            'saldo'             => $compra->total,
+                            'fecha_emision'     => now()->toDateString(),
+                            'fecha_vencimiento' => $compra->fecha_vencimiento,
+                            'estado'            => 'pendiente',
+                        ]);
+                    }
+
+                    // Asiento contable (no bloquear si falla)
+                    try {
+                        $asiento = $this->asientoService->compraRegistrada(
+                            empresaId:  (int) $empresaId,
+                            compraId:   $compra->id,
+                            referencia: $compra->num_documento,
+                            subtotal:   $compra->subtotal_0 + $compra->subtotal_iva,
+                            iva:        $compra->total_iva,
+                            tipo:       $compra->gasto_no_deducible ? 'gasto' : 'inventario',
+                        );
+                        $compra->update(['asiento_id' => $asiento->id]);
+                    } catch (\Throwable $e) {
+                        \Log::warning("Asiento compra {$compra->num_documento}: {$e->getMessage()}");
+                    }
+                }
             }
 
             $this->auditoria->documento(

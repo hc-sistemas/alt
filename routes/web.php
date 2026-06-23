@@ -165,6 +165,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/{compra}/etiquetas-listado',               [CompraController::class, 'etiquetasListado'])         ->name('etiquetas-listado');
         Route::post('/{compra}/etiquetas-reimprimir-seleccion', [CompraController::class, 'reimprimirSeleccion'])      ->name('etiquetas-reimprimir-seleccion');
         Route::get('/{compra}/verificar-anulacion',             [CompraController::class, 'verificarAnulacion'])       ->name('verificar-anulacion');
+        Route::post('/{compra}/anular-pago',                    [CompraController::class, 'anularPago'])                ->name('anular-pago');
     });
 
     // Compras - CxP

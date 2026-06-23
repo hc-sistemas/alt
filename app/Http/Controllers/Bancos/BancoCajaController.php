@@ -65,9 +65,13 @@ class BancoCajaController extends Controller
             'saldo_inicial' => 'numeric|min:0',
         ]);
 
+        $cuentaId = $request->cuenta_id
+            ?: ($this->getCuentaContableAutomatica($request->tipo, $empresaId)?->id);
+
         $banco = BancoCaja::create([
-            ...$request->only(['tipo', 'nombre', 'num_cuenta', 'tipo_cuenta', 'cuenta_id', 'saldo_inicial']),
+            ...$request->only(['tipo', 'nombre', 'num_cuenta', 'tipo_cuenta', 'saldo_inicial']),
             'empresa_id'   => $empresaId,
+            'cuenta_id'    => $cuentaId,
             'saldo_actual' => $request->saldo_inicial ?? 0,
             'estado'       => true,
         ]);
@@ -84,9 +88,34 @@ class BancoCajaController extends Controller
             'cuenta_id'   => 'nullable|exists:plan_cuentas,id',
         ]);
 
-        $banco->update($request->only(['nombre', 'num_cuenta', 'tipo_cuenta', 'cuenta_id']));
+        $cuentaId = $request->cuenta_id
+            ?: ($this->getCuentaContableAutomatica($banco->tipo, session('empresa_activa_id'))?->id);
+
+        $banco->update([
+            ...$request->only(['nombre', 'num_cuenta', 'tipo_cuenta']),
+            'cuenta_id' => $cuentaId,
+        ]);
 
         return back()->with('success', "{$banco->nombre} actualizado correctamente.");
+    }
+
+    private function getCuentaContableAutomatica(string $tipo, int $empresaId): ?PlanCuenta
+    {
+        $codigos = [
+            'banco'      => '1.1.1.3',
+            'caja'       => '1.1.1.1',
+            'caja_chica' => '1.1.1.2',
+            'tarjeta'    => '1.1.1.5',
+        ];
+        $codigo = $codigos[$tipo] ?? null;
+        if (!$codigo) return null;
+
+        return PlanCuenta::where('codigo', $codigo)
+            ->where(function ($q) use ($empresaId) {
+                $q->whereNull('empresa_id')->orWhere('empresa_id', $empresaId);
+            })
+            ->where('estado', true)
+            ->first();
     }
 
     public function toggleEstado(BancoCaja $banco): RedirectResponse

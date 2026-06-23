@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Head, Link, router, usePage, useForm } from '@inertiajs/react'
 import { toast, ToastContainer } from 'react-toastify'
+import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
 import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
-import { ChevronLeft, Ban, ShoppingCart, ExternalLink, X, Printer, XCircle, Download, PackageCheck } from 'lucide-react'
+import { ChevronLeft, Ban, ShoppingCart, ExternalLink, X, Printer, XCircle, Download, PackageCheck, CreditCard } from 'lucide-react'
 import { formatFecha } from '@/utils/contabilidad'
 import type {
     Compra, Proveedor, CentroCosto, AsientoContable,
@@ -107,8 +108,31 @@ export default function CompraShow() {
         if (flash?.error)   notify.error(flash.error)
     }, [flash?.success, flash?.error])
 
-    const puedeAnular       = !compra.tiene_pago
     const confirmarAnulacion = () => setShowAnular(true)
+
+    async function confirmarAnularPago() {
+        const result = await Swal.fire({
+            showCancelButton: true, reverseButtons: true, focusCancel: true,
+            title: 'Anular pago registrado',
+            html: `<p style="color:#6b7280;font-size:14px;margin-bottom:12px">
+                       <strong>${compra.num_documento}</strong>
+                   </p>
+                   <p style="color:#374151;font-size:13px;line-height:1.6">
+                       Se revertirá el movimiento bancario y la deuda volverá a
+                       <strong>Cuentas por Pagar</strong> como pendiente.<br><br>
+                       <strong>La factura seguirá activa.</strong>
+                   </p>`,
+            confirmButtonText: 'Anular pago',
+            cancelButtonText:  'Cancelar',
+            confirmButtonColor: '#f59e0b',
+            cancelButtonColor:  '#6b7280',
+        })
+        if (!result.isConfirmed) return
+        router.post(route('compras.facturas.anular-pago', compra.id), {}, {
+            onSuccess: () => notify.ok('Pago anulado. La factura sigue activa y la deuda fue restaurada en CxP.'),
+            onError:   (e)  => notify.error(Object.values(e)[0] ?? 'Error al anular pago'),
+        })
+    }
 
     const detalles    = compra.detalles ?? []
     const subtotal0   = n(compra.subtotal_0)
@@ -175,11 +199,18 @@ export default function CompraShow() {
                                 <PackageCheck size={15} /> Confirmar recepción
                             </button>
                         )}
-                        {compra.estado === 'activa' && puedeAnular && (
+                        {compra.estado === 'activa' && compra.tiene_pago && (
+                            <button onClick={confirmarAnularPago}
+                                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90"
+                                style={{ background: '#f59e0b' }}>
+                                <CreditCard size={15} /> Anular Pago
+                            </button>
+                        )}
+                        {compra.estado === 'activa' && (
                             <button onClick={confirmarAnulacion}
                                 className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90"
                                 style={{ background: '#ef4444' }}>
-                                <XCircle size={15} /> Anular
+                                <XCircle size={15} /> Anular Factura
                             </button>
                         )}
                     </div>
