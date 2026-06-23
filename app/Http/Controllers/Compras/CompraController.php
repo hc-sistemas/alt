@@ -38,6 +38,8 @@ class CompraController extends Controller
     {
         $empresaId = session('empresa_activa_id');
         $query = Compra::with(['proveedor', 'centroCosto', 'recepcionBodega:id,compra_id'])
+            ->withExists('etiquetasProductos as has_etiquetas')
+            ->withCount(['detalles as tiene_productos_codificados' => fn($q) => $q->whereNotNull('producto_id')])
             ->where('empresa_id', $empresaId);
 
         if ($request->filled('buscar')) {
@@ -307,22 +309,24 @@ class CompraController extends Controller
             $detalles = $compra->detalles
                 ->filter(fn($d) => $d->producto_id !== null)
                 ->map(function ($d) {
-                    $codigo = $d->producto?->codigo ?? '?';
-                    $nombre = $d->producto?->nombre ?? $d->descripcion;
-                    $ultimo = EtiquetaProducto::ultimoCorrelativo((int) $d->producto_id);
-                    $desde  = $ultimo + 1;
-                    $cant   = (int) ceil((float) $d->cantidad);
+                    $codigo  = $d->producto?->codigo ?? '?';
+                    $nombre  = $d->producto?->nombre ?? $d->descripcion;
+                    $prefijo = EtiquetaProducto::extraerPrefijo($codigo);
+                    $ultimo  = EtiquetaProducto::ultimoCorrelativoPorPrefijo($prefijo);
+                    $cant    = (int) ceil((float) $d->cantidad);
+                    $desde   = $ultimo + 1;
                     return [
-                        'id'                 => $d->id,
-                        'producto_id'        => $d->producto_id,
-                        'codigo'             => $codigo,
-                        'nombre'             => $nombre,
-                        'descripcion'        => $d->descripcion,
-                        'cantidad'           => $cant,
-                        'ultimo_correlativo' => $ultimo,
-                        'desde'              => $desde,
-                        'hasta'              => $desde + $cant - 1,
-                        'num_etiquetas'      => $cant,
+                        'id'                      => $d->id,
+                        'producto_id'             => $d->producto_id,
+                        'codigo'                  => $codigo,
+                        'nombre'                  => $nombre,
+                        'descripcion'             => $d->descripcion,
+                        'cantidad'                => $cant,
+                        'prefijo'                 => $prefijo,
+                        'ultima_etiqueta_prefijo' => $ultimo,
+                        'desde'                   => $desde,
+                        'hasta'                   => $desde + $cant - 1,
+                        'num_etiquetas'           => $cant,
                     ];
                 })
                 ->values();
@@ -338,49 +342,55 @@ class CompraController extends Controller
     public function generarEtiquetasPdf(Request $request, Compra $compra): \Illuminate\Http\Response
     {
         $request->validate([
-            'productos'             => 'required|array|min:1',
+            'productos'                 => 'required|array|min:1',
             'productos.*.producto_id'   => 'required|integer',
             'productos.*.detalle_id'    => 'nullable|integer',
             'productos.*.codigo'        => 'required|string',
             'productos.*.descripcion'   => 'required|string',
-            'productos.*.desde'         => 'required|integer|min:1',
             'productos.*.num_etiquetas' => 'required|integer|min:1',
-            'reimprimir'            => 'boolean',
         ]);
 
-        $empresaId  = session('empresa_activa_id');
-        $reimprimir = $request->boolean('reimprimir');
+        $empresaId = session('empresa_activa_id');
 
-        $registros = [];
+        // Calcular correlativos y persistir dentro de una transacción para
+        // evitar duplicados si dos usuarios generan etiquetas simultáneamente
+        $registros = DB::transaction(function () use ($request, $compra, $empresaId) {
+            $registros = [];
 
-        foreach ($request->productos as $p) {
-            $productoId   = (int) $p['producto_id'];
-            $desde        = (int) $p['desde'];
-            $numEtiquetas = (int) $p['num_etiquetas'];
-            $hasta        = $desde + $numEtiquetas - 1;
+            foreach ($request->productos as $p) {
+                $productoId   = (int) $p['producto_id'];
+                $numEtiquetas = (int) $p['num_etiquetas'];
+                $codigo       = $p['codigo'];
+                $prefijo      = EtiquetaProducto::extraerPrefijo($codigo);
 
-            if (!$reimprimir) {
+                // Recalcular dentro de la transacción — ignora el 'desde' del frontend
+                $ultimo = EtiquetaProducto::ultimoCorrelativoPorPrefijo($prefijo);
+                $desde  = $ultimo + 1;
+                $hasta  = $desde + $numEtiquetas - 1;
+
                 EtiquetaProducto::create([
                     'empresa_id'        => $empresaId,
                     'compra_id'         => $compra->id,
                     'compra_detalle_id' => $p['detalle_id'] ?? null,
                     'producto_id'       => $productoId,
-                    'codigo_producto'   => $p['codigo'],
+                    'codigo_producto'   => $codigo,
                     'correlativo_desde' => $desde,
                     'correlativo_hasta' => $hasta,
                     'cantidad'          => $numEtiquetas,
                     'generado_por'      => Auth::id(),
                     'created_at'        => now(),
                 ]);
+
+                $registros[] = [
+                    'codigo'      => $codigo,
+                    'descripcion' => $p['descripcion'],
+                    'desde'       => $desde,
+                    'hasta'       => $hasta,
+                ];
             }
 
-            $registros[] = [
-                'codigo'      => $p['codigo'],
-                'descripcion' => $p['descripcion'],
-                'desde'       => $desde,
-                'hasta'       => $hasta,
-            ];
-        }
+            return $registros;
+        });
 
         // Construir lista de etiquetas individuales
         $generator = new BarcodeGeneratorPNG();
@@ -408,6 +418,137 @@ class CompraController extends Controller
         return $pdf->stream('etiquetas-' . $compra->num_documento . '.pdf');
     }
 
+
+    // ── Etiquetas — listado para modal de selección ──────────────────────────────
+
+    public function etiquetasListado(Compra $compra): JsonResponse
+    {
+        $registros = EtiquetaProducto::where('compra_id', $compra->id)
+            ->with('producto:id,nombre')
+            ->orderBy('producto_id')
+            ->orderBy('correlativo_desde')
+            ->get();
+
+        if ($registros->isEmpty()) {
+            return response()->json(['productos' => []]);
+        }
+
+        $compra->load(['detalles:id,compra_id,producto_id,descripcion']);
+        $descripcionPorProductoId = $compra->detalles
+            ->whereNotNull('producto_id')
+            ->keyBy('producto_id')
+            ->map(fn($d) => $d->descripcion);
+
+        $agrupado = [];
+
+        foreach ($registros as $reg) {
+            $codigo  = $reg->codigo_producto;
+            $nombre  = $reg->producto?->nombre
+                ?? $descripcionPorProductoId[$reg->producto_id]
+                ?? $codigo;
+
+            if (!array_key_exists($codigo, $agrupado)) {
+                $agrupado[$codigo] = ['codigo' => $codigo, 'nombre' => $nombre, 'etiquetas' => []];
+            }
+
+            for ($i = (int) $reg->correlativo_desde; $i <= (int) $reg->correlativo_hasta; $i++) {
+                $agrupado[$codigo]['etiquetas'][] = $codigo . '-' . str_pad($i, 6, '0', STR_PAD_LEFT);
+            }
+        }
+
+        return response()->json(['productos' => array_values($agrupado)]);
+    }
+
+    // ── Etiquetas — reimprimir selección específica ───────────────────────────────
+
+    public function reimprimirSeleccion(Request $request, Compra $compra): \Illuminate\Http\Response
+    {
+        $request->validate([
+            'etiquetas'   => 'required|array|min:1',
+            'etiquetas.*' => 'required|string',
+        ]);
+
+        $compra->load(['detalles:id,compra_id,producto_id,descripcion']);
+        $registros = EtiquetaProducto::where('compra_id', $compra->id)
+            ->get(['producto_id', 'codigo_producto']);
+
+        // Mapa: codigo_producto → descripcion del detalle
+        $descripcionPorCodigo = [];
+        foreach ($registros as $reg) {
+            if (isset($descripcionPorCodigo[$reg->codigo_producto])) continue;
+            $det = $compra->detalles->firstWhere('producto_id', $reg->producto_id);
+            $descripcionPorCodigo[$reg->codigo_producto] = $det?->descripcion ?? $reg->codigo_producto;
+        }
+
+        $generator = new BarcodeGeneratorPNG();
+        $etiquetas = [];
+
+        foreach ($request->etiquetas as $codigoBarras) {
+            // Extrae el código de producto: "AMP-001-000052" → "AMP-001" (antes del último guion)
+            $pos            = strrpos((string) $codigoBarras, '-');
+            $codigoProducto = $pos !== false ? substr((string) $codigoBarras, 0, $pos) : (string) $codigoBarras;
+            $descripcion    = $descripcionPorCodigo[$codigoProducto] ?? $codigoProducto;
+
+            $png = $generator->getBarcode((string) $codigoBarras, BarcodeGeneratorPNG::TYPE_CODE_128, 2, 60);
+            if (!$png) continue;
+
+            $etiquetas[] = [
+                'codigo_barras' => (string) $codigoBarras,
+                'descripcion'   => $descripcion,
+                'barcode_png'   => base64_encode($png),
+            ];
+        }
+
+        if (empty($etiquetas)) {
+            abort(400, 'No se pudo generar ninguna etiqueta.');
+        }
+
+        $empresa = Empresa::find(session('empresa_activa_id'));
+        $pdf = Pdf::loadView('pdf.etiquetas', compact('etiquetas', 'empresa'))
+            ->setPaper([0, 0, 255.12, 99.21], 'portrait');
+
+        return $pdf->stream('reimprimir-seleccion-' . $compra->num_documento . '.pdf');
+    }
+
+    // ── Etiquetas — reimprimir todas las ya generadas para esta compra ───────────
+
+    public function reimprimirEtiquetasPdf(Compra $compra): \Illuminate\Http\Response
+    {
+        $registros = EtiquetaProducto::where('compra_id', $compra->id)->orderBy('id')->get();
+
+        if ($registros->isEmpty()) {
+            abort(404, 'No hay etiquetas generadas para esta factura.');
+        }
+
+        $compra->load(['detalles:id,compra_id,descripcion']);
+        $descripcionesByDetalleId = $compra->detalles->keyBy('id')
+            ->map(fn($d) => $d->descripcion);
+
+        $generator = new BarcodeGeneratorPNG();
+        $etiquetas = [];
+
+        foreach ($registros as $reg) {
+            $descripcion = $descripcionesByDetalleId[$reg->compra_detalle_id] ?? $reg->codigo_producto;
+            for ($i = (int) $reg->correlativo_desde; $i <= (int) $reg->correlativo_hasta; $i++) {
+                $codigoBarras = $reg->codigo_producto . '-' . str_pad($i, 6, '0', STR_PAD_LEFT);
+                $etiquetas[]  = [
+                    'codigo_barras' => $codigoBarras,
+                    'descripcion'   => $descripcion,
+                    'barcode_png'   => base64_encode(
+                        $generator->getBarcode($codigoBarras, BarcodeGeneratorPNG::TYPE_CODE_128, 2, 60)
+                    ),
+                ];
+            }
+        }
+
+        $etiquetas = array_values(array_filter($etiquetas, fn($e) => !empty($e['barcode_png'])));
+
+        $empresa = Empresa::find(session('empresa_activa_id'));
+        $pdf     = Pdf::loadView('pdf.etiquetas', compact('etiquetas', 'empresa'))
+            ->setPaper([0, 0, 255.12, 99.21], 'portrait');
+
+        return $pdf->stream('reimprimir-etiquetas-' . $compra->num_documento . '.pdf');
+    }
 
     public function show(Compra $compra): Response
     {

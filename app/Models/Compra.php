@@ -84,6 +84,11 @@ class Compra extends Model
         return $this->hasOne(RecepcionBodega::class, 'compra_id');
     }
 
+    public function etiquetasProductos(): HasMany
+    {
+        return $this->hasMany(EtiquetaProducto::class, 'compra_id');
+    }
+
     public function scopeActivas(Builder $q): Builder
     {
         return $q->where('estado', 'activa');

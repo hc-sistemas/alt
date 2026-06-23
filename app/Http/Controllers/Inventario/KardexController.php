@@ -44,13 +44,10 @@ class KardexController extends Controller
                 fn($q) => $q->whereExists(fn($sub) => $sub
                     ->from('inventario_movimientos')
                     ->whereColumn('producto_id', 'productos.id')
-                    ->when($bodegaId, fn($s) => $s->where(fn($s2) =>
-                        $s2->where('bodega_origen_id', $bodegaId)
-                           ->orWhere('bodega_destino_id', $bodegaId)
-                    ))
-                    ->when($request->fecha_desde, fn($s) => $s->where('fecha', '>=', $request->fecha_desde))
-                    ->when($request->fecha_hasta, fn($s) => $s->where('fecha', '<=', $request->fecha_hasta))
-                    ->when($request->tipo, fn($s) => $s->where('tipo_movimiento', $request->tipo))
+                    ->when($bodegaId, fn($s) => $s->where('bodega_id', $bodegaId))
+                    ->when($request->fecha_desde, fn($s) => $s->whereDate('created_at', '>=', $request->fecha_desde))
+                    ->when($request->fecha_hasta, fn($s) => $s->whereDate('created_at', '<=', $request->fecha_hasta))
+                    ->when($request->tipo, fn($s) => $s->where('tipo', $request->tipo))
                 )
             )
             ->orderByRaw('(EXISTS (SELECT 1 FROM inventario_movimientos WHERE producto_id = productos.id)) DESC')
@@ -66,44 +63,29 @@ class KardexController extends Controller
             if ($request->fecha_desde) {
                 $saldoQuery = InventarioMovimiento::query()
                     ->whereIn('producto_id', $productoIds)
-                    ->where('fecha', '<', $request->fecha_desde)
-                    ->when($bodegaId, fn($q) => $q->where(fn($q2) =>
-                        $q2->where('bodega_origen_id', $bodegaId)
-                           ->orWhere('bodega_destino_id', $bodegaId)
-                    ));
+                    ->whereDate('created_at', '<', $request->fecha_desde)
+                    ->when($bodegaId, fn($q) => $q->where('bodega_id', $bodegaId));
 
-                $saldoRaw = $bodegaId
-                    ? "producto_id, COALESCE(SUM(CASE
-                        WHEN tipo_movimiento IN ('reserva', 'reserva_liberada') THEN 0
-                        WHEN bodega_destino_id = ? THEN cantidad
-                        WHEN bodega_origen_id = ? THEN -cantidad
-                        ELSE 0 END), 0) as saldo"
-                    : "producto_id, COALESCE(SUM(CASE
-                        WHEN tipo_movimiento = 'entrada' THEN cantidad
-                        WHEN tipo_movimiento = 'salida' THEN -cantidad
-                        WHEN tipo_movimiento IN ('reserva', 'reserva_liberada', 'traslado') THEN 0
-                        WHEN tipo_movimiento = 'ajuste' AND bodega_destino_id IS NOT NULL THEN cantidad
-                        WHEN tipo_movimiento = 'ajuste' AND bodega_origen_id IS NOT NULL THEN -cantidad
-                        ELSE 0 END), 0) as saldo";
+                $saldoRaw = "producto_id, COALESCE(SUM(CASE
+                    WHEN tipo = 'entrada' THEN cantidad
+                    WHEN tipo = 'salida' THEN -cantidad
+                    ELSE 0 END), 0) as saldo";
 
                 $saldosAnteriores = $saldoQuery
-                    ->selectRaw($saldoRaw, $bodegaId ? [$bodegaId, $bodegaId] : [])
+                    ->selectRaw($saldoRaw)
                     ->groupBy('producto_id')
                     ->pluck('saldo', 'producto_id')
                     ->map(fn($v) => (float) $v)
                     ->all();
             }
 
-            $todosMovimientos = InventarioMovimiento::with(['bodegaOrigen', 'bodegaDestino', 'usuario'])
+            $todosMovimientos = InventarioMovimiento::with(['bodega', 'usuario'])
                 ->whereIn('producto_id', $productoIds)
-                ->when($bodegaId, fn($q) => $q->where(fn($q2) =>
-                    $q2->where('bodega_origen_id', $bodegaId)
-                       ->orWhere('bodega_destino_id', $bodegaId)
-                ))
-                ->when($request->fecha_desde, fn($q) => $q->where('fecha', '>=', $request->fecha_desde))
-                ->when($request->fecha_hasta, fn($q) => $q->where('fecha', '<=', $request->fecha_hasta))
-                ->when($request->tipo, fn($q) => $q->where('tipo_movimiento', $request->tipo))
-                ->orderBy('fecha', 'asc')
+                ->when($bodegaId, fn($q) => $q->where('bodega_id', $bodegaId))
+                ->when($request->fecha_desde, fn($q) => $q->whereDate('created_at', '>=', $request->fecha_desde))
+                ->when($request->fecha_hasta, fn($q) => $q->whereDate('created_at', '<=', $request->fecha_hasta))
+                ->when($request->tipo, fn($q) => $q->where('tipo', $request->tipo))
+                ->orderBy('created_at', 'asc')
                 ->orderBy('id', 'asc')
                 ->get()
                 ->groupBy('producto_id');
@@ -123,7 +105,7 @@ class KardexController extends Controller
                     $saldoActual       += $delta;
                     $m->saldo_posterior = $saldoActual;
                     $m->es_ingreso      = $esIngreso;
-                    $m->tipo_descriptivo = $this->tipoDescriptivo($m->tipo_movimiento, $m->documento_tipo, $esIngreso);
+                    $m->tipo_descriptivo = $this->tipoDescriptivo($m->tipo, $m->doc_tipo, $esIngreso);
                 }
 
                 $resultados[] = [
@@ -149,23 +131,9 @@ class KardexController extends Controller
 
     private function determinarEsIngreso(InventarioMovimiento $movimiento, ?int $bodegaId): ?bool
     {
-        $tipo = $movimiento->tipo_movimiento;
-
-        if (in_array($tipo, ['reserva', 'reserva_liberada'])) {
-            return null;
-        }
-
-        if ($bodegaId) {
-            if ((int) $movimiento->bodega_destino_id === $bodegaId) return true;
-            if ((int) $movimiento->bodega_origen_id === $bodegaId) return false;
-            return null;
-        }
-
-        return match ($tipo) {
+        return match ($movimiento->tipo) {
             'entrada' => true,
             'salida'  => false,
-            'traslado' => null,
-            'ajuste'  => $movimiento->bodega_destino_id ? true : ($movimiento->bodega_origen_id ? false : null),
             default   => null,
         };
     }

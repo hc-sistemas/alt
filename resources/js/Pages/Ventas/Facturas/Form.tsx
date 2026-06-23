@@ -597,7 +597,7 @@ export default function Form() {
                                 <tr style={{ borderBottom: '1px solid var(--border)' }}>
                                     {[
                                         { label: 'N°', cls: 'w-8 text-center' },
-                                        { label: 'Producto', cls: 'min-w-[220px]' },
+                                        { label: 'Producto', cls: 'min-w-55' },
                                         { label: 'Cant', cls: 'w-16 text-right' },
                                         { label: 'Precio', cls: 'w-24 text-right' },
                                         { label: 'Desc%', cls: 'w-20 text-right' },
@@ -945,7 +945,7 @@ export default function Form() {
                         </p>
                         <textarea
                             rows={5}
-                            className="w-full rounded-md border px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-[var(--primary)] transition-shadow"
+                            className="w-full rounded-md border px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-(--primary) transition-shadow"
                             style={{ background: 'transparent', borderColor: 'var(--border)', color: 'var(--text-main)' }}
                             placeholder="Observaciones adicionales para la factura..."
                             value={observaciones}

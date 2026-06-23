@@ -207,7 +207,7 @@ export default function ProductosIndex() {
                                     <td className="px-3 py-2.5 font-mono font-medium" style={{ color: 'var(--text-muted)' }}>
                                         {producto.codigo}
                                     </td>
-                                    <td className="px-3 py-2.5 max-w-[200px]">
+                                    <td className="px-3 py-2.5 max-w-50">
                                         <div className="flex items-center gap-1.5 flex-wrap">
                                             <span className="font-medium truncate" style={{ color: 'var(--text-main)' }}>
                                                 {producto.nombre}

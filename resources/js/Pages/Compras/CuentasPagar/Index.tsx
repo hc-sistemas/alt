@@ -127,7 +127,7 @@ function ModalPago({ cxp, bancos, onClose }: {
     function submit(e: React.FormEvent) {
         e.preventDefault()
         setProcessing(true)
-        router.post(route('compras.cxp.pagar', cxp.id), form, {
+        router.post(route('compras.cxp.pagar', cxp.id), form as unknown as Record<string, string>, {
             onSuccess: () => { notify.success('Pago registrado correctamente'); onClose() },
             onError:   (errs) => { notify.error('Error: ' + Object.values(errs).join(', ')); setProcessing(false) },
             onFinish:  () => setProcessing(false),

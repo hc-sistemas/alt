@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict fYErvATCpq71aRnEl69Uey53szZYgbFFQCmkK83jEJphSn9GzSJDUHqt3NAFepc
+\restrict riULas8I4BOb9lapZiTDr2JfU2f3sRdMa6XubZmi4lGP1hw72d3l6cZZcuBaYuN
 
 -- Dumped from database version 16.14
 -- Dumped by pg_dump version 16.14
@@ -1560,7 +1560,8 @@ CREATE TABLE public.inventario_movimientos (
     usuario_id bigint NOT NULL,
     empresa_id bigint NOT NULL,
     notas text,
-    created_at timestamp(0) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
+    created_at timestamp(0) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    liberado_at timestamp(0) without time zone
 );
 
 
@@ -1594,7 +1595,8 @@ CREATE TABLE public.inventario_saldos (
     stock_actual numeric(12,4) DEFAULT '0'::numeric NOT NULL,
     stock_reservado numeric(12,4) DEFAULT '0'::numeric NOT NULL,
     costo_promedio numeric(14,4) DEFAULT '0'::numeric NOT NULL,
-    updated_at timestamp(0) without time zone DEFAULT CURRENT_TIMESTAMP
+    updated_at timestamp(0) without time zone DEFAULT CURRENT_TIMESTAMP,
+    cantidad_reservada numeric(12,4) DEFAULT '0'::numeric NOT NULL
 );
 
 
@@ -2840,6 +2842,77 @@ ALTER SEQUENCE public.puestos_trabajo_id_seq OWNED BY public.puestos_trabajo.id;
 
 
 --
+-- Name: recepcion_detalles; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.recepcion_detalles (
+    id bigint NOT NULL,
+    recepcion_id bigint NOT NULL,
+    compra_detalle_id bigint NOT NULL,
+    producto_id bigint NOT NULL,
+    cantidad_esperada numeric(12,4) NOT NULL,
+    cantidad_recibida numeric(12,4) DEFAULT '0'::numeric NOT NULL,
+    estado character varying(20) DEFAULT 'pendiente'::character varying NOT NULL
+);
+
+
+--
+-- Name: recepcion_detalles_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.recepcion_detalles_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: recepcion_detalles_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.recepcion_detalles_id_seq OWNED BY public.recepcion_detalles.id;
+
+
+--
+-- Name: recepciones_bodega; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.recepciones_bodega (
+    id bigint NOT NULL,
+    empresa_id bigint NOT NULL,
+    compra_id bigint NOT NULL,
+    bodega_id bigint NOT NULL,
+    estado character varying(20) DEFAULT 'pendiente'::character varying NOT NULL,
+    recibido_por bigint,
+    fecha_recepcion date,
+    observacion text,
+    created_at timestamp(0) without time zone,
+    updated_at timestamp(0) without time zone
+);
+
+
+--
+-- Name: recepciones_bodega_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.recepciones_bodega_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: recepciones_bodega_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.recepciones_bodega_id_seq OWNED BY public.recepciones_bodega.id;
+
+
+--
 -- Name: retencion_detalles; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3755,6 +3828,20 @@ ALTER TABLE ONLY public.puestos_trabajo ALTER COLUMN id SET DEFAULT nextval('pub
 
 
 --
+-- Name: recepcion_detalles id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.recepcion_detalles ALTER COLUMN id SET DEFAULT nextval('public.recepcion_detalles_id_seq'::regclass);
+
+
+--
+-- Name: recepciones_bodega id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.recepciones_bodega ALTER COLUMN id SET DEFAULT nextval('public.recepciones_bodega_id_seq'::regclass);
+
+
+--
 -- Name: retencion_detalles id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -3906,25 +3993,18 @@ COPY public.asiento_detalles (id, asiento_id, cuenta_id, centro_costo_id, descri
 32	16	595	\N	Transferencia 890809	0.0000	7383.0000
 33	17	633	\N	Pago 77777	339.2500	0.0000
 34	17	595	\N	Transferencia 77777	0.0000	339.2500
-35	18	604	\N	Compra 002-066666556-70707070	33600.0000	0.0000
-36	18	608	\N	IVA compra 002-066666556-70707070	5040.0000	0.0000
-37	18	633	\N	CxP 002-066666556-70707070	0.0000	38640.0000
-38	19	604	\N	Compra 999-222-44444	450.0000	0.0000
-39	19	608	\N	IVA compra 999-222-44444	67.5000	0.0000
-40	19	633	\N	CxP 999-222-44444	0.0000	517.5000
-41	20	604	\N	Compra 77899999990000	17600.0000	0.0000
-42	20	608	\N	IVA compra 77899999990000	2640.0000	0.0000
-43	20	633	\N	CxP 77899999990000	0.0000	20240.0000
-44	21	604	\N	Compra 9999888777	16150.0000	0.0000
-45	21	608	\N	IVA compra 9999888777	0.0000	0.0000
-46	21	633	\N	CxP 9999888777	0.0000	16150.0000
-47	22	604	\N	Compra 324737945793475	10080.0000	0.0000
-48	22	608	\N	IVA compra 324737945793475	1512.0000	0.0000
-49	22	633	\N	CxP 324737945793475	0.0000	11592.0000
 50	23	633	\N	Pago TRF-009	16150.0000	0.0000
 51	23	595	\N	Transferencia TRF-009	0.0000	16150.0000
 52	24	633	\N	Pago TRF-334	11592.0000	0.0000
 53	24	595	\N	Transferencia TRF-334	0.0000	11592.0000
+54	25	604	\N	Compra 008-444-56777	6300.0000	0.0000
+55	25	608	\N	IVA compra 008-444-56777	945.0000	0.0000
+56	25	633	\N	CxP 008-444-56777	0.0000	7245.0000
+57	26	633	\N	Pago trf-003	7245.0000	0.0000
+58	26	595	\N	Transferencia trf-003	0.0000	7245.0000
+62	28	604	\N	REVERSA: Compra 008-444-56777	0.0000	6300.0000
+63	28	608	\N	REVERSA: IVA compra 008-444-56777	0.0000	945.0000
+64	28	633	\N	REVERSA: CxP 008-444-56777	7245.0000	0.0000
 \.
 
 
@@ -3948,13 +4028,11 @@ COPY public.asientos_contables (id, empresa_id, ejercicio_id, numero, fecha, con
 15	1	1	AS-2026-0013	2026-06-06	Pago proveedor ANT-0001	BANCO	1	ANT-0001	1000.0000	1000.0000	t	1	1	2026-06-05 23:27:30
 16	1	1	AS-2026-0014	2026-06-12	Pago proveedor 890809	BANCO	5	890809	7383.0000	7383.0000	t	1	1	2026-06-12 00:46:57
 17	1	1	AS-2026-0015	2026-06-12	Pago proveedor 77777	BANCO	6	77777	339.2500	339.2500	t	1	1	2026-06-12 00:47:14
-18	1	1	AS-2026-0016	2026-06-13	Compra 002-066666556-70707070	COMPRA	9	002-066666556-70707070	38640.0000	38640.0000	t	1	1	2026-06-13 18:43:31
-19	1	1	AS-2026-0017	2026-06-14	Compra 999-222-44444	COMPRA	10	999-222-44444	517.5000	517.5000	t	1	1	2026-06-13 19:13:55
-20	1	1	AS-2026-0018	2026-06-14	Compra 77899999990000	COMPRA	11	77899999990000	20240.0000	20240.0000	t	1	1	2026-06-14 00:22:29
-21	1	1	AS-2026-0019	2026-06-14	Compra 9999888777	COMPRA	12	9999888777	16150.0000	16150.0000	t	1	1	2026-06-14 09:46:50
-22	1	1	AS-2026-0020	2026-06-14	Compra 324737945793475	COMPRA	13	324737945793475	11592.0000	11592.0000	t	1	1	2026-06-14 10:22:11
 23	1	1	AS-2026-0021	2026-06-15	Pago proveedor TRF-009	BANCO	7	TRF-009	16150.0000	16150.0000	t	1	1	2026-06-15 17:49:21
 24	1	1	AS-2026-0022	2026-06-18	Pago proveedor TRF-334	BANCO	8	TRF-334	11592.0000	11592.0000	t	1	1	2026-06-17 20:16:46
+26	1	1	AS-2026-0024	2026-06-18	Pago proveedor trf-003	BANCO	9	trf-003	7245.0000	7245.0000	t	1	1	2026-06-18 18:44:17
+25	1	1	AS-2026-0023	2026-06-18	Compra 008-444-56777	COMPRA	14	008-444-56777	7245.0000	7245.0000	t	0	1	2026-06-18 18:43:54
+28	1	1	AS-2026-0025	2026-06-18	ANULACIÓN AS-2026-0023: Anulación compra 008-444-56777: El equipo no llego de la mejor manera y nos equivocamos en el registro	MANUAL	25	AS-2026-0023	7245.0000	7245.0000	f	1	1	2026-06-18 18:53:19
 \.
 
 
@@ -3977,7 +4055,7 @@ COPY public.bancos_cajas (id, empresa_id, cuenta_id, tipo, nombre, num_cuenta, t
 4	1	\N	caja	Caja General Matriz	\N	\N	2500.0000	5960.0000	t	2026-06-03 01:01:34	2026-06-09 23:19:18
 2	1	\N	banco	Banco del Pacífico Cta. Ahorros	0987654321	ahorros	18500.5000	9796.3000	t	2026-06-03 01:01:34	2026-06-12 05:46:56
 3	1	\N	banco	Banco Guayaquil Cta. Cte.	1122334455	corriente	8200.0000	16860.7500	t	2026-06-03 01:01:34	2026-06-12 05:47:13
-1	1	\N	banco	Banco Pichincha Cta. Cte.	2100456789	corriente	25000.0000	30498.0000	t	2026-06-03 01:01:34	2026-06-18 01:16:45
+1	1	\N	banco	Banco Pichincha Cta. Cte.	2100456789	corriente	25000.0000	30498.0000	t	2026-06-03 01:01:34	2026-06-18 23:44:16
 \.
 
 
@@ -4122,6 +4200,8 @@ COPY public.compra_detalles (id, compra_id, producto_id, cuenta_id, descripcion,
 23	12	14	\N	Controlador DMX Chauvet Obey 40 32 Canales	190.0000	85.0000	0.0000	16150.0000	0.00	0.0000	16150.0000	f	\N
 24	13	5	\N	Amplificador QSC GX5 500W Potencia	30.0000	420.0000	2520.0000	10080.0000	15.00	1512.0000	11592.0000	f	\N
 25	14	5	\N	Amplificador QSC GX5 500W Potencia	15.0000	420.0000	0.0000	6300.0000	15.00	945.0000	7245.0000	f	\N
+26	15	5	\N	Amplificador QSC GX5 500W Potencia	10.0000	420.0000	0.0000	4200.0000	15.00	630.0000	4830.0000	f	\N
+27	15	18	\N	Cable de Poder Uso Rudo 3x14 AWG 5m	17.0000	8.0000	0.0000	136.0000	15.00	20.4000	156.4000	f	\N
 \.
 
 
@@ -4130,18 +4210,19 @@ COPY public.compra_detalles (id, compra_id, producto_id, cuenta_id, descripcion,
 --
 
 COPY public.compras (id, empresa_id, centro_costo_id, proveedor_id, importacion_id, bodega_id, tipo_documento, num_documento, num_autorizacion, fecha_emision, fecha_registro, fecha_vencimiento, dias_credito, subtotal_0, subtotal_iva, total_iva, total_ice, total, iva_asumido, gasto_no_deducible, sustento_tributario, asiento_id, tiene_pago, concepto, estado, created_by, created_at, updated_at) FROM stdin;
-2	1	\N	2	\N	\N	FAC	001-001-000123	1234567890123456789012345678901234567890123456789	2026-04-18	2026-06-02	2026-05-18	30	0.0000	7525.0000	1128.7500	0.0000	8653.7500	f	f	\N	\N	f	Compra de equipos de audio profesional	activa	1	2026-06-02 02:47:39	2026-06-02 02:47:39
-3	1	\N	1	\N	\N	FAC	002-001-000456	9876543210987654321098765432109876543210987654321	2026-05-03	2026-06-02	2026-05-03	0	0.0000	12920.0000	1938.0000	0.0000	14858.0000	f	f	\N	\N	f	Compra de equipos de iluminación	activa	1	2026-06-02 02:47:39	2026-06-02 02:47:39
-4	1	\N	4	\N	\N	FAC	001-002-000789	1111111111111111111111111111111111111111111111111	2026-05-13	2026-06-02	2026-06-02	45	0.0000	1193.0000	178.9500	0.0000	1371.9500	f	f	\N	\N	f	Compra de cables y accesorios varios	activa	1	2026-06-02 02:47:39	2026-06-02 02:47:39
-5	1	\N	5	\N	\N	FAC	003-001-000321	2222222222222222222222222222222222222222222222222	2026-05-18	2026-06-02	2026-05-18	30	0.0000	500.0000	75.0000	0.0000	575.0000	f	f	\N	\N	f	Servicio de transporte y logística	activa	1	2026-06-02 02:47:39	2026-06-02 02:47:39
-6	1	\N	3	\N	\N	FAC	001-003-000654	3333333333333333333333333333333333333333333333333	2026-05-23	2026-06-02	2026-05-03	15	0.0000	6420.0000	963.0000	0.0000	7383.0000	f	f	\N	\N	t	Compra de instrumentos y accesorios musicales	activa	1	2026-06-02 02:47:39	2026-06-12 05:46:56
-7	1	\N	2	\N	\N	FAC	001-001-000200	4444444444444444444444444444444444444444444444444	2026-05-28	2026-06-02	2026-05-18	30	0.0000	295.0000	44.2500	0.0000	339.2500	f	f	\N	\N	t	Repuestos y suministros para taller técnico	activa	1	2026-06-02 02:47:39	2026-06-12 05:47:13
-9	1	1	8	\N	1	FAC	002-066666556-70707070	53654645	2026-06-13	2026-06-13	2026-06-13	0	0.0000	33600.0000	5040.0000	0.0000	38640.0000	t	f	7	18	f	\N	activa	1	2026-06-13 23:43:31	2026-06-13 23:43:31
-10	1	1	8	\N	2	LIQ	999-222-44444	2324	2026-06-14	2026-06-14	2026-06-14	0	0.0000	450.0000	67.5000	0.0000	517.5000	t	f	4	19	f	\N	activa	1	2026-06-14 00:13:54	2026-06-14 00:13:55
-11	1	1	10	\N	5	FAC	77899999990000	77887	2026-06-14	2026-06-14	2026-06-14	0	0.0000	17600.0000	2640.0000	0.0000	20240.0000	t	f	1	20	f	\N	activa	1	2026-06-14 05:22:28	2026-06-14 05:22:28
-12	1	1	8	\N	5	FAC	9999888777	888	2026-06-14	2026-06-14	2026-08-13	60	16150.0000	0.0000	0.0000	0.0000	16150.0000	t	f	7	21	t	\N	activa	1	2026-06-14 14:46:49	2026-06-15 22:49:21
-13	1	1	9	\N	5	FAC	324737945793475	3242	2026-06-14	2026-06-14	2026-07-29	45	0.0000	10080.0000	1512.0000	0.0000	11592.0000	f	f	3	22	t	\N	activa	1	2026-06-14 15:22:10	2026-06-18 01:16:45
-14	1	1	4	\N	2	FAC	008-444-56777	4566	2026-06-18	2026-06-18	2026-08-02	45	0.0000	6300.0000	945.0000	0.0000	7245.0000	t	f	3	\N	f	\N	pendiente	1	2026-06-18 04:46:19	2026-06-18 04:46:19
+2	1	\N	2	\N	\N	FAC	001-001-000123	1234567890123456789012345678901234567890123456789	2026-04-18	2026-06-02	2026-05-18	30	0.0000	7525.0000	1128.7500	0.0000	8653.7500	f	f	\N	\N	f	Compra de equipos de audio profesional	pendiente	1	2026-06-02 02:47:39	2026-06-21 17:08:43
+3	1	\N	1	\N	\N	FAC	002-001-000456	9876543210987654321098765432109876543210987654321	2026-05-03	2026-06-02	2026-05-03	0	0.0000	12920.0000	1938.0000	0.0000	14858.0000	f	f	\N	\N	f	Compra de equipos de iluminación	pendiente	1	2026-06-02 02:47:39	2026-06-21 17:08:43
+4	1	\N	4	\N	\N	FAC	001-002-000789	1111111111111111111111111111111111111111111111111	2026-05-13	2026-06-02	2026-06-02	45	0.0000	1193.0000	178.9500	0.0000	1371.9500	f	f	\N	\N	f	Compra de cables y accesorios varios	pendiente	1	2026-06-02 02:47:39	2026-06-21 17:08:43
+5	1	\N	5	\N	\N	FAC	003-001-000321	2222222222222222222222222222222222222222222222222	2026-05-18	2026-06-02	2026-05-18	30	0.0000	500.0000	75.0000	0.0000	575.0000	f	f	\N	\N	f	Servicio de transporte y logística	pendiente	1	2026-06-02 02:47:39	2026-06-21 17:08:43
+6	1	\N	3	\N	\N	FAC	001-003-000654	3333333333333333333333333333333333333333333333333	2026-05-23	2026-06-02	2026-05-03	15	0.0000	6420.0000	963.0000	0.0000	7383.0000	f	f	\N	\N	t	Compra de instrumentos y accesorios musicales	pendiente	1	2026-06-02 02:47:39	2026-06-21 17:08:43
+7	1	\N	2	\N	\N	FAC	001-001-000200	4444444444444444444444444444444444444444444444444	2026-05-28	2026-06-02	2026-05-18	30	0.0000	295.0000	44.2500	0.0000	339.2500	f	f	\N	\N	t	Repuestos y suministros para taller técnico	pendiente	1	2026-06-02 02:47:39	2026-06-21 17:08:43
+9	1	1	8	\N	1	FAC	002-066666556-70707070	53654645	2026-06-13	2026-06-13	2026-06-13	0	0.0000	33600.0000	5040.0000	0.0000	38640.0000	t	f	7	\N	f	\N	pendiente	1	2026-06-13 23:43:31	2026-06-21 17:08:43
+10	1	1	8	\N	2	LIQ	999-222-44444	2324	2026-06-14	2026-06-14	2026-06-14	0	0.0000	450.0000	67.5000	0.0000	517.5000	t	f	4	\N	f	\N	pendiente	1	2026-06-14 00:13:54	2026-06-21 17:08:43
+14	1	1	4	\N	2	FAC	008-444-56777	4566	2026-06-18	2026-06-18	2026-08-02	45	0.0000	6300.0000	945.0000	0.0000	7245.0000	t	f	3	25	t	\N	anulada	1	2026-06-18 04:46:19	2026-06-18 23:53:18
+15	1	1	8	\N	2	FAC	009-88-777	1233	2026-06-20	2026-06-20	2026-08-19	60	0.0000	4336.0000	650.4000	0.0000	4986.4000	t	f	12	\N	f	\N	pendiente	1	2026-06-20 22:50:55	2026-06-20 22:50:55
+11	1	1	10	\N	5	FAC	77899999990000	77887	2026-06-14	2026-06-14	2026-06-14	0	0.0000	17600.0000	2640.0000	0.0000	20240.0000	t	f	1	\N	f	\N	pendiente	1	2026-06-14 05:22:28	2026-06-21 17:08:43
+12	1	1	8	\N	5	FAC	9999888777	888	2026-06-14	2026-06-14	2026-08-13	60	16150.0000	0.0000	0.0000	0.0000	16150.0000	t	f	7	\N	t	\N	pendiente	1	2026-06-14 14:46:49	2026-06-21 17:08:43
+13	1	1	9	\N	5	FAC	324737945793475	3242	2026-06-14	2026-06-14	2026-07-29	45	0.0000	10080.0000	1512.0000	0.0000	11592.0000	f	f	3	\N	t	\N	pendiente	1	2026-06-14 15:22:10	2026-06-21 17:08:43
 \.
 
 
@@ -4175,13 +4256,7 @@ COPY public.cuentas_cobrar (id, empresa_id, cliente_id, factura_id, prefactura_i
 --
 
 COPY public.cuentas_pagar (id, empresa_id, proveedor_id, compra_id, monto, saldo, fecha_emision, fecha_vencimiento, aprobada, estado, asiento_pago_id, created_at, updated_at) FROM stdin;
-2	1	2	2	8653.7500	8653.7500	2026-04-18	2026-05-18	f	pendiente	\N	2026-06-02 02:47:39	2026-06-02 02:47:39
-3	1	4	4	1371.9500	1371.9500	2026-05-13	2026-06-02	f	pendiente	\N	2026-06-02 02:47:39	2026-06-02 02:47:39
-4	1	5	5	575.0000	575.0000	2026-05-18	2026-05-18	f	pendiente	\N	2026-06-02 02:47:39	2026-06-02 02:47:39
-5	1	3	6	7383.0000	0.0000	2026-05-23	2026-05-03	f	pagada	\N	2026-06-02 02:47:39	2026-06-12 05:46:56
-6	1	2	7	339.2500	0.0000	2026-05-28	2026-05-18	f	pagada	\N	2026-06-02 02:47:39	2026-06-12 05:47:13
-7	1	8	12	16150.0000	0.0000	2026-06-14	2026-08-13	f	pagada	\N	2026-06-14 14:46:50	2026-06-15 22:49:21
-8	1	9	13	11592.0000	0.0000	2026-06-14	2026-07-29	f	pagada	\N	2026-06-14 15:22:10	2026-06-18 01:16:45
+9	1	4	14	7245.0000	0.0000	2026-06-18	2026-08-02	f	pagada	\N	2026-06-18 23:43:54	2026-06-18 23:44:16
 \.
 
 
@@ -4656,8 +4731,6 @@ COPY public.erp_plan_cuentas (pln_id, pln_codigo, pln_descripcion, pln_obs, pln_
 --
 
 COPY public.etiquetas_productos (id, empresa_id, compra_id, compra_detalle_id, producto_id, codigo_producto, correlativo_desde, correlativo_hasta, cantidad, generado_por, created_at) FROM stdin;
-1	1	14	25	5	AMP-001	1	15	15	1	2026-06-18 05:03:56
-2	1	14	25	5	AMP-001	1	15	15	1	2026-06-18 14:59:25
 \.
 
 
@@ -4740,8 +4813,9 @@ COPY public.importaciones (id, empresa_id, proveedor_id, nombre, num_invoice, ag
 -- Data for Name: inventario_movimientos; Type: TABLE DATA; Schema: public; Owner: -
 --
 
-COPY public.inventario_movimientos (id, producto_id, bodega_id, tipo, doc_tipo, doc_id, cantidad, costo_unitario, costo_total, stock_anterior, stock_nuevo, usuario_id, empresa_id, notas, created_at) FROM stdin;
-1	5	5	entrada	COMPRA	13	30.0000	420.0000	12600.0000	0.0000	30.0000	1	1	Compra registrada: 324737945793475	2026-06-14 15:22:10
+COPY public.inventario_movimientos (id, producto_id, bodega_id, tipo, doc_tipo, doc_id, cantidad, costo_unitario, costo_total, stock_anterior, stock_nuevo, usuario_id, empresa_id, notas, created_at, liberado_at) FROM stdin;
+2	5	2	entrada	COMPRA	14	15.0000	420.0000	6300.0000	0.0000	15.0000	1	1	Compra confirmada: 008-444-56777	2026-06-18 23:43:54	\N
+4	5	2	salida	ANULACION	14	15.0000	420.0000	6300.0000	15.0000	0.0000	1	1	Anulación compra: El equipo no llego de la mejor manera y nos equivocamos en el registro	2026-06-18 23:53:18	\N
 \.
 
 
@@ -4749,29 +4823,30 @@ COPY public.inventario_movimientos (id, producto_id, bodega_id, tipo, doc_tipo, 
 -- Data for Name: inventario_saldos; Type: TABLE DATA; Schema: public; Owner: -
 --
 
-COPY public.inventario_saldos (id, producto_id, bodega_id, stock_actual, stock_reservado, costo_promedio, updated_at) FROM stdin;
-1	1	1	8.0000	0.0000	320.0000	2026-06-11 05:42:58
-2	2	1	5.0000	0.0000	280.0000	2026-06-11 05:42:58
-3	3	1	3.0000	0.0000	680.0000	2026-06-11 05:42:58
-4	4	1	2.0000	0.0000	2800.0000	2026-06-11 05:42:58
-5	5	1	6.0000	0.0000	420.0000	2026-06-11 05:42:58
-6	6	1	4.0000	0.0000	580.0000	2026-06-11 05:42:58
-7	7	1	4.0000	0.0000	1200.0000	2026-06-11 05:42:58
-8	8	1	2.0000	0.0000	980.0000	2026-06-11 05:42:58
-9	9	1	5.0000	0.0000	650.0000	2026-06-11 05:42:58
-10	10	1	3.0000	0.0000	480.0000	2026-06-11 05:42:58
-11	11	1	4.0000	0.0000	220.0000	2026-06-11 05:42:58
-12	12	1	6.0000	0.0000	680.0000	2026-06-11 05:42:58
-13	13	1	2.0000	0.0000	2200.0000	2026-06-11 05:42:58
-14	14	1	8.0000	0.0000	85.0000	2026-06-11 05:42:58
-15	15	1	10.0000	0.0000	120.0000	2026-06-11 05:42:58
-16	16	1	50.0000	0.0000	12.0000	2026-06-11 05:42:58
-17	17	1	30.0000	0.0000	15.0000	2026-06-11 05:42:58
-18	18	1	40.0000	0.0000	8.0000	2026-06-11 05:42:58
-19	19	1	100.0000	0.0000	2.5000	2026-06-11 05:42:58
-20	20	1	200.0000	0.0000	1.8000	2026-06-11 05:42:58
-21	21	1	20.0000	0.0000	8.0000	2026-06-11 05:42:58
-24	5	5	30.0000	0.0000	420.0000	2026-06-14 15:22:10
+COPY public.inventario_saldos (id, producto_id, bodega_id, stock_actual, stock_reservado, costo_promedio, updated_at, cantidad_reservada) FROM stdin;
+1	1	1	8.0000	0.0000	320.0000	2026-06-11 05:42:58	0.0000
+2	2	1	5.0000	0.0000	280.0000	2026-06-11 05:42:58	0.0000
+3	3	1	3.0000	0.0000	680.0000	2026-06-11 05:42:58	0.0000
+4	4	1	2.0000	0.0000	2800.0000	2026-06-11 05:42:58	0.0000
+6	6	1	4.0000	0.0000	580.0000	2026-06-11 05:42:58	0.0000
+7	7	1	4.0000	0.0000	1200.0000	2026-06-11 05:42:58	0.0000
+8	8	1	2.0000	0.0000	980.0000	2026-06-11 05:42:58	0.0000
+9	9	1	5.0000	0.0000	650.0000	2026-06-11 05:42:58	0.0000
+10	10	1	3.0000	0.0000	480.0000	2026-06-11 05:42:58	0.0000
+11	11	1	4.0000	0.0000	220.0000	2026-06-11 05:42:58	0.0000
+12	12	1	6.0000	0.0000	680.0000	2026-06-11 05:42:58	0.0000
+13	13	1	2.0000	0.0000	2200.0000	2026-06-11 05:42:58	0.0000
+14	14	1	8.0000	0.0000	85.0000	2026-06-11 05:42:58	0.0000
+15	15	1	10.0000	0.0000	120.0000	2026-06-11 05:42:58	0.0000
+16	16	1	50.0000	0.0000	12.0000	2026-06-11 05:42:58	0.0000
+17	17	1	30.0000	0.0000	15.0000	2026-06-11 05:42:58	0.0000
+18	18	1	40.0000	0.0000	8.0000	2026-06-11 05:42:58	0.0000
+19	19	1	100.0000	0.0000	2.5000	2026-06-11 05:42:58	0.0000
+20	20	1	200.0000	0.0000	1.8000	2026-06-11 05:42:58	0.0000
+21	21	1	20.0000	0.0000	8.0000	2026-06-11 05:42:58	0.0000
+25	5	2	0.0000	0.0000	420.0000	2026-06-18 23:53:18	0.0000
+5	5	1	0.0000	0.0000	0.0000	2026-06-21 17:08:43	0.0000
+24	5	5	0.0000	0.0000	0.0000	2026-06-21 17:08:43	0.0000
 \.
 
 
@@ -4813,6 +4888,8 @@ COPY public.listas_precio (id, empresa_id, producto_id, tipo, precio, descuento_
 
 COPY public.log_cambios_criticos (id, usuario_id, empresa_id, tabla, registro_id, campo, valor_anterior, valor_nuevo, ip_address, created_at) FROM stdin;
 1	1	1	asientos_contables	13	estado	1	0 — mal creado	127.0.0.1	2026-06-01 00:17:14
+3	1	1	asientos_contables	25	estado	1	0 — Anulación compra 008-444-56777: El equipo no llego de la mejor manera y nos equivocamos en el registro	127.0.0.1	2026-06-18 18:53:19
+4	1	\N	compras	14	estado	activa	anulada — El equipo no llego de la mejor manera y nos equivocamos en el registro	127.0.0.1	2026-06-18 18:53:19
 \.
 
 
@@ -4845,6 +4922,9 @@ COPY public.log_documentos (id, usuario_id, empresa_id, accion, modulo, tabla, r
 22	1	1	crear	contabilidad	asientos_contables	22	Asiento AS-2026-0020: Compra 324737945793475	127.0.0.1	2026-06-14 10:22:11	admin@altamira.com	2026-06-14 15:22:10
 23	1	1	crear	contabilidad	asientos_contables	23	Asiento AS-2026-0021: Pago proveedor TRF-009	127.0.0.1	2026-06-15 17:49:21	admin@altamira.com	2026-06-15 22:49:21
 24	1	1	crear	contabilidad	asientos_contables	24	Asiento AS-2026-0022: Pago proveedor TRF-334	127.0.0.1	2026-06-17 20:16:46	admin@altamira.com	2026-06-18 01:16:46
+25	1	1	crear	contabilidad	asientos_contables	25	Asiento AS-2026-0023: Compra 008-444-56777	127.0.0.1	2026-06-18 18:43:54	admin@altamira.com	2026-06-18 23:43:54
+26	1	1	crear	contabilidad	asientos_contables	26	Asiento AS-2026-0024: Pago proveedor trf-003	127.0.0.1	2026-06-18 18:44:17	admin@altamira.com	2026-06-18 23:44:16
+28	1	1	crear	contabilidad	asientos_contables	28	Asiento AS-2026-0025: ANULACIÓN AS-2026-0023: Anulación compra 008-444-56777: El equipo no llego de la mejor manera y nos equivocamos en el registro	127.0.0.1	2026-06-18 18:53:19	admin@altamira.com	2026-06-18 23:53:18
 \.
 
 
@@ -4992,6 +5072,8 @@ COPY public.migrations (id, migration, batch) FROM stdin;
 90	2026_06_09_300000_alinear_columnas_schema_legacy	12
 91	2026_06_15_500000_create_rrhh_tables	13
 92	2026_06_17_100000_create_etiquetas_productos_table	14
+93	2026_06_18_100000_add_reserva_columns_to_inventario	15
+94	2026_06_19_100000_create_recepciones_bodega_table	15
 \.
 
 
@@ -5056,6 +5138,8 @@ COPY public.movimientos_bancarios (id, empresa_id, banco_caja_id, tipo, sub_tipo
 21	1	3	egreso	pago_proveedor	2026-06-12	339.2500	proveedor	2	TECNOLOGÍA Y SONIDO S.A.	001-001-000200	\N	\N	77777	COMPRA	7	\N	\N	f	f	f	1	2026-06-12 05:47:13	2026-06-12 05:47:13
 22	1	1	egreso	pago_proveedor	2026-06-15	16150.0000	proveedor	8	CHAUVET PROFESSIONAL LLC	9999888777	\N	\N	TRF-009	COMPRA	12	\N	\N	f	f	f	1	2026-06-15 22:49:21	2026-06-15 22:49:21
 23	1	1	egreso	pago_proveedor	2026-06-18	11592.0000	proveedor	9	Distribuidora Nacional de Audio S.A.	324737945793475	\N	\N	TRF-334	COMPRA	13	\N	\N	f	f	f	1	2026-06-18 01:16:45	2026-06-18 01:16:45
+26	1	1	ingreso	pago_proveedor	2026-06-18	7245.0000	proveedor	4	\N	008-444-56777	\N	\N	Reversión pago — Anulación 008-444-56777: El equipo no llego de la mejor manera y nos equivocamos en el registro	ANULACION_COMPRA	14	\N	\N	f	f	f	1	2026-06-18 23:53:18	2026-06-18 23:53:18
+24	1	1	egreso	pago_proveedor	2026-06-18	7245.0000	proveedor	4	CABLES Y ACCESORIOS DEL ECUADOR	008-444-56777	\N	\N	trf-003	COMPRA	14	\N	\N	f	f	t	1	2026-06-18 23:44:16	2026-06-18 23:53:18
 \.
 
 
@@ -5897,8 +5981,8 @@ COPY public.plan_cuentas (id, empresa_id, codigo, nombre, descripcion, tipo, pad
 562	\N	5.2.1.06	Vacaciones	\N	gasto	556	4	t	t	0
 570	\N	5.2.2.03	Servicios Básicos	\N	gasto	567	4	t	t	0
 587	\N	5.3.1.02	Comisiones Bancarias y Pasarelas de Pago	\N	gasto	\N	4	t	t	0
-604	\N	1.1.4.01	Inventario de Mercaderías	\N	activo	425	4	t	t	5
-608	\N	1.1.5.01	Crédito Tributario IVA Compras	\N	activo	430	4	t	t	5
+604	\N	1.1.4.01	Inventario de Mercaderías	\N	activo	425	4	t	t	7
+608	\N	1.1.5.01	Crédito Tributario IVA Compras	\N	activo	430	4	t	t	7
 532	\N	3.1.5.01	Aportes para Futuras Capitalizaciones	\N	patrimonio	531	4	t	t	0
 541	\N	4.1.2.02	Ingresos por Servicios de Capacitación y Asesorías	\N	ingreso	539	4	t	t	0
 663	\N	4.1.2.03	Ingresos por Alquiler de Equipos	\N	ingreso	539	4	t	t	0
@@ -5914,8 +5998,8 @@ COPY public.plan_cuentas (id, empresa_id, codigo, nombre, descripcion, tipo, pad
 670	\N	5.2.2.12	Gastos de Representación y Atención a Clientes	\N	gasto	567	4	t	t	0
 671	\N	5.2.2.13	Suscripciones y Membresías	\N	gasto	567	4	t	t	0
 672	\N	5.2.2.14	Correo, Mensajería y Envíos	\N	gasto	567	4	t	t	0
-595	\N	1.1.1.03	Bancos Locales	\N	activo	411	4	t	t	4
-633	\N	2.1.1.01	Proveedores Locales	\N	pasivo	471	4	t	t	9
+595	\N	1.1.1.03	Bancos Locales	\N	activo	411	4	t	t	5
+633	\N	2.1.1.01	Proveedores Locales	\N	pasivo	471	4	t	t	12
 \.
 
 
@@ -5987,7 +6071,7 @@ COPY public.productos (id, empresa_id, marca_id, categoria_id, bodega_default_id
 22	1	12	6	\N	SRV-001	Servicio de Reparación Electrónica — Hora	\N	servicio	hora	f	45.0000	40.0000	0.0000	0.00	15.00	0.00	2.0000	\N	\N	\N	\N	t	\N	2026-06-11 05:42:58	2026-06-11 05:42:58	\N	f	\N	\N	\N	\N	\N
 23	1	12	6	\N	SRV-002	Alquiler Sistema de Sonido Completo — Día	\N	servicio	dia	f	350.0000	300.0000	0.0000	0.00	15.00	0.00	2.0000	\N	\N	\N	\N	t	\N	2026-06-11 05:42:58	2026-06-11 05:42:58	\N	f	\N	\N	\N	\N	\N
 24	1	12	6	\N	SRV-003	Instalación y Configuración de Equipos	\N	servicio	servicio	f	120.0000	100.0000	0.0000	0.00	15.00	0.00	2.0000	\N	\N	\N	\N	t	\N	2026-06-11 05:42:58	2026-06-11 05:42:58	\N	f	\N	\N	\N	\N	\N
-5	1	4	9	\N	AMP-001	Amplificador QSC GX5 500W Potencia	\N	producto	unidad	t	620.0000	550.0000	420.0000	0.00	15.00	0.00	2.0000	\N	\N	\N	\N	t	\N	2026-06-11 05:42:58	2026-06-14 15:22:10	\N	f	\N	\N	\N	\N	\N
+5	1	4	9	\N	AMP-001	Amplificador QSC GX5 500W Potencia	\N	producto	unidad	t	620.0000	550.0000	420.0000	0.00	15.00	0.00	2.0000	\N	\N	\N	\N	t	\N	2026-06-11 05:42:58	2026-06-18 23:43:54	\N	f	\N	\N	\N	\N	\N
 \.
 
 
@@ -6036,6 +6120,25 @@ COPY public.puestos_trabajo (id, empresa_id, nombre, cargo, departamento, estado
 
 
 --
+-- Data for Name: recepcion_detalles; Type: TABLE DATA; Schema: public; Owner: -
+--
+
+COPY public.recepcion_detalles (id, recepcion_id, compra_detalle_id, producto_id, cantidad_esperada, cantidad_recibida, estado) FROM stdin;
+1	1	26	5	10.0000	0.0000	pendiente
+2	1	27	18	17.0000	0.0000	pendiente
+\.
+
+
+--
+-- Data for Name: recepciones_bodega; Type: TABLE DATA; Schema: public; Owner: -
+--
+
+COPY public.recepciones_bodega (id, empresa_id, compra_id, bodega_id, estado, recibido_por, fecha_recepcion, observacion, created_at, updated_at) FROM stdin;
+1	1	15	2	pendiente	\N	\N	\N	2026-06-20 22:50:55	2026-06-20 22:50:55
+\.
+
+
+--
 -- Data for Name: retencion_detalles; Type: TABLE DATA; Schema: public; Owner: -
 --
 
@@ -6080,7 +6183,7 @@ COPY public.secuenciales (id, empresa_id, tipo_documento, establecimiento, punto
 --
 
 COPY public.sessions (id, user_id, ip_address, user_agent, payload, last_activity) FROM stdin;
-9tbVxDbpZdwnQMyYgJt86mz2VpbAQ5cUXK4ij5dl	1	127.0.0.1	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36	YTo1OntzOjY6Il90b2tlbiI7czo0MDoic3ljaDBoWFE0Rko0VUY2RkxTVkJTdUUyMXZTbVhjMnpRNTlQUWZlZyI7czo1MDoibG9naW5fd2ViXzU5YmEzNmFkZGMyYjJmOTQwMTU4MGYwMTRjN2Y1OGVhNGUzMDk4OWQiO2k6MTtzOjE3OiJlbXByZXNhX2FjdGl2YV9pZCI7aToxO3M6OToiX3ByZXZpb3VzIjthOjI6e3M6MzoidXJsIjtzOjYxOiJodHRwOi8vMTI3LjAuMC4xOjgwMDEvY29tcHJhcy9mYWN0dXJhcy8xMi92ZXJpZmljYXItYW51bGFjaW9uIjtzOjU6InJvdXRlIjtzOjM2OiJjb21wcmFzLmZhY3R1cmFzLnZlcmlmaWNhci1hbnVsYWNpb24iO31zOjY6Il9mbGFzaCI7YToyOntzOjM6Im9sZCI7YTowOnt9czozOiJuZXciO2E6MDp7fX19	1781802001
+Xi279N66oNk6avo9srjhcrFjqsP8vFb1Yl3vAfuO	1	127.0.0.1	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36	YTo1OntzOjY6Il90b2tlbiI7czo0MDoiNnF2cURIcWs4dFJBVElNSGJzd2tMNWZxVW9YcHlMNEV3Tzk3NTZtcCI7czo1MDoibG9naW5fd2ViXzU5YmEzNmFkZGMyYjJmOTQwMTU4MGYwMTRjN2Y1OGVhNGUzMDk4OWQiO2k6MTtzOjE3OiJlbXByZXNhX2FjdGl2YV9pZCI7aToxO3M6OToiX3ByZXZpb3VzIjthOjI6e3M6MzoidXJsIjtzOjU2OiJodHRwOi8vMTI3LjAuMC4xOjgwMDEvY29tcHJhcy9mYWN0dXJhcy8xNS9ldGlxdWV0YXMtZGF0YSI7czo1OiJyb3V0ZSI7czozMToiY29tcHJhcy5mYWN0dXJhcy5ldGlxdWV0YXMtZGF0YSI7fXM6NjoiX2ZsYXNoIjthOjI6e3M6Mzoib2xkIjthOjA6e31zOjM6Im5ldyI7YTowOnt9fX0=	1782062692
 \.
 
 
@@ -6193,14 +6296,14 @@ SELECT pg_catalog.setval('public.aprobaciones_especiales_id_seq', 1, false);
 -- Name: asiento_detalles_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.asiento_detalles_id_seq', 53, true);
+SELECT pg_catalog.setval('public.asiento_detalles_id_seq', 64, true);
 
 
 --
 -- Name: asientos_contables_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.asientos_contables_id_seq', 24, true);
+SELECT pg_catalog.setval('public.asientos_contables_id_seq', 28, true);
 
 
 --
@@ -6270,14 +6373,14 @@ SELECT pg_catalog.setval('public.colaboradores_id_seq', 8, true);
 -- Name: compra_detalles_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.compra_detalles_id_seq', 25, true);
+SELECT pg_catalog.setval('public.compra_detalles_id_seq', 27, true);
 
 
 --
 -- Name: compras_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.compras_id_seq', 14, true);
+SELECT pg_catalog.setval('public.compras_id_seq', 15, true);
 
 
 --
@@ -6305,7 +6408,7 @@ SELECT pg_catalog.setval('public.cuentas_cobrar_id_seq', 1, false);
 -- Name: cuentas_pagar_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.cuentas_pagar_id_seq', 8, true);
+SELECT pg_catalog.setval('public.cuentas_pagar_id_seq', 9, true);
 
 
 --
@@ -6340,7 +6443,7 @@ SELECT pg_catalog.setval('public.empresas_id_seq', 2, true);
 -- Name: etiquetas_productos_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.etiquetas_productos_id_seq', 2, true);
+SELECT pg_catalog.setval('public.etiquetas_productos_id_seq', 1, false);
 
 
 --
@@ -6410,14 +6513,14 @@ SELECT pg_catalog.setval('public.importaciones_id_seq', 3, true);
 -- Name: inventario_movimientos_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.inventario_movimientos_id_seq', 1, true);
+SELECT pg_catalog.setval('public.inventario_movimientos_id_seq', 4, true);
 
 
 --
 -- Name: inventario_saldos_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.inventario_saldos_id_seq', 24, true);
+SELECT pg_catalog.setval('public.inventario_saldos_id_seq', 27, true);
 
 
 --
@@ -6445,14 +6548,14 @@ SELECT pg_catalog.setval('public.listas_precio_id_seq', 1, false);
 -- Name: log_cambios_criticos_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.log_cambios_criticos_id_seq', 1, true);
+SELECT pg_catalog.setval('public.log_cambios_criticos_id_seq', 4, true);
 
 
 --
 -- Name: log_documentos_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.log_documentos_id_seq', 24, true);
+SELECT pg_catalog.setval('public.log_documentos_id_seq', 28, true);
 
 
 --
@@ -6473,7 +6576,7 @@ SELECT pg_catalog.setval('public.marcas_id_seq', 12, true);
 -- Name: migrations_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.migrations_id_seq', 92, true);
+SELECT pg_catalog.setval('public.migrations_id_seq', 94, true);
 
 
 --
@@ -6487,7 +6590,7 @@ SELECT pg_catalog.setval('public.modulos_id_seq', 10, true);
 -- Name: movimientos_bancarios_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.movimientos_bancarios_id_seq', 23, true);
+SELECT pg_catalog.setval('public.movimientos_bancarios_id_seq', 26, true);
 
 
 --
@@ -6621,6 +6724,20 @@ SELECT pg_catalog.setval('public.proveedores_id_seq', 12, true);
 --
 
 SELECT pg_catalog.setval('public.puestos_trabajo_id_seq', 1, false);
+
+
+--
+-- Name: recepcion_detalles_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
+--
+
+SELECT pg_catalog.setval('public.recepcion_detalles_id_seq', 2, true);
+
+
+--
+-- Name: recepciones_bodega_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
+--
+
+SELECT pg_catalog.setval('public.recepciones_bodega_id_seq', 1, true);
 
 
 --
@@ -7482,6 +7599,22 @@ ALTER TABLE ONLY public.proveedores
 
 ALTER TABLE ONLY public.puestos_trabajo
     ADD CONSTRAINT puestos_trabajo_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: recepcion_detalles recepcion_detalles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.recepcion_detalles
+    ADD CONSTRAINT recepcion_detalles_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: recepciones_bodega recepciones_bodega_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.recepciones_bodega
+    ADD CONSTRAINT recepciones_bodega_pkey PRIMARY KEY (id);
 
 
 --
@@ -8940,6 +9073,62 @@ ALTER TABLE ONLY public.puestos_trabajo
 
 
 --
+-- Name: recepcion_detalles recepcion_detalles_compra_detalle_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.recepcion_detalles
+    ADD CONSTRAINT recepcion_detalles_compra_detalle_id_foreign FOREIGN KEY (compra_detalle_id) REFERENCES public.compra_detalles(id);
+
+
+--
+-- Name: recepcion_detalles recepcion_detalles_producto_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.recepcion_detalles
+    ADD CONSTRAINT recepcion_detalles_producto_id_foreign FOREIGN KEY (producto_id) REFERENCES public.productos(id);
+
+
+--
+-- Name: recepcion_detalles recepcion_detalles_recepcion_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.recepcion_detalles
+    ADD CONSTRAINT recepcion_detalles_recepcion_id_foreign FOREIGN KEY (recepcion_id) REFERENCES public.recepciones_bodega(id) ON DELETE CASCADE;
+
+
+--
+-- Name: recepciones_bodega recepciones_bodega_bodega_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.recepciones_bodega
+    ADD CONSTRAINT recepciones_bodega_bodega_id_foreign FOREIGN KEY (bodega_id) REFERENCES public.bodegas(id);
+
+
+--
+-- Name: recepciones_bodega recepciones_bodega_compra_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.recepciones_bodega
+    ADD CONSTRAINT recepciones_bodega_compra_id_foreign FOREIGN KEY (compra_id) REFERENCES public.compras(id);
+
+
+--
+-- Name: recepciones_bodega recepciones_bodega_empresa_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.recepciones_bodega
+    ADD CONSTRAINT recepciones_bodega_empresa_id_foreign FOREIGN KEY (empresa_id) REFERENCES public.empresas(id);
+
+
+--
+-- Name: recepciones_bodega recepciones_bodega_recibido_por_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.recepciones_bodega
+    ADD CONSTRAINT recepciones_bodega_recibido_por_foreign FOREIGN KEY (recibido_por) REFERENCES public.usuarios(id);
+
+
+--
 -- Name: retencion_detalles retencion_detalles_retencion_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -9119,5 +9308,5 @@ ALTER TABLE ONLY public.usuarios
 -- PostgreSQL database dump complete
 --
 
-\unrestrict fYErvATCpq71aRnEl69Uey53szZYgbFFQCmkK83jEJphSn9GzSJDUHqt3NAFepc
+\unrestrict riULas8I4BOb9lapZiTDr2JfU2f3sRdMa6XubZmi4lGP1hw72d3l6cZZcuBaYuN
 

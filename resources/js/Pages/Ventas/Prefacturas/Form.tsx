@@ -403,7 +403,7 @@ export default function Form() {
                                             <td className="py-1.5 px-2" style={{ minWidth: 96 }}>
                                                 <Input type="number" min="0" step="0.01" value={det.precio_unitario} className="text-xs text-right" onChange={e => updateDetalle(idx, { precio_unitario: Number(e.target.value) })} />
                                             </td>
-                                            <td className="py-1.5 px-2 text-center text-right" style={{ color: 'var(--text-muted)' }}>{det.porcentaje_iva}%</td>
+                                            <td className="py-1.5 px-2 text-right" style={{ color: 'var(--text-muted)' }}>{det.porcentaje_iva}%</td>
                                             <td className="py-1.5 px-2 text-right font-semibold" style={{ color: 'var(--text-main)' }}>{formatMoneda(det.total)}</td>
                                             <td className="py-1.5 px-2">
                                                 <button type="button" className="p-1 rounded hover:bg-red-500/10 transition-colors" onClick={() => removeDetalle(idx)}>
@@ -441,7 +441,7 @@ export default function Form() {
                     <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--text-muted)' }}>Observaciones</p>
                     <textarea
                         rows={3}
-                        className="w-full rounded-md border px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-[var(--primary)] transition-shadow"
+                        className="w-full rounded-md border px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-(--primary) transition-shadow"
                         style={{ background: 'transparent', borderColor: 'var(--border)', color: 'var(--text-main)' }}
                         placeholder="Observaciones adicionales para la prefactura..."
                         value={observaciones}

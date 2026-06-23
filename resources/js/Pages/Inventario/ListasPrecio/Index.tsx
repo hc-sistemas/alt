@@ -346,7 +346,7 @@ export default function ListasPrecioIndex() {
                                             {row.codigo}
                                         </td>
                                         {/* Nombre */}
-                                        <td className={cn(tdBase, 'max-w-[180px] truncate')} style={{ color: 'var(--text-main)' }}>
+                                        <td className={cn(tdBase, 'max-w-45 truncate')} style={{ color: 'var(--text-main)' }}>
                                             {row.nombre}
                                         </td>
                                         {/* Marca */}

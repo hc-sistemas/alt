@@ -179,7 +179,7 @@ export default function ActivosIndex() {
                                         <td className="px-3 py-2.5 font-mono font-medium" style={{ color: 'var(--text-muted)' }}>
                                             {activo.codigo}
                                         </td>
-                                        <td className="px-3 py-2.5 max-w-[200px] truncate font-medium" style={{ color: 'var(--text-main)' }}
+                                        <td className="px-3 py-2.5 max-w-50 truncate font-medium" style={{ color: 'var(--text-main)' }}
                                             title={activo.nombre}>
                                             {activo.nombre}
                                         </td>
