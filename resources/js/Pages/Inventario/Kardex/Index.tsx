@@ -4,7 +4,7 @@ import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
 import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
-import { Search, Plus, FileSpreadsheet } from 'lucide-react'
+import { Search, FileSpreadsheet } from 'lucide-react'
 import type { Producto, KardexMovimientoExtendido, PaginatedData, PageProps } from '@/types'
 
 interface KardexResultado {
@@ -38,12 +38,12 @@ const TIPO_OPTIONS = [
 export default function KardexIndex() {
     const { resultados, productos_paginados, bodegas, filters } = usePage<Props>().props
 
-    const [buscar, setBuscar]           = useState(filters.buscar ?? '')
-    const [bodegaId, setBodegaId]       = useState(filters.bodega_id ?? '')
-    const [fechaDesde, setFechaDesde]   = useState(filters.fecha_desde ?? '')
-    const [fechaHasta, setFechaHasta]   = useState(filters.fecha_hasta ?? '')
-    const [tipo, setTipo]               = useState(filters.tipo ?? '')
-    const [fechaError, setFechaError]   = useState<string | null>(null)
+    const [buscar, setBuscar] = useState(filters.buscar ?? '')
+    const [bodegaId, setBodegaId] = useState(filters.bodega_id ?? '')
+    const [fechaDesde, setFechaDesde] = useState(filters.fecha_desde ?? '')
+    const [fechaHasta, setFechaHasta] = useState(filters.fecha_hasta ?? '')
+    const [tipo, setTipo] = useState(filters.tipo ?? '')
+    const [fechaError, setFechaError] = useState<string | null>(null)
 
     const handleBuscar = () => {
         if (fechaDesde && fechaHasta && fechaDesde > fechaHasta) {
@@ -52,11 +52,11 @@ export default function KardexIndex() {
         }
         setFechaError(null)
         router.get(route('inventario.kardex.index'), {
-            buscar:      buscar || undefined,
-            bodega_id:   bodegaId || undefined,
+            buscar: buscar || undefined,
+            bodega_id: bodegaId || undefined,
             fecha_desde: fechaDesde || undefined,
             fecha_hasta: fechaHasta || undefined,
-            tipo:        tipo || undefined,
+            tipo: tipo || undefined,
         }, { preserveState: false })
     }
 
@@ -249,10 +249,10 @@ function ProductoKardexBlock({
     redirectTo: string
 }) {
     const totalIngresosCant = movimientos.reduce((s, m) => s + (m.es_ingreso === true ? Number(m.cantidad) : 0), 0)
-    const totalEgresosCant  = movimientos.reduce((s, m) => s + (m.es_ingreso === false ? Number(m.cantidad) : 0), 0)
+    const totalEgresosCant = movimientos.reduce((s, m) => s + (m.es_ingreso === false ? Number(m.cantidad) : 0), 0)
     const totalIngresosCost = movimientos.reduce((s, m) => s + (m.es_ingreso === true ? Number(m.costo_total) : 0), 0)
-    const totalEgresosCost  = movimientos.reduce((s, m) => s + (m.es_ingreso === false ? Number(m.costo_total) : 0), 0)
-    const saldoFinal        = movimientos.length > 0 ? movimientos[movimientos.length - 1].saldo_posterior : saldoAnterior
+    const totalEgresosCost = movimientos.reduce((s, m) => s + (m.es_ingreso === false ? Number(m.costo_total) : 0), 0)
+    const saldoFinal = movimientos.length > 0 ? movimientos[movimientos.length - 1].saldo_posterior : saldoAnterior
 
     return (
         <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
@@ -262,12 +262,6 @@ function ProductoKardexBlock({
                     <span className="text-xs font-mono mr-2" style={{ color: 'var(--text-muted)' }}>{producto.codigo}</span>
                     <span className="text-sm font-semibold" style={{ color: 'var(--text-main)' }}>{producto.nombre}</span>
                 </div>
-                <Link href={route('inventario.kardex.ajuste', { producto_id: producto.id, redirect_to: redirectTo })}>
-                    <Button size="sm">
-                        <Plus className="w-3.5 h-3.5 mr-1" />
-                        Registrar Ajuste
-                    </Button>
-                </Link>
             </div>
 
             {/* Tabla */}

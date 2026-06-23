@@ -37,7 +37,7 @@ class InventarioMovimiento extends Model
         'fecha', 'hora', 'observacion',
     ];
 
-    public function getTipoMovimientoAttribute(): string  { return (string) $this->attributes['tipo']; }
+    public function getTipoMovimientoAttribute(): ?string  { return isset($this->attributes['tipo']) ? (string) $this->attributes['tipo'] : null; }
     public function getDocumentoTipoAttribute(): ?string  { return $this->attributes['doc_tipo'] ?? null; }
     public function getDocumentoIdAttribute(): ?int       { return isset($this->attributes['doc_id']) ? (int) $this->attributes['doc_id'] : null; }
     public function getFechaAttribute(): ?string          { return $this->created_at?->toDateString(); }
