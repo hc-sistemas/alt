@@ -105,7 +105,7 @@ class KardexController extends Controller
                     $saldoActual       += $delta;
                     $m->saldo_posterior = $saldoActual;
                     $m->es_ingreso      = $esIngreso;
-                    $m->tipo_descriptivo = $this->tipoDescriptivo($m->tipo, $m->doc_tipo, $esIngreso);
+                    $m->tipo_descriptivo = $m->tipo ? $this->tipoDescriptivo($m->tipo, $m->doc_tipo, $esIngreso) : 'MOVIMIENTO';
                 }
 
                 $resultados[] = [
@@ -138,7 +138,7 @@ class KardexController extends Controller
         };
     }
 
-    private function tipoDescriptivo(string $tipoMovimiento, ?string $docTipo, ?bool $esIngreso): string
+    private function tipoDescriptivo(?string $tipoMovimiento, ?string $docTipo, ?bool $esIngreso): string
     {
         $doc = $docTipo ? strtolower($docTipo) : '';
 

@@ -227,6 +227,8 @@ Route::middleware('auth')->group(function () {
         Route::get('recepciones/buscar-producto', [RecepcionController::class, 'buscarProducto'])->name('recepciones.buscarProducto');
         Route::post('recepciones', [RecepcionController::class, 'store'])->name('recepciones.store');
         Route::get('recepciones/{recepcion}', [RecepcionController::class, 'show'])->name('recepciones.show');
+        Route::post('recepciones/{recepcion}/escanear', [RecepcionController::class, 'escanear'])->name('recepciones.escanear');
+        Route::get('recepciones/{recepcion}/etiquetas', [RecepcionController::class, 'etiquetasPendientes'])->name('recepciones.etiquetas');
         Route::post('recepciones/{recepcion}/confirmar', [RecepcionController::class, 'confirmar'])->name('recepciones.confirmar');
     });
 

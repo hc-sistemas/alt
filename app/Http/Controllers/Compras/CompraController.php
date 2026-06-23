@@ -192,7 +192,8 @@ class CompraController extends Controller
                 $detallesProducto = collect($request->detalles)->filter(
                     fn($d) => !empty($d['producto_id'])
                 );
-                if ($detallesProducto->isNotEmpty() && !empty($request->bodega_id)) {
+                $yaExisteRecepcion = \App\Models\RecepcionBodega::where('compra_id', $compra->id)->exists();
+                if (!$yaExisteRecepcion && $detallesProducto->isNotEmpty() && !empty($request->bodega_id)) {
                     $recepcion = \App\Models\RecepcionBodega::create([
                         'empresa_id' => $empresaId,
                         'compra_id'  => $compra->id,
@@ -262,6 +263,29 @@ class CompraController extends Controller
                     } catch (\Exception $e) {
                         \Log::warning("Inventario: error producto {$d->producto_id}: {$e->getMessage()}");
                     }
+                }
+            }
+
+            // Fallback: crear recepción pendiente si no se generaron etiquetas antes
+            $detallesProducto = $compra->detalles->filter(fn($d) => !empty($d->producto_id));
+            $yaExisteRecepcion = \App\Models\RecepcionBodega::where('compra_id', $compra->id)->exists();
+            if (!$yaExisteRecepcion && $detallesProducto->isNotEmpty() && $bodegaEfectiva) {
+                $recepcion = \App\Models\RecepcionBodega::create([
+                    'empresa_id' => $empresaId,
+                    'compra_id'  => $compra->id,
+                    'bodega_id'  => $bodegaEfectiva,
+                    'estado'     => 'pendiente',
+                ]);
+
+                foreach ($detallesProducto as $detalle) {
+                    \App\Models\RecepcionDetalle::create([
+                        'recepcion_id'      => $recepcion->id,
+                        'compra_detalle_id' => $detalle->id,
+                        'producto_id'       => $detalle->producto_id,
+                        'cantidad_esperada' => $detalle->cantidad,
+                        'cantidad_recibida' => 0,
+                        'estado'            => 'pendiente',
+                    ]);
                 }
             }
 
@@ -395,6 +419,37 @@ class CompraController extends Controller
                     'desde'       => $desde,
                     'hasta'       => $hasta,
                 ];
+            }
+
+            // Crear recepción pendiente si no existe ya una para esta compra
+            $yaExisteRecepcion = \App\Models\RecepcionBodega::where('compra_id', $compra->id)->exists();
+
+            if (!$yaExisteRecepcion) {
+                $bodegaEfectiva = $compra->bodega_id
+                    ?? \App\Models\Bodega::where('empresa_id', $empresaId)
+                        ->where('tipo', 'general')
+                        ->value('id');
+
+                if ($bodegaEfectiva) {
+                    $recepcion = \App\Models\RecepcionBodega::create([
+                        'empresa_id' => $empresaId,
+                        'compra_id'  => $compra->id,
+                        'bodega_id'  => $bodegaEfectiva,
+                        'estado'     => 'pendiente',
+                    ]);
+
+                    $compra->load('detalles');
+                    foreach ($compra->detalles->filter(fn($d) => !empty($d->producto_id)) as $detalle) {
+                        \App\Models\RecepcionDetalle::create([
+                            'recepcion_id'      => $recepcion->id,
+                            'compra_detalle_id' => $detalle->id,
+                            'producto_id'       => $detalle->producto_id,
+                            'cantidad_esperada' => $detalle->cantidad,
+                            'cantidad_recibida' => 0,
+                            'estado'            => 'pendiente',
+                        ]);
+                    }
+                }
             }
 
             return $registros;
