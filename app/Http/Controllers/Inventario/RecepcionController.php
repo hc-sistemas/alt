@@ -5,9 +5,11 @@ namespace App\Http\Controllers\Inventario;
 use App\Http\Controllers\Controller;
 use App\Models\Bodega;
 use App\Models\Compra;
+use App\Models\EtiquetaProducto;
 use App\Models\Producto;
 use App\Models\RecepcionBodega;
 use App\Models\RecepcionDetalle;
+use App\Models\RecepcionEscaneo;
 use App\Services\AuditoriaService;
 use App\Services\Contracts\InventarioServiceInterface;
 use Illuminate\Http\JsonResponse;
@@ -174,7 +176,7 @@ class RecepcionController extends Controller
         ]);
     }
 
-    public function confirmar(Request $request, RecepcionBodega $recepcion): RedirectResponse|JsonResponse
+    public function escanear(Request $request, RecepcionBodega $recepcion): RedirectResponse
     {
         $empresaId = session('empresa_activa_id');
 
@@ -183,31 +185,103 @@ class RecepcionController extends Controller
         }
 
         if (!$recepcion->isPendiente()) {
-            return response()->json(['message' => 'Esta recepción ya fue procesada.'], 422);
+            return back()->with('error', 'Esta recepción ya fue procesada.');
         }
 
-        $request->validate([
-            'detalles'                    => 'required|array|min:1',
-            'detalles.*.id'               => 'required|integer|exists:recepcion_detalles,id',
-            'detalles.*.cantidad_recibida' => 'required|numeric|min:0',
+        $request->validate(['codigo' => 'required|string|max:100']);
+
+        $codigo = trim($request->codigo);
+
+        $ultimoGuion = strrpos($codigo, '-');
+        if ($ultimoGuion === false) {
+            return back()->with('error', 'Formato de código inválido.');
+        }
+
+        $codigoProducto = substr($codigo, 0, $ultimoGuion);
+        $correlativoStr = substr($codigo, $ultimoGuion + 1);
+
+        if (!ctype_digit($correlativoStr) || strlen($correlativoStr) !== 6) {
+            return back()->with('error', 'Formato de código inválido.');
+        }
+
+        $correlativo = (int) $correlativoStr;
+
+        $etiqueta = EtiquetaProducto::where('codigo_producto', $codigoProducto)
+            ->where('correlativo_desde', '<=', $correlativo)
+            ->where('correlativo_hasta', '>=', $correlativo)
+            ->where('compra_id', $recepcion->compra_id)
+            ->first();
+
+        if (!$etiqueta) {
+            return back()->with('error', 'Código no pertenece a esta compra.');
+        }
+
+        $detalle = RecepcionDetalle::where('recepcion_id', $recepcion->id)
+            ->where('producto_id', $etiqueta->producto_id)
+            ->first();
+
+        if (!$detalle) {
+            return back()->with('error', 'Producto no encontrado en esta recepción.');
+        }
+
+        $escaneosDetalle = RecepcionEscaneo::where('recepcion_detalle_id', $detalle->id)->count();
+
+        if ($escaneosDetalle >= (int) $detalle->cantidad_esperada) {
+            return back()->with('error', 'Ya se recibieron todas las unidades de este producto.');
+        }
+
+        $duplicado = RecepcionEscaneo::where('recepcion_id', $recepcion->id)
+            ->where('codigo_escaneado', $codigo)
+            ->exists();
+
+        if ($duplicado) {
+            return back()->with('error', 'Este código ya fue escaneado.');
+        }
+
+        RecepcionEscaneo::create([
+            'recepcion_id'        => $recepcion->id,
+            'recepcion_detalle_id' => $detalle->id,
+            'producto_id'         => $etiqueta->producto_id,
+            'codigo_escaneado'    => $codigo,
+            'correlativo'         => $correlativo,
+            'usuario_id'          => Auth::id(),
+            'created_at'          => now(),
         ]);
 
-        DB::transaction(function () use ($request, $recepcion) {
+        $cantidadVerificada = $escaneosDetalle + 1;
+        $detalleCompleto = $cantidadVerificada >= (int) $detalle->cantidad_esperada;
+
+        return back()->with('escaneo', [
+            'detalle_id'          => $detalle->id,
+            'cantidad_verificada' => $cantidadVerificada,
+            'detalle_completo'    => $detalleCompleto,
+        ]);
+    }
+
+    public function confirmar(Request $request, RecepcionBodega $recepcion): RedirectResponse
+    {
+        $empresaId = session('empresa_activa_id');
+
+        if ($recepcion->empresa_id !== (int) $empresaId) {
+            abort(403);
+        }
+
+        if (!$recepcion->isPendiente()) {
+            return back()->with('error', 'Esta recepción ya fue procesada.');
+        }
+
+        DB::transaction(function () use ($recepcion) {
+            $detalles = $recepcion->detalles;
             $todosCompletados = true;
             $algunoParcial    = false;
 
-            foreach ($request->detalles as $d) {
-                $detalle = RecepcionDetalle::with('compraDetalle')
-                    ->where('id', $d['id'])
-                    ->where('recepcion_id', $recepcion->id)
-                    ->firstOrFail();
+            foreach ($detalles as $detalle) {
+                $cantEscaneos = RecepcionEscaneo::where('recepcion_detalle_id', $detalle->id)->count();
+                $cantEsperada = (int) $detalle->cantidad_esperada;
 
-                $cantRecibida = (float) $d['cantidad_recibida'];
-                $cantEsperada = (float) $detalle->cantidad_esperada;
-
-                if ($cantRecibida >= $cantEsperada) {
+                if ($cantEscaneos >= $cantEsperada) {
                     $estadoDetalle = 'completado';
-                } elseif ($cantRecibida > 0) {
+                } elseif ($cantEscaneos > 0) {
                     $estadoDetalle = 'parcial';
                     $todosCompletados = false;
                     $algunoParcial = true;
@@ -217,21 +291,9 @@ class RecepcionController extends Controller
                 }
 
                 $detalle->update([
-                    'cantidad_recibida' => $cantRecibida,
+                    'cantidad_recibida' => $cantEscaneos,
                     'estado'            => $estadoDetalle,
                 ]);
-
-                if ($cantRecibida > 0) {
-                    $costo = (float) ($detalle->compraDetalle->precio_unitario ?? 0);
-                    $this->inventario->ingresarStock(
-                        $detalle->producto_id,
-                        $recepcion->bodega_id,
-                        $cantRecibida,
-                        $costo,
-                        'compra',
-                        $recepcion->compra_id
-                    );
-                }
             }
 
             $estadoRecepcion = $todosCompletados ? 'completada' : ($algunoParcial ? 'parcial' : 'pendiente');
@@ -255,6 +317,46 @@ class RecepcionController extends Controller
             );
         });
 
-        return response()->json(['ok' => true, 'message' => 'Recepción confirmada correctamente.']);
+        return back()->with('success', 'Recepción confirmada correctamente.');
+    }
+
+    public function etiquetasPendientes(RecepcionBodega $recepcion): JsonResponse
+    {
+        $empresaId = session('empresa_activa_id');
+
+        if ($recepcion->empresa_id !== (int) $empresaId) {
+            abort(403);
+        }
+
+        $recepcion->load('detalles.producto');
+
+        $escaneosCodigos = RecepcionEscaneo::where('recepcion_id', $recepcion->id)
+            ->pluck('codigo_escaneado')
+            ->flip();
+
+        $etiquetas = EtiquetaProducto::where('compra_id', $recepcion->compra_id)->get();
+
+        $resultado = [];
+
+        foreach ($etiquetas as $etiqueta) {
+            $detalle = $recepcion->detalles->firstWhere('producto_id', $etiqueta->producto_id);
+            if (!$detalle) {
+                continue;
+            }
+
+            for ($i = $etiqueta->correlativo_desde; $i <= $etiqueta->correlativo_hasta; $i++) {
+                $codigoEscaneado = $etiqueta->codigo_producto . '-' . str_pad($i, 6, '0', STR_PAD_LEFT);
+
+                $resultado[] = [
+                    'detalle_id'       => $detalle->id,
+                    'producto_id'      => $detalle->producto_id,
+                    'producto_nombre'  => $detalle->producto->nombre ?? '',
+                    'codigo_escaneado' => $codigoEscaneado,
+                    'verificado'       => $escaneosCodigos->has($codigoEscaneado),
+                ];
+            }
+        }
+
+        return response()->json($resultado);
     }
 }

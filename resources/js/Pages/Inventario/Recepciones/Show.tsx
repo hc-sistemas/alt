@@ -1,9 +1,10 @@
 import { Head, router, usePage } from '@inertiajs/react'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
 import { Button } from '@/Components/ui/button'
-import { PackageCheck, ScanBarcode, PenLine } from 'lucide-react'
+import { PackageCheck, ScanBarcode, Check, Clock } from 'lucide-react'
 import { toastExito, toastError } from '@/lib/toast'
 import type { RecepcionBodega, PageProps } from '@/types'
 
@@ -11,11 +12,21 @@ interface Props extends PageProps {
     recepcion: RecepcionBodega
 }
 
-type Modo = 'pistoleo' | 'manual'
+interface EtiquetaItem {
+    detalle_id: number
+    producto_id: number
+    producto_nombre: string
+    codigo_escaneado: string
+    verificado: boolean
+}
 
-interface ScanFeedback {
-    tipo: 'ok' | 'error'
-    mensaje: string
+interface GrupoProducto {
+    detalle_id: number
+    producto_id: number
+    producto_nombre: string
+    etiquetas: EtiquetaItem[]
+    verificadas: number
+    total: number
 }
 
 const ESTADO_COLORES: Record<string, string> = {
@@ -29,171 +40,201 @@ const ESTADO_LABELS: Record<string, string> = {
     pendiente: 'Pendiente', completada: 'Completada', completado: 'Completado', parcial: 'Parcial',
 }
 
-export default function RecepcionShow() {
-    const { recepcion, auth } = usePage<Props>().props
-    const isPendiente = recepcion.estado === 'pendiente'
-    const detalles = recepcion.detalles ?? []
+function agruparPorProducto(etiquetas: EtiquetaItem[]): GrupoProducto[] {
+    const mapa = new Map<number, GrupoProducto>()
 
-    const perfilesPermitidos = ['super_admin', 'admin', 'bodeguero']
-    const puedeOperar = perfilesPermitidos.includes(
-        (auth.user?.perfil ?? '').toLowerCase()
-    )
-
-    const [modo, setModo] = useState<Modo>('pistoleo')
-
-    const [cantidades, setCantidades] = useState<Record<number, number>>(() => {
-        const init: Record<number, number> = {}
-        detalles.forEach(d => { init[d.id] = Number(d.cantidad_recibida) })
-        return init
-    })
-
-    const [confirmando, setConfirmando] = useState(false)
-    const scanRef = useRef<HTMLInputElement>(null)
-    const [scanValue, setScanValue] = useState('')
-    const [scanFeedback, setScanFeedback] = useState<ScanFeedback | null>(null)
-    const feedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-    const totalEsperado = detalles.reduce((acc, d) => acc + Number(d.cantidad_esperada), 0)
-    const totalRecibido = detalles.reduce((acc, d) => acc + (cantidades[d.id] ?? 0), 0)
-    const porcentaje = totalEsperado > 0 ? Math.min((totalRecibido / totalEsperado) * 100, 100) : 0
-
-    function getEstadoLinea(detalleId: number, cantEsperada: number): string {
-        const recibida = cantidades[detalleId] ?? 0
-        if (recibida >= cantEsperada) return 'completado'
-        if (recibida > 0) return 'parcial'
-        return 'pendiente'
+    for (const et of etiquetas) {
+        let grupo = mapa.get(et.detalle_id)
+        if (!grupo) {
+            grupo = {
+                detalle_id: et.detalle_id,
+                producto_id: et.producto_id,
+                producto_nombre: et.producto_nombre,
+                etiquetas: [],
+                verificadas: 0,
+                total: 0,
+            }
+            mapa.set(et.detalle_id, grupo)
+        }
+        grupo.etiquetas.push(et)
+        grupo.total++
+        if (et.verificado) grupo.verificadas++
     }
 
-    const mostrarFeedback = useCallback((tipo: 'ok' | 'error', mensaje: string) => {
-        if (feedbackTimer.current) clearTimeout(feedbackTimer.current)
-        setScanFeedback({ tipo, mensaje })
-        feedbackTimer.current = setTimeout(() => setScanFeedback(null), 2500)
-    }, [])
+    for (const grupo of mapa.values()) {
+        grupo.etiquetas.sort((a, b) => {
+            if (a.verificado !== b.verificado) return a.verificado ? 1 : -1
+            return a.codigo_escaneado.localeCompare(b.codigo_escaneado)
+        })
+    }
+
+    return Array.from(mapa.values())
+}
+
+export default function RecepcionShow() {
+    const { recepcion, flash } = usePage<Props>().props
+    const isPendiente = recepcion.estado === 'pendiente'
+
+    const [etiquetas, setEtiquetas] = useState<EtiquetaItem[]>([])
+    const [cargando, setCargando] = useState(true)
+    const [confirmando, setConfirmando] = useState(false)
+    const [scanValue, setScanValue] = useState('')
+    const [scanError, setScanError] = useState<string | null>(null)
+    const [codigoReciente, setCodigoReciente] = useState<string | null>(null)
+
+    const scanRef = useRef<HTMLInputElement>(null)
+    const feedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const recienteTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+    const cargarEtiquetas = useCallback(async () => {
+        try {
+            const csrfToken = (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content ?? ''
+            const res = await fetch(route('inventario.recepciones.etiquetas', recepcion.id), {
+                headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': csrfToken },
+            })
+            if (res.ok) {
+                const data = await res.json() as EtiquetaItem[]
+                setEtiquetas(data)
+            }
+        } catch {
+            // silenciar — la lista queda vacía
+        } finally {
+            setCargando(false)
+        }
+    }, [recepcion.id])
+
+    const isFirstRender = useRef(true)
+    useEffect(() => {
+        if (isFirstRender.current) {
+            isFirstRender.current = false
+            cargarEtiquetas()
+            return
+        }
+    }, [cargarEtiquetas])
 
     useEffect(() => {
         return () => {
             if (feedbackTimer.current) clearTimeout(feedbackTimer.current)
+            if (recienteTimer.current) clearTimeout(recienteTimer.current)
         }
     }, [])
 
     useEffect(() => {
-        if (modo === 'pistoleo' && isPendiente) {
+        if (isPendiente) {
             setTimeout(() => scanRef.current?.focus(), 50)
         }
-    }, [modo, isPendiente])
+    }, [isPendiente])
 
-    async function buscarPorCodigo(codigo: string) {
-        if (!codigo.trim()) return
+    function mostrarErrorEscaneo(mensaje: string) {
+        if (feedbackTimer.current) clearTimeout(feedbackTimer.current)
+        setScanError(mensaje)
+        feedbackTimer.current = setTimeout(() => setScanError(null), 4000)
+    }
 
-        try {
-            const csrfToken = (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content ?? ''
-            const res = await fetch(route('inventario.recepciones.buscarProducto') + '?codigo=' + encodeURIComponent(codigo.trim()), {
-                headers: {
-                    'Accept': 'application/json',
-                    'X-CSRF-TOKEN': csrfToken,
-                },
-            })
-            const json = await res.json() as { encontrado: boolean; producto: { id: number; nombre: string } | null }
-
-            if (!json.encontrado || !json.producto) {
-                mostrarFeedback('error', `Codigo no reconocido: "${codigo}"`)
-                setScanValue('')
-                scanRef.current?.focus()
-                return
-            }
-
-            const detalle = detalles.find(d => d.producto_id === json.producto!.id)
-            if (!detalle) {
-                mostrarFeedback('error', `Producto no pertenece a esta recepcion`)
-                setScanValue('')
-                scanRef.current?.focus()
-                return
-            }
-
-            const maxEsperada = Number(detalle.cantidad_esperada)
-            const cantActual = cantidades[detalle.id] ?? 0
-
-            if (cantActual >= maxEsperada) {
-                mostrarFeedback('error', `"${json.producto.nombre}" ya alcanzo la cantidad esperada (${maxEsperada})`)
-                setScanValue('')
-                scanRef.current?.focus()
-                return
-            }
-
-            setCantidades(prev => ({
-                ...prev,
-                [detalle.id]: Math.min((prev[detalle.id] ?? 0) + 1, maxEsperada),
-            }))
-
-            mostrarFeedback('ok', `+1 ${json.producto.nombre}`)
-            setScanValue('')
-            scanRef.current?.focus()
-        } catch {
-            mostrarFeedback('error', 'Error al buscar producto')
-            setScanValue('')
-            scanRef.current?.focus()
-        }
+    function marcarReciente(codigo: string) {
+        if (recienteTimer.current) clearTimeout(recienteTimer.current)
+        setCodigoReciente(codigo)
+        recienteTimer.current = setTimeout(() => setCodigoReciente(null), 2000)
     }
 
     function handleScanKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
         if (e.key === 'Enter') {
             e.preventDefault()
-            buscarPorCodigo(scanValue)
+            const codigo = scanValue.trim()
+            if (!codigo) return
+
+            setScanError(null)
+            setScanValue('')
+
+            router.post(
+                route('inventario.recepciones.escanear', recepcion.id),
+                { codigo },
+                {
+                    preserveScroll: true,
+                    onSuccess: (page) => {
+                        const pageFlash = (page.props as Props['flash'] & { escaneo?: { detalle_id: number; cantidad_verificada: number; detalle_completo: boolean } }).escaneo
+                        const errorFlash = (page.props as Props).flash?.error
+
+                        if (errorFlash) {
+                            mostrarErrorEscaneo(errorFlash)
+                        } else if (pageFlash) {
+                            marcarReciente(codigo)
+                        }
+
+                        cargarEtiquetas()
+                        scanRef.current?.focus()
+                    },
+                    onError: () => {
+                        mostrarErrorEscaneo('Error al procesar el escaneo.')
+                        scanRef.current?.focus()
+                    },
+                }
+            )
         }
     }
 
     async function ejecutarConfirmar() {
-        const hayAlguno = detalles.some(d => (cantidades[d.id] ?? 0) > 0)
-        if (!hayAlguno) {
-            toastError('Debes registrar al menos una cantidad recibida antes de confirmar.')
-            return
-        }
+        const isDark = document.documentElement.classList.contains('dark')
+
+        const result = await Swal.fire({
+            title: '¿Confirmar recepción?',
+            text: 'Esta acción no se puede deshacer.',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Sí, confirmar',
+            cancelButtonText: 'Cancelar',
+            confirmButtonColor: '#F59E0B',
+            cancelButtonColor: '#64748B',
+            iconColor: '#F59E0B',
+            background: isDark ? '#1E293B' : '#FFFFFF',
+            color: isDark ? '#F1F5F9' : '#0F172A',
+        })
+
+        if (!result.isConfirmed) return
 
         setConfirmando(true)
-        try {
-            const payload = {
-                detalles: detalles.map(d => ({
-                    id: d.id,
-                    cantidad_recibida: cantidades[d.id] ?? 0,
-                })),
-            }
-
-            const csrfToken = (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content ?? ''
-            const res = await fetch(route('inventario.recepciones.confirmar', recepcion.id), {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json',
-                    'X-CSRF-TOKEN': csrfToken,
+        router.post(
+            route('inventario.recepciones.confirmar', recepcion.id),
+            {},
+            {
+                preserveScroll: true,
+                onSuccess: (page) => {
+                    const successFlash = (page.props as Props).flash?.success
+                    const errorFlash = (page.props as Props).flash?.error
+                    if (errorFlash) {
+                        toastError(errorFlash)
+                    } else {
+                        toastExito(successFlash ?? 'Recepción confirmada correctamente.')
+                    }
+                    setConfirmando(false)
                 },
-                body: JSON.stringify(payload),
-            })
-
-            if (!res.ok) {
-                const json = await res.json().catch(() => null) as { message?: string } | null
-                toastError(json?.message ?? 'Error al confirmar la recepcion')
-                return
+                onError: () => {
+                    toastError('Error al confirmar la recepción.')
+                    setConfirmando(false)
+                },
             }
-
-            toastExito('Recepcion confirmada correctamente')
-            router.reload()
-        } catch {
-            toastError('Error al confirmar la recepcion')
-        } finally {
-            setConfirmando(false)
-        }
+        )
     }
 
-    const fmtCantidad = (n: number) => Number.isInteger(n) ? String(n) : n.toString()
+    const grupos = agruparPorProducto(etiquetas)
+    const totalVerificadas = etiquetas.filter(e => e.verificado).length
+    const totalEtiquetas = etiquetas.length
+    const porcentaje = totalEtiquetas > 0 ? Math.min((totalVerificadas / totalEtiquetas) * 100, 100) : 0
+    const todasVerificadas = totalEtiquetas > 0 && totalVerificadas === totalEtiquetas
 
     const formatFecha = (dt: string | null) =>
         dt ? new Date(dt).toLocaleDateString('es-EC', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'
 
+    // Handle flash from initial page load
+    useEffect(() => {
+        if (flash?.error) mostrarErrorEscaneo(flash.error)
+    }, [flash?.error])
+
     return (
-        <AppLayout title={`Recepcion #${recepcion.id}`}>
-            <Head title={`Recepcion #${recepcion.id}`} />
+        <AppLayout title={`Recepción #${recepcion.id}`}>
+            <Head title={`Recepción #${recepcion.id}`} />
             <PageHeader
-                title={`Recepcion #${recepcion.id}`}
+                title={`Recepción #${recepcion.id}`}
                 breadcrumbs={[
                     { label: 'Inventario' },
                     { label: 'Recepciones', href: route('inventario.recepciones.index') },
@@ -223,7 +264,7 @@ export default function RecepcionShow() {
                             <p style={{ color: 'var(--text-main)' }}>{recepcion.bodega?.nombre ?? '—'}</p>
                         </div>
                         <div>
-                            <p className="text-xs mb-0.5" style={{ color: 'var(--text-muted)' }}>Fecha recepcion</p>
+                            <p className="text-xs mb-0.5" style={{ color: 'var(--text-muted)' }}>Fecha recepción</p>
                             <p style={{ color: 'var(--text-main)' }}>{formatFecha(recepcion.fecha_recepcion)}</p>
                         </div>
                         {recepcion.recibidoPor && (
@@ -235,38 +276,8 @@ export default function RecepcionShow() {
                     </div>
                 </div>
 
-                {/* Toggle de modo */}
-                {isPendiente && puedeOperar && (
-                    <div className="flex gap-1 rounded-lg p-1" style={{ background: 'var(--border)' }}>
-                        <button
-                            onClick={() => setModo('pistoleo')}
-                            className="flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all flex-1 justify-center"
-                            style={{
-                                background: modo === 'pistoleo' ? 'var(--bg-card)' : 'transparent',
-                                color: modo === 'pistoleo' ? 'var(--primary)' : 'var(--text-muted)',
-                                boxShadow: modo === 'pistoleo' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-                            }}
-                        >
-                            <ScanBarcode className="w-4 h-4" />
-                            Modo pistoleo
-                        </button>
-                        <button
-                            onClick={() => setModo('manual')}
-                            className="flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all flex-1 justify-center"
-                            style={{
-                                background: modo === 'manual' ? 'var(--bg-card)' : 'transparent',
-                                color: modo === 'manual' ? 'var(--primary)' : 'var(--text-muted)',
-                                boxShadow: modo === 'manual' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-                            }}
-                        >
-                            <PenLine className="w-4 h-4" />
-                            Modo manual
-                        </button>
-                    </div>
-                )}
-
-                {/* Campo de escaneo (modo pistoleo) */}
-                {isPendiente && modo === 'pistoleo' && (
+                {/* Campo de escaneo */}
+                {isPendiente && (
                     <div className="rounded-xl border p-6 space-y-3" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
                         <div className="flex items-center gap-3">
                             <ScanBarcode className="w-6 h-6 shrink-0" style={{ color: 'var(--primary)' }} />
@@ -276,7 +287,7 @@ export default function RecepcionShow() {
                                 value={scanValue}
                                 onChange={e => setScanValue(e.target.value)}
                                 onKeyDown={handleScanKeyDown}
-                                placeholder="Escanea o escribe el codigo de barras..."
+                                placeholder="Escanear código de barras..."
                                 className="flex-1 h-12 rounded-lg border bg-transparent px-4 text-base font-mono focus:outline-none focus:ring-2"
                                 style={{
                                     borderColor: 'var(--border)',
@@ -286,19 +297,12 @@ export default function RecepcionShow() {
                                 autoFocus
                             />
                         </div>
-                        {scanFeedback && (
+                        {scanError && (
                             <div
-                                className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium animate-in fade-in duration-200"
-                                style={{
-                                    background: scanFeedback.tipo === 'ok'
-                                        ? 'rgba(16, 185, 129, 0.12)'
-                                        : 'rgba(239, 68, 68, 0.12)',
-                                    color: scanFeedback.tipo === 'ok'
-                                        ? 'rgb(5, 150, 105)'
-                                        : 'rgb(220, 38, 38)',
-                                }}
+                                className="px-4 py-2.5 rounded-lg text-sm font-medium"
+                                style={{ background: 'rgba(239, 68, 68, 0.12)', color: 'rgb(220, 38, 38)' }}
                             >
-                                {scanFeedback.mensaje}
+                                {scanError}
                             </div>
                         )}
                     </div>
@@ -307,9 +311,11 @@ export default function RecepcionShow() {
                 {/* Barra de progreso */}
                 <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
                     <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium" style={{ color: 'var(--text-main)' }}>Progreso de recepcion</span>
+                        <span className="text-sm font-medium" style={{ color: 'var(--text-main)' }}>
+                            {totalVerificadas} de {totalEtiquetas} etiquetas verificadas
+                        </span>
                         <span className="text-sm font-mono" style={{ color: 'var(--text-muted)' }}>
-                            {totalRecibido} / {totalEsperado} unidades ({porcentaje.toFixed(0)}%)
+                            {porcentaje.toFixed(0)}%
                         </span>
                     </div>
                     <div className="w-full h-3 rounded-full overflow-hidden" style={{ background: 'var(--border)' }}>
@@ -320,79 +326,87 @@ export default function RecepcionShow() {
                     </div>
                 </div>
 
-                {/* Tabla de productos */}
-                <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
-                    <div className="px-4 py-3" style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
-                        <h3 className="text-sm font-semibold" style={{ color: 'var(--text-main)' }}>Productos</h3>
+                {/* Lista de etiquetas agrupadas */}
+                {cargando ? (
+                    <div className="rounded-xl border p-8 text-center" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Cargando etiquetas...</p>
                     </div>
-                    <table className="w-full text-sm">
-                        <thead>
-                            <tr style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
-                                <th className="text-left px-4 py-2.5 font-medium text-xs" style={{ color: 'var(--text-muted)' }}>Codigo</th>
-                                <th className="text-left px-4 py-2.5 font-medium text-xs" style={{ color: 'var(--text-muted)' }}>Producto</th>
-                                <th className="text-right px-4 py-2.5 font-medium text-xs" style={{ color: 'var(--text-muted)' }}>Esperado</th>
-                                <th className="text-right px-4 py-2.5 font-medium text-xs" style={{ color: 'var(--text-muted)' }}>Recibidos</th>
-                                <th className="text-center px-4 py-2.5 font-medium text-xs" style={{ color: 'var(--text-muted)' }}>Estado</th>
-                                {isPendiente && modo === 'manual' && (
-                                    <th className="text-right px-4 py-2.5 font-medium text-xs" style={{ color: 'var(--text-muted)' }}>Ajuste</th>
-                                )}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {detalles.map(d => {
-                                const cantRecibida = cantidades[d.id] ?? 0
-                                const cantEsperada = Number(d.cantidad_esperada)
-                                const estadoLinea = getEstadoLinea(d.id, cantEsperada)
+                ) : grupos.length === 0 ? (
+                    <div className="rounded-xl border p-8 text-center" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No hay etiquetas generadas para esta compra.</p>
+                    </div>
+                ) : (
+                    <div className="space-y-4">
+                        {grupos.map(grupo => (
+                            <div
+                                key={grupo.detalle_id}
+                                className="rounded-xl border overflow-hidden"
+                                style={{ borderColor: 'var(--border)' }}
+                            >
+                                <div
+                                    className="px-4 py-3 flex items-center justify-between"
+                                    style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}
+                                >
+                                    <span className="text-sm font-semibold" style={{ color: 'var(--text-main)' }}>
+                                        {grupo.producto_nombre}
+                                    </span>
+                                    <span className="text-xs font-mono" style={{
+                                        color: grupo.verificadas === grupo.total ? 'rgb(5, 150, 105)' : 'var(--text-muted)',
+                                    }}>
+                                        {grupo.verificadas} / {grupo.total} verificadas
+                                    </span>
+                                </div>
+                                <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
+                                    {grupo.etiquetas.map(et => {
+                                        const esReciente = codigoReciente === et.codigo_escaneado
 
-                                return (
-                                    <tr key={d.id} className="border-t" style={{ borderColor: 'var(--border)' }}>
-                                        <td className="px-4 py-2.5 font-mono text-xs" style={{ color: 'var(--text-muted)' }}>
-                                            {d.producto?.codigo ?? '—'}
-                                        </td>
-                                        <td className="px-4 py-2.5 font-medium" style={{ color: 'var(--text-main)' }}>
-                                            {d.producto?.nombre ?? `#${d.producto_id}`}
-                                        </td>
-                                        <td className="px-4 py-2.5 text-right font-mono" style={{ color: 'var(--text-main)' }}>
-                                            {fmtCantidad(cantEsperada)}
-                                        </td>
-                                        <td className="px-4 py-2.5 text-right font-mono" style={{ color: 'var(--text-main)' }}>
-                                            {fmtCantidad(cantRecibida)}
-                                        </td>
-                                        <td className="px-4 py-2.5 text-center">
-                                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${ESTADO_COLORES[estadoLinea] ?? ''}`}>
-                                                {ESTADO_LABELS[estadoLinea] ?? estadoLinea}
-                                            </span>
-                                        </td>
-                                        {isPendiente && modo === 'manual' && (
-                                            <td className="px-4 py-2.5 text-right w-32">
-                                                <input
-                                                    type="number"
-                                                    min={0}
-                                                    max={cantEsperada}
-                                                    step="1"
-                                                    value={cantRecibida}
-                                                    onChange={e => {
-                                                        const val = Math.min(parseFloat(e.target.value) || 0, cantEsperada)
-                                                        setCantidades(prev => ({ ...prev, [d.id]: val }))
-                                                    }}
-                                                    className="w-full h-8 rounded-md border bg-transparent px-2 text-sm text-right font-mono"
-                                                    style={{ borderColor: 'var(--border)', color: 'var(--text-main)' }}
-                                                />
-                                            </td>
-                                        )}
-                                    </tr>
-                                )
-                            })}
-                        </tbody>
-                    </table>
-                </div>
+                                        return (
+                                            <div
+                                                key={et.codigo_escaneado}
+                                                className="flex items-center justify-between px-4 py-2 text-sm transition-colors duration-500"
+                                                style={{
+                                                    background: esReciente
+                                                        ? 'rgba(245, 158, 11, 0.12)'
+                                                        : 'transparent',
+                                                    borderColor: 'var(--border)',
+                                                }}
+                                            >
+                                                <span
+                                                    className="font-mono text-xs"
+                                                    style={{ color: et.verificado ? 'var(--text-main)' : 'var(--text-muted)' }}
+                                                >
+                                                    {et.codigo_escaneado}
+                                                </span>
+                                                {et.verificado ? (
+                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+                                                        <Check className="w-3 h-3" />
+                                                        OK
+                                                    </span>
+                                                ) : (
+                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                                                        <Clock className="w-3 h-3" />
+                                                        Pendiente
+                                                    </span>
+                                                )}
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
 
-                {/* Botones de accion */}
+                {/* Botones de acción */}
                 <div className="flex gap-3 pt-2">
-                    {isPendiente && puedeOperar && (
-                        <Button onClick={ejecutarConfirmar} loading={confirmando}>
+                    {isPendiente && (
+                        <Button
+                            onClick={ejecutarConfirmar}
+                            loading={confirmando}
+                            disabled={!todasVerificadas}
+                        >
                             <PackageCheck className="w-4 h-4" />
-                            Confirmar recepcion
+                            Confirmar recepción
                         </Button>
                     )}
                     <Button variant="outline" onClick={() => router.visit(route('inventario.recepciones.index'))}>
