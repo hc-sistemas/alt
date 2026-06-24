@@ -2,6 +2,7 @@
 namespace App\Http\Controllers\Compras;
 
 use App\Http\Controllers\Controller;
+use App\Models\CompraDetalle;
 use App\Models\Importacion;
 use App\Models\InventarioSaldo;
 use App\Models\Producto;
@@ -36,6 +37,7 @@ class ImportacionController extends Controller
                 'total_costos_extra'=> $i->total_costos_extra,
                 'costo_total'       => $i->costo_total,
                 'metodo_prorrateo'  => $i->metodo_prorrateo,
+                'proveedor_id'      => $i->proveedor_id,
                 'fecha_partida'     => $i->fecha_partida?->format('Y-m-d'),
                 'fecha_llegada'     => $i->fecha_llegada?->format('Y-m-d'),
                 'fecha_liquidacion' => $i->fecha_liquidacion?->format('d/m/Y'),
@@ -46,9 +48,8 @@ class ImportacionController extends Controller
             ]);
 
         $proveedores = Proveedor::where('empresa_id', $empresaId)
-            ->where('tipo', 'internacional')
             ->activos()->orderBy('razon_social')
-            ->get(['id', 'razon_social', 'pais', 'divisa']);
+            ->get(['id', 'razon_social', 'pais', 'divisa', 'tipo']);
 
         return Inertia::render('Compras/Importaciones/Index', [
             'importaciones' => $importaciones,
@@ -111,32 +112,35 @@ class ImportacionController extends Controller
         }
 
         $request->validate([
-            'metodo_prorrateo'           => 'required|in:cantidad,precio',
-            'fecha_liquidacion'          => 'required|date',
-            'costos_extra'               => 'nullable|array',
-            'costos_extra.*.descripcion' => 'required_with:costos_extra|string|max:200',
-            'costos_extra.*.monto'       => 'required_with:costos_extra|numeric|min:0',
+            'metodo_prorrateo'  => 'required|in:cantidad,precio',
+            'fecha_liquidacion' => 'required|date',
         ]);
 
-        $compras = Compra::where('importacion_id', $importacion->id)
+        // Compras de productos (base del prorrateo)
+        $comprasProducto = Compra::where('importacion_id', $importacion->id)
+            ->where('gasto_no_deducible', false)
             ->with('detalles')->get();
 
-        if ($compras->isEmpty()) {
+        // Costos extra ya registrados como compras
+        $comprasGasto = Compra::where('importacion_id', $importacion->id)
+            ->where('gasto_no_deducible', true)
+            ->get();
+
+        if ($comprasProducto->isEmpty()) {
             return back()->with('error',
-                'No hay compras asociadas a esta importación para prorratear.');
+                'No hay facturas de productos vinculadas. Crea una desde el Tab "Productos".');
         }
 
-        $totalCostosExtra = (float) collect($request->input('costos_extra', []))
-            ->sum(fn($c) => (float) ($c['monto'] ?? 0));
-
-        if ($totalCostosExtra <= 0) {
+        if ($comprasGasto->isEmpty()) {
             return back()->with('error',
-                'Debe ingresar al menos un costo extra con monto mayor a 0.');
+                'No hay costos extra registrados. Agrégalos desde el Tab "Costos Extra".');
         }
+
+        $totalCostosExtra = (float) $comprasGasto->sum('total');
 
         $metodo = $request->input('metodo_prorrateo');
 
-        $bases = $compras->map(fn($compra) => match ($metodo) {
+        $bases = $comprasProducto->map(fn($compra) => match ($metodo) {
             'cantidad' => (float) $compra->detalles->sum('cantidad'),
             default    => (float) $compra->total,
         });
@@ -145,21 +149,25 @@ class ImportacionController extends Controller
 
         if ($baseTotal <= 0) {
             return back()->with('error',
-                'No se puede prorratear: las compras asociadas no tienen cantidad ni valor registrado.');
+                'No se puede prorratear: las facturas de productos no tienen cantidad ni valor.');
         }
 
-        DB::transaction(function () use ($compras, $bases, $baseTotal, $totalCostosExtra) {
-            $compras->each(function ($compra, $idx) use ($bases, $baseTotal, $totalCostosExtra) {
+        DB::transaction(function () use ($comprasProducto, $bases, $baseTotal, $totalCostosExtra) {
+            $comprasProducto->each(function ($compra, $idx) use ($bases, $baseTotal, $totalCostosExtra) {
                 $proporcion    = $bases[$idx] / $baseTotal;
                 $costoAsignado = $totalCostosExtra * $proporcion;
 
-                foreach ($compra->detalles as $detalle) {
-                    if (!$detalle->producto_id || $detalle->cantidad <= 0) continue;
+                $detallesValidos = $compra->detalles->filter(
+                    fn($d) => $d->producto_id !== null
+                        && (float) $d->cantidad > 0
+                        && (float) $d->precio_unitario > 0.01
+                );
+                $cantidadValida = (float) $detallesValidos->sum('cantidad');
 
-                    $cantidadTotal = (float) $compra->detalles->sum('cantidad');
-                    if ($cantidadTotal <= 0) continue;
+                if ($cantidadValida <= 0) return;
 
-                    $costoPorUnitario = ($costoAsignado * ($detalle->cantidad / $cantidadTotal))
+                foreach ($detallesValidos as $detalle) {
+                    $costoPorUnitario = ($costoAsignado * ($detalle->cantidad / $cantidadValida))
                         / $detalle->cantidad;
                     $costoPorUnitarioRedondeado = round($costoPorUnitario, 4);
 
@@ -168,7 +176,6 @@ class ImportacionController extends Controller
                         $saldo->increment('costo_promedio', $costoPorUnitarioRedondeado);
                     }
 
-                    // Error 2: actualizar también productos.costo con el costo aterrizado
                     $nuevoCosto = round((float) $detalle->precio_unitario + $costoPorUnitario, 4);
                     Producto::where('id', $detalle->producto_id)
                         ->update(['costo' => $nuevoCosto]);
@@ -190,6 +197,104 @@ class ImportacionController extends Controller
         return back()->with('success',
             "Importación {$importacion->nombre} liquidada. " .
             'Costo total: $' . number_format($costoTotal, 2));
+    }
+
+    public function crearFactura(Importacion $importacion): JsonResponse
+    {
+        $empresaId = session('empresa_activa_id');
+        if ($importacion->empresa_id !== $empresaId) {
+            return response()->json(['message' => 'Sin autorización.'], 403);
+        }
+
+        $yaExiste = Compra::where('importacion_id', $importacion->id)
+            ->where('gasto_no_deducible', false)
+            ->whereHas('detalles', fn($q) => $q->whereNotNull('producto_id'))
+            ->exists();
+
+        return response()->json([
+            'ya_existe'           => $yaExiste,
+            'tipo_documento'      => 'EXT',
+            'proveedor_id'        => $importacion->proveedor_id,
+            'proveedor_nombre'    => optional($importacion->proveedor)->razon_social,
+            'num_documento'       => $importacion->num_invoice ?? '',
+            'fecha_emision'       => $importacion->fecha_llegada
+                                        ? $importacion->fecha_llegada->format('Y-m-d')
+                                        : now()->format('Y-m-d'),
+            'importacion_id'      => $importacion->id,
+            'importacion_nombre'  => $importacion->nombre,
+            'sustento_tributario' => '06',
+            'dias_credito'        => 0,
+            'iva_forzado'         => 0,
+            'metodo_envio'        => 'FOB',
+            'divisa'              => $importacion->divisa ?? 'USD',
+        ]);
+    }
+
+    public function agregarCosto(Request $request, Importacion $importacion): JsonResponse
+    {
+        $empresaId = session('empresa_activa_id');
+        if ($importacion->empresa_id !== $empresaId) {
+            return response()->json(['message' => 'Sin autorización.'], 403);
+        }
+        if ($importacion->estaLiquidada()) {
+            return response()->json(['message' => 'La importación ya está liquidada.'], 422);
+        }
+
+        $request->validate([
+            'concepto'     => 'required|string|max:200',
+            'proveedor_id' => 'nullable|exists:proveedores,id',
+            'monto'        => 'required|numeric|min:0.01',
+            'num_factura'  => 'nullable|string|max:30',
+        ]);
+
+        $monto       = (float) $request->monto;
+        $proveedorId = $request->proveedor_id ?? $importacion->proveedor_id;
+
+        if (!$proveedorId) {
+            return response()->json(['message' => 'Selecciona el proveedor que cobró este gasto.'], 422);
+        }
+
+        DB::transaction(function () use ($request, $importacion, $empresaId, $monto, $proveedorId) {
+            $compra = Compra::create([
+                'empresa_id'          => $empresaId,
+                'proveedor_id'        => $proveedorId,
+                'importacion_id'      => $importacion->id,
+                'tipo_documento'      => 'LIQ',
+                'num_documento'       => $request->num_factura ?? ('GASTO-' . $importacion->id . '-' . now()->format('Hisu')),
+                'fecha_emision'       => now()->toDateString(),
+                'fecha_registro'      => now()->toDateString(),
+                'fecha_vencimiento'   => now()->toDateString(),
+                'dias_credito'        => 0,
+                'subtotal_0'          => $monto,
+                'subtotal_iva'        => 0,
+                'total_iva'           => 0,
+                'total_ice'           => 0,
+                'total'               => $monto,
+                'gasto_no_deducible'  => true,
+                'sustento_tributario' => 2,
+                'concepto'            => $request->concepto,
+                'estado'              => 'activa',
+                'created_by'          => Auth::id(),
+            ]);
+
+            CompraDetalle::create([
+                'compra_id'       => $compra->id,
+                'descripcion'     => $request->concepto,
+                'cantidad'        => 1,
+                'precio_unitario' => $monto,
+                'descuento'       => 0,
+                'subtotal'        => $monto,
+                'porcentaje_iva'  => 0,
+                'valor_iva'       => 0,
+                'total'           => $monto,
+                'es_activo_fijo'  => false,
+            ]);
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => "Costo \"{$request->concepto}\" registrado: \${$monto}",
+        ]);
     }
 
     public function detalle(Importacion $importacion): JsonResponse

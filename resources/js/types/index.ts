@@ -559,6 +559,13 @@ export interface Compra {
     tiene_productos_codificados: number
     created_at: string
     detalles?: CompraDetalle[]
+    metodo_envio: string | null
+    divisa: string | null
+    tipo_cambio: number | null
+    num_orden_compra: string | null
+    num_contrato: string | null
+    vigencia_desde: string | null
+    vigencia_hasta: string | null
 }
 
 export interface EtiquetaGrupoProducto {

@@ -186,11 +186,13 @@ Route::middleware('auth')->group(function () {
 
     // Compras - Importaciones
     Route::prefix('compras/importaciones')->name('compras.importaciones.')->group(function () {
-        Route::get('/',                         [ImportacionController::class, 'index'])   ->name('index');
-        Route::post('/',                        [ImportacionController::class, 'store'])   ->name('store');
-        Route::get('/{importacion}/detalle',    [ImportacionController::class, 'detalle']) ->name('detalle');
-        Route::put('/{importacion}',            [ImportacionController::class, 'update'])  ->name('update');
-        Route::patch('/{importacion}/liquidar', [ImportacionController::class, 'liquidar'])->name('liquidar');
+        Route::get('/',                              [ImportacionController::class, 'index'])          ->name('index');
+        Route::post('/',                             [ImportacionController::class, 'store'])          ->name('store');
+        Route::get('/{importacion}/detalle',         [ImportacionController::class, 'detalle'])        ->name('detalle');
+        Route::put('/{importacion}',                 [ImportacionController::class, 'update'])         ->name('update');
+        Route::patch('/{importacion}/liquidar',      [ImportacionController::class, 'liquidar'])       ->name('liquidar');
+        Route::post('/{importacion}/agregar-costo',  [ImportacionController::class, 'agregarCosto'])  ->name('agregar-costo');
+        Route::post('/{importacion}/crear-factura',  [ImportacionController::class, 'crearFactura'])  ->name('crear-factura');
     });
 
     // Inventario — Productos + Kárdex

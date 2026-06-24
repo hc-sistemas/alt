@@ -14,7 +14,7 @@ import {
     Eye, ShoppingCart, Trash2, CreditCard,
     Barcode, CheckCircle, XCircle, RefreshCw,
 } from 'lucide-react'
-import type { Compra, Proveedor, CentroCosto, PlanCuenta, Bodega, PageProps, PaginatedData, Producto, EtiquetaDetalleData, EtiquetaGrupoProducto } from '@/types'
+import type { Compra, Importacion, Proveedor, CentroCosto, PlanCuenta, Bodega, PageProps, PaginatedData, Producto, EtiquetaDetalleData, EtiquetaGrupoProducto } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -28,6 +28,21 @@ interface Filtros {
     fecha_hasta?: string
 }
 
+type ImportacionResumen = Pick<Importacion, 'id' | 'nombre' | 'pais_embarque' | 'costo_fob' | 'divisa'>
+
+interface PrefillExterior {
+    tipo_documento: string
+    proveedor_id: number | null
+    num_documento: string
+    fecha_emision: string
+    importacion_id: number
+    sustento_tributario: string
+    dias_credito: number
+    metodo_envio: string
+    divisa: string
+    concepto: string
+}
+
 interface Props extends PageProps {
     compras: PaginatedData<Compra>
     proveedores: Pick<Proveedor, 'id' | 'razon_social' | 'nombre_comercial' | 'identificacion' | 'tiene_credito' | 'dias_credito' | 'tipo'>[]
@@ -35,6 +50,8 @@ interface Props extends PageProps {
     cuentas: Pick<PlanCuenta, 'id' | 'codigo' | 'nombre'>[]
     bodegas: Pick<Bodega, 'id' | 'nombre' | 'tipo'>[]
     productos: ProductoRow[]
+    importacionesActivas: ImportacionResumen[]
+    prefillExterior: PrefillExterior | null
     filtros: Filtros
 }
 
@@ -124,9 +141,10 @@ interface DetalleRowProps {
     onChange: (idx: number, field: keyof DetalleItem, value: string | number | boolean | null) => void
     onRemove: (idx: number) => void
     onAbrirModal: (idx: number) => void
+    tipoDocumento: string
 }
 
-function DetalleRow({ detalle, idx, cuentas, onChange, onRemove, onAbrirModal }: DetalleRowProps) {
+function DetalleRow({ detalle, idx, cuentas, onChange, onRemove, onAbrirModal, tipoDocumento }: DetalleRowProps) {
     const { subtotal, iva, total } = calcDetalle(detalle)
     const inputStyle = { background: 'var(--bg-card)', color: 'var(--text-main)', borderColor: 'var(--border)' }
 
@@ -241,14 +259,22 @@ function DetalleRow({ detalle, idx, cuentas, onChange, onRemove, onAbrirModal }:
 
             {/* ── IVA % ── */}
             <div className="px-1 py-1.5">
-                <select
-                    className="w-full px-1 py-1 border rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500"
-                    style={inputStyle}
-                    value={detalle.porcentaje_iva}
-                    onChange={e => onChange(idx, 'porcentaje_iva', e.target.value)}>
-                    <option value={0}>0%</option>
-                    <option value={15}>15%</option>
-                </select>
+                {tipoDocumento === 'EXT' ? (
+                    <div className="w-full px-1 py-1 border rounded text-xs text-center cursor-not-allowed opacity-60"
+                        style={{ ...inputStyle, background: 'var(--bg-main)' }}
+                        title="Facturas del exterior no generan IVA local">
+                        0%
+                    </div>
+                ) : (
+                    <select
+                        className="w-full px-1 py-1 border rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500"
+                        style={inputStyle}
+                        value={detalle.porcentaje_iva}
+                        onChange={e => onChange(idx, 'porcentaje_iva', e.target.value)}>
+                        <option value={0}>0%</option>
+                        <option value={15}>15%</option>
+                    </select>
+                )}
             </div>
 
             {/* ── Subtotal ── */}
@@ -288,13 +314,17 @@ interface NuevaCompraModalProps {
     cuentas: Props['cuentas']
     bodegas: Props['bodegas']
     productos: ProductoRow[]
+    importacionesActivas: ImportacionResumen[]
     centroMatrizId: number | null
     bodegaDefaultId: number | null
+    initialValues?: Partial<PrefillExterior>
     onClose: () => void
 }
 
-function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, centroMatrizId, bodegaDefaultId, onClose }: NuevaCompraModalProps) {
+function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, importacionesActivas, centroMatrizId, bodegaDefaultId, initialValues, onClose }: NuevaCompraModalProps) {
     const [tab, setTab] = useState<'datos' | 'detalle' | 'centro'>('datos')
+
+    const isExt = initialValues?.tipo_documento === 'EXT'
 
     const { data, setData, post, processing, errors } = useForm<{
         proveedor_id: string | number
@@ -310,25 +340,41 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, c
         centro_costo_id: string | number
         bodega_id: string | number
         detalles: DetalleItem[]
+        importacion_id: string | number
+        metodo_envio: string
+        divisa: string
+        tipo_cambio: string | number
+        num_orden_compra: string
+        num_contrato: string
+        vigencia_desde: string
+        vigencia_hasta: string
     }>({
-        proveedor_id:        '',
-        tipo_documento:      'FAC',
-        num_documento:       '',
+        proveedor_id:        initialValues?.proveedor_id ?? '',
+        tipo_documento:      initialValues?.tipo_documento ?? 'FAC',
+        num_documento:       initialValues?.num_documento ?? '',
         num_autorizacion:    '',
-        fecha_emision:       new Date().toISOString().slice(0, 10),
-        dias_credito:        0,
+        fecha_emision:       initialValues?.fecha_emision ?? new Date().toISOString().slice(0, 10),
+        dias_credito:        initialValues?.dias_credito ?? 0,
         iva_asumido:         false,
         gasto_no_deducible:  false,
-        sustento_tributario: '',
-        concepto:            '',
+        sustento_tributario: initialValues?.sustento_tributario ?? '01',
+        concepto:            initialValues?.concepto ?? '',
         centro_costo_id:     centroMatrizId ? String(centroMatrizId) : '',
         bodega_id:           bodegaDefaultId ? String(bodegaDefaultId) : '',
         detalles: [{
             producto_id: null, codigo: '',
             descripcion: '', cantidad: 1, precio_unitario: '',
-            descuento: 0, descuento_pct: '0', porcentaje_iva: 15,
+            descuento: 0, descuento_pct: '0', porcentaje_iva: isExt ? 0 : 15,
             cuenta_id: '', es_activo_fijo: false,
         }],
+        importacion_id:   initialValues?.importacion_id ?? '',
+        metodo_envio:     initialValues?.metodo_envio ?? 'FOB',
+        divisa:           initialValues?.divisa ?? 'USD',
+        tipo_cambio:      '',
+        num_orden_compra: '',
+        num_contrato:     '',
+        vigencia_desde:   '',
+        vigencia_hasta:   '',
     })
 
     const totales = useMemo(
@@ -346,6 +392,34 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, c
             }))
         }
     }, [data.proveedor_id])
+
+    const SUSTENTO_DEFAULT: Record<string, string> = {
+        FAC: '01', LIQ: '01', TIK: '07', CON: '02', EXT: '06',
+    }
+
+    function handleTipoChange(tipo: string) {
+        setData(prev => ({
+            ...prev,
+            tipo_documento:      tipo,
+            sustento_tributario: SUSTENTO_DEFAULT[tipo] ?? '01',
+            num_autorizacion:    ['EXT', 'TIK'].includes(tipo) ? '' : prev.num_autorizacion,
+            dias_credito:        tipo === 'TIK' ? 0 : prev.dias_credito,
+            importacion_id:      ['EXT', 'LIQ'].includes(tipo) ? prev.importacion_id : '',
+            metodo_envio:        tipo === 'EXT' ? prev.metodo_envio : 'FOB',
+            divisa:              tipo === 'EXT' ? prev.divisa : 'USD',
+            tipo_cambio:         tipo === 'EXT' ? prev.tipo_cambio : '',
+            num_orden_compra:    tipo === 'EXT' ? prev.num_orden_compra : '',
+            num_contrato:        tipo === 'CON' ? prev.num_contrato : '',
+            vigencia_desde:      tipo === 'CON' ? prev.vigencia_desde : '',
+            vigencia_hasta:      tipo === 'CON' ? prev.vigencia_hasta : '',
+            // IVA 0 obligatorio en Exterior; restaurar 15 al cambiar a otro tipo
+            detalles: prev.detalles.map(d => ({
+                ...d,
+                porcentaje_iva: tipo === 'EXT' ? 0
+                    : (Number(d.porcentaje_iva) === 0 ? 15 : d.porcentaje_iva),
+            })),
+        }))
+    }
 
     const updateDetalle = useCallback((idx: number, field: keyof DetalleItem, value: string | number | boolean | null) => {
         setData(prev => ({
@@ -369,7 +443,8 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, c
         detalles: [...prev.detalles, {
             producto_id: null, codigo: '',
             descripcion: '', cantidad: 1, precio_unitario: '',
-            descuento: 0, descuento_pct: '0', porcentaje_iva: 15,
+            descuento: 0, descuento_pct: '0',
+            porcentaje_iva: prev.tipo_documento === 'EXT' ? 0 : 15,
             cuenta_id: '', es_activo_fijo: false,
         }],
     }))
@@ -386,7 +461,7 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, c
                     codigo:          p.codigo,
                     descripcion:     p.nombre,
                     precio_unitario: String(p.costo),
-                    porcentaje_iva:  Number(p.porcentaje_iva),
+                    porcentaje_iva:  prev.tipo_documento === 'EXT' ? 0 : Number(p.porcentaje_iva),
                 }
             }),
         }))
@@ -486,14 +561,26 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, c
                         {/* ── Tab 1: Datos generales ── */}
                         {tab === 'datos' && (
                             <div className="space-y-4 max-w-2xl">
-                                {/* Proveedor */}
+
+                                {/* Proveedor — para EXT mostrar solo internacionales */}
                                 <div className="space-y-1.5">
-                                    <Label>Proveedor <span className="text-red-400">*</span></Label>
+                                    <Label>
+                                        Proveedor{' '}
+                                        {data.tipo_documento !== 'TIK' && <span className="text-red-400">*</span>}
+                                        {data.tipo_documento === 'EXT' && (
+                                            <span className="ml-2 text-xs font-normal" style={{ color: 'var(--text-muted)' }}>
+                                                (solo internacionales)
+                                            </span>
+                                        )}
+                                    </Label>
                                     <select value={data.proveedor_id}
                                         onChange={e => setData('proveedor_id', e.target.value)}
                                         className="input-field select-field">
                                         <option value="">— Seleccionar proveedor —</option>
-                                        {proveedores.map(p => (
+                                        {(data.tipo_documento === 'EXT'
+                                            ? proveedores.filter(p => p.tipo === 'internacional')
+                                            : proveedores
+                                        ).map(p => (
                                             <option key={p.id} value={p.id}>
                                                 {p.razon_social} ({p.identificacion})
                                             </option>
@@ -513,7 +600,7 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, c
                                     <div className="space-y-1.5">
                                         <Label>Tipo documento <span className="text-red-400">*</span></Label>
                                         <select value={data.tipo_documento}
-                                            onChange={e => setData('tipo_documento', e.target.value)}
+                                            onChange={e => handleTipoChange(e.target.value)}
                                             className="input-field select-field">
                                             <option value="FAC">Factura</option>
                                             <option value="LIQ">Liquidación</option>
@@ -527,46 +614,179 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, c
                                         <Input value={data.num_documento}
                                             onChange={e => setData('num_documento', e.target.value)}
                                             error={errors.num_documento}
-                                            placeholder="001-001-000000001" />
+                                            placeholder={data.tipo_documento === 'EXT' ? 'Invoice Number' : '001-001-000000001'} />
                                         {errors.num_documento && <p className="text-red-400 text-xs">{errors.num_documento}</p>}
                                     </div>
                                 </div>
 
-                                {/* Autorización + Fecha */}
-                                <div className="grid grid-cols-2 gap-3">
-                                    <div className="space-y-1.5">
-                                        <Label>N° Autorización SRI</Label>
-                                        <Input value={data.num_autorizacion}
-                                            onChange={e => setData('num_autorizacion', e.target.value)}
-                                            placeholder="Clave de acceso o N° autorización" />
+                                {/* Autorización + Fecha (FAC, LIQ, CON) */}
+                                {!['EXT', 'TIK'].includes(data.tipo_documento) && (
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div className="space-y-1.5">
+                                            <Label>N° Autorización SRI</Label>
+                                            <Input value={data.num_autorizacion}
+                                                onChange={e => setData('num_autorizacion', e.target.value)}
+                                                placeholder="Clave de acceso o N° autorización" />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <Label>Fecha emisión <span className="text-red-400">*</span></Label>
+                                            <Input type="date" value={data.fecha_emision}
+                                                onChange={e => setData('fecha_emision', e.target.value)}
+                                                error={errors.fecha_emision} />
+                                        </div>
                                     </div>
+                                )}
+
+                                {/* Solo fecha (EXT, TIK) */}
+                                {['EXT', 'TIK'].includes(data.tipo_documento) && (
                                     <div className="space-y-1.5">
-                                        <Label>Fecha emisión <span className="text-red-400">*</span></Label>
+                                        <Label>
+                                            {data.tipo_documento === 'EXT' ? 'Fecha de la invoice' : 'Fecha emisión'}
+                                            {' '}<span className="text-red-400">*</span>
+                                        </Label>
                                         <Input type="date" value={data.fecha_emision}
                                             onChange={e => setData('fecha_emision', e.target.value)}
                                             error={errors.fecha_emision} />
                                     </div>
-                                </div>
+                                )}
 
-                                {/* Días crédito + Sustento */}
-                                <div className="grid grid-cols-2 gap-3">
+                                {/* Campos específicos Exterior */}
+                                {data.tipo_documento === 'EXT' && (
+                                    <>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div className="space-y-1.5">
+                                                <Label>Método de envío</Label>
+                                                <select value={data.metodo_envio}
+                                                    onChange={e => setData('metodo_envio', e.target.value)}
+                                                    className="input-field select-field">
+                                                    <option value="FOB">FOB — Free On Board</option>
+                                                    <option value="CIF">CIF — Cost Insurance Freight</option>
+                                                    <option value="EXW">EXW — Ex Works</option>
+                                                    <option value="DAP">DAP — Delivered At Place</option>
+                                                </select>
+                                            </div>
+                                            <div className="space-y-1.5">
+                                                <Label>Divisa</Label>
+                                                <select value={data.divisa}
+                                                    onChange={e => setData('divisa', e.target.value)}
+                                                    className="input-field select-field">
+                                                    <option value="USD">USD — Dólar</option>
+                                                    <option value="EUR">EUR — Euro</option>
+                                                    <option value="CNY">CNY — Yuan Chino</option>
+                                                    <option value="JPY">JPY — Yen Japonés</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        {data.divisa !== 'USD' && (
+                                            <div className="space-y-1.5">
+                                                <Label>Tipo de cambio (1 {data.divisa} = ? USD)</Label>
+                                                <Input type="number" step="0.0001" min={0.0001}
+                                                    value={data.tipo_cambio}
+                                                    onChange={e => setData('tipo_cambio', e.target.value)}
+                                                    placeholder="Ej: 1.0850" />
+                                            </div>
+                                        )}
+                                        <div className="space-y-1.5">
+                                            <Label>
+                                                N° Orden de compra{' '}
+                                                <span className="text-xs font-normal" style={{ color: 'var(--text-muted)' }}>(opcional)</span>
+                                            </Label>
+                                            <Input value={data.num_orden_compra}
+                                                onChange={e => setData('num_orden_compra', e.target.value)}
+                                                placeholder="Purchase Order Number" />
+                                        </div>
+                                    </>
+                                )}
+
+                                {/* Importación vinculada (EXT y LIQ) */}
+                                {['EXT', 'LIQ'].includes(data.tipo_documento) && (
                                     <div className="space-y-1.5">
-                                        <Label>Días de crédito</Label>
-                                        <Input type="number" min={0} max={365}
-                                            value={data.dias_credito}
-                                            onChange={e => setData('dias_credito', e.target.value)} />
-                                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                                            {Number(data.dias_credito) > 0 ? 'Se creará una CxP automáticamente' : 'Contado — sin CxP'}
-                                        </p>
+                                        <Label>Importación vinculada</Label>
+                                        <select value={data.importacion_id}
+                                            onChange={e => setData('importacion_id', e.target.value)}
+                                            className="input-field select-field">
+                                            <option value="">— Sin importación —</option>
+                                            {importacionesActivas.map(imp => (
+                                                <option key={imp.id} value={imp.id}>
+                                                    {imp.nombre} · {imp.pais_embarque ?? '—'} · ${Number(imp.costo_fob).toLocaleString()} {imp.divisa}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        {importacionesActivas.length === 0 && (
+                                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                                No hay importaciones activas.{' '}
+                                                <a href={route('compras.importaciones.index')}
+                                                    className="underline hover:no-underline"
+                                                    style={{ color: 'var(--primary)' }}>
+                                                    Crear importación
+                                                </a>
+                                            </p>
+                                        )}
                                     </div>
+                                )}
+
+                                {/* Campos específicos Contrato */}
+                                {data.tipo_documento === 'CON' && (
+                                    <div className="grid grid-cols-3 gap-3">
+                                        <div className="space-y-1.5">
+                                            <Label>N° Contrato</Label>
+                                            <Input value={data.num_contrato}
+                                                onChange={e => setData('num_contrato', e.target.value)}
+                                                placeholder="CONT-2024-001" />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <Label>Vigencia desde</Label>
+                                            <Input type="date" value={data.vigencia_desde}
+                                                onChange={e => setData('vigencia_desde', e.target.value)} />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <Label>Vigencia hasta</Label>
+                                            <Input type="date" value={data.vigencia_hasta}
+                                                onChange={e => setData('vigencia_hasta', e.target.value)} />
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Días crédito (oculto para TIK) + Sustento */}
+                                {data.tipo_documento !== 'TIK' ? (
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div className="space-y-1.5">
+                                            <Label>Días de crédito</Label>
+                                            <Input type="number" min={0} max={365}
+                                                value={data.dias_credito}
+                                                onChange={e => setData('dias_credito', e.target.value)} />
+                                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                                {Number(data.dias_credito) > 0 ? 'Se creará una CxP automáticamente' : 'Contado — sin CxP'}
+                                            </p>
+                                        </div>
+                                        {data.tipo_documento !== 'EXT' ? (
+                                            <div className="space-y-1.5">
+                                                <Label>Sustento tributario</Label>
+                                                <Input type="number" min={1} max={99}
+                                                    value={data.sustento_tributario}
+                                                    onChange={e => setData('sustento_tributario', e.target.value)}
+                                                    placeholder="01, 02, 03..." />
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-1.5">
+                                                <Label>Sustento tributario</Label>
+                                                <p className="text-sm font-medium px-3 py-2 rounded-lg border"
+                                                    style={{ borderColor: 'var(--border)', color: 'var(--primary)' }}>
+                                                    06 — Importación de bienes
+                                                </p>
+                                                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Asignado automáticamente</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                ) : (
                                     <div className="space-y-1.5">
                                         <Label>Sustento tributario</Label>
                                         <Input type="number" min={1} max={99}
                                             value={data.sustento_tributario}
                                             onChange={e => setData('sustento_tributario', e.target.value)}
-                                            placeholder="01, 02, 03..." />
+                                            placeholder="07 — Contribuyente RISE" />
                                     </div>
-                                </div>
+                                )}
 
                                 {/* Toggles IVA */}
                                 <div className="grid grid-cols-2 gap-3">
@@ -635,7 +855,8 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, c
                                                 cuentas={cuentas}
                                                 onChange={updateDetalle}
                                                 onRemove={removeDetalle}
-                                                onAbrirModal={abrirModalProductos} />
+                                                onAbrirModal={abrirModalProductos}
+                                                tipoDocumento={data.tipo_documento} />
                                         ))}
                                     </div>
                                 </div>
@@ -1405,7 +1626,7 @@ function ReimprimirEtiquetasModal({ compra, onClose, abrirPdf }: ReimprimirEtiqu
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function ComprasIndex() {
-    const { compras, proveedores, centros, cuentas, bodegas, productos, filtros, flash } = usePage<Props>().props
+    const { compras, proveedores, centros, cuentas, bodegas, productos, importacionesActivas, filtros, flash, prefillExterior } = usePage<Props>().props
 
     // Estado local de filas — permite actualizar una fila sin recargar la página
     const [comprasData, setComprasData] = useState(compras.data)
@@ -1415,7 +1636,7 @@ export default function ComprasIndex() {
     // Sincronizar cuando Inertia actualiza los props (filtros, paginación)
     useEffect(() => { setComprasData(compras.data) }, [compras])
 
-    const [modal, setModal] = useState<ModalState>({ type: 'none' })
+    const [modal, setModal] = useState<ModalState>(prefillExterior ? { type: 'nueva' } : { type: 'none' })
     const [buscar, setBuscar]       = useState(filtros.buscar ?? '')
     const [estado, setEstado]       = useState(filtros.estado ?? '')
     const [fechaDesde, setFechaDesde] = useState(filtros.fecha_desde ?? '')
@@ -1869,8 +2090,10 @@ export default function ComprasIndex() {
                     cuentas={cuentas}
                     bodegas={bodegas}
                     productos={productos}
+                    importacionesActivas={importacionesActivas}
                     centroMatrizId={centros.find(c => c.codigo === 'MATRIZ')?.id ?? centros[0]?.id ?? null}
                     bodegaDefaultId={bodegas.find(b => b.tipo === 'general')?.id ?? bodegas[0]?.id ?? null}
+                    initialValues={prefillExterior ?? undefined}
                     onClose={() => setModal({ type: 'none' })}
                 />
             )}
