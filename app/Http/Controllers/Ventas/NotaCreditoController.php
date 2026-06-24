@@ -178,7 +178,7 @@ class NotaCreditoController extends Controller
                             productoId: $original->producto_id,
                             bodegaId:   $bodegaCuarentena->id,
                             cantidad:   $cantidad,
-                            costo:      (float)$original->precio,
+                            costoUnitario: (float)$original->precio,
                             docTipo:    'NC',
                             docId:      $notaCredito->id,
                         );

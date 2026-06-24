@@ -1430,7 +1430,7 @@ export default function ComprasIndex() {
 
     function confirmarRecepcion(c: Compra) {
         if ((c as any).recepcion_bodega) {
-            router.visit(route('inventario.recepciones.show', (c as any).recepcion_bodega.id))
+            router.visit(route('inventario.recepciones.show', (c as any).recepcion_bodega.id) + '?redirect_to=' + encodeURIComponent(route('compras.facturas.index')))
         } else {
             notify.error('Esta compra no tiene una recepción de bodega asociada')
         }

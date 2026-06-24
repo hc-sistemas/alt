@@ -189,7 +189,7 @@ export default function CompraShow() {
                             <button
                                 onClick={() => {
                                     if (compra.recepcion_bodega) {
-                                        router.visit(route('inventario.recepciones.show', compra.recepcion_bodega.id))
+                                        router.visit(route('inventario.recepciones.show', compra.recepcion_bodega.id) + '?redirect_to=' + encodeURIComponent(route('compras.facturas.index')))
                                     } else {
                                         notify.error('Esta compra no tiene una recepción de bodega asociada')
                                     }
