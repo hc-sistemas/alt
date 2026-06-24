@@ -304,23 +304,24 @@ routes/
 
 ---
 
-## Módulos implementados (Fase 1)
+## Módulos implementados (v1.0 — completo)
 
-- ✅ Autenticación con rate limiting
-- ✅ Selección de empresa multi-empresa
-- ✅ Dashboard con widgets y gráficos
-- ✅ Configuración de usuarios (CRUD)
-- ✅ Configuración de permisos por perfil
-- ✅ Configuración de empresa y datos SRI
-- ✅ Dark/light mode persistente
-- ✅ Sidebar colapsable responsive
+- ✅ Autenticación con rate limiting y selección de empresa
+- ✅ Dashboard con widgets y gráficos (Recharts)
+- ✅ Configuración: usuarios, permisos por perfil, empresa/SRI
+- ✅ Contabilidad: plan de cuentas, asientos, ejercicios, reportes (libro diario, mayor)
+- ✅ Compras: facturas, etiquetas, proveedores, CxP, anticipos, importaciones
+- ✅ Inventario: productos, kárdex, traslados, activos fijos, listas de precio, recepciones
+- ✅ Bancos: catálogo, movimientos, cajas/cierre, Datafast, conciliaciones, cheques, reportes
+- ✅ Ventas: facturas SRI, proformas, prefacturas, notas de crédito, retenciones, guías de remisión, CxC
+- ✅ RRHH: colaboradores, asistencia, horas extras, nómina
+- ✅ Personas: clientes, proveedores, transportistas
 
-## Pendiente (Fase 2)
+## Dump de BD con datos de prueba
 
-- ⏳ Facturación electrónica SRI
-- ⏳ Inventario y kárdex
-- ⏳ Contabilidad y plan de cuentas
-- ⏳ Bancos y cajas
-- ⏳ Compras e importaciones
-- ⏳ RRHH y nómina
-- ⏳ Taller (órdenes de trabajo)
+```bash
+psql -U postgres -d altamira -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+psql -U postgres -d altamira -f database/altamira_dump_completo.sql
+```
+
+Incluye: 11 proveedores, 5 importaciones, 8 colaboradores, plan de cuentas (669 cuentas), 7 bancos/cajas.
