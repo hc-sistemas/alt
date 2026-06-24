@@ -61,13 +61,6 @@ class ChequesController extends Controller
             'cheques'  => $cheques,
             'bancos'   => $bancos,
             'filtros'  => $request->only(['estado','banco_caja_id','buscar']),
-            'stats'    => [
-                'total'       => $cheques->count(),
-                'emitidos'    => $cheques->where('estado','emitido')->count(),
-                'cobrados'    => $cheques->where('estado','cobrado')->count(),
-                'protestados' => $cheques->where('estado','protestado')->count(),
-                'monto_total' => $cheques->where('estado','emitido')->sum('monto'),
-            ],
         ]);
     }
 
@@ -142,15 +135,12 @@ class ChequesController extends Controller
         if ($request->estado === 'protestado') {
             DB::table('log_cambios_criticos')->insert([
                 'usuario_id'     => Auth::id(),
-                'username'       => Auth::user()?->email ?? '',
                 'tabla'          => 'cheques',
                 'registro_id'    => $cheque->id,
                 'campo'          => 'estado',
                 'valor_anterior' => 'emitido',
-                'valor_nuevo'    => 'protestado',
-                'motivo'         => $request->observacion ?? 'Cheque protestado',
-                'ip'             => $request->ip(),
-                'fecha'          => now(),
+                'valor_nuevo'    => 'protestado — ' . ($request->observacion ?? 'Cheque protestado'),
+                'ip_address'     => $request->ip(),
             ]);
         }
 

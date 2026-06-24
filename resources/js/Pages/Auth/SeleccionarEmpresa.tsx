@@ -47,7 +47,7 @@ export default function SeleccionarEmpresa({ empresas }: Props) {
                             className={`w-full flex items-center gap-3 p-4 rounded-lg border text-left transition-all ${
                                 data.empresa_id === empresa.id
                                     ? 'border-amber-500 bg-amber-500/10'
-                                    : 'border-[var(--border)] hover:border-amber-500/50 hover:bg-amber-500/5'
+                                    : 'border-(--border) hover:border-amber-500/50 hover:bg-amber-500/5'
                             }`}
                         >
                             <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"

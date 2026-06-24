@@ -19,7 +19,17 @@ class ListaPrecio extends Model
 
     protected function casts(): array
     {
-        return ['precio' => 'float', 'descuento_max' => 'float'];
+        return [
+            'precio'         => 'decimal:4',
+            'descuento_max'  => 'decimal:2',
+            'vigencia_desde' => 'date',
+            'vigencia_hasta' => 'date',
+        ];
+    }
+
+    public function empresa(): BelongsTo
+    {
+        return $this->belongsTo(Empresa::class);
     }
 
     public function producto(): BelongsTo

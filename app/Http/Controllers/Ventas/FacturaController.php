@@ -78,7 +78,8 @@ class FacturaController extends Controller
 
         $clientes = Cliente::where('empresa_id', $empresaId)
             ->select('id', 'identificacion', 'razon_social', 'tiene_credito', 'dias_credito',
-                     'cupo_maximo', 'tipo_identificacion', 'email', 'telefono', 'direccion')
+                     'cupo_maximo', 'tipo_identificacion', 'email', 'telefono', 'direccion',
+                     'ciudad', 'pais')
             ->orderBy('razon_social')
             ->get();
 

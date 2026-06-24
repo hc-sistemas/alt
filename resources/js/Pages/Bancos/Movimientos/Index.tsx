@@ -118,7 +118,7 @@ function MovimientoModal({ bancos, cuentas, onClose }: {
 
     return (
         <div className="modal-overlay" onClick={onClose}>
-            <div className="modal-card max-w-lg overflow-y-auto max-h-[90vh]" onClick={e => e.stopPropagation()}>
+            <div className="modal-card max-w-xl" onClick={e => e.stopPropagation()}>
 
                 <div className="modal-header">
                     <h2>Nuevo Movimiento</h2>
@@ -129,69 +129,77 @@ function MovimientoModal({ bancos, cuentas, onClose }: {
 
                 <form onSubmit={submit}>
                 <div className="modal-body" style={{ gap: '1rem' }}>
-                    {/* Banco */}
-                    <div className="space-y-1.5">
-                        <Label>Banco/Caja <span className="text-red-400">*</span></Label>
-                        <select value={data.banco_caja_id} onChange={e => setData('banco_caja_id', e.target.value)}
-                            className="input-field select-field">
-                            <option value="">— Seleccionar —</option>
-                            {bancos.map(b => <option key={b.id} value={b.id}>{b.nombre} (${Number(b.saldo_actual).toFixed(2)})</option>)}
-                        </select>
-                        {errors.banco_caja_id && <p className="text-red-400 text-xs">{errors.banco_caja_id}</p>}
-                    </div>
 
-                    {/* Tipo ingreso/egreso */}
-                    <div className="space-y-1.5">
-                        <Label>Tipo <span className="text-red-400">*</span></Label>
-                        <div className="grid grid-cols-2 gap-2">
-                            {(['ingreso', 'egreso'] as const).map(t => (
-                                <button key={t} type="button" onClick={() => setData('tipo', t)}
-                                    className={cn(
-                                        'py-3 rounded-xl text-sm font-bold border-2 transition-all flex items-center justify-center gap-2',
-                                        data.tipo === t
-                                            ? t === 'ingreso' ? 'bg-green-500/20 border-green-500 text-green-600 dark:text-green-400'
-                                                              : 'bg-red-500/20 border-red-500 text-red-600 dark:text-red-400'
-                                            : 'border-transparent'
-                                    )}
-                                    style={data.tipo !== t ? { borderColor: 'var(--border)', color: 'var(--text-muted)' } : {}}>
-                                    {t === 'ingreso' ? <ArrowUpCircle className="w-4 h-4" /> : <ArrowDownCircle className="w-4 h-4" />}
-                                    {t === 'ingreso' ? 'Ingreso' : 'Egreso'}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Sub_tipo */}
-                    <div className="space-y-1.5">
-                        <Label>Forma de pago <span className="text-red-400">*</span></Label>
-                        <div className="grid grid-cols-4 gap-1.5">
-                            {(['efectivo', 'transferencia', 'cheque', 'deposito'] as const).map(t => (
-                                <button key={t} type="button" onClick={() => setData('sub_tipo', t)}
-                                    className={cn(
-                                        'py-2 px-1 rounded-lg text-xs font-medium border transition-colors',
-                                        data.sub_tipo === t ? 'text-white border-transparent' : 'hover:opacity-80'
-                                    )}
-                                    style={data.sub_tipo === t
-                                        ? { background: 'var(--primary)' }
-                                        : { borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
-                                    {subTipoLabel[t]}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Fecha / Monto */}
+                    {/* Banco/Caja + Tipo */}
                     <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                            <Label>Banco/Caja <span className="text-red-400">*</span></Label>
+                            <select value={data.banco_caja_id} onChange={e => setData('banco_caja_id', e.target.value)}
+                                className="input-field select-field">
+                                <option value="">— Seleccionar —</option>
+                                {bancos.map(b => <option key={b.id} value={b.id}>{b.nombre} (${Number(b.saldo_actual).toFixed(2)})</option>)}
+                            </select>
+                            {errors.banco_caja_id && <p className="text-red-400 text-xs">{errors.banco_caja_id}</p>}
+                        </div>
+                        <div className="space-y-1.5">
+                            <Label>Tipo <span className="text-red-400">*</span></Label>
+                            <div className="grid grid-cols-2 gap-2">
+                                {(['ingreso', 'egreso'] as const).map(t => (
+                                    <button key={t} type="button" onClick={() => setData('tipo', t)}
+                                        className={cn(
+                                            'py-2.5 rounded-xl text-sm font-bold border-2 transition-all flex items-center justify-center gap-1.5',
+                                            data.tipo === t
+                                                ? t === 'ingreso' ? 'bg-green-500/20 border-green-500 text-green-600 dark:text-green-400'
+                                                                  : 'bg-red-500/20 border-red-500 text-red-600 dark:text-red-400'
+                                                : 'border-transparent'
+                                        )}
+                                        style={data.tipo !== t ? { borderColor: 'var(--border)', color: 'var(--text-muted)' } : {}}>
+                                        {t === 'ingreso' ? <ArrowUpCircle className="w-3.5 h-3.5" /> : <ArrowDownCircle className="w-3.5 h-3.5" />}
+                                        {t === 'ingreso' ? 'Ingreso' : 'Egreso'}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Forma de pago + Fecha */}
+                    <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                            <Label>Forma de pago <span className="text-red-400">*</span></Label>
+                            <div className="grid grid-cols-2 gap-1">
+                                {(['efectivo', 'transferencia', 'cheque', 'deposito'] as const).map(t => (
+                                    <button key={t} type="button" onClick={() => setData('sub_tipo', t)}
+                                        className={cn(
+                                            'py-1.5 px-1 rounded-lg text-xs font-medium border transition-colors',
+                                            data.sub_tipo === t ? 'text-white border-transparent' : 'hover:opacity-80'
+                                        )}
+                                        style={data.sub_tipo === t
+                                            ? { background: 'var(--primary)' }
+                                            : { borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
+                                        {{ efectivo: 'Efectivo', transferencia: 'Transf.', cheque: 'Cheque', deposito: 'Depósito' }[t]}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
                         <div className="space-y-1.5">
                             <Label>Fecha <span className="text-red-400">*</span></Label>
                             <Input type="date" value={data.fecha} onChange={e => setData('fecha', e.target.value)} />
                         </div>
+                    </div>
+
+                    {/* Monto + N° Documento */}
+                    <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1.5">
                             <Label>Monto <span className="text-red-400">*</span></Label>
                             <Input type="number" step="0.01" min="0.01" value={data.monto}
                                 onChange={e => setData('monto', e.target.value)}
                                 error={errors.monto} placeholder="0.00" />
                             {errors.monto && <p className="text-red-400 text-xs">{errors.monto}</p>}
+                        </div>
+                        <div className="space-y-1.5">
+                            <Label>N° Documento</Label>
+                            <Input value={data.num_documento} onChange={e => setData('num_documento', e.target.value)}
+                                placeholder="Ref…" />
                         </div>
                     </div>
 
@@ -210,18 +218,11 @@ function MovimientoModal({ bancos, cuentas, onClose }: {
                         </div>
                     )}
 
-                    {/* Beneficiario / N° Documento */}
-                    <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-1.5">
-                            <Label>Beneficiario</Label>
-                            <Input value={data.beneficiario} onChange={e => setData('beneficiario', e.target.value)}
-                                placeholder="Nombre…" />
-                        </div>
-                        <div className="space-y-1.5">
-                            <Label>N° Documento</Label>
-                            <Input value={data.num_documento} onChange={e => setData('num_documento', e.target.value)}
-                                placeholder="Ref…" />
-                        </div>
+                    {/* Beneficiario */}
+                    <div className="space-y-1.5">
+                        <Label>Beneficiario</Label>
+                        <Input value={data.beneficiario} onChange={e => setData('beneficiario', e.target.value)}
+                            placeholder="Nombre…" />
                     </div>
 
                     {/* Cuenta contrapartida */}
@@ -265,8 +266,10 @@ function MovimientoModal({ bancos, cuentas, onClose }: {
                     {/* Descripción */}
                     <div className="space-y-1.5">
                         <Label>Descripción <span className="text-red-400">*</span></Label>
-                        <Input value={data.descripcion} onChange={e => setData('descripcion', e.target.value)}
-                            error={errors.descripcion} placeholder="Descripción del movimiento…" />
+                        <textarea value={data.descripcion} onChange={e => setData('descripcion', e.target.value)}
+                            rows={2}
+                            className="input-field textarea-field"
+                            placeholder="Descripción del movimiento…" />
                         {errors.descripcion && <p className="text-red-400 text-xs">{errors.descripcion}</p>}
                     </div>
 
@@ -379,59 +382,54 @@ export default function MovimientosIndex() {
                     </div>
                 </div>
                 {/* Toolbar */}
-                <div className="flex items-center gap-2 flex-wrap mb-6">
-                    <button onClick={() => setShowModal(true)}
-                        className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5"
-                        style={{ background: 'var(--primary)' }}>
-                        <Plus size={15} /> Nuevo Movimiento
-                    </button>
+                <div className="flex items-center justify-between gap-3 mb-6">
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-2 whitespace-nowrap">
+                            <Plus size={15} /> Nuevo Movimiento
+                        </button>
 
-                    <div className="input-with-icon">
-                        <Search size={14} className="input-icon" />
-                        <input type="text" value={filtro.buscar ?? ''}
-                            onChange={e => setFiltro(f => ({ ...f, buscar: e.target.value }))}
-                            placeholder="Descripción, beneficiario…"
-                            className="input-field w-48" />
+                        <div className="input-with-icon">
+                            <Search size={14} className="input-icon" />
+                            <input type="text" value={filtro.buscar ?? ''}
+                                onChange={e => setFiltro(f => ({ ...f, buscar: e.target.value }))}
+                                placeholder="Descripción, beneficiario…"
+                                className="input-field w-48" />
+                        </div>
+
+                        <select value={filtro.banco_caja_id ?? ''} onChange={e => setFiltro(f => ({ ...f, banco_caja_id: e.target.value }))}
+                            className="input-field select-field" style={{ width: 'auto' }}>
+                            <option value="">Todos los bancos</option>
+                            {bancos.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
+                        </select>
+
+                        <select value={filtro.tipo ?? ''} onChange={e => setFiltro(f => ({ ...f, tipo: e.target.value }))}
+                            className="input-field select-field" style={{ width: 'auto' }}>
+                            <option value="">Todos</option>
+                            <option value="ingreso">Ingreso</option>
+                            <option value="egreso">Egreso</option>
+                        </select>
+
+                        <input type="date" value={filtro.fecha_desde ?? ''}
+                            onChange={e => setFiltro(f => ({ ...f, fecha_desde: e.target.value }))}
+                            className="input-field" style={{ width: 'auto' }} />
+                        <input type="date" value={filtro.fecha_hasta ?? ''}
+                            onChange={e => setFiltro(f => ({ ...f, fecha_hasta: e.target.value }))}
+                            className="input-field" style={{ width: 'auto' }} />
+
+                        <button onClick={buscar} className="btn-secondary whitespace-nowrap">
+                            Filtrar
+                        </button>
+                        <button onClick={limpiar} className="btn-secondary whitespace-nowrap">
+                            Limpiar
+                        </button>
                     </div>
 
-                    <select value={filtro.banco_caja_id ?? ''} onChange={e => setFiltro(f => ({ ...f, banco_caja_id: e.target.value }))}
-                        className="input-field select-field" style={{ width: 'auto' }}>
-                        <option value="">Todos los bancos</option>
-                        {bancos.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
-                    </select>
-
-                    <select value={filtro.tipo ?? ''} onChange={e => setFiltro(f => ({ ...f, tipo: e.target.value }))}
-                        className="input-field select-field" style={{ width: 'auto' }}>
-                        <option value="">Todos</option>
-                        <option value="ingreso">Ingreso</option>
-                        <option value="egreso">Egreso</option>
-                    </select>
-
-                    <input type="date" value={filtro.fecha_desde ?? ''}
-                        onChange={e => setFiltro(f => ({ ...f, fecha_desde: e.target.value }))}
-                        className="input-field" style={{ width: 'auto' }} />
-                    <input type="date" value={filtro.fecha_hasta ?? ''}
-                        onChange={e => setFiltro(f => ({ ...f, fecha_hasta: e.target.value }))}
-                        className="input-field" style={{ width: 'auto' }} />
-
-                    <button onClick={buscar}
-                        className="px-4 py-2 rounded-xl text-sm font-semibold text-white whitespace-nowrap transition-all hover:opacity-90"
-                        style={{ background: 'var(--primary)' }}>
-                        Filtrar
-                    </button>
-                    <button onClick={limpiar}
-                        className="px-3 py-2 rounded-xl text-sm font-medium border transition-all hover:opacity-80"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
-                        Limpiar
-                    </button>
-
-                    <div className="flex-1" />
-
-                    <a href={route('bancos.movimientos.exportar-xml')}
-                       className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90"
-                       style={{ background: '#3b82f6' }}>
-                        <Download size={15} /> XML
-                    </a>
+                    <div className="flex items-center gap-2">
+                        <a href={route('bancos.movimientos.exportar-xml')}
+                           className="btn-excel flex items-center gap-2 whitespace-nowrap">
+                            <Download size={15} /> XML
+                        </a>
+                    </div>
                 </div>
             </div>
 

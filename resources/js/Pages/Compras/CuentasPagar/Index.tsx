@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react'
 import { router, usePage, Head } from '@inertiajs/react'
 import { toast, ToastContainer } from 'react-toastify'
+import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { Button } from '@/Components/ui/button'
 import { cn } from '@/lib/utils'
-import { DollarSign, AlertTriangle, Clock, Search, X, FileText, Download, CreditCard } from 'lucide-react'
+import { DollarSign, Search, X, FileText, Download, CreditCard, XCircle } from 'lucide-react'
 import type { PageProps, Proveedor, BancoCaja } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
 
@@ -14,6 +15,7 @@ import 'react-toastify/dist/ReactToastify.css'
 
 interface CxPRow {
     id: number
+    compra_id: number | null
     proveedor: string | null
     num_documento: string | null
     monto: number
@@ -21,15 +23,10 @@ interface CxPRow {
     fecha_emision: string | null
     fecha_vencimiento: string | null
     estado: 'pendiente' | 'parcial' | 'pagada'
+    compra_anulada: boolean
     urgencia: 'vencida' | 'critica' | 'proxima' | 'normal'
     color_urgencia: string
     dias_vencimiento: number
-}
-
-interface Resumen {
-    total_pendiente: number
-    vencidas: number
-    por_vencer: number
 }
 
 interface Filtros {
@@ -42,8 +39,13 @@ interface Props extends PageProps {
     proveedores: Pick<Proveedor, 'id' | 'razon_social'>[]
     bancos: Pick<BancoCaja, 'id' | 'nombre' | 'tipo' | 'saldo_actual'>[]
     filtros: Filtros
-    resumen: Resumen
 }
+
+type EscenarioAnulacion =
+    | { escenario: 'A';       mensaje: string }
+    | { escenario: 'B';       mensaje: string; monto: number; banco: string }
+    | { escenario: 'C';       mensaje: string; productos_vendidos: Array<{ nombre: string; cantidad_salida: number }> }
+    | { escenario: 'ANULADA'; mensaje: string }
 
 // ─── Notify ───────────────────────────────────────────────────────────────────
 
@@ -51,6 +53,25 @@ const S = { borderRadius: '14px', fontWeight: '600', color: '#fff' } as const
 const notify = {
     success: (msg: string) => toast.success(msg, { icon: () => '✅', style: { ...S, background: 'linear-gradient(135deg,#10b981,#059669)' } }),
     error:   (msg: string) => toast.error(msg,   { icon: () => '❌', autoClose: 6000, style: { ...S, background: 'linear-gradient(135deg,#ef4444,#dc2626)' } }),
+}
+
+// ─── SweetAlert ───────────────────────────────────────────────────────────────
+
+const SWAL_CSS = `
+    .swal-pop { border-radius:20px!important; padding:28px!important; box-shadow:0 25px 60px rgba(0,0,0,.25)!important; max-width:460px!important }
+    .swal-title { font-size:1.1rem!important; font-weight:700!important; color:#1f2937!important; margin-bottom:16px!important }
+    .swal-confirm { border-radius:10px!important; padding:10px 20px!important; font-weight:600!important }
+    .swal-cancel  { border-radius:10px!important; padding:10px 20px!important; font-weight:600!important }
+`
+function injectSwalCss() {
+    if (document.getElementById('swal-cxp')) return
+    const s = document.createElement('style'); s.id = 'swal-cxp'; s.textContent = SWAL_CSS
+    document.head.appendChild(s)
+}
+const swalBase = {
+    showCancelButton: true, reverseButtons: true, focusCancel: true,
+    customClass: { popup: 'swal-pop', title: 'swal-title', confirmButton: 'swal-confirm', cancelButton: 'swal-cancel' },
+    didOpen: injectSwalCss,
 }
 
 // ─── Urgencia helpers ─────────────────────────────────────────────────────────
@@ -76,23 +97,6 @@ function DiasChip({ dias, urgencia }: { dias: number; urgencia: string }) {
         <span className={cn('px-2 py-0.5 rounded-full text-xs font-semibold', c.bg, c.text)}>
             {label}
         </span>
-    )
-}
-
-// ─── StatCard ─────────────────────────────────────────────────────────────────
-
-function StatCard({ label, value, icon: Icon, cls, valueCls }: {
-    label: string; value: string | number; icon: React.ElementType; cls: string; valueCls: string
-}) {
-    return (
-        <div className="rounded-xl border p-4 flex items-center gap-3 hover:shadow-md transition-shadow"
-            style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
-            <div className={cn('rounded-lg p-2.5 shrink-0', cls)}><Icon className="w-5 h-5" /></div>
-            <div className="min-w-0">
-                <p className={cn('text-xl font-bold leading-none mb-1', valueCls)}>{value}</p>
-                <p className="text-xs leading-none" style={{ color: 'var(--text-muted)' }}>{label}</p>
-            </div>
-        </div>
     )
 }
 
@@ -123,7 +127,7 @@ function ModalPago({ cxp, bancos, onClose }: {
     function submit(e: React.FormEvent) {
         e.preventDefault()
         setProcessing(true)
-        router.post(route('compras.cxp.pagar', cxp.id), form, {
+        router.post(route('compras.cxp.pagar', cxp.id), form as unknown as Record<string, string>, {
             onSuccess: () => { notify.success('Pago registrado correctamente'); onClose() },
             onError:   (errs) => { notify.error('Error: ' + Object.values(errs).join(', ')); setProcessing(false) },
             onFinish:  () => setProcessing(false),
@@ -132,7 +136,7 @@ function ModalPago({ cxp, bancos, onClose }: {
 
     return (
         <div className="modal-overlay" onClick={onClose}>
-            <div className="modal-card max-w-md" onClick={e => e.stopPropagation()}>
+            <div className="modal-card max-w-lg" onClick={e => e.stopPropagation()}>
 
                 {/* Header */}
                 <div className="modal-header">
@@ -224,7 +228,7 @@ function ModalPago({ cxp, bancos, onClose }: {
 // ─── Página ───────────────────────────────────────────────────────────────────
 
 export default function CuentasPagarIndex() {
-    const { cxp, proveedores, bancos, filtros, resumen, flash } = usePage<Props>().props
+    const { cxp, proveedores, bancos, filtros, flash } = usePage<Props>().props
 
     const [buscar,      setBuscar]      = useState('')
     const [estado,      setEstado]      = useState(filtros.estado ?? '')
@@ -252,6 +256,110 @@ export default function CuentasPagarIndex() {
         router.get(route('compras.cxp.index'), {}, { preserveState: false })
     }
 
+    async function iniciarAnulacion(c: CxPRow) {
+        if (!c.compra_id) {
+            notify.error('Esta cuenta por pagar no tiene compra asociada.')
+            return
+        }
+
+        let escData: EscenarioAnulacion
+        try {
+            const res = await fetch(route('compras.facturas.verificar-anulacion', c.compra_id), {
+                headers: { Accept: 'application/json' },
+            })
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ message: 'Error del servidor' })) as { message?: string }
+                notify.error(err.message ?? 'Error al verificar la compra')
+                return
+            }
+            escData = await res.json() as EscenarioAnulacion
+        } catch {
+            notify.error('Error al verificar el estado de la compra.')
+            return
+        }
+
+        if (escData.escenario === 'ANULADA') {
+            notify.error(escData.mensaje)
+            return
+        }
+
+        if (escData.escenario === 'C') {
+            const listaHtml = escData.productos_vendidos
+                .map(d => `<li><b>${d.nombre}</b> — ${d.cantidad_salida} unid. vendidas</li>`)
+                .join('')
+            void Swal.fire({
+                icon: 'error',
+                title: 'No se puede anular',
+                html: `<p style="color:#6b7280;font-size:13px;margin-bottom:12px">${escData.mensaje}</p>
+                       <ul style="text-align:left;font-size:13px;color:#374151;line-height:1.8;padding-left:16px">
+                           ${listaHtml}
+                       </ul>`,
+                confirmButtonText: 'Entendido',
+                confirmButtonColor: '#ef4444',
+                showCancelButton: false,
+                customClass: { popup: 'swal-pop', title: 'swal-title', confirmButton: 'swal-confirm' },
+                didOpen: injectSwalCss,
+            })
+            return
+        }
+
+        if (escData.escenario === 'A') {
+            const result = await Swal.fire({
+                ...swalBase,
+                title: 'Anular compra',
+                html: `<p style="color:#6b7280;font-size:14px;margin-bottom:10px">
+                           <strong>${c.num_documento ?? '—'}</strong> · ${c.proveedor ?? '—'}
+                       </p>
+                       <p style="color:#374151;font-size:13px">${escData.mensaje}</p>`,
+                input: 'textarea',
+                inputPlaceholder: 'Motivo de la anulación (mínimo 10 caracteres)…',
+                inputAttributes: { rows: '3', style: 'font-size:13px' },
+                confirmButtonText: 'Anular',
+                cancelButtonText:  'Cancelar',
+                confirmButtonColor: '#ef4444',
+                cancelButtonColor:  '#6b7280',
+                inputValidator: (v) => (!v || v.trim().length < 10) ? 'El motivo debe tener al menos 10 caracteres.' : null,
+            })
+            if (!result.isConfirmed) return
+            router.patch(route('compras.facturas.anular', c.compra_id), { motivo: result.value as string }, {
+                onSuccess: () => notify.success(`Compra ${c.num_documento ?? ''} anulada correctamente.`),
+                onError:   (e)  => notify.error(Object.values(e)[0] ?? 'Error al anular'),
+            })
+            return
+        }
+
+        if (escData.escenario === 'B') {
+            const result = await Swal.fire({
+                ...swalBase,
+                title: 'Anular compra con pago',
+                html: `<p style="color:#6b7280;font-size:13px;margin-bottom:12px">
+                           <strong>${c.num_documento ?? '—'}</strong> · ${c.proveedor ?? '—'}
+                       </p>
+                       <div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:10px;padding:10px 14px;margin-bottom:12px;text-align:left">
+                           <p style="font-size:12px;color:#92400e;font-weight:600;margin-bottom:4px">Pago registrado</p>
+                           <p style="font-size:12px;color:#78350f">
+                               Banco/Caja: <b>${escData.banco}</b><br>
+                               Monto a reversar: <b>$${escData.monto.toFixed(2)}</b>
+                           </p>
+                       </div>
+                       <p style="color:#374151;font-size:13px">${escData.mensaje}</p>`,
+                input: 'textarea',
+                inputPlaceholder: 'Motivo de la anulación (mínimo 10 caracteres)…',
+                inputAttributes: { rows: '3', style: 'font-size:13px' },
+                confirmButtonText: 'Anular y reversar pago',
+                cancelButtonText:  'Cancelar',
+                confirmButtonColor: '#ef4444',
+                cancelButtonColor:  '#6b7280',
+                inputValidator: (v) => (!v || v.trim().length < 10) ? 'El motivo debe tener al menos 10 caracteres.' : null,
+            })
+            if (!result.isConfirmed) return
+            router.patch(route('compras.facturas.anular', c.compra_id), { motivo: result.value as string }, {
+                onSuccess: () => notify.success(`Compra ${c.num_documento ?? ''} anulada. Pago revertido.`),
+                onError:   (e)  => notify.error(Object.values(e)[0] ?? 'Error al anular'),
+            })
+        }
+    }
+
     const hayFiltros = estado || proveedorId
 
     const filtradas = cxp.filter(c => {
@@ -265,8 +373,6 @@ export default function CuentasPagarIndex() {
 
     const pdfUrl   = `${route('compras.cxp.pdf')}?estado=${estado}&proveedor_id=${proveedorId}`
     const excelUrl = `${route('compras.cxp.excel')}?estado=${estado}&proveedor_id=${proveedorId}`
-
-    const inputStyle = { background: 'var(--bg-card)', color: 'var(--text-main)', borderColor: 'var(--border)' }
 
     return (
         <AppLayout title="Cuentas por Pagar" suppressFlash>
@@ -290,80 +396,54 @@ export default function CuentasPagarIndex() {
                 </div>
 
                 {/* Toolbar */}
-                <div className="flex items-center gap-2 flex-wrap mb-6">
-                    <div className="input-with-icon">
-                        <Search size={14} className="input-icon" />
-                        <input type="text" value={buscar}
-                            onChange={e => setBuscar(e.target.value)}
-                            placeholder="Buscar proveedor o documento…"
-                            className="input-field w-52" />
+                <div className="flex items-center justify-between gap-3 mb-6">
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <div className="input-with-icon">
+                            <Search size={14} className="input-icon" />
+                            <input type="text" value={buscar}
+                                onChange={e => setBuscar(e.target.value)}
+                                placeholder="Buscar proveedor o documento…"
+                                className="input-field w-52" />
+                        </div>
+
+                        <select value={estado} onChange={e => setEstado(e.target.value)}
+                            className="input-field select-field" style={{ width: 'auto' }}>
+                            <option value="">Todas (pendiente + parcial)</option>
+                            <option value="pendiente">Pendiente</option>
+                            <option value="parcial">Parcial</option>
+                            <option value="pagada">Pagada / Anulada</option>
+                        </select>
+
+                        <select value={proveedorId} onChange={e => setProveedorId(e.target.value)}
+                            className="input-field select-field" style={{ width: 'auto' }}>
+                            <option value="">Todos los proveedores</option>
+                            {proveedores.map(p => (
+                                <option key={p.id} value={p.id}>{p.razon_social}</option>
+                            ))}
+                        </select>
+
+                        <button onClick={aplicarFiltros} className="btn-secondary whitespace-nowrap">
+                            Filtrar
+                        </button>
+                        {hayFiltros && (
+                            <button onClick={limpiar} className="btn-secondary whitespace-nowrap">
+                                Limpiar
+                            </button>
+                        )}
                     </div>
 
-                    <select value={estado} onChange={e => setEstado(e.target.value)}
-                        className="input-field select-field" style={{ width: 'auto' }}>
-                        <option value="">Todas (pendiente + parcial)</option>
-                        <option value="pendiente">Pendiente</option>
-                        <option value="parcial">Parcial</option>
-                        <option value="pagada">Pagada</option>
-                    </select>
-
-                    <select value={proveedorId} onChange={e => setProveedorId(e.target.value)}
-                        className="input-field select-field" style={{ width: 'auto' }}>
-                        <option value="">Todos los proveedores</option>
-                        {proveedores.map(p => (
-                            <option key={p.id} value={p.id}>{p.razon_social}</option>
-                        ))}
-                    </select>
-
-                    <button onClick={aplicarFiltros}
-                        className="px-4 py-2 rounded-xl text-sm font-semibold text-white whitespace-nowrap transition-all hover:opacity-90"
-                        style={{ background: 'var(--primary)' }}>
-                        Filtrar
-                    </button>
-                    {hayFiltros && (
-                        <button onClick={limpiar}
-                            className="px-3 py-2 rounded-xl text-sm font-medium border transition-all hover:opacity-80"
-                            style={{ color: 'var(--text-muted)', borderColor: 'var(--border)' }}>
-                            Limpiar
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => abrirPdf(pdfUrl)}
+                            className="btn-pdf flex items-center gap-2 whitespace-nowrap">
+                            <FileText size={15} /> PDF
                         </button>
-                    )}
-
-                    <div className="flex-1" />
-
-                    <button
-                        onClick={() => abrirPdf(pdfUrl)}
-                        className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90"
-                        style={{ background: '#ef4444' }}>
-                        <FileText size={15} /> PDF
-                    </button>
-                    <a href={excelUrl}
-                       className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90"
-                       style={{ background: '#16a34a' }}>
-                        <Download size={15} /> Excel
-                    </a>
+                        <a href={excelUrl}
+                           className="btn-excel flex items-center gap-2 whitespace-nowrap">
+                            <Download size={15} /> Excel
+                        </a>
+                    </div>
                 </div>
-            </div>
-
-            {/* Stats resumen */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 px-6 py-4">
-                <StatCard
-                    label="Total pendiente"
-                    value={`$${Number(resumen.total_pendiente).toLocaleString('es-EC', { minimumFractionDigits: 2 })}`}
-                    icon={DollarSign}
-                    cls="bg-blue-500/15 text-blue-600 dark:text-blue-400"
-                    valueCls="text-blue-600 dark:text-blue-400" />
-                <StatCard
-                    label="Facturas vencidas"
-                    value={resumen.vencidas}
-                    icon={AlertTriangle}
-                    cls="bg-red-500/15 text-red-600 dark:text-red-400"
-                    valueCls="text-red-600 dark:text-red-400" />
-                <StatCard
-                    label="Vencen en 15 días"
-                    value={resumen.por_vencer}
-                    icon={Clock}
-                    cls="bg-orange-500/15 text-orange-600 dark:text-orange-400"
-                    valueCls="text-orange-600 dark:text-orange-400" />
             </div>
 
             {/* Tabla */}
@@ -382,7 +462,7 @@ export default function CuentasPagarIndex() {
                         <span className="col-span-1 text-center">Vencimiento</span>
                         <span className="col-span-1 text-center">Días</span>
                         <span className="col-span-1 text-center">Estado</span>
-                        <span className="col-span-1 text-center">Pagar</span>
+                        <span className="col-span-1 text-center">Acciones</span>
                     </div>
 
                     {filtradas.length === 0 && (
@@ -398,7 +478,8 @@ export default function CuentasPagarIndex() {
                         <div key={c.id}
                             className={cn(
                                 'group grid grid-cols-12 gap-3 px-4 py-3 border-b items-center text-sm transition-colors',
-                                URGENCIA_BORDER[c.urgencia],
+                                c.compra_anulada ? 'border-l-4 border-l-gray-400' : URGENCIA_BORDER[c.urgencia],
+                                (c.estado === 'pagada' || c.compra_anulada) && 'opacity-60',
                             )}
                             style={{ borderBottomColor: 'var(--border)', background: 'transparent' }}
                             onMouseEnter={e => (e.currentTarget.style.background = 'rgba(245,158,11,0.04)')}
@@ -435,30 +516,47 @@ export default function CuentasPagarIndex() {
                             <div className="col-span-1 flex justify-center">
                                 <DiasChip dias={c.dias_vencimiento} urgencia={c.urgencia} />
                             </div>
-                            <div className="col-span-1 flex justify-center">
-                                {c.estado === 'pendiente' && (
-                                    <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400">
-                                        Pendiente
+                            <div className="col-span-1 flex flex-col items-center gap-1">
+                                {c.compra_anulada ? (
+                                    <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                                        Anulada
                                     </span>
-                                )}
-                                {c.estado === 'parcial' && (
-                                    <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
-                                        Parcial
-                                    </span>
-                                )}
-                                {c.estado === 'pagada' && (
-                                    <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
-                                        Pagada
-                                    </span>
+                                ) : (
+                                    <>
+                                        {c.estado === 'pendiente' && (
+                                            <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400">
+                                                Pendiente
+                                            </span>
+                                        )}
+                                        {c.estado === 'parcial' && (
+                                            <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
+                                                Parcial
+                                            </span>
+                                        )}
+                                        {c.estado === 'pagada' && (
+                                            <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
+                                                Pagada
+                                            </span>
+                                        )}
+                                    </>
                                 )}
                             </div>
-                            <div className="col-span-1 flex justify-center">
-                                {c.estado !== 'pagada' && bancos.length > 0 && (
+                            {/* Acciones: Pagar + Anular (ocultas si la compra ya fue anulada) */}
+                            <div className="col-span-1 flex justify-center items-center gap-1">
+                                {!c.compra_anulada && c.estado !== 'pagada' && bancos.length > 0 && (
                                     <button
                                         onClick={() => setModalPago(c)}
                                         title="Registrar pago"
                                         className="p-1.5 rounded-lg hover:bg-green-500/20 text-green-600 dark:text-green-400 transition-colors">
                                         <CreditCard className="w-4 h-4" />
+                                    </button>
+                                )}
+                                {!c.compra_anulada && c.compra_id !== null && (
+                                    <button
+                                        onClick={() => iniciarAnulacion(c)}
+                                        title="Anular compra asociada"
+                                        className="p-1.5 rounded-lg hover:bg-red-500/20 text-red-500 dark:text-red-400 transition-colors">
+                                        <XCircle className="w-4 h-4" />
                                     </button>
                                 )}
                             </div>

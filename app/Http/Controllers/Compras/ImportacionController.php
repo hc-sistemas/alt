@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Compras;
 use App\Http\Controllers\Controller;
 use App\Models\Importacion;
 use App\Models\InventarioSaldo;
+use App\Models\Producto;
 use App\Models\Proveedor;
 use App\Models\Compra;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -26,13 +28,16 @@ class ImportacionController extends Controller
                 'id'                => $i->id,
                 'nombre'            => $i->nombre,
                 'num_invoice'       => $i->num_invoice,
+                'agente_aduanero'   => $i->agente_aduanero,
                 'proveedor'         => $i->proveedor?->razon_social,
                 'pais_embarque'     => $i->pais_embarque,
                 'costo_fob'         => $i->costo_fob,
+                'divisa'            => $i->divisa,
                 'total_costos_extra'=> $i->total_costos_extra,
                 'costo_total'       => $i->costo_total,
-                'fecha_partida'     => $i->fecha_partida?->format('d/m/Y'),
-                'fecha_llegada'     => $i->fecha_llegada?->format('d/m/Y'),
+                'metodo_prorrateo'  => $i->metodo_prorrateo,
+                'fecha_partida'     => $i->fecha_partida?->format('Y-m-d'),
+                'fecha_llegada'     => $i->fecha_llegada?->format('Y-m-d'),
                 'fecha_liquidacion' => $i->fecha_liquidacion?->format('d/m/Y'),
                 'estado'            => $i->estado,
                 'estado_label'      => $i->estado_label,
@@ -48,12 +53,6 @@ class ImportacionController extends Controller
         return Inertia::render('Compras/Importaciones/Index', [
             'importaciones' => $importaciones,
             'proveedores'   => $proveedores,
-            'stats' => [
-                'total'       => $importaciones->count(),
-                'en_transito' => $importaciones->where('estado', 'en_transito')->count(),
-                'en_aduana'   => $importaciones->where('estado', 'en_aduana')->count(),
-                'liquidadas'  => $importaciones->where('estado', 'liquidada')->count(),
-            ],
         ]);
     }
 
@@ -112,7 +111,7 @@ class ImportacionController extends Controller
         }
 
         $request->validate([
-            'metodo_prorrateo'           => 'required|in:cantidad,precio,peso',
+            'metodo_prorrateo'           => 'required|in:cantidad,precio',
             'fecha_liquidacion'          => 'required|date',
             'costos_extra'               => 'nullable|array',
             'costos_extra.*.descripcion' => 'required_with:costos_extra|string|max:200',
@@ -139,15 +138,17 @@ class ImportacionController extends Controller
 
         $bases = $compras->map(fn($compra) => match ($metodo) {
             'cantidad' => (float) $compra->detalles->sum('cantidad'),
-            'peso'     => (float) $compra->detalles->sum('peso_total'),
             default    => (float) $compra->total,
         });
 
         $baseTotal = (float) $bases->sum();
 
-        DB::transaction(function () use ($compras, $bases, $baseTotal, $totalCostosExtra) {
-            if ($baseTotal <= 0) return;
+        if ($baseTotal <= 0) {
+            return back()->with('error',
+                'No se puede prorratear: las compras asociadas no tienen cantidad ni valor registrado.');
+        }
 
+        DB::transaction(function () use ($compras, $bases, $baseTotal, $totalCostosExtra) {
             $compras->each(function ($compra, $idx) use ($bases, $baseTotal, $totalCostosExtra) {
                 $proporcion    = $bases[$idx] / $baseTotal;
                 $costoAsignado = $totalCostosExtra * $proporcion;
@@ -160,11 +161,17 @@ class ImportacionController extends Controller
 
                     $costoPorUnitario = ($costoAsignado * ($detalle->cantidad / $cantidadTotal))
                         / $detalle->cantidad;
+                    $costoPorUnitarioRedondeado = round($costoPorUnitario, 4);
 
                     $saldo = InventarioSaldo::where('producto_id', $detalle->producto_id)->first();
-                    if ($saldo && $saldo->cantidad > 0) {
-                        $saldo->increment('costo_promedio', round($costoPorUnitario, 4));
+                    if ($saldo && $saldo->stock_actual > 0) {
+                        $saldo->increment('costo_promedio', $costoPorUnitarioRedondeado);
                     }
+
+                    // Error 2: actualizar también productos.costo con el costo aterrizado
+                    $nuevoCosto = round((float) $detalle->precio_unitario + $costoPorUnitario, 4);
+                    Producto::where('id', $detalle->producto_id)
+                        ->update(['costo' => $nuevoCosto]);
                 }
             });
         });
@@ -183,5 +190,52 @@ class ImportacionController extends Controller
         return back()->with('success',
             "Importación {$importacion->nombre} liquidada. " .
             'Costo total: $' . number_format($costoTotal, 2));
+    }
+
+    public function detalle(Importacion $importacion): JsonResponse
+    {
+        $empresaId = session('empresa_activa_id');
+        if ($importacion->empresa_id !== $empresaId) abort(403);
+
+        $compras = Compra::where('importacion_id', $importacion->id)
+            ->with(['detalles.producto'])
+            ->get();
+
+        $productos = $compras
+            ->where('gasto_no_deducible', false)
+            ->flatMap(fn($c) => $c->detalles)
+            ->filter(fn($d) => $d->producto_id !== null)
+            ->map(fn($d) => [
+                'codigo'          => $d->producto?->codigo ?? '—',
+                'nombre'          => $d->descripcion,
+                'cantidad'        => (float) $d->cantidad,
+                'precio_unitario' => (float) $d->precio_unitario,
+                'subtotal'        => (float) $d->subtotal,
+                'costo_actual'    => $d->producto ? (float) $d->producto->costo : null,
+            ])
+            ->values();
+
+        $gastos = $compras
+            ->where('gasto_no_deducible', true)
+            ->map(fn($c) => [
+                'concepto'      => $c->concepto ?: $c->num_documento,
+                'num_documento' => $c->num_documento,
+                'monto'         => (float) $c->total,
+            ])
+            ->values();
+
+        $totalGastosFact = $gastos->sum('monto');
+
+        return response()->json([
+            'productos' => $productos,
+            'gastos'    => $gastos,
+            'totales'   => [
+                'fob'    => (float) $importacion->costo_fob,
+                'gastos' => $totalGastosFact > 0
+                    ? $totalGastosFact
+                    : (float) $importacion->total_costos_extra,
+                'total'  => (float) $importacion->costo_total,
+            ],
+        ]);
     }
 }

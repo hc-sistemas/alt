@@ -89,11 +89,14 @@ export default function TrasladoForm() {
 
     function fijarProducto(i: number, p: Resultado) {
         updateItem(i, {
-            producto_id:    p.id.toString(),
-            codigo_input:   p.codigo,
-            producto_nombre: p.nombre,
+            producto_id:      p.id.toString(),
+            codigo_input:     p.codigo,
+            producto_nombre:  p.nombre,
+            stock_disponible: p.disponible ?? null,
         })
-        cargarStock(i, p.id.toString(), data.bodega_origen_id)
+        if (p.disponible === undefined) {
+            cargarStock(i, p.id.toString(), data.bodega_origen_id)
+        }
     }
 
     async function submit(e: React.FormEvent) {
@@ -103,7 +106,7 @@ export default function TrasladoForm() {
 
         const payload = {
             ...data,
-            items: items.map(item => ({
+            detalles: items.map(item => ({
                 producto_id:      item.producto_id,
                 cantidad_enviada: item.cantidad_enviada,
             })),
@@ -223,7 +226,7 @@ export default function TrasladoForm() {
                                 const insuf    = item.stock_disponible !== null && cantidad > item.stock_disponible
                                 return (
                                     <tr key={i} className="border-t" style={{ borderColor: 'var(--border)' }}>
-                                        <td className="px-4 py-2.5 min-w-[260px]">
+                                        <td className="px-4 py-2.5 min-w-65">
                                             {item.producto_nombre ? (
                                                 <div className="flex items-center gap-2 px-3 py-2 rounded-md border"
                                                     style={{ borderColor: 'var(--primary)', background: 'rgba(245,158,11,0.06)' }}>
@@ -245,6 +248,10 @@ export default function TrasladoForm() {
                                                 <div className="space-y-1">
                                                     <BuscadorProductoModal
                                                         onSelect={p => fijarProducto(i, p)}
+                                                        disabled={!data.bodega_origen_id}
+                                                        urlBusqueda={data.bodega_origen_id
+                                                            ? route('inventario.traslados.productosEnBodega') + `?bodega_id=${data.bodega_origen_id}`
+                                                            : undefined}
                                                     />
                                                     {!data.bodega_origen_id && (
                                                         <p className="text-xs text-amber-500">
@@ -277,7 +284,7 @@ export default function TrasladoForm() {
                                         </td>
                                         <td className="px-4 py-2.5 font-mono text-sm"
                                             style={{ color: item.stock_disponible !== null && item.stock_disponible > 0 ? 'var(--primary)' : 'var(--text-muted)' }}>
-                                            {item.loading ? '...' : item.stock_disponible !== null ? item.stock_disponible.toFixed(4) : '—'}
+                                            {item.loading ? '...' : item.stock_disponible !== null ? item.stock_disponible.toFixed(0) : '—'}
                                         </td>
                                         <td className="px-4 py-2.5 w-10">
                                             {items.length > 1 && (

@@ -25,6 +25,39 @@ class TrasladoController extends Controller
         private AuditoriaService $auditoria
     ) {}
 
+    public function productosEnBodega(Request $request): JsonResponse
+    {
+        $empresaId = session('empresa_activa_id');
+        $bodegaId  = $request->integer('bodega_id');
+        $query     = $request->string('q')->trim();
+
+        $resultados = InventarioSaldo::with('producto.marca')
+            ->where('bodega_id', $bodegaId)
+            ->where('stock_actual', '>', 0)
+            ->whereHas('producto', function ($q) use ($empresaId, $query) {
+                $q->where('empresa_id', $empresaId)
+                  ->where('estado', true)
+                  ->when($query->isNotEmpty(), fn($q) =>
+                      $q->where(function ($q) use ($query) {
+                          $q->where('codigo', 'ilike', "%{$query}%")
+                            ->orWhere('nombre', 'ilike', "%{$query}%");
+                      })
+                  );
+            })
+            ->limit(15)
+            ->get()
+            ->map(fn($s) => [
+                'id'             => $s->producto->id,
+                'codigo'         => $s->producto->codigo,
+                'nombre'         => $s->producto->nombre,
+                'marca'          => $s->producto->marca?->nombre,
+                'requiere_serie' => $s->producto->requiere_serie,
+                'disponible'     => (float) $s->stock_actual,
+            ]);
+
+        return response()->json(['resultados' => $resultados]);
+    }
+
     public function index(Request $request): Response
     {
         $empresaId = session('empresa_activa_id');
@@ -113,17 +146,19 @@ class TrasladoController extends Controller
                         );
                     }
 
-                    $this->inventario->reservarStock(
-                        (int) $detalleData['producto_id'],
-                        (int) $data['bodega_origen_id'],
-                        (float) $detalleData['cantidad_enviada']
-                    );
-
-                    TrasladoDetalle::create([
+                    $detalle = TrasladoDetalle::create([
                         'traslado_id'      => $traslado->id,
                         'producto_id'      => $detalleData['producto_id'],
                         'cantidad_enviada' => $detalleData['cantidad_enviada'],
                     ]);
+
+                    $this->inventario->reservarStock(
+                        (int) $detalleData['producto_id'],
+                        (int) $data['bodega_origen_id'],
+                        (float) $detalleData['cantidad_enviada'],
+                        'traslado_detalle',
+                        $detalle->id
+                    );
                 }
 
                 $this->auditoria->documento('crear', 'inventario', 'traslados_bodega', $traslado->id,
@@ -158,6 +193,12 @@ class TrasladoController extends Controller
 
         if ($traslado->empresa_id !== $empresaId) {
             abort(403);
+        }
+
+        $perfilNombre = strtolower(Auth::user()->perfil?->nombre ?? '');
+        $perfilesPermitidos = ['super_admin', 'admin', 'bodeguero'];
+        if (!in_array($perfilNombre, $perfilesPermitidos)) {
+            abort(403, 'No tienes permiso para realizar esta acción.');
         }
 
         if (!$traslado->isPendiente()) {
@@ -231,6 +272,12 @@ class TrasladoController extends Controller
             abort(403);
         }
 
+        $perfilNombre = strtolower(Auth::user()->perfil?->nombre ?? '');
+        $perfilesPermitidos = ['super_admin', 'admin', 'bodeguero'];
+        if (!in_array($perfilNombre, $perfilesPermitidos)) {
+            abort(403, 'No tienes permiso para realizar esta acción.');
+        }
+
         if (!$traslado->isPendiente()) {
             abort(422, 'Traslado no está pendiente.');
         }
@@ -247,7 +294,8 @@ class TrasladoController extends Controller
                     $this->inventario->liberarReserva(
                         (int) $detalle->producto_id,
                         (int) $traslado->bodega_origen_id,
-                        (float) $detalle->cantidad_enviada
+                        'traslado_detalle',
+                        $detalle->id
                     );
                 }
 

@@ -37,8 +37,10 @@ export default function ActivosIndex() {
     const [estado, setEstado] = useState(filters.estado ?? '')
     const [pdfModal, setPdfModal] = useState(false)
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const isFirstRender = useRef(true)
 
     useEffect(() => {
+        if (isFirstRender.current) { isFirstRender.current = false; return }
         if (debounceRef.current) clearTimeout(debounceRef.current)
         debounceRef.current = setTimeout(() => {
             router.get(route('inventario.activos.index'), {
@@ -119,7 +121,7 @@ export default function ActivosIndex() {
                     </div>
 
                     <select value={estado} onChange={e => setEstado(e.target.value)}
-                        className="input-field"
+                        className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm"
                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
                         <option value="">Todos los estados</option>
                         {estados.map(e => (
@@ -177,12 +179,12 @@ export default function ActivosIndex() {
                                         <td className="px-3 py-2.5 font-mono font-medium" style={{ color: 'var(--text-muted)' }}>
                                             {activo.codigo}
                                         </td>
-                                        <td className="px-3 py-2.5 max-w-[200px] truncate font-medium" style={{ color: 'var(--text-main)' }}
+                                        <td className="px-3 py-2.5 max-w-50 truncate font-medium" style={{ color: 'var(--text-main)' }}
                                             title={activo.nombre}>
                                             {activo.nombre}
                                         </td>
                                         <td className="px-3 py-2.5 whitespace-nowrap font-mono" style={{ color: 'var(--text-muted)' }}>
-                                            {activo.fecha_adquisicion}
+                                            {activo.fecha_adquisicion?.split('T')[0]}
                                         </td>
                                         <td className="px-3 py-2.5 text-right font-mono" style={{ color: 'var(--text-main)' }}>
                                             {fmt(activo.costo_adquisicion)}

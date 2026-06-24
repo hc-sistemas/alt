@@ -37,6 +37,7 @@ interface Factura {
 }
 
 interface Filtros {
+    [key: string]: string | undefined
     fecha_desde?: string
     fecha_hasta?: string
     cliente?: string
@@ -70,7 +71,9 @@ function formaPagoResumen(pagos: FacturaPago[]): string {
 }
 
 function esMismoDia(fecha: string): boolean {
-    return fecha.startsWith(new Date().toISOString().slice(0, 10))
+    const hoy = new Date()
+    const hoyLocal = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`
+    return fecha.startsWith(hoyLocal)
 }
 
 // ── Componente ────────────────────────────────────────────────────────────────
@@ -87,7 +90,7 @@ export default function Index() {
     })
 
     const aplicarFiltros = () => {
-        router.get(route('ventas.facturas.index'), filtro, { preserveState: true })
+        router.get(route('ventas.facturas.index'), filtro as Record<string, string | undefined>, { preserveState: true })
     }
 
     const limpiarFiltros = () => {
@@ -131,17 +134,18 @@ export default function Index() {
                     { label: 'Ventas' },
                     { label: 'Facturas' },
                 ]}
-                actions={
+            />
+
+            <div className="p-6 space-y-4">
+
+                <div className="flex items-center">
                     <Link href={route('ventas.facturas.create')}>
-                        <Button size="sm">
+                        <Button>
                             <Plus className="w-4 h-4" />
                             Nueva Factura
                         </Button>
                     </Link>
-                }
-            />
-
-            <div className="p-6 space-y-4">
+                </div>
 
                 {/* Filtros */}
                 <div
@@ -376,9 +380,9 @@ export default function Index() {
                                             disabled={!link.url}
                                             onClick={() => link.url && router.visit(link.url)}
                                             className={cn(
-                                                'min-w-[28px] h-7 px-1.5 rounded text-xs font-medium transition-colors',
+                                                'min-w-7 h-7 px-1.5 rounded text-xs font-medium transition-colors',
                                                 link.active
-                                                    ? 'bg-[var(--primary)] text-black'
+                                                    ? 'bg-(--primary) text-black'
                                                     : 'hover:bg-amber-500/10',
                                                 !link.url && 'opacity-40 cursor-not-allowed',
                                             )}

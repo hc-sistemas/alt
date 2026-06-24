@@ -21,6 +21,7 @@ export default function MarcasIndex() {
     const { marcas, filters } = usePage<Props>().props
     const [search, setSearch] = useState(filters.search ?? '')
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const isFirstRender = useRef(true)
 
     const [modalOpen, setModalOpen] = useState(false)
     const [editando, setEditando] = useState<Marca | null>(null)
@@ -30,6 +31,7 @@ export default function MarcasIndex() {
     const [errorEliminar, setErrorEliminar] = useState<string | null>(null)
 
     useEffect(() => {
+        if (isFirstRender.current) { isFirstRender.current = false; return }
         if (debounceRef.current) clearTimeout(debounceRef.current)
         debounceRef.current = setTimeout(() => {
             router.get(route('inventario.config.marcas.index'), { search }, { preserveState: true, replace: true })
@@ -222,7 +224,7 @@ export default function MarcasIndex() {
                             <h3 className="text-base font-semibold" style={{ color: 'var(--text-main)' }}>
                                 {editando ? 'Editar marca' : 'Nueva marca'}
                             </h3>
-                            <button onClick={cerrarModal} className="modal-close">
+                            <button onClick={cerrarModal} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700">
                                 <X className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
                             </button>
                         </div>
@@ -249,7 +251,7 @@ export default function MarcasIndex() {
                             </div>
                         </div>
 
-                        <div className="modal-footer">
+                        <div className="flex gap-3 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
                             <Button onClick={guardar} loading={procesando}>
                                 <Save className="w-4 h-4" />
                                 {editando ? 'Guardar cambios' : 'Crear marca'}

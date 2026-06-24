@@ -5,7 +5,7 @@ import PageHeader from '@/Components/shared/PageHeader'
 import PdfPreviewModal from '@/Components/shared/PdfPreviewModal'
 import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
-import { Search, ArrowUpDown, SlidersHorizontal, FileText, FileSpreadsheet } from 'lucide-react'
+import { Search, ArrowUpDown, Plus, Pencil, FileText, FileSpreadsheet } from 'lucide-react'
 import type { InventarioSaldo, PaginatedData, PageProps } from '@/types'
 
 interface SaldoRow extends InventarioSaldo {
@@ -28,8 +28,10 @@ export default function KardexSaldos() {
     const [soloCriticos, setSoloCriticos] = useState(filters.solo_criticos === '1')
     const [pdfModal, setPdfModal]     = useState(false)
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const isFirstRender = useRef(true)
 
     useEffect(() => {
+        if (isFirstRender.current) { isFirstRender.current = false; return }
         if (debounceRef.current) clearTimeout(debounceRef.current)
         debounceRef.current = setTimeout(() => {
             router.get(route('inventario.kardex.saldos'), {
@@ -47,12 +49,12 @@ export default function KardexSaldos() {
             const nombre     = s.producto_nombre ?? s.producto?.nombre ?? '—'
             const codigo     = s.producto_codigo ?? s.producto?.codigo ?? '—'
             const bodega     = s.bodega?.nombre ?? `Bodega #${s.bodega_id}`
-            const valorTotal = Number(s.cantidad) * Number(s.costo_promedio)
+            const valorTotal = Number(s.stock_actual) * Number(s.costo_promedio)
             return {
                 'Código Producto': codigo,
                 'Producto':        nombre,
                 'Bodega':          bodega,
-                'Cantidad':        Number(s.cantidad),
+                'Cantidad':        Number(s.stock_actual),
                 'Costo Promedio':  Number(s.costo_promedio),
                 'Valor Total':     Number(valorTotal.toFixed(2)),
             }
@@ -86,7 +88,7 @@ export default function KardexSaldos() {
                             onMouseEnter={e => (e.currentTarget.style.background = 'var(--primary-hover)')}
                             onMouseLeave={e => (e.currentTarget.style.background = 'var(--primary)')}
                         >
-                            <SlidersHorizontal className="w-4 h-4" />
+                            <Plus className="w-4 h-4" />
                             Registrar Ajuste
                         </Button>
                     </Link>
@@ -98,7 +100,7 @@ export default function KardexSaldos() {
                     </div>
 
                     <select value={bodegaId} onChange={e => setBodegaId(e.target.value)}
-                        className="input-field"
+                        className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm"
                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
                         <option value="">Todas las bodegas</option>
                         {bodegas.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
@@ -152,9 +154,9 @@ export default function KardexSaldos() {
                                     </td>
                                 </tr>
                             ) : saldos.data.map(saldo => {
-                                const valorTotal = Number(saldo.cantidad) * Number(saldo.costo_promedio)
+                                const valorTotal = Number(saldo.stock_actual) * Number(saldo.costo_promedio)
                                 const esCritico = saldo.producto_stock_minimo !== undefined &&
-                                    Number(saldo.cantidad) <= Number(saldo.producto_stock_minimo)
+                                    Number(saldo.stock_actual) <= Number(saldo.producto_stock_minimo)
                                 const nombre = saldo.producto_nombre ?? saldo.producto?.nombre ?? '—'
                                 const codigo = saldo.producto_codigo ?? saldo.producto?.codigo ?? '—'
                                 const bodegaNombre = saldo.bodega?.nombre ?? `Bodega #${saldo.bodega_id}`
@@ -169,7 +171,7 @@ export default function KardexSaldos() {
                                         <td className="px-3 py-2.5 font-mono" style={{ color: 'var(--text-muted)' }}>
                                             {codigo}
                                         </td>
-                                        <td className="px-3 py-2.5 max-w-[180px]">
+                                        <td className="px-3 py-2.5 max-w-45">
                                             <span className="font-medium truncate block" style={{ color: 'var(--text-main)' }}>
                                                 {nombre}
                                             </span>
@@ -185,12 +187,12 @@ export default function KardexSaldos() {
                                                     </span>
                                                 )}
                                                 <span style={{ color: esCritico ? '#EF4444' : 'var(--text-main)' }}>
-                                                    {Number(saldo.cantidad).toFixed(4)}
+                                                    {Number(saldo.stock_actual).toFixed(0)}
                                                 </span>
                                             </div>
                                         </td>
                                         <td className="px-3 py-2.5 text-right font-mono" style={{ color: 'var(--text-muted)' }}>
-                                            {Number(saldo.costo_promedio).toFixed(4)}
+                                            {Number(saldo.costo_promedio).toFixed(2)}
                                         </td>
                                         <td className="px-3 py-2.5 text-right font-mono font-medium" style={{ color: 'var(--text-main)' }}>
                                             {valorTotal.toFixed(2)}
@@ -201,7 +203,7 @@ export default function KardexSaldos() {
                                                 bodega_id: saldo.bodega_id,
                                             })}>
                                                 <Button variant="ghost" size="icon" title="Registrar ajuste">
-                                                    <SlidersHorizontal className="w-3.5 h-3.5" />
+                                                    <Pencil className="w-3.5 h-3.5" />
                                                 </Button>
                                             </Link>
                                         </td>

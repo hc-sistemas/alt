@@ -23,8 +23,16 @@ Homestead.json
 Homestead.yaml
 Thumbs.db
 
+# IDE Helper (generados localmente)
+_ide_helper.php
+_ide_helper_models.php
+.phpstorm.meta.php
+
 # Archivos locales que no van al repo
 30052026.backup
 Sistema Altamira.pdf
 database/altamira_schema.sql
 *.backup
+
+# Backups locales de BD
+database/backup_*.sql

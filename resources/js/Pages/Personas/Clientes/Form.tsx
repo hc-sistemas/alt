@@ -96,7 +96,7 @@ export default function ClienteForm() {
                             <Label>Tipo de identificación *</Label>
                             <select
                                 value={data.tipo_identificacion}
-                                onChange={e => setData('tipo_identificacion', e.target.value)}
+                                onChange={e => setData('tipo_identificacion', e.target.value as '04' | '05' | '06' | '07')}
                                 className="flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
                                 style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}
                             >
@@ -238,7 +238,7 @@ export default function ClienteForm() {
                                         type="number"
                                         min={1}
                                         value={data.dias_credito}
-                                        onChange={e => setData('dias_credito', e.target.value)}
+                                        onChange={e => setData('dias_credito', Number(e.target.value))}
                                         placeholder="30"
                                     />
                                     {errors.dias_credito && <p className="text-xs text-red-400">{errors.dias_credito}</p>}
@@ -250,7 +250,7 @@ export default function ClienteForm() {
                                         min={0}
                                         step="0.01"
                                         value={data.cupo_maximo}
-                                        onChange={e => setData('cupo_maximo', e.target.value)}
+                                        onChange={e => setData('cupo_maximo', Number(e.target.value))}
                                         placeholder="5000.00"
                                     />
                                 </div>
@@ -314,7 +314,7 @@ export default function ClienteForm() {
                 </section>
 
                 {/* Acciones */}
-                <div className="modal-footer">
+                <div className="flex gap-3 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
                     <Button type="submit" loading={processing}>
                         <Save className="w-4 h-4" />
                         {esEdicion ? 'Guardar cambios' : 'Crear cliente'}

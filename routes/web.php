@@ -23,6 +23,8 @@ use App\Http\Controllers\Inventario\ProductoController;
 use App\Http\Controllers\Inventario\KardexController;
 use App\Http\Controllers\Inventario\TrasladoController;
 use App\Http\Controllers\Inventario\ActivoFijoController;
+use App\Http\Controllers\Inventario\ListaPrecioController;
+use App\Http\Controllers\Inventario\RecepcionController;
 use App\Http\Controllers\Personas\ClienteController;
 use App\Http\Controllers\Personas\ProveedorController as PersonasProveedorController;
 use App\Http\Controllers\Personas\TransportistaController;
@@ -41,6 +43,10 @@ use App\Http\Controllers\Ventas\NotaCreditoController;
 use App\Http\Controllers\Ventas\RetencionController;
 use App\Http\Controllers\Ventas\GuiaRemisionController;
 use App\Http\Controllers\Ventas\CuentaCobrarController;
+use App\Http\Controllers\RRHH\ColaboradorController;
+use App\Http\Controllers\RRHH\AsistenciaController;
+use App\Http\Controllers\RRHH\HorasExtrasController;
+use App\Http\Controllers\RRHH\NominaController;
 use Illuminate\Support\Facades\Route;
 
 // Auth
@@ -149,9 +155,17 @@ Route::middleware('auth')->group(function () {
         Route::post('/',                 [CompraController::class, 'store']) ->name('store');
         Route::get('/pdf',               [CompraController::class, 'pdf'])   ->name('pdf');
         Route::get('/excel',             [CompraController::class, 'excel']) ->name('excel');
-        Route::get('/{compra}',          [CompraController::class, 'show'])        ->name('show');
-        Route::get('/{compra}/pdf',      [CompraController::class, 'pdfIndividual'])->name('pdf-individual');
-        Route::patch('/{compra}/anular', [CompraController::class, 'anular'])       ->name('anular');
+        Route::get('/{compra}',                    [CompraController::class, 'show'])              ->name('show');
+        Route::get('/{compra}/pdf',               [CompraController::class, 'pdfIndividual'])    ->name('pdf-individual');
+        Route::patch('/{compra}/anular',          [CompraController::class, 'anular'])            ->name('anular');
+        Route::post('/{compra}/activar',          [CompraController::class, 'activar'])           ->name('activar');
+        Route::get('/{compra}/etiquetas-data',                  [CompraController::class, 'etiquetasData'])           ->name('etiquetas-data');
+        Route::post('/{compra}/etiquetas-pdf',                  [CompraController::class, 'generarEtiquetasPdf'])     ->name('etiquetas-pdf');
+        Route::get('/{compra}/etiquetas-reimprimir',            [CompraController::class, 'reimprimirEtiquetasPdf'])  ->name('etiquetas-reimprimir');
+        Route::get('/{compra}/etiquetas-listado',               [CompraController::class, 'etiquetasListado'])         ->name('etiquetas-listado');
+        Route::post('/{compra}/etiquetas-reimprimir-seleccion', [CompraController::class, 'reimprimirSeleccion'])      ->name('etiquetas-reimprimir-seleccion');
+        Route::get('/{compra}/verificar-anulacion',             [CompraController::class, 'verificarAnulacion'])       ->name('verificar-anulacion');
+        Route::post('/{compra}/anular-pago',                    [CompraController::class, 'anularPago'])                ->name('anular-pago');
     });
 
     // Compras - CxP
@@ -174,6 +188,7 @@ Route::middleware('auth')->group(function () {
     Route::prefix('compras/importaciones')->name('compras.importaciones.')->group(function () {
         Route::get('/',                         [ImportacionController::class, 'index'])   ->name('index');
         Route::post('/',                        [ImportacionController::class, 'store'])   ->name('store');
+        Route::get('/{importacion}/detalle',    [ImportacionController::class, 'detalle']) ->name('detalle');
         Route::put('/{importacion}',            [ImportacionController::class, 'update'])  ->name('update');
         Route::patch('/{importacion}/liquidar', [ImportacionController::class, 'liquidar'])->name('liquidar');
     });
@@ -181,13 +196,11 @@ Route::middleware('auth')->group(function () {
     // Inventario — Productos + Kárdex
     Route::prefix('inventario')->name('inventario.')->group(function () {
         Route::get('productos/buscar', [ProductoController::class, 'buscar'])->name('productos.buscar');
-        Route::get('productos/reporte/lista', [ProductoController::class, 'reporteLista'])->name('productos.reporte.lista');
         Route::resource('productos', ProductoController::class)->except(['show']);
 
         // Kárdex — rutas estáticas antes de las dinámicas para evitar colisiones
         Route::get('kardex/saldo', [KardexController::class, 'getSaldo'])->name('kardex.getSaldo');
         Route::get('kardex/saldos', [KardexController::class, 'saldos'])->name('kardex.saldos');
-        Route::get('kardex/reporte/saldos', [KardexController::class, 'reporteSaldos'])->name('kardex.reporte.saldos');
         Route::get('kardex/ajuste', [KardexController::class, 'ajuste'])->name('kardex.ajuste');
         Route::post('kardex/ajuste', [KardexController::class, 'storeAjuste'])->name('kardex.storeAjuste');
         Route::get('kardex', [KardexController::class, 'index'])->name('kardex.index');
@@ -201,10 +214,24 @@ Route::middleware('auth')->group(function () {
         Route::get('traslados/{traslado}', [TrasladoController::class, 'show'])->name('traslados.show');
 
         // Activos Fijos
-        Route::get('activos/reporte/lista', [ActivoFijoController::class, 'reporteLista'])->name('activos.reporte.lista');
         Route::resource('activos', ActivoFijoController::class)->except(['show']);
         Route::get('activos/{activoFijo}', [ActivoFijoController::class, 'show'])->name('activos.show');
         Route::post('activos/{activoFijo}/depreciar', [ActivoFijoController::class, 'depreciar'])->name('activos.depreciar');
+
+        // Listas de Precio
+        Route::get('listas', [ListaPrecioController::class, 'index'])->name('listas.index');
+        Route::put('listas/{producto}', [ListaPrecioController::class, 'update'])->name('listas.update');
+        Route::post('listas/importar', [ListaPrecioController::class, 'importar'])->name('listas.importar');
+
+        // Recepciones de Bodega
+        Route::get('recepciones', [RecepcionController::class, 'index'])->name('recepciones.index');
+        Route::get('recepciones/buscar-compra', [RecepcionController::class, 'buscarCompra'])->name('recepciones.buscarCompra');
+        Route::get('recepciones/buscar-producto', [RecepcionController::class, 'buscarProducto'])->name('recepciones.buscarProducto');
+        Route::post('recepciones', [RecepcionController::class, 'store'])->name('recepciones.store');
+        Route::get('recepciones/{recepcion}', [RecepcionController::class, 'show'])->name('recepciones.show');
+        Route::post('recepciones/{recepcion}/escanear', [RecepcionController::class, 'escanear'])->name('recepciones.escanear');
+        Route::get('recepciones/{recepcion}/etiquetas', [RecepcionController::class, 'etiquetasPendientes'])->name('recepciones.etiquetas');
+        Route::post('recepciones/{recepcion}/confirmar', [RecepcionController::class, 'confirmar'])->name('recepciones.confirmar');
     });
 
     // Inventario — Configuración
@@ -346,5 +373,44 @@ Route::middleware('auth')->group(function () {
         Route::get('/estado-cuenta',   [BancoReporteController::class, 'estadoCuenta'])      ->name('estado-cuenta');
         Route::get('/movimientos',     [BancoReporteController::class, 'reporteMovimientos']) ->name('movimientos');
         Route::get('/caja-chica',      [BancoReporteController::class, 'reporteCajaChica'])  ->name('caja-chica');
+    });
+
+    // ── RRHH ──────────────────────────────────────────────────────────────────
+    Route::prefix('rrhh')->name('rrhh.')->group(function () {
+
+        // Colaboradores
+        Route::prefix('colaboradores')->name('colaboradores.')->group(function () {
+            Route::get('/',                          [ColaboradorController::class, 'index'])  ->name('index');
+            Route::post('/',                         [ColaboradorController::class, 'store'])  ->name('store');
+            Route::put('/{colaborador}',             [ColaboradorController::class, 'update']) ->name('update');
+            Route::patch('/{colaborador}/toggle',    [ColaboradorController::class, 'toggle']) ->name('toggle');
+        });
+
+        // Asistencia — Timbre digital
+        Route::prefix('asistencia')->name('asistencia.')->group(function () {
+            Route::get('/',        [AsistenciaController::class, 'index'])           ->name('index');
+            Route::post('/entrada',[AsistenciaController::class, 'registrarEntrada'])->name('entrada');
+            Route::post('/salida', [AsistenciaController::class, 'registrarSalida']) ->name('salida');
+        });
+
+        // Horas Extras — Panel de aprobación
+        Route::prefix('horas-extras')->name('horas-extras.')->group(function () {
+            Route::get('/',                            [HorasExtrasController::class, 'index'])   ->name('index');
+            Route::patch('/{horaExtra}/aprobar',       [HorasExtrasController::class, 'aprobar']) ->name('aprobar');
+            Route::patch('/{horaExtra}/rechazar',      [HorasExtrasController::class, 'rechazar'])->name('rechazar');
+        });
+
+        // Nómina
+        Route::prefix('nomina')->name('nomina.')->group(function () {
+            Route::get('/',                        [NominaController::class, 'index'])         ->name('index');
+            Route::post('/generar',                [NominaController::class, 'generar'])       ->name('generar');
+            Route::get('/{id}',                    [NominaController::class, 'show'])          ->name('show');
+            Route::put('/{id}/detalle/{did}',      [NominaController::class, 'update'])        ->name('update');
+            Route::post('/{id}/procesar',          [NominaController::class, 'procesar'])      ->name('procesar');
+            Route::post('/{id}/pagar',             [NominaController::class, 'pagar'])         ->name('pagar');
+            Route::delete('/{id}',                 [NominaController::class, 'destroy'])       ->name('destroy');
+            Route::get('/{id}/pdf/{did}',          [NominaController::class, 'pdfIndividual']) ->name('pdf-individual');
+            Route::get('/{id}/zip',                [NominaController::class, 'pdfMasivo'])     ->name('pdf-masivo');
+        });
     });
 });

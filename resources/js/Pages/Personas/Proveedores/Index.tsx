@@ -29,8 +29,10 @@ export default function ProveedoresIndex() {
     const [estado, setEstado] = useState(filters.estado ?? '')
     const [pdfModal, setPdfModal] = useState(false)
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const isFirstRender = useRef(true)
 
     useEffect(() => {
+        if (isFirstRender.current) { isFirstRender.current = false; return }
         if (debounceRef.current) clearTimeout(debounceRef.current)
         debounceRef.current = setTimeout(() => {
             router.get(route('personas.proveedores.index'), { search, tipo, estado }, { preserveState: true, replace: true })
@@ -129,7 +131,7 @@ export default function ProveedoresIndex() {
                         <select
                             value={estado}
                             onChange={e => setEstado(e.target.value)}
-                            className="input-field"
+                            className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm"
                             style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}
                         >
                             <option value="">Todos</option>
@@ -167,7 +169,7 @@ export default function ProveedoresIndex() {
                                 <th className="w-10 px-2 py-2 font-medium text-center" style={{ color: 'var(--text-muted)' }}>No</th>
                                 <th className="w-24 px-2 py-2 font-medium text-left" style={{ color: 'var(--text-muted)' }}>Tipo</th>
                                 <th className="w-36 px-2 py-2 font-medium text-left" style={{ color: 'var(--text-muted)' }}>Identificación</th>
-                                <th className="min-w-[140px] px-2 py-2 font-medium text-left" style={{ color: 'var(--text-muted)' }}>Razón Social</th>
+                                <th className="min-w-35 px-2 py-2 font-medium text-left" style={{ color: 'var(--text-muted)' }}>Razón Social</th>
                                 <th className="w-24 px-2 py-2 font-medium text-left" style={{ color: 'var(--text-muted)' }}>País</th>
                                 <th className="w-24 px-2 py-2 font-medium text-left" style={{ color: 'var(--text-muted)' }}>Ciudad</th>
                                 <th className="w-28 px-2 py-2 font-medium text-left" style={{ color: 'var(--text-muted)' }}>Teléfono</th>

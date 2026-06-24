@@ -39,6 +39,7 @@ class CuentaPagarController extends Controller
         $cxp = $query->orderBy('fecha_vencimiento')->get()
             ->map(fn($c) => [
                 'id'               => $c->id,
+                'compra_id'        => $c->compra_id,
                 'proveedor'        => $c->proveedor?->razon_social,
                 'num_documento'    => $c->compra?->num_documento,
                 'monto'            => $c->monto,
@@ -46,6 +47,7 @@ class CuentaPagarController extends Controller
                 'fecha_emision'    => $c->fecha_emision?->format('d/m/Y'),
                 'fecha_vencimiento'=> $c->fecha_vencimiento?->format('d/m/Y'),
                 'estado'           => $c->estado,
+                'compra_anulada'   => $c->compra?->estado === 'anulada',
                 'urgencia'         => $c->urgencia,
                 'color_urgencia'   => $c->color_urgencia,
                 'dias_vencimiento' => $c->dias_vencimiento,
@@ -64,12 +66,6 @@ class CuentaPagarController extends Controller
             'proveedores' => $proveedores,
             'bancos'      => $bancos,
             'filtros'     => $request->only(['estado', 'proveedor_id']),
-            'resumen' => [
-                'total_pendiente' => (float) CuentaPagar::where('empresa_id', $empresaId)
-                    ->whereIn('estado', ['pendiente', 'parcial'])->sum('saldo'),
-                'vencidas'   => CuentaPagar::where('empresa_id', $empresaId)->vencidas()->count(),
-                'por_vencer' => CuentaPagar::where('empresa_id', $empresaId)->porVencer(15)->count(),
-            ],
         ]);
     }
 
@@ -86,9 +82,18 @@ class CuentaPagarController extends Controller
             return back()->with('error', 'Esta cuenta ya está pagada.');
         }
 
-        DB::transaction(function () use ($request, $cuentaPagar) {
+        $banco = BancoCaja::findOrFail($request->banco_caja_id);
+
+        if ((float) $banco->saldo_actual < (float) $request->monto_pago) {
+            return back()->with('error',
+                "Saldo insuficiente en {$banco->nombre}. " .
+                'Disponible: $' . number_format((float) $banco->saldo_actual, 2) . '. ' .
+                'Requerido: $' . number_format((float) $request->monto_pago, 2) . '.'
+            );
+        }
+
+        DB::transaction(function () use ($request, $cuentaPagar, $banco) {
             $monto  = (float) $request->monto_pago;
-            $banco  = BancoCaja::findOrFail($request->banco_caja_id);
 
             $nuevoSaldo  = max(0, (float) $cuentaPagar->saldo - $monto);
             $nuevoEstado = $nuevoSaldo <= 0 ? 'pagada' : 'parcial';

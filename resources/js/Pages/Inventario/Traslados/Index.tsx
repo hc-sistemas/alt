@@ -33,8 +33,10 @@ export default function TrasladosIndex() {
     const [origenId, setOrigenId]   = useState(filters.bodega_origen_id ?? '')
     const [destinoId, setDestinoId] = useState(filters.bodega_destino_id ?? '')
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const isFirstRender = useRef(true)
 
     useEffect(() => {
+        if (isFirstRender.current) { isFirstRender.current = false; return }
         if (debounceRef.current) clearTimeout(debounceRef.current)
         debounceRef.current = setTimeout(() => {
             router.get(route('inventario.traslados.index'), {

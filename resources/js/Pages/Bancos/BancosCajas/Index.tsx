@@ -215,6 +215,13 @@ function CuentaSearchModal({ cuentas, onSelect, onClose }: {
 
 // ─── Modal Banco/Caja ─────────────────────────────────────────────────────────
 
+const CUENTAS_AUTO: Record<string, string> = {
+    banco:      '1.1.1.3',
+    caja:       '1.1.1.1',
+    caja_chica: '1.1.1.2',
+    tarjeta:    '1.1.1.5',
+}
+
 interface ModalProps {
     banco?: BancoCaja & { cuenta: string | null }
     cuentas: Props['cuentas']
@@ -224,18 +231,38 @@ interface ModalProps {
 function BancoModal({ banco, cuentas, onClose }: ModalProps) {
     const isEdit = !!banco
     const [showCuentaModal, setShowCuentaModal] = useState(false)
-    const [cuentaSeleccionada, setCuentaSeleccionada] = useState<Props['cuentas'][0] | null>(
-        banco?.cuenta_id ? (cuentas.find(c => c.id === Number(banco.cuenta_id)) ?? null) : null
-    )
+
+    const initialTipo = banco?.tipo ?? 'banco'
+
+    // Cuenta inicial: si tiene asignada la usa, si es nuevo busca la auto
+    const initialCuenta = (() => {
+        if (banco?.cuenta_id) return cuentas.find(c => c.id === Number(banco.cuenta_id)) ?? null
+        return cuentas.find(c => c.codigo === CUENTAS_AUTO[initialTipo]) ?? null
+    })()
+
+    const [cuentaSeleccionada, setCuentaSeleccionada] = useState<Props['cuentas'][0] | null>(initialCuenta)
 
     const { data, setData, post, put, processing, errors } = useForm({
-        tipo:          banco?.tipo ?? 'banco',
+        tipo:          initialTipo,
         nombre:        banco?.nombre ?? '',
         num_cuenta:    banco?.num_cuenta ?? '',
         tipo_cuenta:   banco?.tipo_cuenta ?? '',
-        cuenta_id:     banco?.cuenta_id ?? '',
+        cuenta_id:     (initialCuenta?.id ?? banco?.cuenta_id ?? '') as string | number,
         saldo_inicial: banco?.saldo_inicial ?? 0,
     })
+
+    function handleTipoChange(tipo: string) {
+        setData('tipo', tipo)
+        // Cambiar cuenta auto solo si la cuenta actual también es una auto (o no hay)
+        const esAutoActual = cuentaSeleccionada
+            ? Object.values(CUENTAS_AUTO).includes(cuentaSeleccionada.codigo)
+            : true
+        if (esAutoActual) {
+            const auto = cuentas.find(c => c.codigo === CUENTAS_AUTO[tipo]) ?? null
+            setCuentaSeleccionada(auto)
+            setData('cuenta_id', auto ? (auto.id as any) : '')
+        }
+    }
 
     function handleCuentaSelect(c: Props['cuentas'][0] | null) {
         setCuentaSeleccionada(c)
@@ -260,7 +287,7 @@ function BancoModal({ banco, cuentas, onClose }: ModalProps) {
     return (
         <>
             <div className="modal-overlay" onClick={onClose}>
-                <div className="modal-card max-w-md overflow-y-auto max-h-[90vh]" onClick={e => e.stopPropagation()}>
+                <div className="modal-card max-w-xl" onClick={e => e.stopPropagation()}>
 
                     <div className="modal-header">
                         <h2>{isEdit ? 'Editar banco/caja' : 'Nuevo banco/caja'}</h2>
@@ -277,7 +304,7 @@ function BancoModal({ banco, cuentas, onClose }: ModalProps) {
                                 <div className="grid grid-cols-2 gap-2">
                                     {(['banco', 'caja', 'caja_chica', 'tarjeta'] as const).map(t => (
                                         <button key={t} type="button"
-                                            onClick={() => setData('tipo', t)}
+                                            onClick={() => handleTipoChange(t)}
                                             className={cn(
                                                 'py-2 px-3 rounded-lg text-sm font-medium border transition-colors',
                                                 data.tipo === t ? 'text-white border-transparent' : 'hover:opacity-80'
@@ -322,7 +349,15 @@ function BancoModal({ banco, cuentas, onClose }: ModalProps) {
 
                         {/* Cuenta contable — búsqueda modal */}
                         <div className="space-y-1.5">
-                            <Label>Cuenta contable</Label>
+                            <div className="flex items-center justify-between">
+                                <Label>Cuenta contable</Label>
+                                {cuentaSeleccionada && CUENTAS_AUTO[data.tipo] === cuentaSeleccionada.codigo && (
+                                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                                        style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)', color: 'var(--primary)' }}>
+                                        Auto
+                                    </span>
+                                )}
+                            </div>
                             <button type="button" onClick={() => setShowCuentaModal(true)}
                                 className="w-full flex items-center justify-between rounded-lg px-3 py-2 text-sm border transition-colors hover:opacity-80 text-left"
                                 style={{

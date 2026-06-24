@@ -1,5 +1,5 @@
 import { Link, usePage } from '@inertiajs/react'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
     LayoutDashboard, FileText, ShoppingCart, Package, BookOpen,
     Landmark, Users, Wrench, BarChart2, Settings, Settings2, ClipboardList, ArrowLeftRight, ChevronDown,
@@ -49,9 +49,12 @@ const navItems: NavItem[] = [
         nombre: 'Inventario', clave: 'inventario', icon: Package,
         hijos: [
             { nombre: 'Productos', href: '/inventario/productos' },
-            { nombre: 'Kárdex', href: '/inventario/kardex/saldos' },
+            { nombre: 'Kárdex', href: '/inventario/kardex' },
+            { nombre: 'Saldos de inventario', href: '/inventario/kardex/saldos' },
             { nombre: 'Traslados', href: '/inventario/traslados' },
             { nombre: 'Activos Fijos', href: '/inventario/activos' },
+            { nombre: 'Listas de Precio', href: '/inventario/listas' },
+            { nombre: 'Recepciones', href: '/inventario/recepciones' },
         ],
         subgrupos: [
             {
@@ -89,8 +92,10 @@ const navItems: NavItem[] = [
     {
         nombre: 'RRHH', clave: 'rrhh', icon: Users,
         hijos: [
-            { nombre: 'Colaboradores', href: '/rrhh/colaboradores' },
-            { nombre: 'Nómina', href: '/rrhh/nomina' },
+            { nombre: 'Colaboradores',  href: '/rrhh/colaboradores'  },
+            { nombre: 'Asistencia',     href: '/rrhh/asistencia'     },
+            { nombre: 'Horas Extras',   href: '/rrhh/horas-extras'   },
+            { nombre: 'Nómina',         href: '/rrhh/nomina'         },
         ]
     },
     {
@@ -119,6 +124,21 @@ const navItems: NavItem[] = [
     },
 ]
 
+function getInitialOpen(currentUrl: string): string[] {
+    const open = new Set(['configuracion', 'inventario-config'])
+    for (const item of navItems) {
+        if (!item.hijos && !item.subgrupos) continue
+        const hasActive =
+            (item.hijos?.some(h => currentUrl.startsWith(h.href)) ?? false) ||
+            (item.subgrupos?.some(sg => sg.hijos.some(h => currentUrl.startsWith(h.href))) ?? false)
+        if (hasActive) open.add(item.clave)
+        item.subgrupos?.forEach(sg => {
+            if (sg.hijos.some(h => currentUrl.startsWith(h.href))) open.add(sg.clave)
+        })
+    }
+    return [...open]
+}
+
 interface Props {
     collapsed: boolean
     onCollapse: (v: boolean) => void
@@ -128,13 +148,43 @@ interface Props {
 
 export default function Sidebar({ collapsed, onCollapse, mobileOpen, onMobileClose }: Props) {
     const { url } = usePage<PageProps>()
-    const [openSections, setOpenSections] = useState<string[]>(['configuracion', 'inventario-config'])
+    const [openSections, setOpenSections] = useState<string[]>(() => getInitialOpen(url))
 
     const toggleSection = (clave: string) => {
-        setOpenSections(prev =>
-            prev.includes(clave) ? prev.filter(s => s !== clave) : [...prev, clave]
-        )
+        setOpenSections(prev => {
+            if (prev.includes(clave)) {
+                const item = navItems.find(i => i.clave === clave)
+                const hasActive =
+                    (item?.hijos?.some(h => url.startsWith(h.href)) ?? false) ||
+                    (item?.subgrupos?.some(sg => sg.hijos.some(h => url.startsWith(h.href))) ?? false)
+                if (hasActive) return prev
+                return prev.filter(s => s !== clave)
+            }
+            return [...prev, clave]
+        })
     }
+
+    useEffect(() => {
+        const handle = () => {
+            const path = window.location.pathname
+            setOpenSections(prev => {
+                const next = new Set(prev)
+                for (const item of navItems) {
+                    if (!item.hijos && !item.subgrupos) continue
+                    const hasActive =
+                        (item.hijos?.some(h => path.startsWith(h.href)) ?? false) ||
+                        (item.subgrupos?.some(sg => sg.hijos.some(h => path.startsWith(h.href))) ?? false)
+                    if (hasActive) next.add(item.clave)
+                    item.subgrupos?.forEach(sg => {
+                        if (sg.hijos.some(h => path.startsWith(h.href))) next.add(sg.clave)
+                    })
+                }
+                return [...next]
+            })
+        }
+        document.addEventListener('inertia:navigate', handle)
+        return () => document.removeEventListener('inertia:navigate', handle)
+    }, [])
 
     const isActive = (href: string) => url.startsWith(href)
 

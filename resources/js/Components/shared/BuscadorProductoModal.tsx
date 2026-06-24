@@ -8,15 +8,17 @@ export interface Resultado {
     nombre: string
     marca: string | null
     requiere_serie: boolean
+    disponible?: number
 }
 
 interface Props {
     onSelect: (producto: Resultado) => void
     placeholder?: string
     disabled?: boolean
+    urlBusqueda?: string
 }
 
-export default function BuscadorProductoModal({ onSelect, placeholder, disabled }: Props) {
+export default function BuscadorProductoModal({ onSelect, placeholder, disabled, urlBusqueda }: Props) {
     const [queryInput, setQueryInput]   = useState('')
     const [resultados, setResultados]   = useState<Resultado[]>([])
     const [buscando, setBuscando]       = useState(false)
@@ -42,8 +44,10 @@ export default function BuscadorProductoModal({ onSelect, placeholder, disabled 
         setError('')
         setBuscando(true)
         try {
-            const res = await fetch(
-                route('inventario.productos.buscar') + `?q=${encodeURIComponent(q)}`,
+            const base = urlBusqueda ?? route('inventario.productos.buscar')
+            const sep  = base.includes('?') ? '&' : '?'
+            const res  = await fetch(
+                base + `${sep}q=${encodeURIComponent(q)}`,
                 { headers: { Accept: 'application/json' } }
             )
             const json = await res.json()

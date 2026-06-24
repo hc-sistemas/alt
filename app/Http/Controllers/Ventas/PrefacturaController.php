@@ -145,55 +145,55 @@ class PrefacturaController extends Controller
             $total    += $neto + ($grabaIva ? $neto * 0.15 : 0);
         }
 
-        $prefactura = DB::transaction(function () use ($request, $empresaId, $total) {
-            $numero = $this->secuencial->siguiente($empresaId, 'PRE');
+        try {
+            $prefactura = DB::transaction(function () use ($request, $empresaId, $total) {
+                $numero = $this->secuencial->siguiente($empresaId, 'PRE');
 
-            $prefactura = Prefactura::create([
-                'empresa_id'      => $empresaId,
-                'centro_costo_id' => $request->centro_costo_id,
-                'cliente_id'      => $request->cliente_id,
-                'usuario_id'      => Auth::id(),
-                'numero'          => $numero,
-                'fecha_emision'   => now()->toDateString(),
-                'total'           => $total,
-                'total_abonado'   => 0,
-                'saldo_pendiente' => $total,
-                'observaciones'   => $request->observaciones,
-                'estado'          => 'pendiente',
-            ]);
-
-            foreach ($request->detalles as $det) {
-                $cantidad  = (float)$det['cantidad'];
-                $precio    = (float)$det['precio'];
-                $descPct   = (float)($det['descuento_pct'] ?? 0);
-                $descuento = $precio * $cantidad * ($descPct / 100);
-                $neto      = ($precio * $cantidad) - $descuento;
-                $grabaIva  = (bool)($det['graba_iva'] ?? true);
-                $iva       = $grabaIva ? $neto * 0.15 : 0;
-
-                PrefacturaDetalle::create([
-                    'prefactura_id' => $prefactura->id,
-                    'producto_id'   => $det['producto_id'],
-                    'bodega_id'     => $det['bodega_id'],
-                    'descripcion'   => $det['descripcion'] ?? null,
-                    'cantidad'      => $cantidad,
-                    'precio'        => $precio,
-                    'descuento_pct' => $descPct,
-                    'descuento'     => $descuento,
-                    'subtotal'      => $neto,
-                    'iva'           => $iva,
-                    'total'         => $neto + $iva,
+                $prefactura = Prefactura::create([
+                    'empresa_id'      => $empresaId,
+                    'centro_costo_id' => $request->centro_costo_id,
+                    'cliente_id'      => $request->cliente_id,
+                    'usuario_id'      => Auth::id(),
+                    'numero'          => $numero,
+                    'fecha_emision'   => now()->toDateString(),
+                    'total'           => $total,
+                    'total_abonado'   => 0,
+                    'saldo_pendiente' => $total,
+                    'observaciones'   => $request->observaciones,
+                    'estado'          => 'pendiente',
                 ]);
 
-                try {
-                    $this->inventario->reservarStock($det['producto_id'], $det['bodega_id'], $cantidad);
-                } catch (\Throwable) {
-                    // Reserva de inventario no bloquea el flujo principal
-                }
-            }
+                foreach ($request->detalles as $det) {
+                    $cantidad  = (float)$det['cantidad'];
+                    $precio    = (float)$det['precio'];
+                    $descPct   = (float)($det['descuento_pct'] ?? 0);
+                    $descuento = $precio * $cantidad * ($descPct / 100);
+                    $neto      = ($precio * $cantidad) - $descuento;
+                    $grabaIva  = (bool)($det['graba_iva'] ?? true);
+                    $iva       = $grabaIva ? $neto * 0.15 : 0;
 
-            return $prefactura;
-        });
+                    $detalle = PrefacturaDetalle::create([
+                        'prefactura_id' => $prefactura->id,
+                        'producto_id'   => $det['producto_id'],
+                        'bodega_id'     => $det['bodega_id'],
+                        'descripcion'   => $det['descripcion'] ?? null,
+                        'cantidad'      => $cantidad,
+                        'precio'        => $precio,
+                        'descuento_pct' => $descPct,
+                        'descuento'     => $descuento,
+                        'subtotal'      => $neto,
+                        'iva'           => $iva,
+                        'total'         => $neto + $iva,
+                    ]);
+
+                    $this->inventario->reservarStock($det['producto_id'], $det['bodega_id'], $cantidad, 'prefactura_detalle', $detalle->id);
+                }
+
+                return $prefactura;
+            });
+        } catch (\Exception $e) {
+            return back()->withErrors(['error' => $e->getMessage()])->withInput();
+        }
 
         $this->auditoria->documento('crear', 'ventas', 'prefacturas', $prefactura->id, "Prefactura {$prefactura->numero} creada");
 
@@ -277,81 +277,94 @@ class PrefacturaController extends Controller
             'formas_pago.*.monto' => 'required|numeric|min:0.01',
         ]);
 
-        $factura = DB::transaction(function () use ($request, $prefactura, $empresaId) {
-            $numero = $this->secuencial->siguiente($empresaId, 'FAC');
-            [$est, $pe, $sec] = explode('-', $numero);
+        try {
+            $factura = DB::transaction(function () use ($request, $prefactura, $empresaId) {
+                $numero = $this->secuencial->siguiente($empresaId, 'FAC');
+                [$est, $pe, $sec] = explode('-', $numero);
 
-            $cliente = Cliente::findOrFail($prefactura->cliente_id);
+                $cliente = Cliente::findOrFail($prefactura->cliente_id);
 
-            $factura = Factura::create([
-                'empresa_id'          => $empresaId,
-                'centro_costo_id'     => $prefactura->centro_costo_id,
-                'cliente_id'          => $prefactura->cliente_id,
-                'usuario_id'          => Auth::id(),
-                'establecimiento'     => $est,
-                'punto_emision'       => $pe,
-                'secuencial'          => ltrim($sec, '0') ?: '1',
-                'numero_completo'     => $numero,
-                'fecha_emision'       => now()->toDateString(),
-                'hora_emision'        => now()->toTimeString(),
-                'estado_sri'          => 'pendiente',
-                'tipo_identificacion' => $cliente->tipo_identificacion,
-                'identificacion'      => $cliente->identificacion,
-                'razon_social'        => $cliente->razon_social,
-                'email_cliente'       => $cliente->email,
-                'telefono_cliente'    => $cliente->telefono,
-                'direccion_cliente'   => $cliente->direccion,
-                'subtotal_0'          => 0,
-                'subtotal_15'         => $prefactura->total,
-                'descuento_total'     => 0,
-                'total_iva'           => 0,
-                'total'               => $prefactura->total,
-                'observaciones'       => $prefactura->observaciones,
-                'tipo'                => 2,
-                'estado'              => 'activa',
-                'tiene_descuento_especial' => false,
-                'email_enviado'       => false,
-            ]);
+                $subtotal0  = 0;
+                $subtotal15 = 0;
+                $totalIva   = 0;
 
-            foreach ($prefactura->detalles as $det) {
-                FacturaDetalle::create([
-                    'factura_id'    => $factura->id,
-                    'producto_id'   => $det->producto_id,
-                    'descripcion'   => $det->descripcion,
-                    'cantidad'      => $det->cantidad,
-                    'precio'        => $det->precio,
-                    'descuento_pct' => $det->descuento_pct,
-                    'descuento'     => $det->descuento,
-                    'subtotal'      => $det->subtotal,
-                    'iva_pct'       => 15,
-                    'iva'           => $det->iva,
-                    'total'         => $det->total,
+                foreach ($prefactura->detalles as $det) {
+                    if ((float) $det->iva > 0) {
+                        $subtotal15 += (float) $det->subtotal;
+                    } else {
+                        $subtotal0 += (float) $det->subtotal;
+                    }
+                    $totalIva += (float) $det->iva;
+                }
+
+                $factura = Factura::create([
+                    'empresa_id'          => $empresaId,
+                    'centro_costo_id'     => $prefactura->centro_costo_id,
+                    'cliente_id'          => $prefactura->cliente_id,
+                    'usuario_id'          => Auth::id(),
+                    'establecimiento'     => $est,
+                    'punto_emision'       => $pe,
+                    'secuencial'          => ltrim($sec, '0') ?: '1',
+                    'numero_completo'     => $numero,
+                    'fecha_emision'       => now()->toDateString(),
+                    'hora_emision'        => now()->toTimeString(),
+                    'estado_sri'          => 'pendiente',
+                    'tipo_identificacion' => $cliente->tipo_identificacion,
+                    'identificacion'      => $cliente->identificacion,
+                    'razon_social'        => $cliente->razon_social,
+                    'email_cliente'       => $cliente->email,
+                    'telefono_cliente'    => $cliente->telefono,
+                    'direccion_cliente'   => $cliente->direccion,
+                    'subtotal_0'          => $subtotal0,
+                    'subtotal_15'         => $subtotal15,
+                    'descuento_total'     => 0,
+                    'total_iva'           => $totalIva,
+                    'total'               => $prefactura->total,
+                    'observaciones'       => $prefactura->observaciones,
+                    'tipo'                => 2,
+                    'estado'              => 'activa',
+                    'tiene_descuento_especial' => false,
+                    'email_enviado'       => false,
                 ]);
 
-                try {
-                    $this->inventario->liberarReserva($det->producto_id, $det->bodega_id, $det->cantidad);
-                } catch (\Throwable) {
-                    // Liberar reserva no bloquea el flujo
-                }
-            }
-
-            if ($request->filled('formas_pago')) {
-                foreach ($request->formas_pago as $pago) {
-                    FacturaPago::create([
-                        'factura_id' => $factura->id,
-                        'forma_pago' => $pago['forma'],
-                        'monto'      => $pago['monto'],
+                foreach ($prefactura->detalles as $det) {
+                    FacturaDetalle::create([
+                        'factura_id'    => $factura->id,
+                        'producto_id'   => $det->producto_id,
+                        'descripcion'   => $det->descripcion,
+                        'cantidad'      => $det->cantidad,
+                        'precio'        => $det->precio,
+                        'descuento_pct' => $det->descuento_pct,
+                        'descuento'     => $det->descuento,
+                        'subtotal'      => $det->subtotal,
+                        'iva_pct'       => 15,
+                        'iva'           => $det->iva,
+                        'total'         => $det->total,
                     ]);
+
+                    $this->inventario->confirmarSalida($det->producto_id, $det->bodega_id, 'prefactura_detalle', $det->id);
                 }
-            }
 
-            $prefactura->update([
-                'factura_id' => $factura->id,
-                'estado'     => 'liquidada',
-            ]);
+                if ($request->filled('formas_pago')) {
+                    foreach ($request->formas_pago as $pago) {
+                        FacturaPago::create([
+                            'factura_id' => $factura->id,
+                            'forma_pago' => $pago['forma'],
+                            'monto'      => $pago['monto'],
+                        ]);
+                    }
+                }
 
-            return $factura;
-        });
+                $prefactura->update([
+                    'factura_id' => $factura->id,
+                    'estado'     => 'liquidada',
+                ]);
+
+                return $factura;
+            });
+        } catch (\Exception $e) {
+            return back()->withErrors(['error' => $e->getMessage()])->withInput();
+        }
 
         $this->auditoria->documento('convertir', 'ventas', 'prefacturas', $prefactura->id, "Prefactura {$prefactura->numero} convertida a factura {$factura->numero_completo}");
 

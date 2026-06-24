@@ -9,7 +9,8 @@ import { Input } from '@/Components/ui/input'
 import BuscadorClienteModal from '@/Components/shared/BuscadorClienteModal'
 import DescuentoEspecialModal from '@/Components/Ventas/DescuentoEspecialModal'
 import { cn, formatMoneda } from '@/lib/utils'
-import { Plus, Save, X, AlertTriangle, Send, Search } from 'lucide-react'
+import { toastError } from '@/lib/toast'
+import { Plus, Save, X, Send, Search } from 'lucide-react'
 import type { PageProps, Empresa, Usuario, Cliente, LimiteDescuento } from '@/types'
 
 // ── Interfaces locales ────────────────────────────────────────────────────────
@@ -174,13 +175,13 @@ export default function Form() {
     // — Modal producto
     const [modalProducto, setModalProducto] = useState<{ idx: number; matches: ProductoVenta[] } | null>(null)
 
-    // — Forma de pago (fila única)
-    const [pago, setPago] = useState<FormaPagoLinea>(() => pagoVacio(formas_pago))
+    // — Formas de pago (múltiples líneas)
+    const [pagos, setPagos] = useState<FormaPagoLinea[]>(() => [pagoVacio(formas_pago)])
 
     // — Misc
     const [observaciones, setObservaciones] = useState('')
     const [guardando, setGuardando] = useState(false)
-    const [errores, setErrores] = useState<string[]>([])
+    const [erroresPago, setErroresPago] = useState<Record<number, string>>({})
 
     useEffect(() => {
         const isOpen = modalCliente.length > 0 || modalProducto !== null || modalDescuentoGlobal
@@ -201,7 +202,8 @@ export default function Form() {
         return { subtotal0, subtotal15, descTotal, iva, total: subtotal0 + subtotal15 + iva }
     }, [detalles])
 
-    const diferencia = Math.round((pago.valor - totales.total) * 100) / 100
+    const totalPagado = useMemo(() => pagos.reduce((acc, p) => acc + p.valor, 0), [pagos])
+    const diferencia = Math.round((totalPagado - totales.total) * 100) / 100
 
     // ── Handlers: descuento especial global ──────────────────────────────────
 
@@ -318,7 +320,7 @@ export default function Form() {
                 producto_id: p.id,
                 codigo: p.codigo,
                 descripcion: p.nombre,
-                precio_unitario: p.pvp,
+                precio_unitario: Math.round(p.pvp * 100) / 100,
                 porcentaje_iva: p.porcentaje_iva,
                 descuento_max_producto: p.descuento_max,
                 descuento_pct: 0,
@@ -357,16 +359,47 @@ export default function Form() {
     const addDetalle = () => setDetalles(prev => [...prev, lineaVacia()])
     const removeDetalle = (idx: number) => setDetalles(prev => prev.filter((_, i) => i !== idx))
 
+    // ── Handlers: formas de pago ────────────────────────────────────────────
+
+    const addPago = () => setPagos(prev => [...prev, pagoVacio(formas_pago)])
+    const removePago = (idx: number) => setPagos(prev => prev.filter((_, i) => i !== idx))
+    const updatePago = (idx: number, patch: Partial<FormaPagoLinea>) => {
+        setPagos(prev => {
+            const next = [...prev]
+            next[idx] = { ...next[idx], ...patch }
+            return next
+        })
+    }
+
+    function puedeUsarCredito(idx: number): boolean {
+        return !pagos.some((p, i) => i !== idx && p.forma_pago === 'credito')
+    }
+
     // ── Submit ────────────────────────────────────────────────────────────────
 
     const handleSubmit = (e: { preventDefault(): void }) => {
         e.preventDefault()
-        const errs: string[] = []
-        if (!clienteSeleccionado) errs.push('Debe seleccionar un cliente.')
-        if (detalles.length === 0) errs.push('Agregue al menos un producto.')
-        if (Math.abs(diferencia) > 0.01) errs.push(`Las formas de pago no cuadran. Diferencia: ${formatMoneda(Math.abs(diferencia))}`)
-        if (errs.length > 0) { setErrores(errs); return }
-        setErrores([])
+
+        const erroresGlobales: string[] = []
+        if (!clienteSeleccionado) erroresGlobales.push('Debe seleccionar un cliente.')
+        if (detalles.length === 0) erroresGlobales.push('Agregue al menos un producto.')
+        if (Math.abs(diferencia) > 0.01) {
+            erroresGlobales.push(`Las formas de pago no cuadran. Diferencia: ${formatMoneda(Math.abs(diferencia))}`)
+        }
+
+        const nuevosErroresPago: Record<number, string> = {}
+        pagos.forEach((p, i) => {
+            if (!p.forma_pago) nuevosErroresPago[i] = 'Seleccione una forma de pago.'
+            else if (p.valor <= 0) nuevosErroresPago[i] = 'El valor debe ser mayor a 0.'
+        })
+        setErroresPago(nuevosErroresPago)
+
+        if (erroresGlobales.length > 0) {
+            erroresGlobales.forEach(msg => toastError(msg))
+            return
+        }
+
+        if (Object.keys(nuevosErroresPago).length > 0) return
 
         setGuardando(true)
         router.post(route('ventas.facturas.store'), {
@@ -386,13 +419,13 @@ export default function Form() {
                 graba_iva: d.porcentaje_iva > 0,
                 aprobacion_id: null,
             })),
-            formas_pago: [{
-                forma: pago.forma_pago,
-                monto: pago.valor,
-                plazo: pago.dias_credito ? String(pago.dias_credito) : null,
-                banco: pago.banco,
-                num_cheque: pago.num_cheque,
-            }],
+            formas_pago: pagos.map(p => ({
+                forma: p.forma_pago,
+                monto: p.valor,
+                plazo: p.dias_credito ? String(p.dias_credito) : null,
+                banco: p.banco,
+                num_cheque: p.num_cheque,
+            })),
         }, {
             onError: () => setGuardando(false),
             onFinish: () => setGuardando(false),
@@ -422,22 +455,6 @@ export default function Form() {
             />
 
             <form onSubmit={handleSubmit} className="p-4 space-y-4 max-w-7xl">
-
-                {/* Errores globales */}
-                {errores.length > 0 && (
-                    <div
-                        className="rounded-lg p-3 border"
-                        style={{ background: 'rgba(239,68,68,.1)', borderColor: 'rgba(239,68,68,.3)' }}
-                    >
-                        <ul className="space-y-1">
-                            {errores.map((e, i) => (
-                                <li key={i} className="text-sm text-red-400 flex items-center gap-2">
-                                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" /> {e}
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
-                )}
 
                 {/* ── 1. Encabezado compacto ── */}
                 <div
@@ -580,7 +597,7 @@ export default function Form() {
                                 <tr style={{ borderBottom: '1px solid var(--border)' }}>
                                     {[
                                         { label: 'N°', cls: 'w-8 text-center' },
-                                        { label: 'Producto', cls: 'min-w-[220px]' },
+                                        { label: 'Producto', cls: 'min-w-55' },
                                         { label: 'Cant', cls: 'w-16 text-right' },
                                         { label: 'Precio', cls: 'w-24 text-right' },
                                         { label: 'Desc%', cls: 'w-20 text-right' },
@@ -701,7 +718,10 @@ export default function Form() {
                                                 className={cn(tdInput, 'text-right')}
                                                 style={tdInputStyle}
                                                 value={det.precio_unitario}
-                                                onChange={e => updateDetalle(idx, { precio_unitario: Number(e.target.value) })}
+                                                onChange={e => {
+                                                    const val = Number(e.target.value)
+                                                    updateDetalle(idx, { precio_unitario: isNaN(val) ? 0 : Math.round(val * 100) / 100 })
+                                                }}
                                             />
                                         </td>
 
@@ -784,89 +804,128 @@ export default function Form() {
                         >
                             Formas de Pago
                         </span>
+                        <Button type="button" size="sm" onClick={addPago}>
+                            <Plus className="w-3.5 h-3.5" />
+                            Agregar forma de pago
+                        </Button>
                     </div>
 
-                    {/* Fila única de pago */}
-                    <div className="flex flex-wrap items-end gap-3">
+                    {/* Líneas de pago */}
+                    <div className="space-y-2">
+                        {pagos.map((p, idx) => (
+                            <div key={idx}>
+                            <div className="flex flex-wrap items-end gap-3">
 
-                        {/* Forma */}
-                        <div>
-                            <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>FORMA</p>
-                            <select
-                                className="h-8 rounded-md border px-2 text-sm capitalize"
-                                style={{ background: 'var(--bg-main)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
-                                value={pago.forma_pago}
-                                onChange={e => setPago(prev => ({
-                                    ...prev,
-                                    forma_pago: e.target.value,
-                                    dias_credito: e.target.value === 'credito'
-                                        ? (clienteSeleccionado?.dias_credito ?? 30)
-                                        : 0,
-                                }))}
-                            >
-                                {formas_pago.map(f => (
-                                    <option key={f} value={f} className="capitalize">{f}</option>
-                                ))}
-                            </select>
-                        </div>
+                                {/* Forma */}
+                                <div>
+                                    {idx === 0 && <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>FORMA</p>}
+                                    <select
+                                        className="h-8 rounded-md border px-2 text-sm capitalize"
+                                        style={{ background: 'var(--bg-main)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
+                                        value={p.forma_pago}
+                                        onChange={e => {
+                                            const nueva = e.target.value
+                                            if (nueva === 'credito' && !puedeUsarCredito(idx)) return
+                                            updatePago(idx, {
+                                                forma_pago: nueva,
+                                                dias_credito: nueva === 'credito'
+                                                    ? (clienteSeleccionado?.dias_credito ?? 30)
+                                                    : 0,
+                                            })
+                                        }}
+                                    >
+                                        {formas_pago.map(f => (
+                                            <option
+                                                key={f}
+                                                value={f}
+                                                className="capitalize"
+                                                disabled={f === 'credito' && !puedeUsarCredito(idx)}
+                                            >
+                                                {f}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
 
-                        {/* N_DOC */}
-                        <div>
-                            <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>
-                                {pago.forma_pago === 'cheque' ? 'N° CHEQUE' : 'N_DOC'}
-                            </p>
-                            <input
-                                className="h-8 w-32 rounded-md border px-2 text-sm focus:outline-none"
-                                style={{ background: 'var(--bg-main)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
-                                placeholder="Número..."
-                                value={pago.num_cheque ?? ''}
-                                onChange={e => setPago(prev => ({ ...prev, num_cheque: e.target.value || null }))}
-                            />
-                        </div>
+                                {/* N_DOC */}
+                                <div>
+                                    {idx === 0 && (
+                                        <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>
+                                            {p.forma_pago === 'cheque' ? 'N° CHEQUE' : 'N_DOC'}
+                                        </p>
+                                    )}
+                                    <input
+                                        className="h-8 w-32 rounded-md border px-2 text-sm focus:outline-none"
+                                        style={{ background: 'var(--bg-main)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
+                                        placeholder="Número..."
+                                        value={p.num_cheque ?? ''}
+                                        onChange={e => updatePago(idx, { num_cheque: e.target.value || null })}
+                                    />
+                                </div>
 
-                        {/* Banco */}
-                        <div>
-                            <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>BANCO</p>
-                            <input
-                                className="h-8 w-36 rounded-md border px-2 text-sm focus:outline-none"
-                                style={{ background: 'var(--bg-main)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
-                                placeholder="Banco..."
-                                value={pago.banco ?? ''}
-                                onChange={e => setPago(prev => ({ ...prev, banco: e.target.value || null }))}
-                            />
-                        </div>
+                                {/* Banco */}
+                                <div>
+                                    {idx === 0 && <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>BANCO</p>}
+                                    <input
+                                        className="h-8 w-36 rounded-md border px-2 text-sm focus:outline-none"
+                                        style={{ background: 'var(--bg-main)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
+                                        placeholder="Banco..."
+                                        value={p.banco ?? ''}
+                                        onChange={e => updatePago(idx, { banco: e.target.value || null })}
+                                    />
+                                </div>
 
-                        {/* Cantidad */}
-                        <div>
-                            <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>CANTIDAD</p>
-                            <input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                className="h-8 w-32 rounded-md border px-2 text-sm text-right focus:outline-none"
-                                style={{ background: 'var(--bg-main)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
-                                value={pago.valor}
-                                onChange={e => setPago(prev => ({ ...prev, valor: Number(e.target.value) }))}
-                            />
-                        </div>
+                                {/* Cantidad */}
+                                <div>
+                                    {idx === 0 && <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>CANTIDAD</p>}
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        className="h-8 w-32 rounded-md border px-2 text-sm text-right focus:outline-none"
+                                        style={{ background: 'var(--bg-main)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
+                                        value={p.valor}
+                                        onChange={e => updatePago(idx, { valor: Number(e.target.value) })}
+                                    />
+                                </div>
 
-                        {/* Días (solo crédito) */}
-                        {pago.forma_pago === 'credito' && (
-                            <div>
-                                <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>DÍAS</p>
-                                <input
-                                    type="number"
-                                    min="1"
-                                    className="h-8 w-20 rounded-md border px-2 text-sm text-right focus:outline-none"
-                                    style={{ background: 'var(--bg-main)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
-                                    value={pago.dias_credito || (clienteSeleccionado?.dias_credito ?? 30)}
-                                    onChange={e => setPago(prev => ({ ...prev, dias_credito: Number(e.target.value) }))}
-                                />
+                                {/* Días (solo crédito) */}
+                                {p.forma_pago === 'credito' && (
+                                    <div>
+                                        {idx === 0 && <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>DÍAS</p>}
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            className="h-8 w-20 rounded-md border px-2 text-sm text-right focus:outline-none"
+                                            style={{ background: 'var(--bg-main)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
+                                            value={p.dias_credito || (clienteSeleccionado?.dias_credito ?? 30)}
+                                            onChange={e => updatePago(idx, { dias_credito: Number(e.target.value) })}
+                                        />
+                                    </div>
+                                )}
+
+                                {/* Eliminar línea */}
+                                {pagos.length > 1 && (
+                                    <button
+                                        type="button"
+                                        className="p-1 rounded hover:bg-red-500/10 transition-colors mb-0.5"
+                                        onClick={() => removePago(idx)}
+                                        title="Eliminar línea de pago"
+                                    >
+                                        <X className="w-4 h-4 text-red-400" />
+                                    </button>
+                                )}
                             </div>
-                        )}
+                            {erroresPago[idx] && (
+                                <p className="text-xs mt-0.5" style={{ color: '#ef4444' }}>
+                                    {erroresPago[idx]}
+                                </p>
+                            )}
+                            </div>
+                        ))}
 
                         {/* Diferencia */}
-                        <div className="ml-auto flex items-end pb-0.5">
+                        <div className="flex items-center justify-end pt-1">
                             <span className={cn('text-sm', Math.abs(diferencia) <= 0.01 ? 'text-emerald-400' : 'text-red-400')}>
                                 Diferencia:{' '}
                                 <strong>{formatMoneda(Math.abs(diferencia))}</strong>
@@ -886,7 +945,7 @@ export default function Form() {
                         </p>
                         <textarea
                             rows={5}
-                            className="w-full rounded-md border px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-[var(--primary)] transition-shadow"
+                            className="w-full rounded-md border px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-(--primary) transition-shadow"
                             style={{ background: 'transparent', borderColor: 'var(--border)', color: 'var(--text-main)' }}
                             placeholder="Observaciones adicionales para la factura..."
                             value={observaciones}

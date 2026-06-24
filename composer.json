@@ -13,11 +13,13 @@
         "laravel/tinker": "^2.10.1",
         "league/csv": "^9.28",
         "maatwebsite/excel": "^3.1",
+        "picqer/php-barcode-generator": "^3.2",
         "predis/predis": "^2.0",
         "spatie/laravel-permission": "^6.0",
         "tightenco/ziggy": "^2.0"
     },
     "require-dev": {
+        "barryvdh/laravel-ide-helper": "^3.7",
         "fakerphp/faker": "^1.23",
         "laravel/pail": "^1.2.2",
         "laravel/pint": "^1.24",

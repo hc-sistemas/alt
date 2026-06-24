@@ -257,26 +257,38 @@ textarea.input-field,
     color: #E2E8F0;
 }
 
-/* ── MODALES mejorados ── */
+/* ══ MODAL OVERLAY ══ */
 .modal-overlay {
     position: fixed;
     inset: 0;
     z-index: 50;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: center;
-    padding: 1rem;
-    background: rgba(0, 0, 0, 0.55);
+    padding: 16px;
+    background: rgba(0, 0, 0, 0.6);
     backdrop-filter: blur(4px);
+    overflow-y: auto;
 }
 
+/* Centrar verticalmente cuando el contenido es corto */
+.modal-overlay::before {
+    content: '';
+    display: block;
+    min-height: calc(50vh - 200px);
+    flex-shrink: 0;
+}
+
+/* ══ MODAL CARD ══ */
 .modal-card {
+    position: relative;
     width: 100%;
     border-radius: 1.25rem;
-    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.2);
-    overflow: hidden;
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.25);
     background: #FFFFFF;
-    position: relative;
+    display: flex;
+    flex-direction: column;
+    margin: auto;
 }
 
 .dark .modal-card {
@@ -284,11 +296,7 @@ textarea.input-field,
     border: 1px solid #334155;
 }
 
-.modal-card.max-h-90 {
-    max-height: 90vh;
-    overflow-y: auto;
-}
-
+/* ══ MODAL HEADER ══ */
 .modal-header {
     display: flex;
     align-items: center;
@@ -296,6 +304,8 @@ textarea.input-field,
     padding: 1.25rem 1.5rem;
     border-bottom: 2px solid #F59E0B;
     background: #FAFAFA;
+    border-radius: 1.25rem 1.25rem 0 0;
+    flex-shrink: 0;
 }
 
 .dark .modal-header {
@@ -313,9 +323,7 @@ textarea.input-field,
     margin: 0;
 }
 
-.dark .modal-header h2 {
-    color: #F1F5F9;
-}
+.dark .modal-header h2 { color: #F1F5F9; }
 
 .modal-close {
     width: 2rem;
@@ -325,11 +333,12 @@ textarea.input-field,
     justify-content: center;
     border-radius: 50%;
     font-size: 1.25rem;
+    line-height: 1;
     color: #6B7280;
-    transition: all 0.15s;
     cursor: pointer;
     border: none;
     background: transparent;
+    transition: all 0.15s;
     flex-shrink: 0;
 }
 
@@ -343,26 +352,57 @@ textarea.input-field,
     color: #F1F5F9;
 }
 
+/* ══ MODAL BODY ══ */
 .modal-body {
     padding: 1.5rem;
     display: flex;
     flex-direction: column;
     gap: 1rem;
-    overflow-y: auto;
 }
 
+/* ══ MODAL FOOTER ══ */
 .modal-footer {
     display: flex;
     gap: 0.75rem;
     padding: 1rem 1.5rem;
     border-top: 1px solid #E5E7EB;
     background: #F9FAFB;
+    border-radius: 0 0 1.25rem 1.25rem;
+    flex-shrink: 0;
 }
 
 .dark .modal-footer {
     background: #1E293B;
     border-top-color: #334155;
 }
+
+/* ══ ANCHOS ══ */
+.modal-card.max-w-sm  { max-width: 384px;  }
+.modal-card.max-w-md  { max-width: 448px;  }
+.modal-card.max-w-lg  { max-width: 512px;  }
+.modal-card.max-w-xl  { max-width: 576px;  }
+.modal-card.max-w-2xl { max-width: 672px;  }
+.modal-card.max-w-3xl { max-width: 768px;  }
+.modal-card.max-w-4xl { max-width: 896px;  }
+.modal-card.max-w-5xl { max-width: 1024px; }
+
+/* ══ MÓVIL ══ */
+@media (max-width: 640px) {
+    .modal-overlay {
+        padding: 8px;
+        align-items: flex-start;
+    }
+    .modal-overlay::before { display: none; }
+    .modal-card {
+        max-width: 100% !important;
+        border-radius: 1rem;
+        margin: 8px 0;
+    }
+}
+
+/* Bloquear scroll del body cuando hay modal abierto */
+body:has(.modal-overlay) { overflow: hidden; }
+body.modal-open { overflow: hidden; }
 
 /* ── BOTONES ── */
 .btn-primary {
@@ -423,6 +463,44 @@ textarea.input-field,
 .dark .btn-secondary:hover {
     background: #334155;
 }
+
+.btn-pdf {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.625rem 1.25rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #FFFFFF;
+    background: #EF4444;
+    border-radius: 0.75rem;
+    border: none;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+    text-decoration: none;
+}
+.btn-pdf:hover { background: #DC2626; transform: translateY(-1px); }
+
+.btn-excel {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.625rem 1.25rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #FFFFFF;
+    background: #16A34A;
+    border-radius: 0.75rem;
+    border: none;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+    text-decoration: none;
+}
+.btn-excel:hover { background: #15803D; transform: translateY(-1px); }
 
 /* Grid de 2 columnas en formularios */
 .form-grid-2 {

@@ -75,11 +75,6 @@ class ParametroContableController extends Controller
         return Inertia::render('Contabilidad/Parametros/Index', [
             'grupos'  => $listaCompleta->groupBy('grupo'),
             'cuentas' => $cuentas,
-            'stats'   => [
-                'total'        => count($this->parametrosDefinidos),
-                'configurados' => $listaCompleta->where('configurado', true)->count(),
-                'pendientes'   => $listaCompleta->where('configurado', false)->count(),
-            ],
         ]);
     }
 

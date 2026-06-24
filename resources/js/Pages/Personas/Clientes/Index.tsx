@@ -30,8 +30,10 @@ export default function ClientesIndex() {
     const [estado, setEstado] = useState(filters.estado ?? '')
     const [pdfModal, setPdfModal] = useState(false)
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const isFirstRender = useRef(true)
 
     useEffect(() => {
+        if (isFirstRender.current) { isFirstRender.current = false; return }
         if (debounceRef.current) clearTimeout(debounceRef.current)
         debounceRef.current = setTimeout(() => {
             router.get(route('personas.clientes.index'), { search, estado }, { preserveState: true, replace: true })
@@ -141,7 +143,7 @@ export default function ClientesIndex() {
                             <tr style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
                                 <th className="w-10 px-2 py-2 font-medium text-center" style={{ color: 'var(--text-muted)' }}>No</th>
                                 <th className="w-36 px-2 py-2 font-medium text-left" style={{ color: 'var(--text-muted)' }}>Identificación</th>
-                                <th className="min-w-[160px] px-2 py-2 font-medium text-left" style={{ color: 'var(--text-muted)' }}>Nombre / Razón Social</th>
+                                <th className="min-w-40 px-2 py-2 font-medium text-left" style={{ color: 'var(--text-muted)' }}>Nombre / Razón Social</th>
                                 <th className="w-24 px-2 py-2 font-medium text-left" style={{ color: 'var(--text-muted)' }}>Cantón</th>
                                 <th className="px-2 py-2 font-medium text-left" style={{ color: 'var(--text-muted)' }}>Dirección</th>
                                 <th className="w-28 px-2 py-2 font-medium text-left" style={{ color: 'var(--text-muted)' }}>Teléfono</th>

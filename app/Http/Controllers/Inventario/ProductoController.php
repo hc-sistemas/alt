@@ -59,11 +59,11 @@ class ProductoController extends Controller
             'marcas'     => Marca::where('estado', true)->orderBy('nombre')->get(['id', 'nombre']),
             'categorias' => CategoriaProducto::where('estado', true)->orderBy('nombre')->get(['id', 'nombre', 'categoria_padre_id']),
             'bodegas'    => Bodega::where('empresa_id', $empresaId)->where('estado', true)->orderBy('nombre')->get(['id', 'nombre', 'tipo']),
-            'cuentas'    => PlanCuenta::where('empresa_id', $empresaId)
-                                ->where('permite_asientos', true)
-                                ->where('estado', true)
-                                ->orderBy('codigo')
-                                ->get(['id', 'codigo', 'descripcion']),
+            'cuentas'    => PlanCuenta::whereNull('empresa_id')
+                ->where('permite_asientos', true)
+                ->where('estado', true)
+                ->orderBy('codigo')
+                ->get(['id', 'codigo', 'nombre']),
         ]);
     }
 
@@ -154,11 +154,11 @@ class ProductoController extends Controller
             'marcas'     => Marca::where('estado', true)->orderBy('nombre')->get(['id', 'nombre']),
             'categorias' => CategoriaProducto::where('estado', true)->orderBy('nombre')->get(['id', 'nombre', 'categoria_padre_id']),
             'bodegas'    => Bodega::where('empresa_id', $empresaId)->where('estado', true)->orderBy('nombre')->get(['id', 'nombre', 'tipo']),
-            'cuentas'    => PlanCuenta::where('empresa_id', $empresaId)
-                                ->where('permite_asientos', true)
-                                ->where('estado', true)
-                                ->orderBy('codigo')
-                                ->get(['id', 'codigo', 'descripcion']),
+            'cuentas' => PlanCuenta::whereNull('empresa_id')
+                ->where('permite_asientos', true)
+                ->where('estado', true)
+                ->orderBy('codigo')
+                ->get(['id', 'codigo', 'nombre']),
         ]);
     }
 

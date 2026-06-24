@@ -17,7 +17,6 @@ class AuditoriaService
     ): void {
         DB::table('log_documentos')->insert([
             'usuario_id'  => Auth::id(),
-            'username'    => Auth::user()?->username ?? Auth::user()?->email ?? 'sistema',
             'accion'      => $accion,
             'modulo'      => $modulo,
             'tabla'       => $tabla,
@@ -35,7 +34,7 @@ class AuditoriaService
             'usuario_id' => Auth::id(),
             'username'   => $email ?? Auth::user()?->username ?? Auth::user()?->email ?? 'sistema',
             'tipo'       => $tipo,
-            'ip'         => Request::ip(),
+            'ip_address' => Request::ip(),
             'user_agent' => Request::userAgent(),
             'fecha'      => now(),
         ]);

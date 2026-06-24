@@ -126,7 +126,7 @@ function CerrarModal({ cierre, onClose }: { cierre: CierreRow; onClose: () => vo
             .reduce((s, v) => s + Number(v || 0), 0),
     [data.total_efectivo, data.total_tarjeta, data.total_cheque, data.total_transferencia])
 
-    const diferencia = totalCobrado - cierre.total_facturado
+    const diferencia = totalCobrado - cierre.total_cobrado
 
     function submit(e: React.FormEvent) {
         e.preventDefault()
@@ -160,7 +160,7 @@ function CerrarModal({ cierre, onClose }: { cierre: CierreRow; onClose: () => vo
 
     return (
         <div className="modal-overlay" onClick={onClose}>
-            <div className="modal-card max-w-md overflow-y-auto max-h-[90vh]" onClick={e => e.stopPropagation()}>
+            <div className="modal-card max-w-md" onClick={e => e.stopPropagation()}>
                 <div className="modal-header">
                     <h2>Cerrar Caja — {cierre.caja}</h2>
                     <button className="modal-close" onClick={onClose}><X className="w-4 h-4" /></button>
@@ -187,7 +187,7 @@ function CerrarModal({ cierre, onClose }: { cierre: CierreRow; onClose: () => vo
                         style={{ background: 'rgba(245,158,11,0.05)', border: '1px solid var(--border)' }}>
                         <div className="flex justify-between text-sm">
                             <span style={{ color: 'var(--text-muted)' }}>Total facturado</span>
-                            <span className="font-medium" style={{ color: 'var(--text-main)' }}>{fmt(cierre.total_facturado)}</span>
+                            <span className="font-medium" style={{ color: 'var(--text-main)' }}>{fmt(cierre.total_cobrado)}</span>
                         </div>
                         <div className="flex justify-between text-sm">
                             <span style={{ color: 'var(--text-muted)' }}>Total cobrado</span>

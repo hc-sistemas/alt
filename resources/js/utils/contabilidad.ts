@@ -30,24 +30,20 @@ export const notify = {
     success: (msg: string) => toast.success(msg, {
         icon: () => '✅',
         style: { ...S, background: 'linear-gradient(135deg,#10b981,#059669)' },
-        progressStyle: { background: 'rgba(255,255,255,0.4)' },
     }),
     warning: (msg: string) => toast.warning(msg, {
         icon: () => '⚠️',
         autoClose: 5000,
         style: { ...S, background: 'linear-gradient(135deg,#f59e0b,#d97706)' },
-        progressStyle: { background: 'rgba(255,255,255,0.4)' },
     }),
     error: (msg: string) => toast.error(msg, {
         icon: () => '❌',
         autoClose: 6000,
         style: { ...S, background: 'linear-gradient(135deg,#ef4444,#dc2626)' },
-        progressStyle: { background: 'rgba(255,255,255,0.4)' },
     }),
     info: (msg: string) => toast.info(msg, {
         icon: () => 'ℹ️',
         style: { ...S, background: 'linear-gradient(135deg,#3b82f6,#2563eb)' },
-        progressStyle: { background: 'rgba(255,255,255,0.4)' },
     }),
 }
 

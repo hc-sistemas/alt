@@ -102,7 +102,7 @@ function ModalNuevo({ proveedores, importaciones, bancos, onClose }: {
 
     return (
         <div className="modal-overlay" onClick={onClose}>
-            <div className="modal-card max-w-md overflow-y-auto max-h-[90vh]" onClick={e => e.stopPropagation()}>
+            <div className="modal-card max-w-lg" onClick={e => e.stopPropagation()}>
 
                 <div className="modal-header">
                     <h2>
@@ -402,47 +402,43 @@ export default function AnticiposIndex() {
                 </div>
 
                 {/* Toolbar */}
-                <div className="flex items-center gap-2 flex-wrap mb-6">
-                    <button onClick={() => setModalNuevo(true)}
-                        className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5"
-                        style={{ background: 'var(--primary)' }}>
-                        <Plus size={15} /> Nuevo Anticipo
-                    </button>
+                <div className="flex items-center justify-between gap-3 mb-6">
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <button onClick={() => setModalNuevo(true)} className="btn-primary flex items-center gap-2 whitespace-nowrap">
+                            <Plus size={15} /> Nuevo Anticipo
+                        </button>
 
-                    <div className="input-with-icon">
-                        <Search size={14} className="input-icon" />
-                        <input type="text" value={buscar}
-                            onChange={e => setBuscar(e.target.value)}
-                            onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
-                            placeholder="Proveedor o transferencia…"
-                            className="input-field w-52" />
+                        <div className="input-with-icon">
+                            <Search size={14} className="input-icon" />
+                            <input type="text" value={buscar}
+                                onChange={e => setBuscar(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
+                                placeholder="Proveedor o transferencia…"
+                                className="input-field w-52" />
+                        </div>
+
+                        <select value={estado} onChange={e => setEstado(e.target.value)}
+                            className="input-field select-field" style={{ width: 'auto' }}>
+                            <option value="">Todos</option>
+                            <option value="pendiente">Pendientes</option>
+                            <option value="cruzado">Cruzados</option>
+                        </select>
+
+                        <select value={proveedorId} onChange={e => setProveedorId(e.target.value)}
+                            className="input-field select-field" style={{ width: 'auto' }}>
+                            <option value="">Todos los proveedores</option>
+                            {proveedores.map(p => (
+                                <option key={p.id} value={p.id}>{p.razon_social}</option>
+                            ))}
+                        </select>
+
+                        <button onClick={aplicarFiltros} className="btn-secondary whitespace-nowrap">
+                            Filtrar
+                        </button>
+                        <button onClick={limpiar} className="btn-secondary whitespace-nowrap">
+                            Limpiar
+                        </button>
                     </div>
-
-                    <select value={estado} onChange={e => setEstado(e.target.value)}
-                        className="input-field select-field" style={{ width: 'auto' }}>
-                        <option value="">Todos</option>
-                        <option value="pendiente">Pendientes</option>
-                        <option value="cruzado">Cruzados</option>
-                    </select>
-
-                    <select value={proveedorId} onChange={e => setProveedorId(e.target.value)}
-                        className="input-field select-field" style={{ width: 'auto' }}>
-                        <option value="">Todos los proveedores</option>
-                        {proveedores.map(p => (
-                            <option key={p.id} value={p.id}>{p.razon_social}</option>
-                        ))}
-                    </select>
-
-                    <button onClick={aplicarFiltros}
-                        className="px-4 py-2 rounded-xl text-sm font-semibold text-white whitespace-nowrap transition-all hover:opacity-90"
-                        style={{ background: 'var(--primary)' }}>
-                        Filtrar
-                    </button>
-                    <button onClick={limpiar}
-                        className="p-2 rounded-xl border transition-all hover:opacity-80"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
-                        <X size={14} />
-                    </button>
                 </div>
             </div>
 

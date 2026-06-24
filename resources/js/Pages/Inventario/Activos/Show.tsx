@@ -1,4 +1,5 @@
-import { Head, Link, useForm, usePage } from '@inertiajs/react'
+import { Head, Link, router, usePage } from '@inertiajs/react'
+import { useState } from 'react'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
 import { Button } from '@/Components/ui/button'
@@ -40,10 +41,18 @@ export default function ActivoFijoShow() {
     const { activo } = usePage<Props>().props
 
     const now = new Date()
-    const { data, setData, post, processing, errors } = useForm({
-        periodo_año: now.getFullYear().toString(),
-        periodo_mes: (now.getMonth() + 1).toString(),
+    const ultimaDep = activo.depreciaciones?.[0]
+    const siguientePeriodo = ultimaDep
+        ? ultimaDep.periodo_mes === 12
+            ? { año: ultimaDep.periodo_año + 1, mes: 1 }
+            : { año: ultimaDep.periodo_año, mes: ultimaDep.periodo_mes + 1 }
+        : { año: now.getFullYear(), mes: now.getMonth() + 1 }
+
+    const [data, setData] = useState({
+        periodo_año: siguientePeriodo.año.toString(),
+        periodo_mes: siguientePeriodo.mes.toString(),
     })
+    const [processing, setProcessing] = useState(false)
 
     const valorAdq   = Number(activo.costo_adquisicion)
     const valorRes   = Number(activo.valor_residual)
@@ -61,12 +70,37 @@ export default function ActivoFijoShow() {
 
     const puedeDepreciar = activo.estado === 'activo' && (valorLibro - valorRes) > 0
 
-    function registrarDepreciacion(e: React.FormEvent) {
+    const anioSeleccionado = parseInt(data.periodo_año)
+    const mesMaximo = anioSeleccionado === now.getFullYear() ? now.getMonth() + 1 : 12
+
+    async function registrarDepreciacion(e: React.FormEvent) {
         e.preventDefault()
-        post(route('inventario.activos.depreciar', activo.id), {
-            onSuccess: () => toastExito('Depreciación registrada correctamente'),
-            onError: (err) => toastError(err.message ?? 'Error al registrar depreciación'),
-        })
+        setProcessing(true)
+        try {
+            const res = await fetch(route('inventario.activos.depreciar', activo.id), {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content ?? '',
+                },
+                body: JSON.stringify({
+                    periodo_año: data.periodo_año,
+                    periodo_mes: data.periodo_mes,
+                }),
+            })
+            if (res.status === 422) {
+                const json = await res.json()
+                toastError(json.message ?? 'Error al registrar depreciación')
+                return
+            }
+            toastExito('Depreciación registrada correctamente')
+            router.reload({ only: ['activo'] })
+        } catch {
+            toastError('Error al registrar depreciación')
+        } finally {
+            setProcessing(false)
+        }
     }
 
     return (
@@ -81,16 +115,6 @@ export default function ActivoFijoShow() {
                     { label: 'Activos Fijos', href: route('inventario.activos.index') },
                     { label: activo.codigo ?? activo.id.toString() },
                 ]}
-                actions={
-                    activo.estado === 'activo' ? (
-                        <Link href={route('inventario.activos.edit', activo.id)}>
-                            <Button variant="outline">
-                                <Pencil className="w-4 h-4" />
-                                Editar
-                            </Button>
-                        </Link>
-                    ) : undefined
-                }
             />
 
             <div className="p-6 space-y-6 max-w-4xl">
@@ -165,22 +189,23 @@ export default function ActivoFijoShow() {
                         <form onSubmit={registrarDepreciacion} className="flex flex-wrap gap-4 items-end">
                             <div className="space-y-1.5">
                                 <Label>Año</Label>
-                                <Input type="number" min={2000} max={2100}
+                                <Input type="number" min={2000} max={now.getFullYear()}
                                     value={data.periodo_año}
-                                    onChange={e => setData('periodo_año', e.target.value)}
+                                    onChange={e => setData(prev => ({ ...prev, periodo_año: e.target.value }))}
                                     className="w-28" />
-                                {errors.periodo_año && <p className="text-xs text-red-400">{errors.periodo_año}</p>}
                             </div>
                             <div className="space-y-1.5">
                                 <Label>Mes</Label>
                                 <select value={data.periodo_mes}
-                                    onChange={e => setData('periodo_mes', e.target.value)}
-                                    className="input-field w-40">
+                                    onChange={e => setData(prev => ({ ...prev, periodo_mes: e.target.value }))}
+                                    className="flex h-9 rounded-md border bg-transparent px-3 py-1 text-sm w-40"
+                                    style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-main)' }}>
                                     {MESES.slice(1).map((m, i) => (
-                                        <option key={i + 1} value={i + 1}>{m}</option>
+                                        i + 1 <= mesMaximo && (
+                                            <option key={i + 1} value={i + 1}>{m}</option>
+                                        )
                                     ))}
                                 </select>
-                                {errors.periodo_mes && <p className="text-xs text-red-400">{errors.periodo_mes}</p>}
                             </div>
                             <Button type="submit" loading={processing}>
                                 <TrendingDown className="w-4 h-4" />
@@ -234,6 +259,22 @@ export default function ActivoFijoShow() {
                             ))}
                         </tbody>
                     </table>
+                </div>
+
+                {/* Acciones */}
+                <div className="flex gap-3 pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
+                    <Button variant="outline"
+                        onClick={() => router.visit(route('inventario.activos.index'))}>
+                        Volver
+                    </Button>
+                    {activo.estado === 'activo' && (
+                        <Link href={route('inventario.activos.edit', activo.id)}>
+                            <Button variant="outline">
+                                <Pencil className="w-4 h-4" />
+                                Editar
+                            </Button>
+                        </Link>
+                    )}
                 </div>
             </div>
         </AppLayout>

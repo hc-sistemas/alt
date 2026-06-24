@@ -22,8 +22,13 @@ const ESTADO_LABELS: Record<string, string> = {
 }
 
 export default function TrasladoShow() {
-    const { traslado } = usePage<Props>().props
+    const { traslado, auth } = usePage<Props>().props
     const isPendiente = traslado.estado === 'pendiente'
+
+    const perfilesPermitidos = ['super_admin', 'admin', 'bodeguero']
+    const puedeOperar = perfilesPermitidos.includes(
+        (auth.user?.perfil ?? '').toLowerCase()
+    )
 
     const [modalAnular, setModalAnular] = useState(false)
     const [motivoAnular, setMotivoAnular] = useState('')
@@ -41,8 +46,7 @@ export default function TrasladoShow() {
         ? new Date(dt).toLocaleString('es-EC', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
         : '—'
 
-    async function confirmar(e: React.FormEvent) {
-        e.preventDefault()
+    async function ejecutarConfirmar() {
         try {
             const res = await fetch(route('inventario.traslados.confirmar', traslado.id), {
                 method: 'POST',
@@ -66,7 +70,7 @@ export default function TrasladoShow() {
         }
     }
 
-    async function anular() {
+    async function ejecutarAnular() {
         if (!motivoAnular.trim()) { toastError('El motivo es obligatorio'); return }
         setAnulando(true)
         try {
@@ -222,8 +226,9 @@ export default function TrasladoShow() {
                 </div>
 
                 {/* Formulario de confirmación */}
-                {isPendiente && (
-                    <form onSubmit={confirmar} className="rounded-xl border p-5 space-y-4"
+                {isPendiente && puedeOperar && (
+                    <form onSubmit={e => { e.preventDefault(); ejecutarConfirmar() }}
+                        className="rounded-xl border p-5 space-y-4"
                         style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
                         <h3 className="text-sm font-semibold" style={{ color: 'var(--text-main)' }}>Confirmar recepción</h3>
                         <div className="space-y-1.5">
@@ -233,7 +238,8 @@ export default function TrasladoShow() {
                                 onChange={e => setData('observacion', e.target.value)}
                                 rows={2}
                                 placeholder="Observaciones de la recepción..."
-                                className="input-field"
+                                className="flex w-full rounded-md border bg-transparent px-3 py-2 text-sm resize-none"
+                                style={{ borderColor: 'var(--border)', color: 'var(--text-main)' }}
                             />
                         </div>
                         <div className="flex gap-3">
@@ -249,6 +255,13 @@ export default function TrasladoShow() {
                         </div>
                     </form>
                 )}
+
+                {/* Botón de regreso */}
+                <div className="flex gap-3 pt-2">
+                    <Button variant="outline" onClick={() => router.visit(route('inventario.traslados.index'))}>
+                        Volver a Traslados
+                    </Button>
+                </div>
             </div>
 
             {/* Modal de rechazo */}
@@ -280,8 +293,8 @@ export default function TrasladoShow() {
                                 autoFocus
                             />
                         </div>
-                        <div className="modal-footer">
-                            <Button onClick={anular} loading={anulando}
+                        <div className="flex gap-3 pt-1">
+                            <Button onClick={ejecutarAnular} loading={anulando}
                                 style={{ background: '#EF4444', color: 'white' }}>
                                 Confirmar rechazo
                             </Button>

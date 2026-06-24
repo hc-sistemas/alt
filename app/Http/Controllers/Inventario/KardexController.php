@@ -28,34 +28,91 @@ class KardexController extends Controller
     public function index(Request $request): Response
     {
         $empresaId = session('empresa_activa_id');
+        $buscar    = $request->string('buscar')->trim()->toString();
+        $bodegaId  = $request->integer('bodega_id') ?: null;
 
-        $productoId      = $request->integer('producto_id') ?: null;
-        $producto        = null;
-        $saldosPorBodega = [];
-        $movimientos     = null;
+        $resultados = [];
 
-        if ($productoId) {
-            $producto = Producto::where('id', $productoId)
-                ->where('empresa_id', $empresaId)
-                ->first();
+        $productosPaginados = Producto::where('empresa_id', $empresaId)
+            ->where('estado', true)
+            ->when($buscar !== '', fn($q) => $q->where(fn($q2) => $q2
+                ->where('codigo', 'ilike', "%{$buscar}%")
+                ->orWhere('nombre', 'ilike', "%{$buscar}%")
+            ))
+            ->when(
+                $bodegaId || $request->fecha_desde || $request->fecha_hasta || $request->tipo,
+                fn($q) => $q->whereExists(fn($sub) => $sub
+                    ->from('inventario_movimientos')
+                    ->whereColumn('producto_id', 'productos.id')
+                    ->when($bodegaId, fn($s) => $s->where('bodega_id', $bodegaId))
+                    ->when($request->fecha_desde, fn($s) => $s->whereDate('created_at', '>=', $request->fecha_desde))
+                    ->when($request->fecha_hasta, fn($s) => $s->whereDate('created_at', '<=', $request->fecha_hasta))
+                    ->when($request->tipo, fn($s) => $s->where('tipo', $request->tipo))
+                )
+            )
+            ->orderByRaw('(EXISTS (SELECT 1 FROM inventario_movimientos WHERE producto_id = productos.id)) DESC')
+            ->orderBy('nombre')
+            ->paginate(5)
+            ->withQueryString();
 
-            if ($producto) {
-                $saldosPorBodega = InventarioSaldo::with('bodega')
-                    ->where('producto_id', $productoId)
-                    ->get();
+        $productosPage = $productosPaginados->getCollection();
+        $productoIds   = $productosPage->pluck('id')->all();
 
-                $movimientos = InventarioMovimiento::with(['bodegaOrigen', 'bodegaDestino', 'usuario'])
-                    ->where('producto_id', $productoId)
-                    ->when($request->bodega_id, fn($q) => $q->where(fn($q2) =>
-                        $q2->where('bodega_origen_id', $request->bodega_id)
-                           ->orWhere('bodega_destino_id', $request->bodega_id)
-                    ))
-                    ->when($request->fecha_desde, fn($q) => $q->where('fecha', '>=', $request->fecha_desde))
-                    ->when($request->fecha_hasta, fn($q) => $q->where('fecha', '<=', $request->fecha_hasta))
-                    ->when($request->tipo, fn($q) => $q->where('tipo_movimiento', 'like', "%{$request->tipo}%"))
-                    ->orderByDesc('fecha')
-                    ->paginate(25)
-                    ->withQueryString();
+        if (count($productoIds) > 0) {
+            $saldosAnteriores = [];
+            if ($request->fecha_desde) {
+                $saldoQuery = InventarioMovimiento::query()
+                    ->whereIn('producto_id', $productoIds)
+                    ->whereDate('created_at', '<', $request->fecha_desde)
+                    ->when($bodegaId, fn($q) => $q->where('bodega_id', $bodegaId));
+
+                $saldoRaw = "producto_id, COALESCE(SUM(CASE
+                    WHEN tipo = 'entrada' THEN cantidad
+                    WHEN tipo = 'salida' THEN -cantidad
+                    ELSE 0 END), 0) as saldo";
+
+                $saldosAnteriores = $saldoQuery
+                    ->selectRaw($saldoRaw)
+                    ->groupBy('producto_id')
+                    ->pluck('saldo', 'producto_id')
+                    ->map(fn($v) => (float) $v)
+                    ->all();
+            }
+
+            $todosMovimientos = InventarioMovimiento::with(['bodega', 'usuario'])
+                ->whereIn('producto_id', $productoIds)
+                ->when($bodegaId, fn($q) => $q->where('bodega_id', $bodegaId))
+                ->when($request->fecha_desde, fn($q) => $q->whereDate('created_at', '>=', $request->fecha_desde))
+                ->when($request->fecha_hasta, fn($q) => $q->whereDate('created_at', '<=', $request->fecha_hasta))
+                ->when($request->tipo, fn($q) => $q->where('tipo', $request->tipo))
+                ->orderBy('created_at', 'asc')
+                ->orderBy('id', 'asc')
+                ->get()
+                ->groupBy('producto_id');
+
+            foreach ($productosPage as $producto) {
+                $movs = $todosMovimientos->get($producto->id, collect());
+                $saldoAnterior = $saldosAnteriores[$producto->id] ?? 0.0;
+                $saldoActual   = $saldoAnterior;
+
+                foreach ($movs as $m) {
+                    $esIngreso = $this->determinarEsIngreso($m, $bodegaId);
+                    $delta = $esIngreso === true
+                        ? (float) $m->cantidad
+                        : ($esIngreso === false ? -((float) $m->cantidad) : 0.0);
+
+                    $m->saldo_anterior  = $saldoActual;
+                    $saldoActual       += $delta;
+                    $m->saldo_posterior = $saldoActual;
+                    $m->es_ingreso      = $esIngreso;
+                    $m->tipo_descriptivo = $m->tipo ? $this->tipoDescriptivo($m->tipo, $m->doc_tipo, $esIngreso) : 'MOVIMIENTO';
+                }
+
+                $resultados[] = [
+                    'producto'       => $producto,
+                    'movimientos'    => $movs->values()->toArray(),
+                    'saldo_anterior' => $saldoAnterior,
+                ];
             }
         }
 
@@ -65,12 +122,55 @@ class KardexController extends Controller
             ->get(['id', 'nombre']);
 
         return Inertia::render('Inventario/Kardex/Index', [
-            'producto'        => $producto,
-            'movimientos'     => $movimientos,
-            'saldosPorBodega' => $saldosPorBodega,
-            'bodegas'         => $bodegas,
-            'filters'         => $request->only(['producto_id', 'bodega_id', 'fecha_desde', 'fecha_hasta', 'tipo']),
+            'resultados'          => $resultados,
+            'productos_paginados' => $productosPaginados,
+            'bodegas'             => $bodegas,
+            'filters'             => $request->only(['buscar', 'bodega_id', 'fecha_desde', 'fecha_hasta', 'tipo']),
         ]);
+    }
+
+    private function determinarEsIngreso(InventarioMovimiento $movimiento, ?int $bodegaId): ?bool
+    {
+        return match ($movimiento->tipo) {
+            'entrada' => true,
+            'salida'  => false,
+            default   => null,
+        };
+    }
+
+    private function tipoDescriptivo(?string $tipoMovimiento, ?string $docTipo, ?bool $esIngreso): string
+    {
+        $doc = $docTipo ? strtolower($docTipo) : '';
+
+        return match ($tipoMovimiento) {
+            'entrada' => match (true) {
+                str_contains($doc, 'compra'), str_contains($doc, 'factura'), $doc === '' => 'INGRESO DE COMPRA',
+                str_contains($doc, 'ajuste') => 'INGRESO DE AJUSTE',
+                str_contains($doc, 'importacion') => 'INGRESO DE IMPORTACIÓN',
+                str_contains($doc, 'traslado') => 'INGRESO DE TRANSFERENCIA',
+                str_contains($doc, 'prefactura'), str_contains($doc, 'proforma'), str_contains($doc, 'produccion') => 'INGRESO DE PRODUCCIÓN',
+                default => 'INGRESO',
+            },
+            'salida' => match (true) {
+                str_contains($doc, 'factura'), str_contains($doc, 'venta'), str_contains($doc, 'prefactura'), str_contains($doc, 'proforma') => 'EGRESO POR VENTAS',
+                str_contains($doc, 'ajuste') => 'EGRESO POR AJUSTE',
+                str_contains($doc, 'traslado') => 'EGRESO TRANSFERENCIA',
+                default => 'EGRESO',
+            },
+            'traslado' => match ($esIngreso) {
+                true  => 'INGRESO DE TRANSFERENCIA',
+                false => 'EGRESO TRANSFERENCIA',
+                null  => 'TRASLADO',
+            },
+            'ajuste' => match ($esIngreso) {
+                true  => 'INGRESO POR AJUSTE',
+                false => 'EGRESO POR AJUSTE',
+                null  => 'AJUSTE',
+            },
+            'reserva'          => 'RESERVA',
+            'reserva_liberada' => 'RESERVA LIBERADA',
+            default            => strtoupper($tipoMovimiento),
+        };
     }
 
     public function saldos(Request $request): Response
@@ -150,10 +250,11 @@ class KardexController extends Controller
                 ->get(['id', 'nombre']),
             'productoId' => $request->integer('producto_id') ?: null,
             'bodegaId'   => $request->integer('bodega_id') ?: null,
+            'redirect_to' => $request->input('redirect_to', route('inventario.kardex.saldos')),
         ]);
     }
 
-    public function storeAjuste(Request $request): RedirectResponse|JsonResponse
+    public function storeAjuste(Request $request): RedirectResponse
     {
         $empresaId = session('empresa_activa_id');
 
@@ -164,6 +265,7 @@ class KardexController extends Controller
             'cantidad'       => ['required', 'integer', 'min:1'],
             'costo_unitario' => ['required_if:tipo_ajuste,positivo', 'nullable', 'numeric', 'min:0'],
             'motivo'         => ['required', 'string', 'max:255'],
+            'redirect_to'   => ['nullable', 'string', 'max:500'],
         ]);
 
         $producto = Producto::where('id', $data['producto_id'])
@@ -190,7 +292,7 @@ class KardexController extends Controller
                 );
             }
         } catch (\Exception $e) {
-            return response()->json(['message' => $e->getMessage()], 422);
+            return back()->withErrors(['error' => $e->getMessage()])->withInput();
         }
 
         $tipoTexto = $data['tipo_ajuste'] === 'positivo' ? 'positivo' : 'negativo';
@@ -202,7 +304,9 @@ class KardexController extends Controller
             "Ajuste {$tipoTexto} de {$data['cantidad']} unidades — {$producto->codigo}: {$data['motivo']}"
         );
 
-        return redirect()->route('inventario.kardex.saldos')
+        $redirectTo = $request->input('redirect_to', route('inventario.kardex.saldos'));
+
+        return redirect($redirectTo)
             ->with('success', 'Ajuste de inventario registrado correctamente.');
     }
 

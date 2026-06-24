@@ -312,7 +312,7 @@ export default function ProveedorForm() {
                 </div>
 
                 {/* Acciones */}
-                <div className="modal-footer">
+                <div className="flex gap-3 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
                     <Button type="submit" loading={processing}>
                         <Save className="w-4 h-4" />
                         {esEdicion ? 'Guardar cambios' : 'Crear proveedor'}

@@ -21,6 +21,7 @@ class ActivoFijo extends Model
     protected function casts(): array
     {
         return [
+            'empresa_id'             => 'integer',
             'fecha_adquisicion'      => 'date',
             'costo_adquisicion'      => 'decimal:2',
             'valor_residual'         => 'decimal:2',

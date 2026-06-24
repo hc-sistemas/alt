@@ -27,11 +27,12 @@ class Compra extends Model
             'fecha_emision'      => 'date',
             'fecha_registro'     => 'date',
             'fecha_vencimiento'  => 'date',
-            'subtotal_0'         => 'decimal:4',
-            'subtotal_iva'       => 'decimal:4',
-            'total_iva'          => 'decimal:4',
+            'subtotal_0'         => 'float',
+            'subtotal_iva'       => 'float',
+            'total_iva'          => 'float',
             'total_ice'          => 'decimal:4',
-            'total'              => 'decimal:4',
+            'total'              => 'float',
+            'dias_credito'       => 'integer',
             'iva_asumido'        => 'boolean',
             'gasto_no_deducible' => 'boolean',
             'tiene_pago'         => 'boolean',
@@ -78,6 +79,16 @@ class Compra extends Model
         return $this->hasOne(CuentaPagar::class, 'compra_id');
     }
 
+    public function recepcionBodega(): HasOne
+    {
+        return $this->hasOne(RecepcionBodega::class, 'compra_id');
+    }
+
+    public function etiquetasProductos(): HasMany
+    {
+        return $this->hasMany(EtiquetaProducto::class, 'compra_id');
+    }
+
     public function scopeActivas(Builder $q): Builder
     {
         return $q->where('estado', 'activa');
@@ -88,8 +99,14 @@ class Compra extends Model
         return $q->where('empresa_id', $empresaId);
     }
 
-    public function estaActiva(): bool  { return $this->estado === 'activa'; }
-    public function estaAnulada(): bool { return $this->estado === 'anulada'; }
+    public function estaPendiente(): bool { return $this->estado === 'pendiente'; }
+    public function estaActiva(): bool    { return $this->estado === 'activa'; }
+    public function estaAnulada(): bool   { return $this->estado === 'anulada'; }
+
+    public function puedeAnularse(): bool
+    {
+        return !$this->estaAnulada() && !$this->tiene_pago;
+    }
 
     public function puedeEditarse(): bool
     {

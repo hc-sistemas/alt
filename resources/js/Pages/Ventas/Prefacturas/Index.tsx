@@ -51,7 +51,7 @@ export default function Index() {
     })
 
     const aplicarFiltros = () => {
-        router.get(route('ventas.prefacturas.index'), filtro, { preserveState: true })
+        router.get(route('ventas.prefacturas.index'), filtro as Record<string, string | undefined>, { preserveState: true })
     }
 
     const limpiarFiltros = () => {
@@ -69,17 +69,18 @@ export default function Index() {
                 title="Prefacturas / Reservas"
                 description="Gestión de prefacturas y anticipos"
                 breadcrumbs={[{ label: 'Ventas' }, { label: 'Prefacturas' }]}
-                actions={
+            />
+
+            <div className="p-6 space-y-4">
+                <div className="flex items-center">
                     <Link href={route('ventas.prefacturas.create')}>
-                        <Button size="sm">
+                        <Button>
                             <Plus className="w-4 h-4" />
                             Nueva Prefactura
                         </Button>
                     </Link>
-                }
-            />
+                </div>
 
-            <div className="p-6 space-y-4">
                 {/* Filtros */}
                 <div
                     className="rounded-xl p-4 border"
@@ -239,8 +240,8 @@ export default function Index() {
                                             disabled={!link.url}
                                             onClick={() => link.url && router.visit(link.url)}
                                             className={cn(
-                                                'min-w-[28px] h-7 px-1.5 rounded text-xs font-medium transition-colors',
-                                                link.active ? 'bg-[var(--primary)] text-black' : 'hover:bg-amber-500/10',
+                                                'min-w-7 h-7 px-1.5 rounded text-xs font-medium transition-colors',
+                                                link.active ? 'bg-(--primary) text-black' : 'hover:bg-amber-500/10',
                                                 !link.url && 'opacity-40 cursor-not-allowed',
                                             )}
                                             style={!link.active ? { color: 'var(--text-muted)' } : {}}

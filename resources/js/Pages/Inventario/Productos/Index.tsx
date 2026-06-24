@@ -36,8 +36,10 @@ export default function ProductosIndex() {
     const [estado, setEstado]       = useState(filters.estado ?? '')
     const [pdfModal, setPdfModal]   = useState(false)
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const isFirstRender = useRef(true)
 
     useEffect(() => {
+        if (isFirstRender.current) { isFirstRender.current = false; return }
         if (debounceRef.current) clearTimeout(debounceRef.current)
         debounceRef.current = setTimeout(() => {
             router.get(route('inventario.productos.index'), {
@@ -125,21 +127,21 @@ export default function ProductosIndex() {
 
                     <select value={marcaId} onChange={e => setMarcaId(e.target.value)}
                         className="input-field"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
                         <option value="">Todas las marcas</option>
                         {marcas.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}
                     </select>
 
                     <select value={catId} onChange={e => setCatId(e.target.value)}
                         className="input-field"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
                         <option value="">Todas las categorías</option>
                         {categorias.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
                     </select>
 
                     <select value={tipo} onChange={e => setTipo(e.target.value)}
                         className="input-field"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
                         <option value="">Todos los tipos</option>
                         <option value="producto">Producto</option>
                         <option value="servicio">Servicio</option>
@@ -149,7 +151,7 @@ export default function ProductosIndex() {
 
                     <select value={estado} onChange={e => setEstado(e.target.value)}
                         className="input-field"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
                         <option value="">Todos los estados</option>
                         <option value="activo">Activos</option>
                         <option value="inactivo">Inactivos</option>
@@ -205,7 +207,7 @@ export default function ProductosIndex() {
                                     <td className="px-3 py-2.5 font-mono font-medium" style={{ color: 'var(--text-muted)' }}>
                                         {producto.codigo}
                                     </td>
-                                    <td className="px-3 py-2.5 max-w-[200px]">
+                                    <td className="px-3 py-2.5 max-w-50">
                                         <div className="flex items-center gap-1.5 flex-wrap">
                                             <span className="font-medium truncate" style={{ color: 'var(--text-main)' }}>
                                                 {producto.nombre}
