@@ -8,6 +8,7 @@ import { Input } from '@/Components/ui/input'
 import { Badge } from '@/Components/ui/badge'
 import { cn, formatMoneda, formatFecha } from '@/lib/utils'
 import { Plus, Search, Eye, Ban, FileText, ChevronLeft, ChevronRight, ArrowRightLeft } from 'lucide-react'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { PageProps, PaginatedData } from '@/types'
 
 interface ProformaCliente {
@@ -46,6 +47,7 @@ const ESTADO_CONFIG = {
 
 export default function Index() {
     const { proformas, filtros } = usePage<Props>().props
+    const { puede } = usePermiso('ventas')
 
     const [filtro, setFiltro] = useState<Filtros>({
         estado:      filtros.estado      ?? '',
@@ -104,14 +106,16 @@ export default function Index() {
             />
 
             <div className="p-6 space-y-4">
-                <div className="flex items-center">
-                    <Link href={route('ventas.proformas.create')}>
-                        <Button>
-                            <Plus className="w-4 h-4" />
-                            Nueva Proforma
-                        </Button>
-                    </Link>
-                </div>
+                {puede('crear') && (
+                    <div className="flex items-center">
+                        <Link href={route('ventas.proformas.create')}>
+                            <Button>
+                                <Plus className="w-4 h-4" />
+                                Nueva Proforma
+                            </Button>
+                        </Link>
+                    </div>
+                )}
                 {/* Filtros */}
                 <div
                     className="rounded-xl p-4 border"
@@ -187,12 +191,14 @@ export default function Index() {
                         <div className="flex flex-col items-center justify-center py-20 gap-3">
                             <FileText className="w-12 h-12 opacity-20" style={{ color: 'var(--text-muted)' }} />
                             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No se encontraron proformas</p>
-                            <Link href={route('ventas.proformas.create')}>
-                                <Button size="sm">
-                                    <Plus className="w-4 h-4" />
-                                    Nueva Proforma
-                                </Button>
-                            </Link>
+                            {puede('crear') && (
+                                <Link href={route('ventas.proformas.create')}>
+                                    <Button size="sm">
+                                        <Plus className="w-4 h-4" />
+                                        Nueva Proforma
+                                    </Button>
+                                </Link>
+                            )}
                         </div>
                     ) : (
                         <div className="overflow-x-auto">
@@ -257,25 +263,25 @@ export default function Index() {
                                                                 Ver
                                                             </button>
                                                         </Link>
-                                                        {esPendiente && (
-                                                            <>
-                                                                <button
-                                                                    type="button"
-                                                                    className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors hover:bg-emerald-500/10 text-emerald-400"
-                                                                    onClick={() => void handleConvertir(p)}
-                                                                >
-                                                                    <ArrowRightLeft className="w-3.5 h-3.5" />
-                                                                    Convertir
-                                                                </button>
-                                                                <button
-                                                                    type="button"
-                                                                    className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors hover:bg-red-500/10 text-red-400"
-                                                                    onClick={() => void handleAnular(p)}
-                                                                >
-                                                                    <Ban className="w-3.5 h-3.5" />
-                                                                    Anular
-                                                                </button>
-                                                            </>
+                                                        {esPendiente && puede('editar') && (
+                                                            <button
+                                                                type="button"
+                                                                className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors hover:bg-emerald-500/10 text-emerald-400"
+                                                                onClick={() => void handleConvertir(p)}
+                                                            >
+                                                                <ArrowRightLeft className="w-3.5 h-3.5" />
+                                                                Convertir
+                                                            </button>
+                                                        )}
+                                                        {esPendiente && puede('anular') && (
+                                                            <button
+                                                                type="button"
+                                                                className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors hover:bg-red-500/10 text-red-400"
+                                                                onClick={() => void handleAnular(p)}
+                                                            >
+                                                                <Ban className="w-3.5 h-3.5" />
+                                                                Anular
+                                                            </button>
                                                         )}
                                                     </div>
                                                 </td>

@@ -7,6 +7,7 @@ import { Input } from '@/Components/ui/input'
 import { Badge } from '@/Components/ui/badge'
 import { cn, formatMoneda, formatFecha } from '@/lib/utils'
 import { Plus, Search, Eye, FileText, ChevronLeft, ChevronRight } from 'lucide-react'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { PageProps, PaginatedData } from '@/types'
 
 interface PrefacturaCliente {
@@ -44,6 +45,7 @@ const ESTADO_CONFIG = {
 
 export default function Index() {
     const { prefacturas, filtros } = usePage<Props>().props
+    const { puede } = usePermiso('ventas')
 
     const [filtro, setFiltro] = useState<Filtros>({
         estado:  filtros.estado  ?? '',
@@ -72,14 +74,16 @@ export default function Index() {
             />
 
             <div className="p-6 space-y-4">
-                <div className="flex items-center">
-                    <Link href={route('ventas.prefacturas.create')}>
-                        <Button>
-                            <Plus className="w-4 h-4" />
-                            Nueva Prefactura
-                        </Button>
-                    </Link>
-                </div>
+                {puede('crear') && (
+                    <div className="flex items-center">
+                        <Link href={route('ventas.prefacturas.create')}>
+                            <Button>
+                                <Plus className="w-4 h-4" />
+                                Nueva Prefactura
+                            </Button>
+                        </Link>
+                    </div>
+                )}
 
                 {/* Filtros */}
                 <div
@@ -138,12 +142,14 @@ export default function Index() {
                         <div className="flex flex-col items-center justify-center py-20 gap-3">
                             <FileText className="w-12 h-12 opacity-20" style={{ color: 'var(--text-muted)' }} />
                             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No se encontraron prefacturas</p>
-                            <Link href={route('ventas.prefacturas.create')}>
-                                <Button size="sm">
-                                    <Plus className="w-4 h-4" />
-                                    Nueva Prefactura
-                                </Button>
-                            </Link>
+                            {puede('crear') && (
+                                <Link href={route('ventas.prefacturas.create')}>
+                                    <Button size="sm">
+                                        <Plus className="w-4 h-4" />
+                                        Nueva Prefactura
+                                    </Button>
+                                </Link>
+                            )}
                         </div>
                     ) : (
                         <div className="overflow-x-auto">

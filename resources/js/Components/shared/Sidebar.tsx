@@ -1,5 +1,5 @@
 import { Link, usePage } from '@inertiajs/react'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import {
     LayoutDashboard, FileText, ShoppingCart, Package, BookOpen,
     Landmark, Users, Wrench, BarChart2, Settings, Settings2, ClipboardList, ArrowLeftRight, ChevronDown,
@@ -7,6 +7,8 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { PageProps } from '@/types'
+
+const MODULOS_SIN_PERMISO = new Set(['dashboard', 'personas'])
 
 interface NavSubgrupo {
     nombre: string
@@ -147,8 +149,17 @@ interface Props {
 }
 
 export default function Sidebar({ collapsed, onCollapse, mobileOpen, onMobileClose }: Props) {
-    const { url } = usePage<PageProps>()
+    const { url, props } = usePage<PageProps>()
+    const permisos = props.permisos
     const [openSections, setOpenSections] = useState<string[]>(() => getInitialOpen(url))
+
+    const itemsVisibles = useMemo(() => {
+        if (permisos === '*') return navItems
+        return navItems.filter(item => {
+            if (MODULOS_SIN_PERMISO.has(item.clave)) return true
+            return permisos[item.clave]?.ver === true
+        })
+    }, [permisos])
 
     const toggleSection = (clave: string) => {
         setOpenSections(prev => {
@@ -208,7 +219,7 @@ export default function Sidebar({ collapsed, onCollapse, mobileOpen, onMobileClo
 
             {/* Nav */}
             <nav className="flex-1 overflow-y-auto py-4 px-2 space-y-1">
-                {navItems.map(item => {
+                {itemsVisibles.map(item => {
                     const Icon = item.icon
                     const isOpen = openSections.includes(item.clave)
                     const hasHijos = item.hijos && item.hijos.length > 0
