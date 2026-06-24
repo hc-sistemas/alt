@@ -8,6 +8,7 @@ import { Label } from '@/Components/ui/label'
 import {
     Eye, Plus, Search, X, Package, ChevronRight, ChevronLeft, Loader2,
 } from 'lucide-react'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { RecepcionBodega, PaginatedData, PageProps } from '@/types'
 
 interface Props extends PageProps {
@@ -330,6 +331,7 @@ function NuevaRecepcionModal({ bodegas, onClose }: NuevaRecepcionModalProps) {
 
 export default function RecepcionesIndex() {
     const { recepciones, filtros, bodegas } = usePage<Props>().props
+    const { puede } = usePermiso('inventario')
 
     const [modalAbierto, setModalAbierto] = useState(false)
     const [estado, setEstado]         = useState(filtros.estado ?? '')
@@ -365,13 +367,15 @@ export default function RecepcionesIndex() {
 
             <div className="p-6">
                 <div className="flex items-center gap-3 mb-4 flex-wrap">
-                    <button onClick={() => setModalAbierto(true)}
-                        className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-white transition-colors"
-                        style={{ background: 'var(--primary)' }}
-                        onMouseEnter={e => (e.currentTarget.style.background = 'var(--primary-hover)')}
-                        onMouseLeave={e => (e.currentTarget.style.background = 'var(--primary)')}>
-                        <Plus size={15} /> Nueva Recepción
-                    </button>
+                    {puede('crear') && (
+                        <button onClick={() => setModalAbierto(true)}
+                            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-white transition-colors"
+                            style={{ background: 'var(--primary)' }}
+                            onMouseEnter={e => (e.currentTarget.style.background = 'var(--primary-hover)')}
+                            onMouseLeave={e => (e.currentTarget.style.background = 'var(--primary)')}>
+                            <Plus size={15} /> Nueva Recepción
+                        </button>
+                    )}
 
                     <select value={estado} onChange={e => setEstado(e.target.value)}
                         className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm"

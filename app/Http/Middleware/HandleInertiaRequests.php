@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Middleware;
 
 class HandleInertiaRequests extends Middleware
@@ -27,11 +28,33 @@ class HandleInertiaRequests extends Middleware
                     'nombre' => $user->nombre,
                     'email' => $user->email,
                     'perfil' => $user->perfil?->nombre,
+                    'perfil_clave' => $user->perfil?->nombre,
                     'empresa_id' => $user->empresa_id,
                     'centro_costo_id' => $user->centro_costo_id,
                     'avatar' => $user->avatar,
                 ] : null,
             ],
+            'permisos' => function () use ($user) {
+                if (!$user) return [];
+
+                if ($user->perfil?->nombre === 'super_admin') return '*';
+
+                return DB::table('permisos')
+                    ->join('modulos', 'modulos.id', '=', 'permisos.modulo_id')
+                    ->where('permisos.perfil_id', $user->perfil_id)
+                    ->select('modulos.clave', 'permisos.ver', 'permisos.crear', 'permisos.editar', 'permisos.eliminar', 'permisos.anular')
+                    ->get()
+                    ->mapWithKeys(fn ($p) => [
+                        $p->clave => [
+                            'ver'      => (bool) $p->ver,
+                            'crear'    => (bool) $p->crear,
+                            'editar'   => (bool) $p->editar,
+                            'eliminar' => (bool) $p->eliminar,
+                            'anular'   => (bool) $p->anular,
+                        ]
+                    ])
+                    ->toArray();
+            },
             'empresa_activa' => $empresaActivaId ? \App\Models\Empresa::find($empresaActivaId)?->only([
                 'id', 'nombre_comercial', 'ruc', 'logo',
             ]) : null,
