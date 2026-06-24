@@ -291,7 +291,7 @@ class KardexController extends Controller
                     0
                 );
             }
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             return back()->withErrors(['error' => $e->getMessage()])->withInput();
         }
 
