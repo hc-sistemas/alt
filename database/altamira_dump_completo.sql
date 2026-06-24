@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict cTAZ04ENxQpSmYATRKnBNb3h9WzkKuNCSvDhqNr9bT678sTv10Vwh0ojKeQXSHn
+\restrict 7Ha1bfDn9kL1el9kU2NnWVU5kijWg11UcpLPwf6DCrJSP7brW9xvMHvZ9EAZpz1
 
 -- Dumped from database version 16.14
 -- Dumped by pg_dump version 16.14
@@ -735,7 +735,14 @@ CREATE TABLE public.compras (
     estado character varying(20) DEFAULT 'activa'::character varying NOT NULL,
     created_by bigint,
     created_at timestamp(0) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at timestamp(0) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
+    updated_at timestamp(0) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    metodo_envio character varying(10),
+    divisa character varying(10) DEFAULT 'USD'::character varying,
+    tipo_cambio numeric(10,4),
+    num_orden_compra character varying(50),
+    num_contrato character varying(50),
+    vigencia_desde date,
+    vigencia_hasta date
 );
 
 
@@ -4266,6 +4273,9 @@ COPY public.asiento_detalles (id, asiento_id, cuenta_id, centro_costo_id, descri
 85	37	604	\N	Compra 999-8888-7777	1176.0000	0.0000
 86	37	608	\N	IVA compra 999-8888-7777	176.4000	0.0000
 87	37	633	\N	CxP 999-8888-7777	0.0000	1352.4000
+88	38	604	\N	Compra 0555-5666-56555	45.0000	0.0000
+89	38	608	\N	IVA compra 0555-5666-56555	0.0000	0.0000
+90	38	633	\N	CxP 0555-5666-56555	0.0000	45.0000
 \.
 
 
@@ -4303,6 +4313,7 @@ COPY public.asientos_contables (id, empresa_id, ejercicio_id, numero, fecha, con
 35	1	1	AS-2026-0032	2026-06-23	ANULACIÓN AS-2026-0029: Anulación compra 000-999-666-5: mal pagada	MANUAL	32	AS-2026-0029	13.8000	13.8000	f	1	1	2026-06-23 18:33:50
 36	1	1	AS-2026-0033	2026-06-23	Pago proveedor TRF-009	BANCO	11	TRF-009	667.0000	667.0000	t	1	1	2026-06-23 18:41:35
 37	1	1	AS-2026-0034	2026-06-23	Compra 999-8888-7777	COMPRA	28	999-8888-7777	1352.4000	1352.4000	t	1	1	2026-06-23 18:46:27
+38	1	1	AS-2026-0035	2026-06-24	Compra 0555-5666-56555	COMPRA	33	0555-5666-56555	45.0000	45.0000	t	1	1	2026-06-23 20:23:21
 \.
 
 
@@ -4497,6 +4508,17 @@ COPY public.compra_detalles (id, compra_id, producto_id, cuenta_id, descripcion,
 72	31	15	\N	Efecto LED ADJ Mega Bar 50RGB RC	1.0000	120.0000	0.0000	120.0000	15.00	18.0000	138.0000	f	\N
 73	32	59	\N	Controlador DMX Chauvet Obey 70	2.0000	180.0000	0.0000	360.0000	15.00	54.0000	414.0000	f	\N
 74	32	18	\N	Cable de Poder Uso Rudo 3x14 AWG 5m	2.0000	8.0000	0.0000	16.0000	15.00	2.4000	18.4000	f	\N
+75	33	17	\N	Cable Speakon 4P 10 metros	3.0000	15.0000	0.0000	45.0000	0.00	0.0000	45.0000	f	\N
+76	34	17	\N	Cable Speakon 4P 10 metros	15.0000	15.0000	0.0000	225.0000	15.00	33.7500	258.7500	f	\N
+77	35	6	\N	Amplificador Crown XTi 2002 650W	1.0000	580.0000	0.0000	580.0000	0.00	0.0000	580.0000	f	\N
+78	36	\N	\N	Flete maritimo Japon-Ecuador	1.0000	2200.0000	0.0000	2200.0000	0.00	0.0000	2200.0000	f	\N
+79	37	\N	\N	Advalorem (10%)	1.0000	981.0000	0.0000	981.0000	0.00	0.0000	981.0000	f	\N
+80	38	\N	\N	FODINFA (0.5%)	1.0000	49.0000	0.0000	49.0000	0.00	0.0000	49.0000	f	\N
+81	39	\N	\N	ISD (5% salida divisas)	1.0000	490.5000	0.0000	490.5000	0.00	0.0000	490.5000	f	\N
+82	40	\N	\N	Seguro transporte internacional	1.0000	180.0000	0.0000	180.0000	0.00	0.0000	180.0000	f	\N
+83	41	\N	\N	Honorarios agente aduanero	1.0000	520.0000	0.0000	520.0000	0.00	0.0000	520.0000	f	\N
+84	42	\N	\N	Almacenaje puerto Guayaquil	1.0000	190.0000	0.0000	190.0000	0.00	0.0000	190.0000	f	\N
+85	43	\N	\N	Transporte Guayaquil-Quito	1.0000	380.0000	0.0000	380.0000	0.00	0.0000	380.0000	f	\N
 \.
 
 
@@ -4504,30 +4526,41 @@ COPY public.compra_detalles (id, compra_id, producto_id, cuenta_id, descripcion,
 -- Data for Name: compras; Type: TABLE DATA; Schema: public; Owner: -
 --
 
-COPY public.compras (id, empresa_id, centro_costo_id, proveedor_id, importacion_id, bodega_id, tipo_documento, num_documento, num_autorizacion, fecha_emision, fecha_registro, fecha_vencimiento, dias_credito, subtotal_0, subtotal_iva, total_iva, total_ice, total, iva_asumido, gasto_no_deducible, sustento_tributario, asiento_id, tiene_pago, concepto, estado, created_by, created_at, updated_at) FROM stdin;
-3	1	\N	1	\N	\N	FAC	002-001-000456	9876543210987654321098765432109876543210987654321	2026-05-03	2026-06-02	2026-05-03	0	0.0000	12920.0000	1938.0000	0.0000	14858.0000	f	f	\N	\N	f	Compra de equipos de iluminación	anulada	1	2026-06-02 02:47:39	2026-06-23 03:11:27
-2	1	\N	2	\N	\N	FAC	001-001-000123	1234567890123456789012345678901234567890123456789	2026-04-18	2026-06-02	2026-05-18	30	0.0000	7525.0000	1128.7500	0.0000	8653.7500	f	f	\N	\N	f	Compra de equipos de audio profesional	anulada	1	2026-06-02 02:47:39	2026-06-23 03:11:31
-9	1	1	8	\N	1	FAC	002-066666556-70707070	53654645	2026-06-13	2026-06-13	2026-06-13	0	0.0000	33600.0000	5040.0000	0.0000	38640.0000	t	f	7	\N	f	\N	pendiente	1	2026-06-13 23:43:31	2026-06-23 12:47:12
-14	1	1	4	\N	2	FAC	008-444-56777	4566	2026-06-18	2026-06-18	2026-08-02	45	0.0000	6300.0000	945.0000	0.0000	7245.0000	t	f	3	25	t	\N	anulada	1	2026-06-18 04:46:19	2026-06-18 23:53:18
-15	1	1	8	\N	2	FAC	009-88-777	1233	2026-06-20	2026-06-20	2026-08-19	60	0.0000	4336.0000	650.4000	0.0000	4986.4000	t	f	12	\N	f	\N	pendiente	1	2026-06-20 22:50:55	2026-06-20 22:50:55
-10	1	1	8	\N	2	LIQ	999-222-44444	2324	2026-06-14	2026-06-14	2026-06-14	0	0.0000	450.0000	67.5000	0.0000	517.5000	t	f	4	\N	f	\N	pendiente	1	2026-06-14 00:13:54	2026-06-23 12:47:12
-7	1	\N	2	\N	\N	FAC	001-001-000200	4444444444444444444444444444444444444444444444444	2026-05-28	2026-06-02	2026-05-18	30	0.0000	295.0000	44.2500	0.0000	339.2500	f	f	\N	\N	t	Repuestos y suministros para taller técnico	anulada	1	2026-06-02 02:47:39	2026-06-23 03:11:00
-6	1	\N	3	\N	\N	FAC	001-003-000654	3333333333333333333333333333333333333333333333333	2026-05-23	2026-06-02	2026-05-03	15	0.0000	6420.0000	963.0000	0.0000	7383.0000	f	f	\N	\N	t	Compra de instrumentos y accesorios musicales	anulada	1	2026-06-02 02:47:39	2026-06-23 03:11:09
-5	1	\N	5	\N	\N	FAC	003-001-000321	2222222222222222222222222222222222222222222222222	2026-05-18	2026-06-02	2026-05-18	30	0.0000	500.0000	75.0000	0.0000	575.0000	f	f	\N	\N	f	Servicio de transporte y logística	anulada	1	2026-06-02 02:47:39	2026-06-23 03:11:17
-4	1	\N	4	\N	\N	FAC	001-002-000789	1111111111111111111111111111111111111111111111111	2026-05-13	2026-06-02	2026-06-02	45	0.0000	1193.0000	178.9500	0.0000	1371.9500	f	f	\N	\N	f	Compra de cables y accesorios varios	anulada	1	2026-06-02 02:47:39	2026-06-23 03:11:21
-11	1	1	10	\N	5	FAC	77899999990000	77887	2026-06-14	2026-06-14	2026-06-14	0	0.0000	17600.0000	2640.0000	0.0000	20240.0000	t	f	1	\N	f	\N	pendiente	1	2026-06-14 05:22:28	2026-06-21 17:08:43
-12	1	1	8	\N	5	FAC	9999888777	888	2026-06-14	2026-06-14	2026-08-13	60	16150.0000	0.0000	0.0000	0.0000	16150.0000	t	f	7	\N	t	\N	pendiente	1	2026-06-14 14:46:49	2026-06-21 17:08:43
-13	1	1	9	\N	5	FAC	324737945793475	3242	2026-06-14	2026-06-14	2026-07-29	45	0.0000	10080.0000	1512.0000	0.0000	11592.0000	f	f	3	\N	t	\N	pendiente	1	2026-06-14 15:22:10	2026-06-21 17:08:43
-16	1	\N	6	5	\N	FAC	IMP-TEST-001	\N	2026-06-15	2026-06-15	2026-06-15	0	15000.0000	0.0000	0.0000	0.0000	15000.0000	f	f	\N	\N	f	\N	anulada	1	2026-06-23 12:30:53	2026-06-23 20:40:09
-27	1	1	14	4	4	EXT	PKN-2026-0001	\N	2026-04-20	2026-04-20	\N	0	4970.0000	0.0000	0.0000	0.0000	4970.0000	f	f	7	\N	f	\N	anulada	1	2026-06-23 17:42:17	2026-06-23 20:46:56
-26	1	1	8	3	4	EXT	CHV-2026-INV-0456	\N	2026-04-15	2026-04-15	\N	0	24100.0000	0.0000	0.0000	0.0000	24100.0000	f	f	7	\N	f	\N	anulada	1	2026-06-23 17:42:17	2026-06-23 20:47:01
-25	1	1	7	2	4	EXT	YMH-2026-INV-0234	\N	2026-04-01	2026-04-01	\N	0	31600.0000	0.0000	0.0000	0.0000	31600.0000	f	f	7	\N	f	\N	anulada	1	2026-06-23 17:42:17	2026-06-23 20:47:05
-24	1	1	6	1	1	EXT	SHR-2026-FAC-001	\N	2026-02-15	2026-02-15	\N	0	18480.0000	0.0000	0.0000	0.0000	18480.0000	f	f	7	\N	f	\N	anulada	1	2026-06-23 17:42:17	2026-06-23 20:47:08
-30	1	1	9	\N	2	FAC	000-999-666-5	123	2026-06-23	2026-06-23	2026-08-07	45	0.0000	12.0000	1.8000	0.0000	13.8000	t	t	3	32	t	\N	anulada	1	2026-06-23 23:30:19	2026-06-23 23:33:50
-31	1	1	9	\N	2	FAC	002-999-345777	7766	2026-06-23	2026-06-23	2026-08-07	45	0.0000	120.0000	18.0000	0.0000	138.0000	t	t	87	\N	f	\N	pendiente	1	2026-06-23 23:37:49	2026-06-23 23:37:49
-32	1	1	8	\N	2	FAC	55-9987-0987766	456	2026-06-23	2026-06-23	2026-08-22	60	0.0000	376.0000	56.4000	0.0000	432.4000	f	f	67	\N	f	\N	pendiente	1	2026-06-23 23:38:24	2026-06-23 23:38:24
-29	1	1	4	\N	2	FAC	3333-2222-1111	123	2026-06-23	2026-06-23	2026-08-07	45	0.0000	580.0000	87.0000	0.0000	667.0000	f	f	2	29	t	\N	activa	1	2026-06-23 20:43:48	2026-06-23 23:41:35
-28	1	1	6	\N	2	FAC	999-8888-7777	1234	2026-06-23	2026-06-23	2026-08-22	60	0.0000	1176.0000	176.4000	0.0000	1352.4000	t	f	1	37	f	\N	activa	1	2026-06-23 20:43:07	2026-06-23 23:46:26
+COPY public.compras (id, empresa_id, centro_costo_id, proveedor_id, importacion_id, bodega_id, tipo_documento, num_documento, num_autorizacion, fecha_emision, fecha_registro, fecha_vencimiento, dias_credito, subtotal_0, subtotal_iva, total_iva, total_ice, total, iva_asumido, gasto_no_deducible, sustento_tributario, asiento_id, tiene_pago, concepto, estado, created_by, created_at, updated_at, metodo_envio, divisa, tipo_cambio, num_orden_compra, num_contrato, vigencia_desde, vigencia_hasta) FROM stdin;
+3	1	\N	1	\N	\N	FAC	002-001-000456	9876543210987654321098765432109876543210987654321	2026-05-03	2026-06-02	2026-05-03	0	0.0000	12920.0000	1938.0000	0.0000	14858.0000	f	f	\N	\N	f	Compra de equipos de iluminación	anulada	1	2026-06-02 02:47:39	2026-06-23 03:11:27	\N	USD	\N	\N	\N	\N	\N
+2	1	\N	2	\N	\N	FAC	001-001-000123	1234567890123456789012345678901234567890123456789	2026-04-18	2026-06-02	2026-05-18	30	0.0000	7525.0000	1128.7500	0.0000	8653.7500	f	f	\N	\N	f	Compra de equipos de audio profesional	anulada	1	2026-06-02 02:47:39	2026-06-23 03:11:31	\N	USD	\N	\N	\N	\N	\N
+9	1	1	8	\N	1	FAC	002-066666556-70707070	53654645	2026-06-13	2026-06-13	2026-06-13	0	0.0000	33600.0000	5040.0000	0.0000	38640.0000	t	f	7	\N	f	\N	pendiente	1	2026-06-13 23:43:31	2026-06-23 12:47:12	\N	USD	\N	\N	\N	\N	\N
+14	1	1	4	\N	2	FAC	008-444-56777	4566	2026-06-18	2026-06-18	2026-08-02	45	0.0000	6300.0000	945.0000	0.0000	7245.0000	t	f	3	25	t	\N	anulada	1	2026-06-18 04:46:19	2026-06-18 23:53:18	\N	USD	\N	\N	\N	\N	\N
+15	1	1	8	\N	2	FAC	009-88-777	1233	2026-06-20	2026-06-20	2026-08-19	60	0.0000	4336.0000	650.4000	0.0000	4986.4000	t	f	12	\N	f	\N	pendiente	1	2026-06-20 22:50:55	2026-06-20 22:50:55	\N	USD	\N	\N	\N	\N	\N
+10	1	1	8	\N	2	LIQ	999-222-44444	2324	2026-06-14	2026-06-14	2026-06-14	0	0.0000	450.0000	67.5000	0.0000	517.5000	t	f	4	\N	f	\N	pendiente	1	2026-06-14 00:13:54	2026-06-23 12:47:12	\N	USD	\N	\N	\N	\N	\N
+7	1	\N	2	\N	\N	FAC	001-001-000200	4444444444444444444444444444444444444444444444444	2026-05-28	2026-06-02	2026-05-18	30	0.0000	295.0000	44.2500	0.0000	339.2500	f	f	\N	\N	t	Repuestos y suministros para taller técnico	anulada	1	2026-06-02 02:47:39	2026-06-23 03:11:00	\N	USD	\N	\N	\N	\N	\N
+6	1	\N	3	\N	\N	FAC	001-003-000654	3333333333333333333333333333333333333333333333333	2026-05-23	2026-06-02	2026-05-03	15	0.0000	6420.0000	963.0000	0.0000	7383.0000	f	f	\N	\N	t	Compra de instrumentos y accesorios musicales	anulada	1	2026-06-02 02:47:39	2026-06-23 03:11:09	\N	USD	\N	\N	\N	\N	\N
+5	1	\N	5	\N	\N	FAC	003-001-000321	2222222222222222222222222222222222222222222222222	2026-05-18	2026-06-02	2026-05-18	30	0.0000	500.0000	75.0000	0.0000	575.0000	f	f	\N	\N	f	Servicio de transporte y logística	anulada	1	2026-06-02 02:47:39	2026-06-23 03:11:17	\N	USD	\N	\N	\N	\N	\N
+4	1	\N	4	\N	\N	FAC	001-002-000789	1111111111111111111111111111111111111111111111111	2026-05-13	2026-06-02	2026-06-02	45	0.0000	1193.0000	178.9500	0.0000	1371.9500	f	f	\N	\N	f	Compra de cables y accesorios varios	anulada	1	2026-06-02 02:47:39	2026-06-23 03:11:21	\N	USD	\N	\N	\N	\N	\N
+11	1	1	10	\N	5	FAC	77899999990000	77887	2026-06-14	2026-06-14	2026-06-14	0	0.0000	17600.0000	2640.0000	0.0000	20240.0000	t	f	1	\N	f	\N	pendiente	1	2026-06-14 05:22:28	2026-06-21 17:08:43	\N	USD	\N	\N	\N	\N	\N
+12	1	1	8	\N	5	FAC	9999888777	888	2026-06-14	2026-06-14	2026-08-13	60	16150.0000	0.0000	0.0000	0.0000	16150.0000	t	f	7	\N	t	\N	pendiente	1	2026-06-14 14:46:49	2026-06-21 17:08:43	\N	USD	\N	\N	\N	\N	\N
+13	1	1	9	\N	5	FAC	324737945793475	3242	2026-06-14	2026-06-14	2026-07-29	45	0.0000	10080.0000	1512.0000	0.0000	11592.0000	f	f	3	\N	t	\N	pendiente	1	2026-06-14 15:22:10	2026-06-21 17:08:43	\N	USD	\N	\N	\N	\N	\N
+16	1	\N	6	5	\N	FAC	IMP-TEST-001	\N	2026-06-15	2026-06-15	2026-06-15	0	15000.0000	0.0000	0.0000	0.0000	15000.0000	f	f	\N	\N	f	\N	anulada	1	2026-06-23 12:30:53	2026-06-23 20:40:09	\N	USD	\N	\N	\N	\N	\N
+33	1	1	4	\N	2	EXT	0555-5666-56555	45454	2026-06-24	2026-06-24	2026-08-08	45	45.0000	0.0000	0.0000	0.0000	45.0000	f	f	4	38	f	\N	activa	1	2026-06-24 01:16:56	2026-06-24 01:23:20	\N	USD	\N	\N	\N	\N	\N
+27	1	1	14	4	4	EXT	PKN-2026-0001	\N	2026-04-20	2026-04-20	\N	0	4970.0000	0.0000	0.0000	0.0000	4970.0000	f	f	7	\N	f	\N	anulada	1	2026-06-23 17:42:17	2026-06-23 20:46:56	\N	USD	\N	\N	\N	\N	\N
+26	1	1	8	3	4	EXT	CHV-2026-INV-0456	\N	2026-04-15	2026-04-15	\N	0	24100.0000	0.0000	0.0000	0.0000	24100.0000	f	f	7	\N	f	\N	anulada	1	2026-06-23 17:42:17	2026-06-23 20:47:01	\N	USD	\N	\N	\N	\N	\N
+25	1	1	7	2	4	EXT	YMH-2026-INV-0234	\N	2026-04-01	2026-04-01	\N	0	31600.0000	0.0000	0.0000	0.0000	31600.0000	f	f	7	\N	f	\N	anulada	1	2026-06-23 17:42:17	2026-06-23 20:47:05	\N	USD	\N	\N	\N	\N	\N
+24	1	1	6	1	1	EXT	SHR-2026-FAC-001	\N	2026-02-15	2026-02-15	\N	0	18480.0000	0.0000	0.0000	0.0000	18480.0000	f	f	7	\N	f	\N	anulada	1	2026-06-23 17:42:17	2026-06-23 20:47:08	\N	USD	\N	\N	\N	\N	\N
+34	1	1	14	\N	2	FAC	67676-6666	6867	2026-06-24	2026-06-24	2026-06-24	0	0.0000	225.0000	33.7500	0.0000	258.7500	f	f	6	\N	f	\N	pendiente	1	2026-06-24 01:28:10	2026-06-24 01:28:10	\N	USD	\N	\N	\N	\N	\N
+35	1	1	14	6	2	EXT	INV-2026-08	\N	2026-06-30	2026-06-24	2026-06-30	0	580.0000	0.0000	0.0000	0.0000	580.0000	f	f	6	\N	f	Importacion Q7	pendiente	1	2026-06-24 15:28:41	2026-06-24 15:28:41	FOB	USD	\N	\N	\N	\N	\N
+36	1	\N	7	2	\N	LIQ	GASTO-2-01	\N	2026-06-24	2026-06-24	2026-06-24	0	2200.0000	0.0000	0.0000	0.0000	2200.0000	f	t	2	\N	f	Flete maritimo Japon-Ecuador	activa	\N	2026-06-24 18:35:09	2026-06-24 18:35:09	\N	USD	\N	\N	\N	\N	\N
+37	1	\N	7	2	\N	LIQ	GASTO-2-02	\N	2026-06-24	2026-06-24	2026-06-24	0	981.0000	0.0000	0.0000	0.0000	981.0000	f	t	2	\N	f	Advalorem (10%)	activa	\N	2026-06-24 18:35:09	2026-06-24 18:35:09	\N	USD	\N	\N	\N	\N	\N
+38	1	\N	7	2	\N	LIQ	GASTO-2-03	\N	2026-06-24	2026-06-24	2026-06-24	0	49.0000	0.0000	0.0000	0.0000	49.0000	f	t	2	\N	f	FODINFA (0.5%)	activa	\N	2026-06-24 18:35:09	2026-06-24 18:35:09	\N	USD	\N	\N	\N	\N	\N
+39	1	\N	7	2	\N	LIQ	GASTO-2-04	\N	2026-06-24	2026-06-24	2026-06-24	0	490.5000	0.0000	0.0000	0.0000	490.5000	f	t	2	\N	f	ISD (5% salida divisas)	activa	\N	2026-06-24 18:35:09	2026-06-24 18:35:09	\N	USD	\N	\N	\N	\N	\N
+30	1	1	9	\N	2	FAC	000-999-666-5	123	2026-06-23	2026-06-23	2026-08-07	45	0.0000	12.0000	1.8000	0.0000	13.8000	t	t	3	32	t	\N	anulada	1	2026-06-23 23:30:19	2026-06-23 23:33:50	\N	USD	\N	\N	\N	\N	\N
+31	1	1	9	\N	2	FAC	002-999-345777	7766	2026-06-23	2026-06-23	2026-08-07	45	0.0000	120.0000	18.0000	0.0000	138.0000	t	t	87	\N	f	\N	pendiente	1	2026-06-23 23:37:49	2026-06-23 23:37:49	\N	USD	\N	\N	\N	\N	\N
+32	1	1	8	\N	2	FAC	55-9987-0987766	456	2026-06-23	2026-06-23	2026-08-22	60	0.0000	376.0000	56.4000	0.0000	432.4000	f	f	67	\N	f	\N	pendiente	1	2026-06-23 23:38:24	2026-06-23 23:38:24	\N	USD	\N	\N	\N	\N	\N
+40	1	\N	7	2	\N	LIQ	GASTO-2-05	\N	2026-06-24	2026-06-24	2026-06-24	0	180.0000	0.0000	0.0000	0.0000	180.0000	f	t	2	\N	f	Seguro transporte internacional	activa	\N	2026-06-24 18:35:09	2026-06-24 18:35:09	\N	USD	\N	\N	\N	\N	\N
+29	1	1	4	\N	2	FAC	3333-2222-1111	123	2026-06-23	2026-06-23	2026-08-07	45	0.0000	580.0000	87.0000	0.0000	667.0000	f	f	2	29	t	\N	activa	1	2026-06-23 20:43:48	2026-06-23 23:41:35	\N	USD	\N	\N	\N	\N	\N
+41	1	\N	7	2	\N	LIQ	GASTO-2-06	\N	2026-06-24	2026-06-24	2026-06-24	0	520.0000	0.0000	0.0000	0.0000	520.0000	f	t	2	\N	f	Honorarios agente aduanero	activa	\N	2026-06-24 18:35:09	2026-06-24 18:35:09	\N	USD	\N	\N	\N	\N	\N
+28	1	1	6	\N	2	FAC	999-8888-7777	1234	2026-06-23	2026-06-23	2026-08-22	60	0.0000	1176.0000	176.4000	0.0000	1352.4000	t	f	1	37	f	\N	activa	1	2026-06-23 20:43:07	2026-06-23 23:46:26	\N	USD	\N	\N	\N	\N	\N
+42	1	\N	7	2	\N	LIQ	GASTO-2-07	\N	2026-06-24	2026-06-24	2026-06-24	0	190.0000	0.0000	0.0000	0.0000	190.0000	f	t	2	\N	f	Almacenaje puerto Guayaquil	activa	\N	2026-06-24 18:35:09	2026-06-24 18:35:09	\N	USD	\N	\N	\N	\N	\N
+43	1	\N	7	2	\N	LIQ	GASTO-2-08	\N	2026-06-24	2026-06-24	2026-06-24	0	380.0000	0.0000	0.0000	0.0000	380.0000	f	t	2	\N	f	Transporte Guayaquil-Quito	activa	\N	2026-06-24 18:35:09	2026-06-24 18:35:09	\N	USD	\N	\N	\N	\N	\N
 \.
 
 
@@ -4565,6 +4598,7 @@ COPY public.cuentas_pagar (id, empresa_id, proveedor_id, compra_id, monto, saldo
 12	1	9	30	13.8000	0.0000	2026-06-23	2026-08-07	f	pagada	\N	2026-06-23 23:31:41	2026-06-23 23:33:30
 11	1	4	29	667.0000	0.0000	2026-06-23	2026-08-07	f	pagada	\N	2026-06-23 21:05:35	2026-06-23 23:41:35
 13	1	6	28	1352.4000	1352.4000	2026-06-23	2026-08-22	f	pendiente	\N	2026-06-23 23:46:26	2026-06-23 23:46:26
+14	1	4	33	45.0000	45.0000	2026-06-24	2026-08-08	f	pendiente	\N	2026-06-24 01:23:20	2026-06-24 01:23:20
 \.
 
 
@@ -5049,6 +5083,9 @@ COPY public.etiquetas_productos (id, empresa_id, compra_id, compra_detalle_id, p
 8	1	30	71	16	CAB-001	50	50	1	1	2026-06-23 23:31:09
 9	1	31	72	15	ILU-004	9	9	1	1	2026-06-23 23:38:38
 10	1	12	23	14	ILU-003	10	199	190	1	2026-06-23 23:47:25
+11	1	32	73	59	CHV-002	1	2	2	1	2026-06-24 01:08:02
+12	1	32	74	18	CAB-003	51	52	2	1	2026-06-24 01:08:02
+13	1	33	75	17	CAB-002	53	55	3	1	2026-06-24 01:18:06
 \.
 
 
@@ -5125,7 +5162,8 @@ COPY public.importaciones (id, empresa_id, proveedor_id, nombre, num_invoice, ag
 3	1	8	IMPORTACIÓN CHAUVET Q2-2026	CHV-2026-0456	Agencia Aduanera Global Trade	ESTADOS UNIDOS	24500.0000	USD	2026-06-07	\N	\N	0.0000	24500.0000	cantidad	en_transito	Cabezas móviles y controladores DMX Chauvet Pro. En tránsito marítimo.	1	2026-06-02 02:47:39	2026-06-02 02:47:39
 5	1	6	IMPORTACION-PRUEBA-PRORRATEO	\N	\N	China	15000.0000	USD	2026-05-01	2026-06-15	2026-06-23	50.0000	15050.0000	cantidad	liquidada	Importación de prueba para validar prorrateo	1	2026-06-23 12:30:30	2026-06-23 12:56:30
 4	1	7	IMPORTACION-PEKIN-OO1	INV-2026-004	Roberto	China	4970.0000	USD	2026-06-01	2026-06-15	\N	0.0000	0.0000	cantidad	en_transito	\N	1	2026-06-23 12:23:33	2026-06-23 12:23:33
-2	1	7	IMPORTACIÓN YAMAHA Q2-2026	YMH-2026-0234	Agencia Aduanera Ecuaduanas	JAPÓN	32000.0000	USD	2026-05-08	2026-05-28	\N	0.0000	32000.0000	cantidad	en_aduana	Consolas de mezcla y procesadores de señal Yamaha. En proceso de desaduanización.	1	2026-06-02 02:47:39	2026-06-23 17:05:03
+6	1	14	Importacion Q7	INV-2026-08	Roberto	Japon	190.0000	USD	2026-06-23	2026-06-30	\N	0.0000	0.0000	cantidad	en_transito	\N	1	2026-06-24 01:25:08	2026-06-24 01:25:08
+2	1	7	IMPORTACIÓN YAMAHA Q2-2026	YMH-2026-0234	Agencia Aduanera Ecuaduanas	JAPÓN	32000.0000	USD	2026-05-08	2026-05-28	2026-06-24	4990.5000	36990.5000	precio	liquidada	Consolas de mezcla y procesadores de señal Yamaha. En proceso de desaduanización.	1	2026-06-02 02:47:39	2026-06-24 18:35:47
 \.
 
 
@@ -5160,6 +5198,7 @@ COPY public.inventario_movimientos (id, producto_id, bodega_id, tipo, doc_tipo, 
 26	16	2	salida	ANULACION	30	1.0000	12.0000	12.0000	1.0000	0.0000	1	1	Anulación compra: mal pagada	2026-06-23 23:33:50	\N
 27	6	2	entrada	COMPRA	28	2.0000	580.0000	1160.0000	0.0000	2.0000	1	1	Recepción #3: 999-8888-7777	2026-06-23 23:46:26	\N
 28	18	2	entrada	COMPRA	28	2.0000	8.0000	16.0000	0.0000	2.0000	1	1	Recepción #3: 999-8888-7777	2026-06-23 23:46:26	\N
+29	17	2	entrada	COMPRA	33	3.0000	15.0000	45.0000	0.0000	3.0000	1	1	Recepción #9: 0555-5666-56555	2026-06-24 01:23:20	\N
 \.
 
 
@@ -5192,6 +5231,7 @@ COPY public.inventario_saldos (id, producto_id, bodega_id, stock_actual, stock_r
 85	16	2	0.0000	0.0000	12.0000	2026-06-23 23:33:50	0.0000
 83	6	2	2.0000	0.0000	580.0000	2026-06-23 23:46:26	0.0000
 88	18	2	2.0000	0.0000	8.0000	2026-06-23 23:46:26	0.0000
+89	17	2	3.0000	0.0000	15.0000	2026-06-24 01:23:20	0.0000
 17	17	1	30.0000	0.0000	15.0000	2026-06-11 05:42:58	0.0000
 1	1	1	0.0000	0.0000	321.6667	2026-06-23 20:40:09	0.0000
 2	2	1	0.0000	0.0000	281.6667	2026-06-23 20:40:09	0.0000
@@ -5314,6 +5354,8 @@ COPY public.log_documentos (id, usuario_id, empresa_id, accion, modulo, tabla, r
 38	1	1	crear	contabilidad	asientos_contables	36	Asiento AS-2026-0033: Pago proveedor TRF-009	127.0.0.1	2026-06-23 18:41:35	admin@altamira.com	2026-06-23 23:41:35
 39	1	1	crear	contabilidad	asientos_contables	37	Asiento AS-2026-0034: Compra 999-8888-7777	127.0.0.1	2026-06-23 18:46:27	admin@altamira.com	2026-06-23 23:46:26
 40	1	1	confirmar	inventario	recepciones_bodega	3	Recepción #3 confirmada — estado: completada	127.0.0.1	2026-06-23 23:46:26	\N	\N
+41	1	1	crear	contabilidad	asientos_contables	38	Asiento AS-2026-0035: Compra 0555-5666-56555	127.0.0.1	2026-06-23 20:23:21	admin@altamira.com	2026-06-24 01:23:20
+42	1	1	confirmar	inventario	recepciones_bodega	9	Recepción #9 confirmada — estado: completada	127.0.0.1	2026-06-24 01:23:20	\N	\N
 \.
 
 
@@ -5487,6 +5529,7 @@ COPY public.migrations (id, migration, batch) FROM stdin;
 94	2026_06_19_100000_create_recepciones_bodega_table	15
 95	2026_06_22_100000_create_nomina_tables	16
 96	2026_06_21_100000_create_recepcion_escaneos_table	17
+97	2026_06_24_100000_add_exterior_fields_to_compras	18
 \.
 
 
@@ -6432,8 +6475,8 @@ COPY public.plan_cuentas (id, empresa_id, codigo, nombre, descripcion, tipo, pad
 562	\N	5.2.1.06	Vacaciones	\N	gasto	556	4	t	t	0
 570	\N	5.2.2.03	Servicios Básicos	\N	gasto	567	4	t	t	0
 587	\N	5.3.1.02	Comisiones Bancarias y Pasarelas de Pago	\N	gasto	\N	4	t	t	0
-604	\N	1.1.4.01	Inventario de Mercaderías	\N	activo	425	4	t	t	10
-608	\N	1.1.5.01	Crédito Tributario IVA Compras	\N	activo	430	4	t	t	12
+604	\N	1.1.4.01	Inventario de Mercaderías	\N	activo	425	4	t	t	11
+608	\N	1.1.5.01	Crédito Tributario IVA Compras	\N	activo	430	4	t	t	13
 532	\N	3.1.5.01	Aportes para Futuras Capitalizaciones	\N	patrimonio	531	4	t	t	0
 541	\N	4.1.2.02	Ingresos por Servicios de Capacitación y Asesorías	\N	ingreso	539	4	t	t	0
 663	\N	4.1.2.03	Ingresos por Alquiler de Equipos	\N	ingreso	539	4	t	t	0
@@ -6450,7 +6493,7 @@ COPY public.plan_cuentas (id, empresa_id, codigo, nombre, descripcion, tipo, pad
 671	\N	5.2.2.13	Suscripciones y Membresías	\N	gasto	567	4	t	t	0
 672	\N	5.2.2.14	Correo, Mensajería y Envíos	\N	gasto	567	4	t	t	0
 595	\N	1.1.1.03	Bancos Locales	\N	activo	411	4	t	t	9
-633	\N	2.1.1.01	Proveedores Locales	\N	pasivo	471	4	t	t	21
+633	\N	2.1.1.01	Proveedores Locales	\N	pasivo	471	4	t	t	22
 \.
 
 
@@ -6527,23 +6570,23 @@ COPY public.productos (id, empresa_id, marca_id, categoria_id, bodega_default_id
 2	1	1	7	\N	MIC-002	Micrófono Condensador Shure SM7B	\N	producto	unidad	f	420.0000	370.0000	501.6667	0.00	15.00	0.00	2.0000	\N	\N	\N	\N	t	\N	2026-06-11 05:42:58	2026-06-23 12:56:30	\N	f	\N	\N	\N	\N	\N
 3	1	2	8	\N	CON-001	Consola Yamaha MG16XU 16 Canales USB	\N	producto	unidad	t	980.0000	850.0000	501.6667	0.00	15.00	0.00	2.0000	\N	\N	\N	\N	t	\N	2026-06-11 05:42:58	2026-06-23 12:56:30	\N	f	\N	\N	\N	\N	\N
 5	1	4	9	\N	AMP-001	Amplificador QSC GX5 500W Potencia	\N	producto	unidad	t	620.0000	550.0000	420.0000	0.00	15.00	0.00	2.0000	\N	\N	\N	\N	t	\N	2026-06-11 05:42:58	2026-06-23 17:05:03	\N	f	\N	\N	\N	\N	\N
-17	1	12	13	\N	CAB-002	Cable Speakon 4P 10 metros	\N	producto	unidad	f	28.0000	23.0000	15.0000	0.00	15.00	0.00	2.0000	\N	\N	\N	\N	t	\N	2026-06-11 05:42:58	2026-06-23 17:05:03	\N	f	\N	\N	\N	\N	\N
 16	1	12	13	\N	CAB-001	Cable XLR Macho-Hembra 10 metros Neutrik	\N	producto	unidad	f	22.0000	18.0000	12.0000	0.00	15.00	0.00	2.0000	\N	\N	\N	\N	t	\N	2026-06-11 05:42:58	2026-06-23 23:31:41	\N	f	\N	\N	\N	\N	\N
 51	1	1	7	\N	SHR-001	Micrófono Dinámico Shure SM58-LC	\N	producto	UND	f	165.0000	135.0000	106.3900	10.00	15.00	0.00	0.0000	0.0000	\N	\N	\N	t	\N	2026-06-23 17:42:17	2026-06-23 17:42:26	\N	f	\N	\N	\N	\N	\N
 52	1	1	7	\N	SHR-002	Micrófono Instrumental Shure SM57-LC	\N	producto	UND	f	148.0000	120.0000	96.3900	10.00	15.00	0.00	0.0000	0.0000	\N	\N	\N	t	\N	2026-06-23 17:42:17	2026-06-23 17:42:26	\N	f	\N	\N	\N	\N	\N
 53	1	1	7	\N	SHR-003	Sistema Inalámbrico Shure BLX288/PG58	\N	producto	UND	f	360.0000	290.0000	227.3900	10.00	15.00	0.00	0.0000	0.0000	\N	\N	\N	t	\N	2026-06-23 17:42:17	2026-06-23 17:42:26	\N	f	\N	\N	\N	\N	\N
 6	1	10	9	\N	AMP-002	Amplificador Crown XTi 2002 650W	\N	producto	unidad	t	850.0000	750.0000	580.0000	0.00	15.00	0.00	2.0000	\N	\N	\N	\N	t	\N	2026-06-11 05:42:58	2026-06-23 23:46:26	\N	f	\N	\N	\N	\N	\N
 18	1	12	19	\N	CAB-003	Cable de Poder Uso Rudo 3x14 AWG 5m	\N	producto	unidad	f	15.0000	12.0000	8.0000	0.00	15.00	0.00	2.0000	\N	\N	\N	\N	t	\N	2026-06-11 05:42:58	2026-06-23 23:46:26	\N	f	\N	\N	\N	\N	\N
-54	1	2	8	\N	YAM-001	Consola de Mezcla Yamaha MG20XU 20 Canales	\N	producto	UND	f	680.0000	550.0000	420.0000	10.00	15.00	0.00	0.0000	0.0000	\N	\N	\N	t	\N	2026-06-23 17:42:17	2026-06-23 17:42:26	\N	f	\N	\N	\N	\N	\N
-55	1	2	10	\N	YAM-002	Monitor de Estudio Yamaha HS8 8"	\N	producto	UND	f	620.0000	500.0000	380.0000	10.00	15.00	0.00	0.0000	0.0000	\N	\N	\N	t	\N	2026-06-23 17:42:17	2026-06-23 17:42:26	\N	f	\N	\N	\N	\N	\N
-56	1	2	12	\N	YAM-003	Procesador Digital Yamaha SPX2000	\N	producto	UND	f	1050.0000	850.0000	650.0000	10.00	15.00	0.00	0.0000	0.0000	\N	\N	\N	t	\N	2026-06-23 17:42:17	2026-06-23 17:42:26	\N	f	\N	\N	\N	\N	\N
-57	1	2	9	\N	YAM-004	Amplificador de Potencia Yamaha P7000S	\N	producto	UND	f	1250.0000	1020.0000	780.0000	10.00	15.00	0.00	0.0000	0.0000	\N	\N	\N	t	\N	2026-06-23 17:42:17	2026-06-23 17:42:26	\N	f	\N	\N	\N	\N	\N
+17	1	12	13	\N	CAB-002	Cable Speakon 4P 10 metros	\N	producto	unidad	f	28.0000	23.0000	15.0000	0.00	15.00	0.00	2.0000	\N	\N	\N	\N	t	\N	2026-06-11 05:42:58	2026-06-24 01:23:20	\N	f	\N	\N	\N	\N	\N
 58	1	5	14	\N	CHV-001	Cabeza Móvil Chauvet Pro Rogue R3 Wash	\N	producto	UND	f	1350.0000	1100.0000	850.0000	10.00	15.00	0.00	0.0000	0.0000	\N	\N	\N	t	\N	2026-06-23 17:42:17	2026-06-23 17:42:26	\N	f	\N	\N	\N	\N	\N
 59	1	5	16	\N	CHV-002	Controlador DMX Chauvet Obey 70	\N	producto	UND	f	280.0000	230.0000	180.0000	10.00	15.00	0.00	0.0000	0.0000	\N	\N	\N	t	\N	2026-06-23 17:42:17	2026-06-23 17:42:26	\N	f	\N	\N	\N	\N	\N
 60	1	5	17	\N	CHV-003	Par LED Chauvet SlimPAR Pro RGBA IP	\N	producto	UND	f	195.0000	160.0000	120.0000	10.00	15.00	0.00	0.0000	0.0000	\N	\N	\N	t	\N	2026-06-23 17:42:17	2026-06-23 17:42:26	\N	f	\N	\N	\N	\N	\N
 61	1	5	17	\N	CHV-004	Máquina de Humo Chauvet Nimbus Dry Ice	\N	producto	UND	f	450.0000	370.0000	290.0000	10.00	15.00	0.00	0.0000	0.0000	\N	\N	\N	t	\N	2026-06-23 17:42:17	2026-06-23 17:42:26	\N	f	\N	\N	\N	\N	\N
 62	1	3	11	\N	DJ-003	Auriculares DJ Pioneer HDJ-X5 Negro	\N	producto	UND	f	145.0000	115.0000	85.0000	10.00	15.00	0.00	0.0000	0.0000	\N	\N	\N	t	\N	2026-06-23 17:42:17	2026-06-23 17:42:26	\N	f	\N	\N	\N	\N	\N
 63	1	12	13	\N	CAB-010	Cable XLR Balanceado 10m Canare L-4E6S	\N	producto	UND	f	32.0000	26.0000	18.0000	10.00	15.00	0.00	0.0000	0.0000	\N	\N	\N	t	\N	2026-06-23 17:42:17	2026-06-23 17:42:26	\N	f	\N	\N	\N	\N	\N
+54	1	2	8	\N	YAM-001	Consola de Mezcla Yamaha MG20XU 20 Canales	\N	producto	UND	f	680.0000	550.0000	500.4919	10.00	15.00	0.00	0.0000	0.0000	\N	\N	\N	t	\N	2026-06-23 17:42:17	2026-06-24 18:35:47	\N	f	\N	\N	\N	\N	\N
+55	1	2	10	\N	YAM-002	Monitor de Estudio Yamaha HS8 8"	\N	producto	UND	f	620.0000	500.0000	460.4919	10.00	15.00	0.00	0.0000	0.0000	\N	\N	\N	t	\N	2026-06-23 17:42:17	2026-06-24 18:35:47	\N	f	\N	\N	\N	\N	\N
+56	1	2	12	\N	YAM-003	Procesador Digital Yamaha SPX2000	\N	producto	UND	f	1050.0000	850.0000	730.4919	10.00	15.00	0.00	0.0000	0.0000	\N	\N	\N	t	\N	2026-06-23 17:42:17	2026-06-24 18:35:47	\N	f	\N	\N	\N	\N	\N
+57	1	2	9	\N	YAM-004	Amplificador de Potencia Yamaha P7000S	\N	producto	UND	f	1250.0000	1020.0000	860.4919	10.00	15.00	0.00	0.0000	0.0000	\N	\N	\N	t	\N	2026-06-23 17:42:17	2026-06-24 18:35:47	\N	f	\N	\N	\N	\N	\N
 \.
 
 
@@ -6608,6 +6651,9 @@ COPY public.recepcion_detalles (id, recepcion_id, compra_detalle_id, producto_id
 4	3	68	6	2.0000	2.0000	completado
 5	3	69	18	2.0000	2.0000	completado
 11	8	23	14	190.0000	0.0000	pendiente
+12	9	75	17	3.0000	3.0000	completado
+13	10	76	17	15.0000	0.0000	pendiente
+14	11	77	6	1.0000	0.0000	pendiente
 \.
 
 
@@ -6624,6 +6670,9 @@ COPY public.recepcion_escaneos (id, recepcion_id, recepcion_detalle_id, producto
 6	3	4	6	AMP-002-000013	13	1	2026-06-23 23:46:05
 7	3	5	18	CAB-003-000048	48	1	2026-06-23 23:46:10
 8	3	5	18	CAB-003-000049	49	1	2026-06-23 23:46:21
+9	9	12	17	CAB-002-000053	53	1	2026-06-24 01:21:14
+10	9	12	17	CAB-002-000055	55	1	2026-06-24 01:21:22
+11	9	12	17	CAB-002-000054	54	1	2026-06-24 01:23:07
 \.
 
 
@@ -6640,6 +6689,9 @@ COPY public.recepciones_bodega (id, empresa_id, compra_id, bodega_id, estado, re
 7	1	32	2	pendiente	\N	\N	\N	2026-06-23 23:38:24	2026-06-23 23:38:24
 3	1	28	2	completada	1	2026-06-23	\N	2026-06-23 20:43:07	2026-06-23 23:46:26
 8	1	12	5	pendiente	\N	\N	\N	2026-06-23 23:47:25	2026-06-23 23:47:25
+9	1	33	2	completada	1	2026-06-24	\N	2026-06-24 01:16:56	2026-06-24 01:23:20
+10	1	34	2	pendiente	\N	\N	\N	2026-06-24 01:28:10	2026-06-24 01:28:10
+11	1	35	2	pendiente	\N	\N	\N	2026-06-24 15:28:41	2026-06-24 15:28:41
 \.
 
 
@@ -6696,7 +6748,9 @@ COPY public.secuenciales (id, empresa_id, tipo_documento, establecimiento, punto
 --
 
 COPY public.sessions (id, user_id, ip_address, user_agent, payload, last_activity) FROM stdin;
-Y6LHBeYVazVLDBuwq3f9brUYdnc8noLHLsbZt14U	1	127.0.0.1	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36	YTo1OntzOjY6Il90b2tlbiI7czo0MDoiRFF4bkRPY2ZBaGFiN013WHhHYkNLeVdLNExEV1RVTGF5RWVRZ3B5ZCI7czo1MDoibG9naW5fd2ViXzU5YmEzNmFkZGMyYjJmOTQwMTU4MGYwMTRjN2Y1OGVhNGUzMDk4OWQiO2k6MTtzOjE3OiJlbXByZXNhX2FjdGl2YV9pZCI7aToxO3M6NjoiX2ZsYXNoIjthOjI6e3M6MzoibmV3IjthOjA6e31zOjM6Im9sZCI7YTowOnt9fXM6OToiX3ByZXZpb3VzIjthOjI6e3M6MzoidXJsIjtzOjU2OiJodHRwOi8vMTI3LjAuMC4xOjgwMDEvY29tcHJhcy9mYWN0dXJhcy8xMi9ldGlxdWV0YXMtZGF0YSI7czo1OiJyb3V0ZSI7czozMToiY29tcHJhcy5mYWN0dXJhcy5ldGlxdWV0YXMtZGF0YSI7fX0=	1782258479
+Gt5IN3ykXmIu8FKClCDfxPQoaV2T1LeOgZX1mvVD	1	127.0.0.1	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36	YTo1OntzOjY6Il90b2tlbiI7czo0MDoiMU82ZFg5azhWbWoxTFJoMGVBQ29JTnBzMjdqOFRTeGNuZ2N5MG11QyI7czo1MDoibG9naW5fd2ViXzU5YmEzNmFkZGMyYjJmOTQwMTU4MGYwMTRjN2Y1OGVhNGUzMDk4OWQiO2k6MTtzOjE3OiJlbXByZXNhX2FjdGl2YV9pZCI7aToxO3M6OToiX3ByZXZpb3VzIjthOjI6e3M6MzoidXJsIjtzOjU3OiJodHRwOi8vMTI3LjAuMC4xOjgwMDEvY29tcHJhcy9mYWN0dXJhcz9pbmljaWFyX2V4dGVyaW9yPTYiO3M6NToicm91dGUiO3M6MjI6ImNvbXByYXMuZmFjdHVyYXMuaW5kZXgiO31zOjY6Il9mbGFzaCI7YToyOntzOjM6Im9sZCI7YTowOnt9czozOiJuZXciO2E6MDp7fX19	1782314940
+TRzcybCe0uZIEw83CKYlS8Hr0AX87J0fuVgsdboY	1	127.0.0.1	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36	YTo1OntzOjY6Il90b2tlbiI7czo0MDoiT1JySU1mYTRISG1qR25SNkFTMTJnOXVrZkZLRXlBRnBTbE42M2RjMiI7czo1MDoibG9naW5fd2ViXzU5YmEzNmFkZGMyYjJmOTQwMTU4MGYwMTRjN2Y1OGVhNGUzMDk4OWQiO2k6MTtzOjE3OiJlbXByZXNhX2FjdGl2YV9pZCI7aToxO3M6OToiX3ByZXZpb3VzIjthOjI6e3M6MzoidXJsIjtzOjQzOiJodHRwOi8vMTI3LjAuMC4xOjgwMDEvY29tcHJhcy9pbXBvcnRhY2lvbmVzIjtzOjU6InJvdXRlIjtzOjI3OiJjb21wcmFzLmltcG9ydGFjaW9uZXMuaW5kZXgiO31zOjY6Il9mbGFzaCI7YToyOntzOjM6Im9sZCI7YTowOnt9czozOiJuZXciO2E6MDp7fX19	1782326271
+Y6LHBeYVazVLDBuwq3f9brUYdnc8noLHLsbZt14U	1	127.0.0.1	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36	YTo1OntzOjY6Il90b2tlbiI7czo0MDoiRFF4bkRPY2ZBaGFiN013WHhHYkNLeVdLNExEV1RVTGF5RWVRZ3B5ZCI7czo1MDoibG9naW5fd2ViXzU5YmEzNmFkZGMyYjJmOTQwMTU4MGYwMTRjN2Y1OGVhNGUzMDk4OWQiO2k6MTtzOjE3OiJlbXByZXNhX2FjdGl2YV9pZCI7aToxO3M6NjoiX2ZsYXNoIjthOjI6e3M6MzoibmV3IjthOjA6e31zOjM6Im9sZCI7YTowOnt9fXM6OToiX3ByZXZpb3VzIjthOjI6e3M6MzoidXJsIjtzOjU2OiJodHRwOi8vMTI3LjAuMC4xOjgwMDEvaW52ZW50YXJpby9yZWNlcGNpb25lcy85L2V0aXF1ZXRhcyI7czo1OiJyb3V0ZSI7czozMjoiaW52ZW50YXJpby5yZWNlcGNpb25lcy5ldGlxdWV0YXMiO319	1782265004
 \.
 
 
@@ -6809,14 +6863,14 @@ SELECT pg_catalog.setval('public.aprobaciones_especiales_id_seq', 1, false);
 -- Name: asiento_detalles_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.asiento_detalles_id_seq', 87, true);
+SELECT pg_catalog.setval('public.asiento_detalles_id_seq', 90, true);
 
 
 --
 -- Name: asientos_contables_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.asientos_contables_id_seq', 37, true);
+SELECT pg_catalog.setval('public.asientos_contables_id_seq', 38, true);
 
 
 --
@@ -6886,14 +6940,14 @@ SELECT pg_catalog.setval('public.colaboradores_id_seq', 8, true);
 -- Name: compra_detalles_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.compra_detalles_id_seq', 74, true);
+SELECT pg_catalog.setval('public.compra_detalles_id_seq', 85, true);
 
 
 --
 -- Name: compras_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.compras_id_seq', 32, true);
+SELECT pg_catalog.setval('public.compras_id_seq', 43, true);
 
 
 --
@@ -6921,7 +6975,7 @@ SELECT pg_catalog.setval('public.cuentas_cobrar_id_seq', 1, false);
 -- Name: cuentas_pagar_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.cuentas_pagar_id_seq', 13, true);
+SELECT pg_catalog.setval('public.cuentas_pagar_id_seq', 14, true);
 
 
 --
@@ -6956,7 +7010,7 @@ SELECT pg_catalog.setval('public.empresas_id_seq', 2, true);
 -- Name: etiquetas_productos_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.etiquetas_productos_id_seq', 10, true);
+SELECT pg_catalog.setval('public.etiquetas_productos_id_seq', 13, true);
 
 
 --
@@ -7019,21 +7073,21 @@ SELECT pg_catalog.setval('public.horas_extras_aprobacion_id_seq', 1, false);
 -- Name: importaciones_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.importaciones_id_seq', 5, true);
+SELECT pg_catalog.setval('public.importaciones_id_seq', 6, true);
 
 
 --
 -- Name: inventario_movimientos_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.inventario_movimientos_id_seq', 28, true);
+SELECT pg_catalog.setval('public.inventario_movimientos_id_seq', 29, true);
 
 
 --
 -- Name: inventario_saldos_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.inventario_saldos_id_seq', 88, true);
+SELECT pg_catalog.setval('public.inventario_saldos_id_seq', 89, true);
 
 
 --
@@ -7068,7 +7122,7 @@ SELECT pg_catalog.setval('public.log_cambios_criticos_id_seq', 19, true);
 -- Name: log_documentos_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.log_documentos_id_seq', 40, true);
+SELECT pg_catalog.setval('public.log_documentos_id_seq', 42, true);
 
 
 --
@@ -7089,7 +7143,7 @@ SELECT pg_catalog.setval('public.marcas_id_seq', 12, true);
 -- Name: migrations_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.migrations_id_seq', 96, true);
+SELECT pg_catalog.setval('public.migrations_id_seq', 97, true);
 
 
 --
@@ -7264,21 +7318,21 @@ SELECT pg_catalog.setval('public.puestos_trabajo_id_seq', 1, false);
 -- Name: recepcion_detalles_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.recepcion_detalles_id_seq', 11, true);
+SELECT pg_catalog.setval('public.recepcion_detalles_id_seq', 14, true);
 
 
 --
 -- Name: recepcion_escaneos_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.recepcion_escaneos_id_seq', 8, true);
+SELECT pg_catalog.setval('public.recepcion_escaneos_id_seq', 11, true);
 
 
 --
 -- Name: recepciones_bodega_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.recepciones_bodega_id_seq', 8, true);
+SELECT pg_catalog.setval('public.recepciones_bodega_id_seq', 11, true);
 
 
 --
@@ -10008,5 +10062,5 @@ ALTER TABLE ONLY public.usuarios
 -- PostgreSQL database dump complete
 --
 
-\unrestrict cTAZ04ENxQpSmYATRKnBNb3h9WzkKuNCSvDhqNr9bT678sTv10Vwh0ojKeQXSHn
+\unrestrict 7Ha1bfDn9kL1el9kU2NnWVU5kijWg11UcpLPwf6DCrJSP7brW9xvMHvZ9EAZpz1
 
