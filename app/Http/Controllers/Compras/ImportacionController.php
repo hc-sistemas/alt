@@ -2,12 +2,15 @@
 namespace App\Http\Controllers\Compras;
 
 use App\Http\Controllers\Controller;
+use App\Models\AnticipoProveedor;
+use App\Models\Compra;
 use App\Models\CompraDetalle;
+use App\Models\CuentaPagar;
 use App\Models\Importacion;
 use App\Models\InventarioSaldo;
 use App\Models\Producto;
 use App\Models\Proveedor;
-use App\Models\Compra;
+use App\Services\AsientoService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -18,6 +21,8 @@ use Inertia\Response;
 
 class ImportacionController extends Controller
 {
+    public function __construct(private AsientoService $asientoService) {}
+
     public function index(): Response
     {
         $empresaId    = session('empresa_activa_id');
@@ -182,6 +187,70 @@ class ImportacionController extends Controller
                 }
             });
         });
+
+        // Auto-cruce de anticipos pendientes contra CxP de esta importación
+        if ($importacion->proveedor_id) {
+            try {
+                $anticiposPendientes = AnticipoProveedor::where('empresa_id', $importacion->empresa_id)
+                    ->where('proveedor_id', $importacion->proveedor_id)
+                    ->where('saldo', '>', 0)
+                    ->where('estado', 'pendiente')
+                    ->orderBy('fecha')
+                    ->orderBy('id')
+                    ->get();
+
+                $cxpPendientes = CuentaPagar::whereHas('compra', function ($q) use ($importacion) {
+                    $q->where('importacion_id', $importacion->id)
+                      ->where('gasto_no_deducible', false);
+                })
+                ->where('saldo', '>', 0)
+                ->whereIn('estado', ['pendiente', 'parcial'])
+                ->get();
+
+                if ($anticiposPendientes->isNotEmpty() && $cxpPendientes->isNotEmpty()) {
+                    DB::transaction(function () use ($anticiposPendientes, $cxpPendientes, $importacion, $request) {
+                        foreach ($anticiposPendientes as $anticipo) {
+                            foreach ($cxpPendientes as $cxp) {
+                                if ((float) $anticipo->saldo <= 0.001 || (float) $cxp->saldo <= 0.001) {
+                                    continue;
+                                }
+
+                                $montoCruce = min((float) $anticipo->saldo, (float) $cxp->saldo);
+
+                                $nuevoSaldoAnticipo = max(0, (float) $anticipo->saldo - $montoCruce);
+                                $anticipo->update([
+                                    'saldo'  => $nuevoSaldoAnticipo,
+                                    'estado' => $nuevoSaldoAnticipo <= 0.001 ? 'cruzado' : 'pendiente',
+                                ]);
+                                $anticipo->refresh();
+
+                                $nuevoSaldoCxP = max(0, (float) $cxp->saldo - $montoCruce);
+                                $cxp->update([
+                                    'saldo'  => $nuevoSaldoCxP,
+                                    'estado' => $nuevoSaldoCxP <= 0.001 ? 'pagada' : 'parcial',
+                                ]);
+                                $cxp->refresh();
+
+                                try {
+                                    $referencia = 'CRZ-ANT-' . str_pad($anticipo->id, 4, '0', STR_PAD_LEFT);
+                                    $this->asientoService->cruciarAnticipo(
+                                        empresaId:  $importacion->empresa_id,
+                                        anticipoId: $anticipo->id,
+                                        referencia: $referencia,
+                                        monto:      $montoCruce,
+                                        fecha:      $request->input('fecha_liquidacion'),
+                                    );
+                                } catch (\Exception) {
+                                    // No bloquear si período contable cerrado
+                                }
+                            }
+                        }
+                    });
+                }
+            } catch (\Exception) {
+                // Auto-cruce no crítico — la liquidación ya fue procesada
+            }
+        }
 
         $costoFob   = (float) $importacion->costo_fob;
         $costoTotal = $costoFob + $totalCostosExtra;

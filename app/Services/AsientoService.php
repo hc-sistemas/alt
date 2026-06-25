@@ -522,4 +522,102 @@ class AsientoService
             documentoRef: $referencia, esAutomatico: true,
         );
     }
+
+    // ══════════════════════════════════════════════════════════
+    // ANTICIPO A PROVEEDOR
+    // DEBE:  1.1.3.3 Anticipos a Proveedores (activo)
+    // HABER: cuenta bancaria del banco usado (activo)
+    // ══════════════════════════════════════════════════════════
+    public function anticipoProveedor(
+        int    $empresaId,
+        int    $anticiPoId,
+        string $referencia,
+        float  $monto,
+        int    $bancoCajaId,
+        string $fecha,
+    ): AsientoContable {
+        // Cuenta 1.1.3.3 — Anticipos a Proveedores (catálogo global)
+        $ctaAnticipo = PlanCuenta::where('codigo', '1.1.3.3')
+            ->whereNull('empresa_id')
+            ->where('permite_asientos', true)
+            ->value('id');
+
+        if (!$ctaAnticipo) {
+            throw new \Exception(
+                'No se encontró la cuenta 1.1.3.3 (Anticipos a Proveedores) en el plan de cuentas.'
+            );
+        }
+
+        // Cuenta del banco: usar cuenta_id asignada al banco, si no → 1.1.1.3
+        $bancoCuenta = \App\Models\BancoCaja::where('id', $bancoCajaId)->value('cuenta_id');
+        if (!$bancoCuenta) {
+            $bancoCuenta = PlanCuenta::where('codigo', '1.1.1.3')
+                ->whereNull('empresa_id')
+                ->where('permite_asientos', true)
+                ->value('id');
+        }
+
+        if (!$bancoCuenta) {
+            throw new \Exception(
+                'No se encontró la cuenta bancaria (1.1.1.3) para el asiento de anticipo.'
+            );
+        }
+
+        return $this->crear(
+            empresaId:    $empresaId,
+            concepto:     "Anticipo a proveedor — {$referencia}",
+            partidas: [
+                ['cuenta_id' => $ctaAnticipo, 'debe' => $monto, 'haber' => 0,
+                 'descripcion' => "Anticipo {$referencia}"],
+                ['cuenta_id' => $bancoCuenta,  'debe' => 0,     'haber' => $monto,
+                 'descripcion' => "Pago anticipo {$referencia}"],
+            ],
+            documentoTipo: 'ANTICIPO',
+            documentoId:   $anticiPoId,
+            documentoRef:  $referencia,
+            esAutomatico:  true,
+            fecha:         $fecha,
+        );
+    }
+
+    // ══════════════════════════════════════════════════════════
+    // CRUCE ANTICIPO CON CxP AL LIQUIDAR IMPORTACIÓN
+    // DEBE:  2.1.xx.xx Proveedores Locales (pasivo — reducir)
+    // HABER: 1.1.3.3   Anticipos a Proveedores (activo — reducir)
+    // ══════════════════════════════════════════════════════════
+    public function cruciarAnticipo(
+        int    $empresaId,
+        int    $anticipoId,
+        string $referencia,
+        float  $monto,
+        string $fecha,
+    ): AsientoContable {
+        $ctaAnticipo = PlanCuenta::where('codigo', '1.1.3.3')
+            ->whereNull('empresa_id')
+            ->where('permite_asientos', true)
+            ->value('id');
+
+        if (!$ctaAnticipo) {
+            throw new \Exception(
+                'No se encontró la cuenta 1.1.3.3 (Anticipos a Proveedores) en el plan de cuentas.'
+            );
+        }
+
+        return $this->crear(
+            empresaId:    $empresaId,
+            concepto:     "Cruce anticipo proveedor — {$referencia}",
+            partidas: [
+                ['cuenta_id' => $this->cuentaId('cta_proveedores_locales', $empresaId),
+                 'debe' => $monto, 'haber' => 0,
+                 'descripcion' => "Cruce CxP {$referencia}"],
+                ['cuenta_id' => $ctaAnticipo, 'debe' => 0, 'haber' => $monto,
+                 'descripcion' => "Anticipo aplicado {$referencia}"],
+            ],
+            documentoTipo: 'CRUCE',
+            documentoId:   $anticipoId,
+            documentoRef:  $referencia,
+            esAutomatico:  true,
+            fecha:         $fecha,
+        );
+    }
 }

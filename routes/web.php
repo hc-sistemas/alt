@@ -173,10 +173,11 @@ Route::middleware('auth')->group(function () {
         });
 
         Route::prefix('compras/anticipos')->name('compras.anticipos.')->group(function () {
-            Route::get('/',                    [AnticipoProveedorController::class, 'index'])->name('index');
-            Route::post('/',                   [AnticipoProveedorController::class, 'store'])->name('store');
-            Route::patch('/{anticipo}/cruzar', [AnticipoProveedorController::class, 'cruzar'])->name('cruzar');
-            Route::patch('/{anticipo}/anular', [AnticipoProveedorController::class, 'anular'])->name('anular');
+            Route::get('/',                      [AnticipoProveedorController::class, 'index'])      ->name('index');
+            Route::post('/',                     [AnticipoProveedorController::class, 'store'])      ->name('store');
+            Route::get('/cxp-pendientes',        [AnticipoProveedorController::class, 'cxpPendientes'])->name('cxp-pendientes');
+            Route::patch('/{anticipo}/cruzar',   [AnticipoProveedorController::class, 'cruzar'])    ->name('cruzar');
+            Route::patch('/{anticipo}/anular',   [AnticipoProveedorController::class, 'anular'])    ->name('anular');
         });
 
         Route::prefix('compras/importaciones')->name('compras.importaciones.')->group(function () {
@@ -261,10 +262,11 @@ Route::middleware('auth')->group(function () {
 
     // Compras - Anticipos Proveedores
     Route::prefix('compras/anticipos')->name('compras.anticipos.')->group(function () {
-        Route::get('/',                    [AnticipoProveedorController::class, 'index'])->name('index');
-        Route::post('/',                   [AnticipoProveedorController::class, 'store'])->name('store');
-        Route::patch('/{anticipo}/cruzar', [AnticipoProveedorController::class, 'cruzar'])->name('cruzar');
-        Route::patch('/{anticipo}/anular', [AnticipoProveedorController::class, 'anular'])->name('anular');
+        Route::get('/',                      [AnticipoProveedorController::class, 'index'])        ->name('index');
+        Route::post('/',                     [AnticipoProveedorController::class, 'store'])        ->name('store');
+        Route::get('/cxp-pendientes',        [AnticipoProveedorController::class, 'cxpPendientes'])->name('cxp-pendientes');
+        Route::patch('/{anticipo}/cruzar',   [AnticipoProveedorController::class, 'cruzar'])      ->name('cruzar');
+        Route::patch('/{anticipo}/anular',   [AnticipoProveedorController::class, 'anular'])      ->name('anular');
     });
 
     // Compras - Importaciones
