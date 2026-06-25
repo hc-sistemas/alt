@@ -244,36 +244,6 @@ class CompraController extends Controller
                     ));
                 }
 
-                // Crear recepción pendiente automáticamente si hay productos y bodega seleccionada
-                $detallesProducto = collect($request->detalles)->filter(
-                    fn($d) => !empty($d['producto_id'])
-                );
-                $yaExisteRecepcion = \App\Models\RecepcionBodega::where('compra_id', $compra->id)->exists();
-                if (!$yaExisteRecepcion && $detallesProducto->isNotEmpty() && !empty($request->bodega_id)) {
-                    $recepcion = \App\Models\RecepcionBodega::create([
-                        'empresa_id' => $empresaId,
-                        'compra_id'  => $compra->id,
-                        'bodega_id'  => $request->bodega_id,
-                        'estado'     => 'pendiente',
-                    ]);
-
-                    foreach ($detallesProducto as $d) {
-                        $detalle = CompraDetalle::where('compra_id', $compra->id)
-                            ->where('producto_id', $d['producto_id'])
-                            ->first();
-
-                        if ($detalle) {
-                            \App\Models\RecepcionDetalle::create([
-                                'recepcion_id'      => $recepcion->id,
-                                'compra_detalle_id' => $detalle->id,
-                                'producto_id'       => $d['producto_id'],
-                                'cantidad_esperada' => $d['cantidad'],
-                                'cantidad_recibida' => 0,
-                                'estado'            => 'pendiente',
-                            ]);
-                        }
-                    }
-                }
             });
 
             return back()->with('success',
