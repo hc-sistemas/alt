@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\BancoCaja;
 use App\Models\CentroCosto;
 use App\Models\CierreCaja;
+use App\Models\Factura;
+use App\Services\AsientoService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -14,6 +16,8 @@ use Inertia\Response;
 
 class CierreCajaController extends Controller
 {
+    public function __construct(private AsientoService $asientoService) {}
+
     public function index(): Response
     {
         $empresaId = session('empresa_activa_id');
@@ -30,6 +34,7 @@ class CierreCajaController extends Controller
                 'centro_costo'     => $c->centroCosto?->nombre,
                 'fecha'            => $c->fecha?->format('d/m/Y'),
                 'monto_inicial'    => $c->monto_inicial,
+                'total_facturado'  => $c->total_facturado,
                 'total_cobrado'    => $c->total_cobrado,
                 'total_efectivo'   => $c->total_efectivo,
                 'total_tarjeta'    => $c->total_tarjeta,
@@ -94,6 +99,8 @@ class CierreCajaController extends Controller
 
     public function cerrar(Request $request, CierreCaja $cierre): RedirectResponse
     {
+        $empresaId = session('empresa_activa_id');
+
         if ($cierre->estaCerrada()) {
             return back()->with('error', 'Esta caja ya está cerrada.');
         }
@@ -106,15 +113,25 @@ class CierreCajaController extends Controller
             'observaciones'       => 'nullable|string|max:500',
         ]);
 
+        // Total real facturado del día en este centro de costo
+        $totalFacturado = Factura::where('empresa_id', $empresaId)
+            ->whereDate('fecha_emision', $cierre->fecha)
+            ->whereNotIn('estado_sri', ['anulada'])
+            ->when($cierre->centro_costo_id, fn($q) =>
+                $q->where('centro_costo_id', $cierre->centro_costo_id)
+            )
+            ->sum('total');
+
         $totalCobrado = $request->total_efectivo
             + ($request->total_tarjeta       ?? 0)
             + ($request->total_cheque        ?? 0)
             + ($request->total_transferencia ?? 0);
 
-        $diferencia = $totalCobrado - $cierre->total_facturado;
+        $diferencia = $totalCobrado - (float) $totalFacturado;
 
         $cierre->update([
             'usuario_cierre_id'   => Auth::id(),
+            'total_facturado'     => $totalFacturado,
             'total_cobrado'       => $totalCobrado,
             'total_efectivo'      => $request->total_efectivo,
             'total_tarjeta'       => $request->total_tarjeta ?? 0,
@@ -126,9 +143,26 @@ class CierreCajaController extends Controller
             'hora_cierre'         => now(),
         ]);
 
-        $msg = 'Caja cerrada correctamente.';
+        // Asiento contable del cierre (no bloqueante)
+        if ($totalCobrado > 0) {
+            try {
+                $this->asientoService->cierreCaja(
+                    empresaId:    $empresaId,
+                    cierreId:     $cierre->id,
+                    totalCobrado: $totalCobrado,
+                    bancoCajaId:  $cierre->banco_caja_id,
+                    fecha:        is_string($cierre->fecha) ? $cierre->fecha : $cierre->fecha->toDateString(),
+                );
+            } catch (\Throwable) {
+                // Período cerrado o parámetro no configurado — no bloquear el cierre
+            }
+        }
+
+        $msg = 'Caja cerrada. Facturado: $' . number_format((float) $totalFacturado, 2)
+            . ' · Cobrado: $' . number_format($totalCobrado, 2);
+
         if (abs($diferencia) > 0.01) {
-            $msg .= ' Diferencia detectada: $' . number_format(abs($diferencia), 2);
+            $msg .= ' · Diferencia: $' . number_format(abs($diferencia), 2);
         }
 
         return back()->with(

@@ -126,23 +126,29 @@ class ChequesController extends Controller
                 "Este cheque ya fue {$cheque->estado}. No se puede modificar.");
         }
 
-        $cheque->update([
-            'estado'      => $request->estado,
-            'fecha_cobro' => $request->fecha_cobro ?? now()->toDateString(),
-            'observacion' => $request->observacion,
-        ]);
-
-        if ($request->estado === 'protestado') {
-            DB::table('log_cambios_criticos')->insert([
-                'usuario_id'     => Auth::id(),
-                'tabla'          => 'cheques',
-                'registro_id'    => $cheque->id,
-                'campo'          => 'estado',
-                'valor_anterior' => 'emitido',
-                'valor_nuevo'    => 'protestado — ' . ($request->observacion ?? 'Cheque protestado'),
-                'ip_address'     => $request->ip(),
+        DB::transaction(function () use ($request, $cheque) {
+            $cheque->update([
+                'estado'      => $request->estado,
+                'fecha_cobro' => $request->fecha_cobro ?? now()->toDateString(),
+                'observacion' => $request->observacion,
             ]);
-        }
+
+            if ($request->estado === 'protestado') {
+                // Revertir el saldo: el cheque vuelve al banco
+                BancoCaja::find($cheque->banco_caja_id)
+                    ?->actualizarSaldo((float) $cheque->monto, 'ingreso');
+
+                DB::table('log_cambios_criticos')->insert([
+                    'usuario_id'     => Auth::id(),
+                    'tabla'          => 'cheques',
+                    'registro_id'    => $cheque->id,
+                    'campo'          => 'estado',
+                    'valor_anterior' => 'emitido',
+                    'valor_nuevo'    => 'protestado — ' . ($request->observacion ?? 'Cheque protestado'),
+                    'ip_address'     => $request->ip(),
+                ]);
+            }
+        });
 
         $mensajes = [
             'cobrado'    => "Cheque N° {$cheque->numero} marcado como cobrado.",

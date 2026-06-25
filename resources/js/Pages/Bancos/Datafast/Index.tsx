@@ -5,7 +5,7 @@ import AppLayout from '@/Layouts/AppLayout'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
-import { Plus, X, CreditCard, CheckCircle, Clock, DollarSign } from 'lucide-react'
+import { Plus, X, CreditCard, CheckCircle } from 'lucide-react'
 import type { BancoCaja, DatafastLote, PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
 
@@ -23,7 +23,6 @@ interface LoteRow {
 interface Props extends PageProps {
     lotes: LoteRow[]
     bancos: Pick<BancoCaja, 'id' | 'nombre' | 'tipo'>[]
-    stats: { pendientes: number; liquidados: number; total_vouchers: number }
 }
 
 // ─── Notify ───────────────────────────────────────────────────────────────────
@@ -36,21 +35,6 @@ const notify = {
 }
 
 const fmt = (n: number) => '$' + Number(n).toLocaleString('es-EC', { minimumFractionDigits: 2 })
-
-// ─── StatCard ─────────────────────────────────────────────────────────────────
-
-function StatCard({ label, value, icon: Icon, cls, valueCls }: {
-    label: string; value: string | number; icon: React.ElementType; cls: string; valueCls: string
-}) {
-    return (
-        <div className="rounded-xl border p-4 flex items-center gap-3 hover:shadow-md transition-shadow"
-            style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
-            <div className={cn('rounded-lg p-2.5 shrink-0', cls)}><Icon className="w-5 h-5" /></div>
-            <div><p className={cn('text-2xl font-bold leading-none mb-1', valueCls)}>{value}</p>
-                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{label}</p></div>
-        </div>
-    )
-}
 
 // ─── Modal Nuevo Lote ─────────────────────────────────────────────────────────
 
@@ -224,7 +208,7 @@ function LiquidarModal({ lote, bancos, onClose }: { lote: LoteRow; bancos: Props
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function DatafastIndex() {
-    const { lotes, bancos, stats, flash } = usePage<Props>().props
+    const { lotes, bancos, flash } = usePage<Props>().props
     const [showLote, setShowLote] = useState(false)
     const [liquidarLote, setLiquidarLote] = useState<LoteRow | null>(null)
 
@@ -257,18 +241,6 @@ export default function DatafastIndex() {
                 </div>
             </div>
 
-            {/* Stats */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 px-6 py-4">
-                <StatCard label="Pendientes" value={stats.pendientes} icon={Clock}
-                    cls="bg-orange-500/15 text-orange-600 dark:text-orange-400"
-                    valueCls="text-orange-600 dark:text-orange-400" />
-                <StatCard label="Liquidados" value={stats.liquidados} icon={CheckCircle}
-                    cls="bg-green-500/15 text-green-600 dark:text-green-400"
-                    valueCls="text-green-600 dark:text-green-400" />
-                <StatCard label="Total Vouchers" value={fmt(stats.total_vouchers)} icon={DollarSign}
-                    cls="bg-blue-500/15 text-blue-600 dark:text-blue-400"
-                    valueCls="text-blue-600 dark:text-blue-400" />
-            </div>
 
             {/* Tabla */}
             <div className="px-6 pb-8">

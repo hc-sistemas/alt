@@ -44,12 +44,6 @@ class BancoCajaController extends Controller
         return Inertia::render('Bancos/BancosCajas/Index', [
             'bancos'  => $bancos,
             'cuentas' => $cuentas,
-            'stats'   => [
-                'total_bancos' => $bancos->where('tipo', 'banco')->count(),
-                'total_cajas'  => $bancos->whereIn('tipo', ['caja', 'caja_chica'])->count(),
-                'saldo_bancos' => $bancos->where('tipo', 'banco')->sum('saldo_actual'),
-                'saldo_cajas'  => $bancos->whereIn('tipo', ['caja', 'caja_chica'])->sum('saldo_actual'),
-            ],
         ]);
     }
 

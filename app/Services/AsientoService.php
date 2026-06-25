@@ -620,4 +620,86 @@ class AsientoService
             fecha:         $fecha,
         );
     }
+
+    // ══════════════════════════════════════════════════════════
+    // CIERRE DE CAJA
+    // DEBE:  Cuenta Bancaria destino (donde va el efectivo)
+    // HABER: Cuenta de la caja chica (de donde sale)
+    // ══════════════════════════════════════════════════════════
+    public function cierreCaja(
+        int    $empresaId,
+        int    $cierreId,
+        float  $totalCobrado,
+        int    $bancoCajaId,
+        string $fecha,
+    ): AsientoContable {
+        $ctaCaja = \App\Models\BancoCaja::where('id', $bancoCajaId)->value('cuenta_id');
+        if (!$ctaCaja) {
+            throw new \Exception('La caja no tiene cuenta contable asignada.');
+        }
+
+        $ctaDestino = $this->cuentaId('cta_bancos_locales', $empresaId);
+
+        return $this->crear(
+            empresaId:    $empresaId,
+            concepto:     "Cierre de caja #{$cierreId}",
+            partidas: [
+                ['cuenta_id' => $ctaDestino, 'debe' => $totalCobrado, 'haber' => 0,
+                 'descripcion' => "Depósito cierre caja #{$cierreId}"],
+                ['cuenta_id' => $ctaCaja,    'debe' => 0, 'haber' => $totalCobrado,
+                 'descripcion' => "Cierre caja #{$cierreId}"],
+            ],
+            documentoTipo: 'BANCO',
+            documentoId:   $cierreId,
+            documentoRef:  "CAJA-{$cierreId}",
+            esAutomatico:  true,
+            fecha:         $fecha,
+        );
+    }
+
+    // ══════════════════════════════════════════════════════════
+    // AJUSTE DE CONCILIACIÓN BANCARIA
+    // diferencia > 0: banco tiene más → DEBE banco / HABER ajuste
+    // diferencia < 0: sistema tiene más → DEBE ajuste / HABER banco
+    // ══════════════════════════════════════════════════════════
+    public function ajusteConciliacion(
+        int    $empresaId,
+        int    $conciliacionId,
+        float  $diferencia,
+        int    $bancoCajaId,
+        string $fecha,
+    ): AsientoContable {
+        $ctaBanco = \App\Models\BancoCaja::where('id', $bancoCajaId)->value('cuenta_id');
+        if (!$ctaBanco) {
+            throw new \Exception('El banco no tiene cuenta contable asignada.');
+        }
+
+        $ctaAjuste = $this->cuentaId('cta_gastos_bancarios', $empresaId);
+        $abs       = round(abs($diferencia), 4);
+
+        $partidas = $diferencia > 0
+            ? [
+                ['cuenta_id' => $ctaBanco,  'debe' => $abs, 'haber' => 0,
+                 'descripcion' => "Ajuste conciliación #{$conciliacionId}"],
+                ['cuenta_id' => $ctaAjuste, 'debe' => 0,    'haber' => $abs,
+                 'descripcion' => "Diferencia conciliación #{$conciliacionId}"],
+              ]
+            : [
+                ['cuenta_id' => $ctaAjuste, 'debe' => $abs, 'haber' => 0,
+                 'descripcion' => "Diferencia conciliación #{$conciliacionId}"],
+                ['cuenta_id' => $ctaBanco,  'debe' => 0,    'haber' => $abs,
+                 'descripcion' => "Ajuste conciliación #{$conciliacionId}"],
+              ];
+
+        return $this->crear(
+            empresaId:    $empresaId,
+            concepto:     "Ajuste conciliación bancaria #{$conciliacionId}",
+            partidas:     $partidas,
+            documentoTipo:'BANCO',
+            documentoId:  $conciliacionId,
+            documentoRef: "CONC-{$conciliacionId}",
+            esAutomatico: true,
+            fecha:        $fecha,
+        );
+    }
 }

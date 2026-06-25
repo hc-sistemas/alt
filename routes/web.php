@@ -330,10 +330,13 @@ Route::middleware('auth')->group(function () {
         });
 
         Route::prefix('bancos/conciliaciones')->name('bancos.conciliaciones.')->group(function () {
-            Route::get('/',                             [ConciliacionController::class, 'index'])           ->name('index');
-            Route::post('/',                            [ConciliacionController::class, 'store'])           ->name('store');
-            Route::get('/{conciliacion}',               [ConciliacionController::class, 'show'])            ->name('show');
-            Route::patch('/{conciliacion}/conciliar',   [ConciliacionController::class, 'marcarConciliada'])->name('conciliar');
+            Route::get('/',                                         [ConciliacionController::class, 'index'])              ->name('index');
+            Route::post('/',                                        [ConciliacionController::class, 'store'])              ->name('store');
+            Route::get('/{conciliacion}',                           [ConciliacionController::class, 'show'])               ->name('show');
+            Route::patch('/{conciliacion}/conciliar',               [ConciliacionController::class, 'marcarConciliada'])   ->name('conciliar');
+            Route::post('/{conciliacion}/upload-csv',               [ConciliacionController::class, 'uploadCsv'])          ->name('upload-csv');
+            Route::post('/{conciliacion}/conciliar-partida',        [ConciliacionController::class, 'conciliarPartida'])   ->name('conciliar-partida');
+            Route::post('/{conciliacion}/generar-asiento-ajuste',   [ConciliacionController::class, 'generarAsientoAjuste'])->name('generar-asiento-ajuste');
         });
 
         Route::prefix('bancos/cheques')->name('bancos.cheques.')->group(function () {
