@@ -8,7 +8,7 @@ import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
 import {
     Plus, X, ArrowUpCircle, ArrowDownCircle, Search,
-    Ban, Download,
+    Ban, DollarSign, Download,
 } from 'lucide-react'
 import type { MovimientoBancario, BancoCaja, PlanCuenta, PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
