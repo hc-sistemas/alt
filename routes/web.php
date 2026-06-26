@@ -272,9 +272,10 @@ Route::middleware('auth')->group(function () {
 
     // Bancos - Movimientos
     Route::prefix('bancos/movimientos')->name('bancos.movimientos.')->group(function () {
-        Route::get('/',                      [MovimientoBancarioController::class, 'index'])      ->name('index');
-        Route::post('/',                     [MovimientoBancarioController::class, 'store'])      ->name('store');
-        Route::patch('/{movimiento}/anular', [MovimientoBancarioController::class, 'anular'])     ->name('anular');
+        Route::get('/',                      [MovimientoBancarioController::class, 'index'])       ->name('index');
+        Route::post('/',                     [MovimientoBancarioController::class, 'store'])       ->name('store');
+        Route::patch('/{movimiento}/anular', [MovimientoBancarioController::class, 'anular'])      ->name('anular');
+        Route::get('/export-excel',          [MovimientoBancarioController::class, 'exportExcel']) ->name('export-excel');
         Route::get('/exportar-xml',          [MovimientoBancarioController::class, 'exportarXml'])->name('exportar-xml');
     });
 

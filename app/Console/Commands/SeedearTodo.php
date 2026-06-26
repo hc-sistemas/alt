@@ -19,6 +19,7 @@ class SeedearTodo extends Command
             'altamira:seedear-compras',
             'altamira:seedear-bancos',
             'altamira:seedear-bancos-extra',
+            'altamira:seedear-cheques',
         ];
 
         foreach ($comandos as $cmd) {

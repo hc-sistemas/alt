@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Bancos;
 
+use App\Exports\MovimientosExport;
 use App\Http\Controllers\Controller;
 use App\Models\BancoCaja;
 use App\Models\MovimientoBancario;
@@ -13,6 +14,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
+use Maatwebsite\Excel\Facades\Excel;
 
 class MovimientoBancarioController extends Controller
 {
@@ -157,6 +159,22 @@ class MovimientoBancarioController extends Controller
         } catch (\Exception $e) {
             return back()->with('error', $e->getMessage());
         }
+    }
+
+    public function exportExcel(Request $request): \Symfony\Component\HttpFoundation\BinaryFileResponse
+    {
+        $empresaId = session('empresa_activa_id');
+
+        $filtros = $request->only([
+            'banco_caja_id', 'tipo', 'fecha_desde', 'fecha_hasta', 'buscar',
+        ]);
+
+        $fecha = now()->format('Y-m-d');
+
+        return Excel::download(
+            new MovimientosExport($empresaId, $filtros),
+            "movimientos-bancarios-{$fecha}.xlsx"
+        );
     }
 
     public function exportarXml(Request $request): \Illuminate\Http\Response

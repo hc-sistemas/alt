@@ -5,10 +5,10 @@ import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
-import { cn } from '@/lib/utils'
+import { cn, formatFecha } from '@/lib/utils'
 import {
     Plus, X, ArrowUpCircle, ArrowDownCircle, Search,
-    Ban, DollarSign, Clock, Download,
+    Ban, DollarSign, FileSpreadsheet, FileCode,
 } from 'lucide-react'
 import type { MovimientoBancario, BancoCaja, PlanCuenta, PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
@@ -425,9 +425,16 @@ export default function MovimientosIndex() {
                     </div>
 
                     <div className="flex items-center gap-2">
+                        <a href={route('bancos.movimientos.export-excel') + '?' + new URLSearchParams(
+                                Object.fromEntries(Object.entries(filtro).filter(([,v]) => v)) as Record<string, string>
+                            ).toString()}
+                           className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-sm font-medium text-white whitespace-nowrap transition-opacity hover:opacity-90"
+                           style={{ background: '#16a34a' }}>
+                            <FileSpreadsheet size={15} /> Excel
+                        </a>
                         <a href={route('bancos.movimientos.exportar-xml')}
-                           className="btn-excel flex items-center gap-2 whitespace-nowrap">
-                            <Download size={15} /> XML
+                           className="btn-secondary flex items-center gap-2 whitespace-nowrap">
+                            <FileCode size={15} /> XML
                         </a>
                     </div>
                 </div>
@@ -480,7 +487,7 @@ export default function MovimientosIndex() {
                             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
 
                             <div className="col-span-1">
-                                <p className="text-xs font-mono" style={{ color: 'var(--text-main)' }}>{m.fecha}</p>
+                                <p className="text-xs font-mono" style={{ color: 'var(--text-main)' }}>{formatFecha(m.fecha)}</p>
                             </div>
                             <div className="col-span-2 min-w-0">
                                 <p className="text-xs truncate font-medium" style={{ color: 'var(--text-main)' }}>
