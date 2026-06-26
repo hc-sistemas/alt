@@ -110,7 +110,7 @@ export default function Show() {
                         <InfoRow label="Tipo documento" value={cuenta.documento_tipo} />
                         <InfoRow label="N° Documento" value={<span className="font-mono">{cuenta.documento_numero}</span>} />
                         <InfoRow label="Fecha emisión" value={formatFecha(cuenta.fecha_emision)} />
-                        <InfoRow label="Fecha vencimiento" value={formatFecha(cuenta.fecha_vencimiento)} />
+                        <InfoRow label="Fecha vencimiento" value={cuenta.fecha_vencimiento ? formatFecha(cuenta.fecha_vencimiento) : '—'} />
                         {cuenta.dias_vencido > 0 && (
                             <InfoRow
                                 label="Días vencido"

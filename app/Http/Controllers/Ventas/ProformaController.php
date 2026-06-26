@@ -66,7 +66,7 @@ class ProformaController extends Controller
 
         $clientes = Cliente::where('empresa_id', $empresaId)
             ->select('id', 'identificacion', 'razon_social', 'tiene_credito', 'dias_credito',
-                     'cupo_maximo', 'tipo_identificacion', 'email', 'telefono', 'direccion')
+        'cupo_maximo', 'tipo_identificacion', 'email', 'telefono', 'direccion', 'ciudad')
             ->orderBy('razon_social')
             ->get();
 
@@ -182,16 +182,14 @@ class ProformaController extends Controller
                 $iva       = $grabaIva ? $neto * 0.15 : 0;
 
                 ProformaDetalle::create([
-                    'proforma_id'   => $proforma->id,
-                    'producto_id'   => $det['producto_id'],
-                    'descripcion'   => $det['descripcion'] ?? null,
-                    'cantidad'      => $cantidad,
-                    'precio'        => $precio,
-                    'descuento_pct' => $descPct,
-                    'descuento'     => $descuento,
-                    'subtotal'      => $neto,
-                    'iva'           => $iva,
-                    'total'         => $neto + $iva,
+                    'proforma_id'    => $proforma->id,
+                    'producto_id'    => $det['producto_id'],
+                    'descripcion'    => $det['descripcion'] ?? null,
+                    'cantidad'       => $cantidad,
+                    'precio_unitario'=> $precio,
+                    'descuento_pct'  => $descPct,
+                    'subtotal'       => $neto,
+                    'total'          => $neto + $iva,
                 ]);
             }
 
@@ -277,18 +275,21 @@ class ProformaController extends Controller
             ]);
 
             foreach ($proforma->detalles as $det) {
+                $descuentoValor = $det->precio_unitario * $det->cantidad * ($det->descuento_pct / 100);
+                $valorIva = $det->subtotal * ($det->porcentaje_iva / 100);
+
                 FacturaDetalle::create([
-                    'factura_id'    => $factura->id,
-                    'producto_id'   => $det->producto_id,
-                    'descripcion'   => $det->descripcion,
-                    'cantidad'      => $det->cantidad,
-                    'precio'        => $det->precio,
-                    'descuento_pct' => $det->descuento_pct,
-                    'descuento'     => $det->descuento,
-                    'subtotal'      => $det->subtotal,
-                    'iva_pct'       => 15,
-                    'iva'           => $det->iva,
-                    'total'         => $det->total,
+                    'factura_id'      => $factura->id,
+                    'producto_id'     => $det->producto_id,
+                    'descripcion'     => $det->descripcion,
+                    'cantidad'        => $det->cantidad,
+                    'precio_unitario' => $det->precio_unitario,
+                    'descuento_pct'   => $det->descuento_pct,
+                    'descuento_valor' => $descuentoValor,
+                    'subtotal'        => $det->subtotal,
+                    'porcentaje_iva'  => $det->porcentaje_iva,
+                    'valor_iva'       => $valorIva,
+                    'total'           => $det->total,
                 ]);
             }
 
@@ -296,7 +297,7 @@ class ProformaController extends Controller
                 FacturaPago::create([
                     'factura_id' => $factura->id,
                     'forma_pago' => $pago['forma'],
-                    'monto'      => $pago['monto'],
+                    'valor'      => $pago['monto'],
                 ]);
             }
 

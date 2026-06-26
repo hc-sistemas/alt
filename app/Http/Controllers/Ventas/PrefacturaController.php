@@ -173,17 +173,12 @@ class PrefacturaController extends Controller
                     $iva       = $grabaIva ? $neto * 0.15 : 0;
 
                     $detalle = PrefacturaDetalle::create([
-                        'prefactura_id' => $prefactura->id,
-                        'producto_id'   => $det['producto_id'],
-                        'bodega_id'     => $det['bodega_id'],
-                        'descripcion'   => $det['descripcion'] ?? null,
-                        'cantidad'      => $cantidad,
-                        'precio'        => $precio,
-                        'descuento_pct' => $descPct,
-                        'descuento'     => $descuento,
-                        'subtotal'      => $neto,
-                        'iva'           => $iva,
-                        'total'         => $neto + $iva,
+                        'prefactura_id'  => $prefactura->id,
+                        'producto_id'    => $det['producto_id'],
+                        'descripcion'    => $det['descripcion'] ?? null,
+                        'cantidad'       => $cantidad,
+                        'precio_unitario'=> $precio,
+                        'total'          => $neto + $iva,
                     ]);
 
                     $this->inventario->reservarStock($det['producto_id'], $det['bodega_id'], $cantidad, 'prefactura_detalle', $detalle->id);
@@ -191,7 +186,7 @@ class PrefacturaController extends Controller
 
                 return $prefactura;
             });
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             return back()->withErrors(['error' => $e->getMessage()])->withInput();
         }
 
@@ -329,17 +324,17 @@ class PrefacturaController extends Controller
 
                 foreach ($prefactura->detalles as $det) {
                     FacturaDetalle::create([
-                        'factura_id'    => $factura->id,
-                        'producto_id'   => $det->producto_id,
-                        'descripcion'   => $det->descripcion,
-                        'cantidad'      => $det->cantidad,
-                        'precio'        => $det->precio,
-                        'descuento_pct' => $det->descuento_pct,
-                        'descuento'     => $det->descuento,
-                        'subtotal'      => $det->subtotal,
-                        'iva_pct'       => 15,
-                        'iva'           => $det->iva,
-                        'total'         => $det->total,
+                        'factura_id'      => $factura->id,
+                        'producto_id'     => $det->producto_id,
+                        'descripcion'     => $det->descripcion,
+                        'cantidad'        => $det->cantidad,
+                        'precio_unitario' => $det->precio,
+                        'descuento_pct'   => $det->descuento_pct,
+                        'descuento_valor' => $det->descuento,
+                        'subtotal'        => $det->subtotal,
+                        'porcentaje_iva'  => 15,
+                        'valor_iva'       => $det->iva,
+                        'total'           => $det->total,
                     ]);
 
                     $this->inventario->confirmarSalida($det->producto_id, $det->bodega_id, 'prefactura_detalle', $det->id);
@@ -350,7 +345,7 @@ class PrefacturaController extends Controller
                         FacturaPago::create([
                             'factura_id' => $factura->id,
                             'forma_pago' => $pago['forma'],
-                            'monto'      => $pago['monto'],
+                            'valor'      => $pago['monto'],
                         ]);
                     }
                 }
@@ -362,7 +357,7 @@ class PrefacturaController extends Controller
 
                 return $factura;
             });
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             return back()->withErrors(['error' => $e->getMessage()])->withInput();
         }
 

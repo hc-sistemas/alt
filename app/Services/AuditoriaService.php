@@ -32,11 +32,11 @@ class AuditoriaService
     {
         DB::table('log_sesiones')->insert([
             'usuario_id' => Auth::id(),
-            'username'   => $email ?? Auth::user()?->username ?? Auth::user()?->email ?? 'sistema',
+            'email'      => $email ?? Auth::user()?->email ?? 'sistema',
             'tipo'       => $tipo,
             'ip_address' => Request::ip(),
-            'user_agent' => Request::userAgent(),
-            'fecha'      => now(),
+            'empresa_id' => $empresaId ?? session('empresa_activa_id'),
+            'created_at' => now(),
         ]);
     }
 }

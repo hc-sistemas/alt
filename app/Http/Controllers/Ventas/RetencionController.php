@@ -91,25 +91,24 @@ class RetencionController extends Controller
             $numero = $this->secuencial->siguiente($empresaId, 'RET');
 
             $retencion = Retencion::create([
-                'empresa_id'   => $empresaId,
-                'factura_id'   => $factura->id,
-                'cliente_id'   => $factura->cliente_id,
-                'usuario_id'   => Auth::id(),
-                'numero'       => $numero,
-                'fecha_emision'=> now()->toDateString(),
-                'total'        => $total,
-                'estado_sri'   => 'pendiente',
-                'estado'       => 'activa',
+                'empresa_id'      => $empresaId,
+                'factura_id'      => $factura->id,
+                'cliente_id'      => $factura->cliente_id,
+                'usuario_id'      => Auth::id(),
+                'numero_completo' => $numero,
+                'fecha_emision'   => now()->toDateString(),
+                'total'           => $total,
+                'estado_sri'      => 'pendiente',
+                'estado'          => 'activa',
             ]);
 
             foreach ($request->detalles as $det) {
                 RetencionDetalle::create([
-                    'retencion_id' => $retencion->id,
-                    'codigo'       => $det['codigo'],
-                    'descripcion'  => $det['descripcion'],
-                    'base'         => $det['base'],
-                    'porcentaje'   => $det['porcentaje'],
-                    'valor'        => $det['base'] * $det['porcentaje'] / 100,
+                    'retencion_id'   => $retencion->id,
+                    'codigo'         => $det['codigo'],
+                    'base_imponible' => $det['base'],
+                    'porcentaje'     => $det['porcentaje'],
+                    'valor_retenido' => $det['base'] * $det['porcentaje'] / 100,
                 ]);
             }
 
