@@ -8,7 +8,7 @@ import { Label } from '@/Components/ui/label'
 import { cn, formatFecha } from '@/lib/utils'
 import {
     Plus, X, ArrowUpCircle, ArrowDownCircle, Search,
-    Ban, DollarSign, Clock, FileSpreadsheet, FileCode,
+    Ban, DollarSign, Clock, FileSpreadsheet,
 } from 'lucide-react'
 import type { MovimientoBancario, BancoCaja, PlanCuenta, PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
@@ -432,10 +432,7 @@ export default function MovimientosIndex() {
                            style={{ background: '#16a34a' }}>
                             <FileSpreadsheet size={15} /> Excel
                         </a>
-                        <a href={route('bancos.movimientos.exportar-xml')}
-                           className="btn-secondary flex items-center gap-2 whitespace-nowrap">
-                            <FileCode size={15} /> XML
-                        </a>
+
                     </div>
                 </div>
             </div>
