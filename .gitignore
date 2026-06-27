@@ -36,3 +36,5 @@ database/altamira_schema.sql
 
 # Backups locales de BD
 database/backup_*.sql
+
+!storage/app/public/manuales/
