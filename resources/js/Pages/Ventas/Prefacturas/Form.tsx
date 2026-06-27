@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import { Head, usePage, router, Link } from '@inertiajs/react'
 import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
@@ -6,6 +7,7 @@ import PageHeader from '@/Components/shared/PageHeader'
 import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
+import BuscadorClienteModal from '@/Components/shared/BuscadorClienteModal'
 import { cn, formatMoneda } from '@/lib/utils'
 import { Plus, Trash2, Search, Save, X, AlertTriangle } from 'lucide-react'
 import type { PageProps, Empresa, Usuario, Cliente } from '@/types'
@@ -15,7 +17,21 @@ interface ProductoVenta {
     codigo: string
     nombre: string
     pvp: number
+    pvd: number
+    costo: number
+    descuento_max: number
     porcentaje_iva: number
+}
+
+interface Bodega {
+    id: number
+    nombre: string
+}
+
+interface Saldo {
+    producto_id: number
+    bodega_id: number
+    disponible: number
 }
 
 interface DetalleLinea {
@@ -24,18 +40,26 @@ interface DetalleLinea {
     descripcion: string
     cantidad: number
     precio_unitario: number
+    descuento_pct: number
     subtotal: number
     porcentaje_iva: number
     valor_iva: number
     total: number
+    bodega_id: number | null
+    _busqueda: string
+    _error: string
+    _desc_error: string
 }
 
 interface Props extends PageProps {
     clientes: Cliente[]
     productos: ProductoVenta[]
     vendedores: Pick<Usuario, 'id' | 'nombre' | 'email'>[]
+    bodegas: Bodega[]
+    saldos: Saldo[]
     empresa_activa: Empresa
     siguiente_numero: string
+    limites_descuento: { descuento_maximo_pct: number; puede_aprobar: boolean } | null
 }
 
 function calcularLinea(linea: DetalleLinea): DetalleLinea {
@@ -47,8 +71,10 @@ function calcularLinea(linea: DetalleLinea): DetalleLinea {
 function lineaVacia(): DetalleLinea {
     return {
         producto_id: null, codigo: '', descripcion: '',
-        cantidad: 1, precio_unitario: 0,
+        cantidad: 1, precio_unitario: 0, descuento_pct: 0,
         subtotal: 0, porcentaje_iva: 15, valor_iva: 0, total: 0,
+        bodega_id: null,
+        _busqueda: '', _error: '', _desc_error: '',
     }
 }
 
@@ -58,23 +84,65 @@ function getCsrf(): string {
 
 const hoy = new Date().toISOString().slice(0, 10)
 
+function ClienteField({ label, value, onChange, type = 'text', onKeyDown }: {
+    label: string
+    value: string
+    onChange: (v: string) => void
+    type?: 'text' | 'email'
+    onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void
+}) {
+    return (
+        <tr style={{ borderBottom: '1px solid var(--border)' }}>
+            <td
+                className="py-1 px-2 text-xs font-semibold w-28 select-none whitespace-nowrap"
+                style={{ color: 'var(--text-muted)' }}
+            >
+                {label}:
+            </td>
+            <td className="py-0.5 px-1">
+                <Input
+                    type={type}
+                    value={value}
+                    onChange={e => onChange(e.target.value)}
+                    onKeyDown={onKeyDown}
+                    placeholder=""
+                />
+            </td>
+        </tr>
+    )
+}
+
 export default function Form() {
-    const { clientes, productos, vendedores, siguiente_numero } = usePage<Props>().props
+    const { clientes, productos, vendedores, bodegas, saldos, siguiente_numero, errors } = usePage<Props>().props
+
+    const getDisponible = (productoId: number | null, bodegaId: number | null): number | null => {
+        if (!productoId || !bodegaId) return null
+        const saldo = saldos.find(s => s.producto_id === productoId && s.bodega_id === bodegaId)
+        return saldo?.disponible ?? 0
+    }
 
     // — Cliente
-    const [busquedaCliente, setBusquedaCliente] = useState('')
     const [clienteSeleccionado, setClienteSeleccionado] = useState<Cliente | null>(null)
-    const [clienteEditado, setClienteEditado] = useState<Partial<Cliente>>({})
-    const [mostrarDropdown, setMostrarDropdown] = useState(false)
-    const [esNuevoCliente, setEsNuevoCliente] = useState(false)
+    const [clienteEditado, setClienteEditado] = useState<Partial<Cliente>>({
+        tipo_identificacion: '04',
+        identificacion: '',
+        razon_social: '',
+        direccion: '',
+        telefono: '',
+        email: '',
+        ciudad: '',
+        pais: 'ECUADOR',
+    })
+    const [modalCliente, setModalCliente] = useState<Cliente[]>([])
     const [guardandoCliente, setGuardandoCliente] = useState(false)
+    const [mensajeCliente, setMensajeCliente] = useState('')
 
     // — Vendedor
     const [vendedorId, setVendedorId] = useState<number>(vendedores[0]?.id ?? 0)
 
     // — Líneas
     const [detalles, setDetalles] = useState<DetalleLinea[]>([lineaVacia()])
-    const [productoDropIdx, setProductoDropIdx] = useState<number | null>(null)
+    const [modalProducto, setModalProducto] = useState<{ idx: number; matches: ProductoVenta[] } | null>(null)
 
     // — Misc
     const [observaciones, setObservaciones] = useState('')
@@ -83,13 +151,21 @@ export default function Form() {
 
     // ── Computed ────────────────────────────────────────────────────────────────
 
-    const clientesFiltrados = useMemo(() => {
-        const q = busquedaCliente.trim().toLowerCase()
-        if (!q) return []
-        return clientes.filter(
-            c => c.identificacion.toLowerCase().includes(q) || c.razon_social.toLowerCase().includes(q)
-        ).slice(0, 8)
-    }, [clientes, busquedaCliente])
+    const handleBuscarCliente = () => {
+        const q = (clienteEditado.identificacion ?? '').trim()
+        if (!q) return
+        const matches = clientes.filter(c =>
+            c.identificacion.toLowerCase().includes(q.toLowerCase()) ||
+            c.razon_social.toLowerCase().includes(q.toLowerCase())
+        )
+        if (matches.length === 1) {
+            seleccionarCliente(matches[0])
+        } else if (matches.length >= 2) {
+            setModalCliente(matches)
+        } else {
+            setMensajeCliente('Cliente no encontrado — complete los datos para crear uno nuevo')
+        }
+    }
 
     const totales = useMemo(() => {
         let subtotal = 0, iva = 0
@@ -105,16 +181,8 @@ export default function Form() {
     const seleccionarCliente = (c: Cliente) => {
         setClienteSeleccionado(c)
         setClienteEditado({ ...c })
-        setBusquedaCliente(c.razon_social)
-        setMostrarDropdown(false)
-        setEsNuevoCliente(false)
-    }
-
-    const iniciarNuevoCliente = () => {
-        setClienteSeleccionado(null)
-        setClienteEditado({ razon_social: busquedaCliente, identificacion: '', tipo_identificacion: '04', tiene_credito: false, dias_credito: 0, cupo_maximo: 0 })
-        setEsNuevoCliente(true)
-        setMostrarDropdown(false)
+        setMensajeCliente('')
+        setModalCliente([])
     }
 
     const handleGuardarCliente = async () => {
@@ -132,14 +200,16 @@ export default function Form() {
         try {
             const res = await fetch(route('ventas.facturas.cliente-guardar'), {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': getCsrf(), Accept: 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': getCsrf(),
+                    Accept: 'application/json',
+                },
                 body: JSON.stringify(clienteEditado),
             })
             const data = await res.json() as { cliente: Cliente }
             setClienteSeleccionado(data.cliente)
             setClienteEditado({ ...data.cliente })
-            setBusquedaCliente(data.cliente.razon_social)
-            setEsNuevoCliente(false)
         } catch {
             // error silencioso
         } finally {
@@ -157,7 +227,7 @@ export default function Form() {
         })
     }
 
-    const seleccionarProducto = (idx: number, p: ProductoVenta) => {
+    const seleccionarProductoLocal = (idx: number, p: ProductoVenta) => {
         setDetalles(prev => {
             const next = [...prev]
             next[idx] = calcularLinea({
@@ -165,22 +235,42 @@ export default function Form() {
                 producto_id: p.id,
                 codigo: p.codigo,
                 descripcion: p.nombre,
-                precio_unitario: p.pvp,
-                porcentaje_iva: p.porcentaje_iva ?? 15,
+                precio_unitario: Math.round(p.pvp * 100) / 100,
+                porcentaje_iva: p.porcentaje_iva,
+                _busqueda: '',
+                _error: '',
+                _desc_error: '',
             })
             return next
         })
-        setProductoDropIdx(null)
+        setModalProducto(null)
+    }
+
+    const handleBuscarProducto = (idx: number, q: string) => {
+        if (!q.trim()) return
+        const matches = productos.filter(p =>
+            p.codigo.toLowerCase().includes(q.toLowerCase()) ||
+            p.nombre.toLowerCase().includes(q.toLowerCase())
+        )
+        if (matches.length === 1) {
+            seleccionarProductoLocal(idx, matches[0])
+        } else if (matches.length >= 2) {
+            setModalProducto({ idx, matches })
+        } else {
+            updateDetalle(idx, { _error: 'Producto no encontrado' })
+        }
+    }
+
+    const limpiarProducto = (idx: number) => {
+        setDetalles(prev => {
+            const next = [...prev]
+            next[idx] = lineaVacia()
+            return next
+        })
     }
 
     const addDetalle = () => setDetalles(prev => [...prev, lineaVacia()])
     const removeDetalle = (idx: number) => setDetalles(prev => prev.filter((_, i) => i !== idx))
-
-    const productosFiltrados = (q: string) => {
-        if (!q.trim()) return []
-        const lq = q.toLowerCase()
-        return productos.filter(p => p.codigo.toLowerCase().includes(lq) || p.nombre.toLowerCase().includes(lq)).slice(0, 8)
-    }
 
     // ── Submit ───────────────────────────────────────────────────────────────
 
@@ -189,6 +279,7 @@ export default function Form() {
         const errs: string[] = []
         if (!clienteSeleccionado) errs.push('Debe seleccionar un cliente.')
         if (detalles.length === 0) errs.push('Agregue al menos un producto.')
+        if (detalles.some(d => !d.bodega_id)) errs.push('Todos los productos deben tener bodega seleccionada.')
         if (errs.length > 0) { setErrores(errs); return }
         setErrores([])
         setGuardando(true)
@@ -197,12 +288,13 @@ export default function Form() {
             vendedor_id: vendedorId,
             observaciones,
             detalles: detalles.map(d => ({
-                producto_id: d.producto_id,
-                codigo: d.codigo,
-                descripcion: d.descripcion,
-                cantidad: d.cantidad,
-                precio: d.precio_unitario,
-                graba_iva: d.porcentaje_iva > 0,
+                producto_id:  d.producto_id,
+                bodega_id:    d.bodega_id,
+                descripcion:  d.descripcion,
+                cantidad:     d.cantidad,
+                precio:       d.precio_unitario,
+                descuento_pct: d.descuento_pct,
+                graba_iva:    d.porcentaje_iva > 0,
             })),
         }, {
             onError: () => setGuardando(false),
@@ -211,6 +303,7 @@ export default function Form() {
     }
 
     const vendedorActual = vendedores.find(v => v.id === vendedorId)
+    const tipoLabel: Record<string, string> = { '04': 'RUC', '05': 'CÉDULA', '06': 'PASAPORTE', '07': 'CONSUMIDOR' }
 
     return (
         <AppLayout>
@@ -226,6 +319,20 @@ export default function Form() {
 
             <form onSubmit={handleSubmit} className="p-6 space-y-6 max-w-7xl">
 
+                {/* Errores del servidor */}
+                {errors?.error && (
+                    <div
+                        className="rounded-lg p-4 border"
+                        style={{ background: 'rgba(239,68,68,.1)', borderColor: 'rgba(239,68,68,.3)' }}
+                    >
+                        <p className="text-sm text-red-400 flex items-center gap-2">
+                            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                            {errors.error}
+                        </p>
+                    </div>
+                )}
+
+                {/* Errores */}
                 {errores.length > 0 && (
                     <div
                         className="rounded-lg p-4 border"
@@ -241,25 +348,42 @@ export default function Form() {
                     </div>
                 )}
 
-                {/* Encabezado */}
+                {/* ── SECCIÓN 1: Encabezado ── */}
                 <div
                     className="rounded-xl p-5 border"
                     style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
                 >
-                    <p className="text-xs font-semibold uppercase tracking-wider mb-4" style={{ color: 'var(--text-muted)' }}>Datos del Documento</p>
+                    <p className="text-xs font-semibold uppercase tracking-wider mb-4" style={{ color: 'var(--text-muted)' }}>
+                        Datos del Documento
+                    </p>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
                             <Label style={{ color: 'var(--text-main)' }}>Número</Label>
-                            <Input className="mt-1 font-mono" value={siguiente_numero} readOnly style={{ color: 'var(--text-muted)', cursor: 'not-allowed' }} />
+                            <Input
+                                className="mt-1 font-mono"
+                                value={siguiente_numero}
+                                readOnly
+                                style={{ color: 'var(--text-muted)', cursor: 'not-allowed' }}
+                            />
                         </div>
                         <div>
                             <Label style={{ color: 'var(--text-main)' }}>Fecha</Label>
-                            <Input className="mt-1" value={hoy} readOnly style={{ color: 'var(--text-muted)', cursor: 'not-allowed' }} />
+                            <Input
+                                className="mt-1"
+                                value={hoy}
+                                readOnly
+                                style={{ color: 'var(--text-muted)', cursor: 'not-allowed' }}
+                            />
                         </div>
                         <div>
                             <Label style={{ color: 'var(--text-main)' }}>Vendedor</Label>
                             {vendedores.length <= 1 ? (
-                                <Input className="mt-1" value={vendedorActual?.nombre ?? ''} readOnly style={{ color: 'var(--text-muted)', cursor: 'not-allowed' }} />
+                                <Input
+                                    className="mt-1"
+                                    value={vendedorActual?.nombre ?? ''}
+                                    readOnly
+                                    style={{ color: 'var(--text-muted)', cursor: 'not-allowed' }}
+                                />
                             ) : (
                                 <select
                                     className="mt-1 w-full h-9 rounded-md border px-3 text-sm"
@@ -267,152 +391,254 @@ export default function Form() {
                                     value={vendedorId}
                                     onChange={e => setVendedorId(Number(e.target.value))}
                                 >
-                                    {vendedores.map(v => <option key={v.id} value={v.id}>{v.nombre}</option>)}
+                                    {vendedores.map(v => (
+                                        <option key={v.id} value={v.id}>{v.nombre}</option>
+                                    ))}
                                 </select>
                             )}
                         </div>
                     </div>
                 </div>
 
-                {/* Cliente */}
+                {/* ── SECCIÓN 2: Cliente ── */}
                 <div
-                    className="rounded-xl p-5 border"
+                    className="rounded-xl p-4 border max-w-xl"
                     style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
                 >
-                    <p className="text-xs font-semibold uppercase tracking-wider mb-4" style={{ color: 'var(--text-muted)' }}>Cliente</p>
-                    <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: 'var(--text-muted)' }} />
-                        <Input
-                            className="pl-9"
-                            placeholder="Buscar por RUC, cédula o razón social..."
-                            value={busquedaCliente}
-                            onChange={e => {
-                                setBusquedaCliente(e.target.value)
-                                setMostrarDropdown(true)
-                                if (!e.target.value) { setClienteSeleccionado(null); setEsNuevoCliente(false) }
-                            }}
-                            onFocus={() => setMostrarDropdown(true)}
-                            onBlur={() => setTimeout(() => setMostrarDropdown(false), 200)}
-                        />
-                        {mostrarDropdown && busquedaCliente.trim().length >= 2 && (
-                            <div
-                                className="absolute z-30 left-0 right-0 mt-1 rounded-xl border shadow-2xl overflow-hidden"
-                                style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
-                            >
-                                {clientesFiltrados.map(c => (
-                                    <button key={c.id} type="button" className="w-full text-left px-4 py-3 hover:bg-amber-500/10 border-b transition-colors" style={{ borderColor: 'var(--border)' }} onMouseDown={() => seleccionarCliente(c)}>
-                                        <p className="text-sm font-medium" style={{ color: 'var(--text-main)' }}>{c.razon_social}</p>
-                                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{c.identificacion}</p>
-                                    </button>
-                                ))}
-                                {clientesFiltrados.length === 0 && (
-                                    <button type="button" className="w-full text-left px-4 py-3 text-sm transition-colors hover:bg-amber-500/10" style={{ color: 'var(--primary)' }} onMouseDown={iniciarNuevoCliente}>
-                                        <Plus className="w-4 h-4 inline mr-1" />
-                                        Crear nuevo cliente "{busquedaCliente}"
-                                    </button>
-                                )}
-                            </div>
-                        )}
-                    </div>
+                    <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--text-muted)' }}>
+                        Cliente
+                    </p>
 
-                    {(clienteSeleccionado || esNuevoCliente) && (
-                        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <Label style={{ color: 'var(--text-main)' }}>Razón Social *</Label>
-                                <Input className="mt-1" value={clienteEditado.razon_social ?? ''} onChange={e => setClienteEditado(p => ({ ...p, razon_social: e.target.value }))} />
-                            </div>
-                            <div>
-                                <Label style={{ color: 'var(--text-main)' }}>Identificación *</Label>
-                                <Input className="mt-1" value={clienteEditado.identificacion ?? ''} onChange={e => setClienteEditado(p => ({ ...p, identificacion: e.target.value }))} />
-                            </div>
-                            <div>
-                                <Label style={{ color: 'var(--text-main)' }}>Email</Label>
-                                <Input className="mt-1" type="email" value={clienteEditado.email ?? ''} onChange={e => setClienteEditado(p => ({ ...p, email: e.target.value }))} />
-                            </div>
-                            <div>
-                                <Label style={{ color: 'var(--text-main)' }}>Teléfono</Label>
-                                <Input className="mt-1" value={clienteEditado.telefono ?? ''} onChange={e => setClienteEditado(p => ({ ...p, telefono: e.target.value }))} />
-                            </div>
-                            <div className="md:col-span-2 flex justify-end">
-                                <Button type="button" variant="outline" size="sm" loading={guardandoCliente} onClick={() => void handleGuardarCliente()}>
-                                    <Save className="w-4 h-4" />
-                                    {clienteSeleccionado?.id ? 'Actualizar Cliente' : 'Guardar Cliente'}
-                                </Button>
-                            </div>
+                    <div style={{ maxWidth: 480 }}>
+                        <table className="w-full">
+                            <tbody>
+                                <ClienteField
+                                    label={tipoLabel[clienteEditado.tipo_identificacion ?? '04'] ?? 'RUC/CC'}
+                                    value={clienteEditado.identificacion ?? ''}
+                                    onChange={v => {
+                                        setClienteEditado(p => ({ ...p, identificacion: v }))
+                                        setMensajeCliente('')
+                                        if (clienteSeleccionado) setClienteSeleccionado(null)
+                                    }}
+                                    onKeyDown={e => {
+                                        if (e.key === 'Enter') {
+                                            e.preventDefault()
+                                            handleBuscarCliente()
+                                        }
+                                    }}
+                                />
+                                <ClienteField
+                                    label="NOMBRE"
+                                    value={clienteEditado.razon_social ?? ''}
+                                    onChange={v => setClienteEditado(p => ({ ...p, razon_social: v }))}
+                                />
+                                <ClienteField
+                                    label="DIRECCIÓN"
+                                    value={clienteEditado.direccion ?? ''}
+                                    onChange={v => setClienteEditado(p => ({ ...p, direccion: v }))}
+                                />
+                                <ClienteField
+                                    label="TELÉFONO"
+                                    value={clienteEditado.telefono ?? ''}
+                                    onChange={v => setClienteEditado(p => ({ ...p, telefono: v }))}
+                                />
+                                <ClienteField
+                                    label="EMAIL"
+                                    value={clienteEditado.email ?? ''}
+                                    onChange={v => setClienteEditado(p => ({ ...p, email: v }))}
+                                    type="email"
+                                />
+                                <ClienteField
+                                    label="CIUDAD"
+                                    value={clienteEditado.ciudad ?? ''}
+                                    onChange={v => setClienteEditado(p => ({ ...p, ciudad: v }))}
+                                />
+                                <ClienteField
+                                    label="PAÍS"
+                                    value={clienteEditado.pais ?? 'ECUADOR'}
+                                    onChange={v => setClienteEditado(p => ({ ...p, pais: v }))}
+                                />
+                            </tbody>
+                        </table>
+
+                        {mensajeCliente && (
+                            <p className="mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
+                                {mensajeCliente}
+                            </p>
+                        )}
+
+                        <div className="mt-3">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                loading={guardandoCliente}
+                                onClick={handleGuardarCliente}
+                            >
+                                <Save className="w-3.5 h-3.5" />
+                                {clienteSeleccionado?.id ? 'Actualizar Cliente' : 'Guardar Cliente'}
+                            </Button>
                         </div>
-                    )}
+                    </div>
                 </div>
 
-                {/* Productos (sin descuentos) */}
+                {/* ── SECCIÓN 3: Productos ── */}
                 <div
                     className="rounded-xl p-5 border"
                     style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
                 >
                     <div className="flex items-center justify-between mb-4">
-                        <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Detalle de Productos</p>
+                        <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+                            Detalle de Productos
+                        </p>
                         <Button type="button" size="sm" onClick={addDetalle}>
                             <Plus className="w-4 h-4" />
                             Agregar producto
                         </Button>
                     </div>
+
                     <div className="overflow-x-auto">
                         <table className="w-full text-xs">
                             <thead>
                                 <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                                    {['Código', 'Descripción', 'Cantidad', 'Precio Unit.', 'IVA%', 'Total', ''].map((col, i) => (
-                                        <th key={i} className={cn('py-2 px-2 font-medium text-left', i >= 2 && 'text-right')} style={{ color: 'var(--text-muted)' }}>
+                                    {['Producto', 'Bodega', 'Stock', 'Cant.', 'Precio Unit.', 'IVA%', 'Total', ''].map((col, i) => (
+                                        <th
+                                            key={i}
+                                            className={cn('py-2 px-2 font-medium text-left', (i >= 3 && i <= 4) && 'text-right')}
+                                            style={{ color: 'var(--text-muted)' }}
+                                        >
                                             {col}
                                         </th>
                                     ))}
                                 </tr>
                             </thead>
                             <tbody>
-                                {detalles.map((det, idx) => {
-                                    const filtrados = productosFiltrados(det.codigo)
-                                    return (
-                                        <tr key={idx} style={{ borderBottom: '1px solid var(--border)' }}>
-                                            <td className="py-1.5 px-2 relative" style={{ minWidth: 130 }}>
-                                                <Input
-                                                    value={det.codigo}
-                                                    placeholder="Buscar..."
-                                                    className="text-xs"
-                                                    onChange={e => { updateDetalle(idx, { codigo: e.target.value, producto_id: null }); setProductoDropIdx(idx) }}
-                                                    onFocus={() => setProductoDropIdx(idx)}
-                                                    onBlur={() => setTimeout(() => setProductoDropIdx(null), 200)}
-                                                />
-                                                {productoDropIdx === idx && filtrados.length > 0 && (
-                                                    <div
-                                                        className="absolute left-0 top-full z-30 w-72 mt-0.5 rounded-lg border shadow-xl overflow-hidden"
-                                                        style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
+                                {detalles.map((det, idx) => (
+                                    <tr key={idx} style={{ borderBottom: '1px solid var(--border)' }}>
+                                        <td className="py-1 px-1">
+                                            {det.producto_id !== null ? (
+                                                <div
+                                                    className="flex items-center gap-1 min-w-0 px-1.5 py-0.5 rounded"
+                                                    style={{
+                                                        border: '1px solid var(--primary)',
+                                                        background: 'rgba(245,158,11,0.06)',
+                                                    }}
+                                                >
+                                                    <span
+                                                        className="font-mono font-semibold text-xs shrink-0"
+                                                        style={{ color: 'var(--primary)' }}
                                                     >
-                                                        {filtrados.map(p => (
-                                                            <button key={p.id} type="button" className="w-full text-left px-3 py-2 hover:bg-amber-500/10 border-b transition-colors" style={{ borderColor: 'var(--border)' }} onMouseDown={() => seleccionarProducto(idx, p)}>
-                                                                <p className="font-medium" style={{ color: 'var(--text-main)' }}>{p.codigo} — {p.nombre}</p>
-                                                                <p style={{ color: 'var(--text-muted)' }}>{formatMoneda(p.pvp)} · IVA {p.porcentaje_iva ?? 15}%</p>
-                                                            </button>
-                                                        ))}
+                                                        {det.codigo}
+                                                    </span>
+                                                    <span
+                                                        className="text-xs truncate flex-1"
+                                                        style={{ color: 'var(--text-main)' }}
+                                                    >
+                                                        {' — '}{det.descripcion}
+                                                    </span>
+                                                    <button
+                                                        type="button"
+                                                        className="shrink-0 p-0.5 rounded hover:bg-red-500/10 transition-colors"
+                                                        onClick={() => limpiarProducto(idx)}
+                                                        title="Limpiar producto"
+                                                    >
+                                                        <X className="w-3 h-3 text-red-400" />
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <div>
+                                                    <div className="relative">
+                                                        <Search
+                                                            className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 pointer-events-none"
+                                                            style={{ color: 'var(--text-muted)' }}
+                                                        />
+                                                        <input
+                                                            type="text"
+                                                            className="w-full h-7 pl-6 pr-2 text-xs rounded border focus:outline-none"
+                                                            style={{
+                                                                background: 'var(--bg-main)',
+                                                                borderColor: det._error ? '#ef4444' : 'var(--border)',
+                                                                color: 'var(--text-main)',
+                                                            }}
+                                                            placeholder="Código o nombre... Enter"
+                                                            value={det._busqueda}
+                                                            onChange={e => updateDetalle(idx, { _busqueda: e.target.value, _error: '' })}
+                                                            onKeyDown={e => {
+                                                                if (e.key === 'Enter') {
+                                                                    e.preventDefault()
+                                                                    handleBuscarProducto(idx, det._busqueda)
+                                                                }
+                                                            }}
+                                                        />
                                                     </div>
-                                                )}
-                                            </td>
-                                            <td className="py-1.5 px-2" style={{ minWidth: 180 }}>
-                                                <Input value={det.descripcion} placeholder="Descripción..." className="text-xs" onChange={e => updateDetalle(idx, { descripcion: e.target.value })} />
-                                            </td>
-                                            <td className="py-1.5 px-2" style={{ minWidth: 80 }}>
-                                                <Input type="number" min="0.01" step="0.01" value={det.cantidad} className="text-xs text-right" onChange={e => updateDetalle(idx, { cantidad: Number(e.target.value) })} />
-                                            </td>
-                                            <td className="py-1.5 px-2" style={{ minWidth: 96 }}>
-                                                <Input type="number" min="0" step="0.01" value={det.precio_unitario} className="text-xs text-right" onChange={e => updateDetalle(idx, { precio_unitario: Number(e.target.value) })} />
-                                            </td>
-                                            <td className="py-1.5 px-2 text-right" style={{ color: 'var(--text-muted)' }}>{det.porcentaje_iva}%</td>
-                                            <td className="py-1.5 px-2 text-right font-semibold" style={{ color: 'var(--text-main)' }}>{formatMoneda(det.total)}</td>
-                                            <td className="py-1.5 px-2">
-                                                <button type="button" className="p-1 rounded hover:bg-red-500/10 transition-colors" onClick={() => removeDetalle(idx)}>
-                                                    <Trash2 className="w-4 h-4 text-red-400" />
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    )
-                                })}
+                                                    {det._error && (
+                                                        <p className="text-xs mt-0.5" style={{ color: '#ef4444' }}>
+                                                            {det._error}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </td>
+                                        <td className="py-1 px-1">
+                                            <select
+                                                className="w-full h-7 rounded border px-1.5 text-xs"
+                                                style={{ background: 'var(--bg-main)', borderColor: det.bodega_id ? 'var(--border)' : '#ef4444', color: 'var(--text-main)' }}
+                                                value={det.bodega_id ?? ''}
+                                                onChange={e => updateDetalle(idx, { bodega_id: Number(e.target.value) || null })}
+                                            >
+                                                <option value="">-- Bodega --</option>
+                                                {bodegas.map(b => (
+                                                    <option key={b.id} value={b.id}>{b.nombre}</option>
+                                                ))}
+                                            </select>
+                                        </td>
+                                        <td className="py-1 px-1.5 text-right text-xs whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>
+                                            {(() => {
+                                                const disp = getDisponible(det.producto_id, det.bodega_id)
+                                                if (disp === null) return '—'
+                                                return (
+                                                    <span style={{ color: disp < det.cantidad ? '#ef4444' : disp === 0 ? '#ef4444' : 'var(--text-muted)' }}>
+                                                        {disp} disp.
+                                                    </span>
+                                                )
+                                            })()}
+                                        </td>
+                                        <td className="py-1.5 px-2" style={{ minWidth: 72 }}>
+                                            <Input
+                                                type="number"
+                                                min="1"
+                                                step="1"
+                                                value={det.cantidad}
+                                                className="text-xs text-right"
+                                                style={{
+                                                    borderColor: (() => {
+                                                        const disp = getDisponible(det.producto_id, det.bodega_id)
+                                                        return disp !== null && det.cantidad > disp ? '#ef4444' : undefined
+                                                    })()
+                                                }}
+                                                onChange={e => updateDetalle(idx, { cantidad: parseInt(e.target.value) || 1 })}
+                                                onKeyDown={e => { if (e.key === '.' || e.key === ',') e.preventDefault() }}
+                                            />
+                                        </td>
+                                        <td className="py-1.5 px-2" style={{ minWidth: 96 }}>
+                                            <Input
+                                                type="number"
+                                                min="0"
+                                                step="0.01"
+                                                value={det.precio_unitario}
+                                                className="text-xs text-right"
+                                                onChange={e => updateDetalle(idx, { precio_unitario: Number(e.target.value) })}
+                                            />
+                                        </td>
+                                        <td className="py-1.5 px-2 text-center" style={{ color: 'var(--text-muted)' }}>{det.porcentaje_iva}%</td>
+                                        <td className="py-1.5 px-2 text-right font-semibold" style={{ color: 'var(--text-main)' }}>{formatMoneda(det.total)}</td>
+                                        <td className="py-1.5 px-2">
+                                            <button type="button" className="p-1 rounded hover:bg-red-500/10 transition-colors" onClick={() => removeDetalle(idx)}>
+                                                <Trash2 className="w-4 h-4 text-red-400" />
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
                             </tbody>
                             <tfoot>
                                 <tr style={{ borderTop: '2px solid var(--border)' }}>
@@ -433,7 +659,7 @@ export default function Form() {
                     </div>
                 </div>
 
-                {/* Observaciones */}
+                {/* ── SECCIÓN 4: Observaciones ── */}
                 <div
                     className="rounded-xl p-5 border"
                     style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
@@ -449,7 +675,7 @@ export default function Form() {
                     />
                 </div>
 
-                {/* Acciones */}
+                {/* ── SECCIÓN 5: Acciones ── */}
                 <div className="flex items-center justify-between pb-2">
                     <Link href={route('ventas.prefacturas.index')}>
                         <Button type="button" variant="ghost">
@@ -463,6 +689,101 @@ export default function Form() {
                     </Button>
                 </div>
             </form>
+
+            {modalProducto !== null && createPortal(
+                <>
+                    <div
+                        className="fixed inset-0"
+                        style={{ background: 'rgba(0,0,0,0.5)', zIndex: 50 }}
+                        onClick={() => setModalProducto(null)}
+                    />
+                    <div
+                        className="fixed inset-0 flex items-center justify-center p-4"
+                        style={{ zIndex: 51 }}
+                        onKeyDown={e => { if (e.key === 'Escape') setModalProducto(null) }}
+                    >
+                        <div
+                            className="w-full rounded-xl shadow-xl flex flex-col"
+                            style={{ maxWidth: 600, background: 'var(--bg-card)', border: '1px solid var(--border)' }}
+                        >
+                            <div
+                                className="flex items-center justify-between px-4 py-3 shrink-0"
+                                style={{ borderBottom: '1px solid var(--border)' }}
+                            >
+                                <span className="text-sm font-semibold" style={{ color: 'var(--text-main)' }}>
+                                    Seleccionar Producto
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={() => setModalProducto(null)}
+                                    className="p-1 rounded-md transition-colors"
+                                    style={{ color: 'var(--text-muted)' }}
+                                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.08)')}
+                                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                                >
+                                    <X className="w-4 h-4" />
+                                </button>
+                            </div>
+                            <div style={{ maxHeight: 360, overflowY: 'auto' }}>
+                                <table className="w-full text-sm">
+                                    <thead className="sticky top-0" style={{ background: 'var(--bg-card)' }}>
+                                        <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                                            {['Código', 'Nombre', 'PVP'].map(h => (
+                                                <th
+                                                    key={h}
+                                                    className="text-left px-4 py-2 text-xs font-medium"
+                                                    style={{ color: 'var(--text-muted)' }}
+                                                >
+                                                    {h}
+                                                </th>
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {modalProducto.matches.map(p => (
+                                            <tr
+                                                key={p.id}
+                                                onClick={() => seleccionarProductoLocal(modalProducto.idx, p)}
+                                                className="cursor-pointer transition-colors"
+                                                style={{ borderBottom: '1px solid var(--border)' }}
+                                                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(245,158,11,0.08)')}
+                                                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                                            >
+                                                <td
+                                                    className="px-4 py-2.5 font-mono text-xs font-semibold whitespace-nowrap"
+                                                    style={{ color: 'var(--primary)' }}
+                                                >
+                                                    {p.codigo}
+                                                </td>
+                                                <td className="px-4 py-2.5 text-xs" style={{ color: 'var(--text-main)' }}>
+                                                    {p.nombre}
+                                                </td>
+                                                <td className="px-4 py-2.5 text-xs text-right" style={{ color: 'var(--text-muted)' }}>
+                                                    {formatMoneda(p.pvp)}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div
+                                className="px-4 py-2 text-xs shrink-0"
+                                style={{ borderTop: '1px solid var(--border)', color: 'var(--text-muted)' }}
+                            >
+                                {modalProducto.matches.length} resultado{modalProducto.matches.length !== 1 ? 's' : ''}
+                            </div>
+                        </div>
+                    </div>
+                </>,
+                document.body
+            )}
+
+            <BuscadorClienteModal
+                coincidencias={modalCliente}
+                abierto={modalCliente.length > 0}
+                onCerrar={() => setModalCliente([])}
+                onSelect={seleccionarCliente}
+            />
         </AppLayout>
     )
 }

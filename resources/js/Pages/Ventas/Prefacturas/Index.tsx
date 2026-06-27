@@ -17,8 +17,8 @@ interface PrefacturaCliente {
 
 interface Prefactura {
     id: number
-    numero_completo: string
-    fecha: string
+    numero: string
+    fecha_emision: string
     total: number
     total_abonado: number
     saldo_pendiente: number
@@ -177,10 +177,10 @@ export default function Index() {
                                                 style={{ borderBottom: '1px solid var(--border)' }}
                                             >
                                                 <td className="px-4 py-3 font-mono text-xs font-medium" style={{ color: 'var(--text-main)' }}>
-                                                    {pf.numero_completo}
+                                                    {pf.numero}
                                                 </td>
                                                 <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-muted)' }}>
-                                                    {formatFecha(pf.fecha)}
+                                                    {formatFecha(pf.fecha_emision)}
                                                 </td>
                                                 <td className="px-4 py-3">
                                                     {pf.cliente ? (

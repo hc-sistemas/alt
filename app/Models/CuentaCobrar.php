@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class CuentaCobrar extends Model
 {
@@ -49,5 +50,10 @@ class CuentaCobrar extends Model
     public function prefactura(): BelongsTo
     {
         return $this->belongsTo(Prefactura::class);
+    }
+
+    public function cobros(): HasMany
+    {
+        return $this->hasMany(CuentaCobrarCobro::class, 'cuenta_cobrar_id')->orderBy('fecha');
     }
 }

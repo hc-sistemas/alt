@@ -119,8 +119,28 @@ class InventarioService implements InventarioServiceInterface
         });
     }
 
-    public function reservarStock(int $productoId, int $bodegaId, float $cantidad): void
-    {
+    public function reservarStock(
+        int $productoId,
+        int $bodegaId,
+        float $cantidad,
+        string $documentoTipo = '',
+        int $documentoId = 0
+    ): void {
+        $saldo = DB::table('inventario_saldos')
+            ->where('producto_id', $productoId)
+            ->where('bodega_id', $bodegaId)
+            ->first();
+
+        $stockActual = $saldo ? (float) $saldo->stock_actual : 0;
+        $reservado   = $saldo ? (float) ($saldo->cantidad_reservada ?? 0) : 0;
+        $disponible  = max(0, $stockActual - $reservado);
+
+        if ($cantidad > $disponible) {
+            throw new \RuntimeException(
+                "Stock insuficiente en bodega seleccionada. Disponible: {$disponible}, solicitado: {$cantidad}."
+            );
+        }
+
         DB::table('inventario_saldos')
             ->where('producto_id', $productoId)
             ->where('bodega_id', $bodegaId)
