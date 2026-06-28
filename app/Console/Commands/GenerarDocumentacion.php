@@ -111,11 +111,11 @@ class GenerarDocumentacion extends Command
         $dir = base_path('usos');
         if (!is_dir($dir)) mkdir($dir, 0755, true);
 
-        // Solo modulos Dev 2 (excluye RRHH, Bancos, Inventario y Personas que son Dev 1)
+        // Solo modulos Dev 2 (excluye RRHH, Ventas, Inventario y Personas que son Dev 1)
         $modulos = [
             'contabilidad' => ['nombre' => 'Contabilidad', 'html' => $this->htmlContabilidad()],
             'compras'      => ['nombre' => 'Compras',      'html' => $this->htmlCompras()],
-            'ventas'       => ['nombre' => 'Ventas',       'html' => $this->htmlVentas()],
+            'bancos'       => ['nombre' => 'Bancos',       'html' => $this->htmlBancos()],
         ];
 
         foreach ($modulos as $key => $m) {
@@ -585,510 +585,247 @@ class GenerarDocumentacion extends Command
     }
 
     /* ═══════════════════════════════════════════════════════
-       INVENTARIO
+       BANCOS
     ════════════════════════════════════════════════════════ */
-    private function htmlInventario(): string
+    private function htmlBancos(): string
     {
         return '
     <div class="page">
       <div class="titulo-modulo">
-        <div class="nombre">INVENTARIO</div>
-        <div class="sub">Productos &middot; Kardex &middot; Saldos &middot; Traslados &middot; Recepciones &middot; Activos Fijos</div>
+        <div class="nombre">BANCOS</div>
+        <div class="sub">Bancos y Cajas &middot; Movimientos &middot; Cheques &middot; Cierre de Cajas &middot; Conciliacion &middot; Datafast &middot; Reportes</div>
         <div class="linea"></div>
       </div>
 
       <div class="intro"><p>
-        <strong>Para que sirve:</strong> Controla cuantos productos hay en cada bodega y a que costo.
-        Todas las entradas de stock vienen automaticamente de <strong>Compras</strong> al activar
-        una factura. Los traslados redistribuyen entre bodegas sin afectar el total.
-        Los ajustes manuales corrigen diferencias de inventario fisico.
+        <strong>Para que sirve:</strong> Controla todo el dinero de la empresa: saldos en bancos y cajas,
+        entradas y salidas de efectivo, cheques emitidos, cierre diario de cajas, conciliacion con el
+        estado de cuenta del banco y liquidacion de pagos con tarjeta (Datafast).
+        Cada movimiento genera automaticamente un asiento contable en Contabilidad.
       </p></div>
 
-      <div class="info box"><p>
-        <strong>Dev 1 y Dev 2:</strong> El catalogo de productos (crear, configurar precio, categoria, marca)
-        fue construido por Dev 1. Dev 2 construyo los movimientos: recepciones, traslados, kardex y
-        activos fijos. Ambas partes se usan juntas.
-      </p></div>
-
-      <h2>1. CONFIGURACION PREVIA (una sola vez, Dev 1)</h2>
-      <div class="cards">
-        <div class="card"><div class="card-inner">
-          <div class="card-titulo">Bodegas</div>
-          <div class="card-cuerpo"><span class="ruta">Inventario &rarr; Config &rarr; Bodegas</span><br>
-          Crear: Bodega Principal, Showroom, Taller, etc.
-          Son los lugares fisicos donde vive el stock.</div>
-        </div></div>
-        <div class="card"><div class="card-inner">
-          <div class="card-titulo">Marcas y Categorias</div>
-          <div class="card-cuerpo"><span class="ruta">Inventario &rarr; Config &rarr; Marcas / Categorias</span><br>
-          Yamaha, JBL, Shure... Las categorias pueden tener subcategorias
-          (Instrumentos &rarr; Guitarras).</div>
-        </div></div>
+      <h2>COMO SE CONECTA CON EL RESTO DEL SISTEMA</h2>
+      <div class="rel-box">
+        <div class="rel-linea"><span class="rel-icono">-&gt;</span>
+          <strong>Compras &rarr; Pagar CxP</strong> crea un MovimientoBancario (egreso) automaticamente</div>
+        <div class="rel-linea"><span class="rel-icono">-&gt;</span>
+          <strong>Ventas &rarr; Cobrar CxC</strong> crea un MovimientoBancario (ingreso) automaticamente</div>
+        <div class="rel-linea"><span class="rel-icono">-&gt;</span>
+          <strong>Cada movimiento bancario</strong> genera un asiento contable doble en Contabilidad</div>
+        <div class="rel-linea"><span class="rel-icono">-&gt;</span>
+          <strong>Datafast</strong> usa parametros contables: cta_vouchers, cta_ventas_locales, cta_comisiones_bancarias</div>
+        <div class="rel-linea"><span class="rel-icono">-&gt;</span>
+          <strong>Cada banco/caja</strong> debe tener una cuenta del plan de cuentas asignada</div>
       </div>
 
-      <h2>2. PRODUCTOS (Dev 1)</h2>
-      <p>Ruta: <span class="ruta">Inventario &rarr; Productos</span></p>
-      <p>Catalogo de lo que la empresa vende y compra. Cada producto tiene un codigo unico (SKU).
-      Al crear un producto el stock empieza en <strong>cero</strong>.
-      Para dar stock inicial usar un Ajuste de Inventario.</p>
+      <h2>1. BANCOS Y CAJAS (catalogo)</h2>
+      <p>Ruta: <span class="ruta">Bancos &rarr; Bancos y Cajas</span></p>
+      <p>Catalogo de todas las cuentas bancarias y cajas de la empresa.
+      Cada banco/caja tiene un saldo que se actualiza automaticamente con cada movimiento.</p>
 
-      <table class="t">
-        <tr><th>Campo</th><th>Que es</th><th>Req.</th></tr>
-        <tr><td><strong>Codigo (SKU)</strong></td><td>Unico por empresa. Ej: YAM-P125.
-            El prefijo se usa en las etiquetas de codigo de barras.</td><td><span class="req">Si</span></td></tr>
-        <tr><td><strong>Nombre</strong></td><td>Descripcion completa del producto</td><td><span class="req">Si</span></td></tr>
-        <tr><td><strong>Tipo</strong></td><td>producto / servicio / repuesto / insumo</td><td><span class="req">Si</span></td></tr>
-        <tr><td><strong>Unidad</strong></td><td>UND, KG, L, PAR, etc.</td><td><span class="req">Si</span></td></tr>
-        <tr><td><strong>% IVA</strong></td><td>0% o 15% segun el tipo de producto</td><td><span class="req">Si</span></td></tr>
-        <tr><td><strong>PVP</strong></td><td>Precio de venta al publico</td><td>No</td></tr>
-        <tr><td><strong>Costo</strong></td><td>Costo de compra. Se actualiza solo con cada compra activada y al liquidar importaciones.</td><td>No</td></tr>
-        <tr><td><strong>Stock minimo</strong></td><td>Genera alerta cuando el stock baja de este nivel</td><td>No</td></tr>
-        <tr><td><strong>Requiere serie</strong></td><td>Para equipos que se rastrean por numero de serie individual (amplificadores, consolas, etc.)</td><td>No</td></tr>
-        <tr><td><strong>Tiene ICE</strong></td><td>Impuesto a consumos especiales si aplica</td><td>No</td></tr>
-      </table>
-
-      <div class="tip box"><p><strong>Dar stock inicial:</strong> Ir a
-      <span class="ruta">Inventario &rarr; Kardex &rarr; Ajuste</span> y crear un movimiento tipo
-      <em>Ingreso</em> con la cantidad y el costo promedio del momento.</p></div>
-
-      <h2>3. KARDEX &mdash; HISTORIAL DE MOVIMIENTOS</h2>
-      <p>Ruta: <span class="ruta">Inventario &rarr; Kardex</span></p>
-      <p>Registro cronologico de todo lo que ha entrado y salido de un producto en cada bodega,
-      con saldo corriente actualizado en tiempo real.</p>
-
-      <table class="t">
-        <tr><th>Tipo</th><th>Como se genera</th><th>Efecto en stock</th></tr>
-        <tr><td><span class="badge vd">entrada</span></td><td>Al activar una Compra o confirmar una Recepcion</td><td>Stock sube</td></tr>
-        <tr><td><span class="badge rj">salida</span></td><td>Al registrar una Venta (modulo Ventas)</td><td>Stock baja</td></tr>
-        <tr><td><span class="badge am">ajuste</span></td><td>Manual desde Kardex &rarr; Ajuste de Inventario</td><td>Sube o baja segun tipo</td></tr>
-        <tr><td><span class="badge az">traslado</span></td><td>Al confirmar un Traslado de Bodega</td><td>Redistribuye entre bodegas</td></tr>
-      </table>
-
-      <h3>Hacer un ajuste manual de inventario</h3>
-      <p>Ruta: <span class="ruta">Inventario &rarr; Kardex &rarr; Ajuste</span></p>
-      <div class="paso"><div class="num">1</div><div class="paso-cont">
-        <div class="titulo">Seleccionar Producto y Bodega</div>
-      </div></div>
-      <div class="paso"><div class="num">2</div><div class="paso-cont">
-        <div class="titulo">Elegir tipo: Ingreso (aumentar stock) o Egreso (reducir stock)</div>
-      </div></div>
-      <div class="paso"><div class="num">3</div><div class="paso-cont">
-        <div class="titulo">Ingresar Cantidad y Motivo</div>
-        <div class="detalle">Ejemplos de motivo: "Inventario fisico junio 2026", "Merma por dano", "Saldo inicial".</div>
-      </div></div>
-      <div class="paso"><div class="num">4</div><div class="paso-cont">
-        <div class="titulo">Guardar &mdash; el saldo se actualiza de inmediato</div>
-      </div></div>
-
-      <h3>Ver saldos actuales por bodega</h3>
-      <p>Ruta: <span class="ruta">Inventario &rarr; Kardex &rarr; Saldos</span></p>
-      <p>Muestra el stock actual de todos los productos por bodega con costo unitario
-      y valor total en libros.</p>
-
-      <h2>4. TRASLADOS ENTRE BODEGAS</h2>
-      <p>Ruta: <span class="ruta">Inventario &rarr; Traslados</span></p>
-      <p>Mueve productos de una bodega a otra <strong>sin cambiar el total de la empresa</strong>.
-      Ejemplo: pasar 5 guitarras del showroom al taller para reparacion.</p>
+      <h3>Tipos disponibles</h3>
+      <div style="margin:6px 0 12px;">
+        <span class="badge az">banco</span>
+        <span class="badge vd">caja</span>
+        <span class="badge am">caja chica</span>
+        <span class="badge mo">tarjeta</span>
+      </div>
 
       <table class="t">
         <tr><th>Campo</th><th>Descripcion</th><th>Req.</th></tr>
-        <tr><td><strong>Bodega origen</strong></td><td>De donde sale la mercaderia</td><td><span class="req">Si</span></td></tr>
-        <tr><td><strong>Bodega destino</strong></td><td>A donde llega. Debe ser diferente al origen.</td><td><span class="req">Si</span></td></tr>
-        <tr><td><strong>Detalles</strong></td><td>Producto + Cantidad. Minimo 1 linea. Valida que haya stock
-            suficiente en la bodega origen.</td><td><span class="req">Si</span></td></tr>
+        <tr><td><strong>Tipo</strong></td><td>banco / caja / caja_chica / tarjeta</td><td><span class="req">Si</span></td></tr>
+        <tr><td><strong>Nombre</strong></td><td>Ej: "Banco Pichincha Cta. Corriente", "Caja Showroom"</td><td><span class="req">Si</span></td></tr>
+        <tr><td><strong>N. Cuenta</strong></td><td>Numero de cuenta bancaria</td><td>No</td></tr>
+        <tr><td><strong>Tipo cuenta</strong></td><td>ahorros o corriente (solo para bancos)</td><td>No</td></tr>
+        <tr><td><strong>Cuenta contable</strong></td><td>Cuenta del plan de cuentas que representa este banco/caja.
+            Si se deja vacio el sistema asigna una automaticamente segun el tipo.</td><td>No</td></tr>
+        <tr><td><strong>Saldo inicial</strong></td><td>Saldo de apertura al registrarlo por primera vez en el sistema</td><td>No</td></tr>
       </table>
+
+      <div class="tip box"><p><strong>Cuentas automaticas si no se asigna una:</strong>
+      banco: Bancos (1.1.1.3) &middot; caja: Caja (1.1.1.1) &middot;
+      caja_chica: Caja Chica (1.1.1.2) &middot; tarjeta: Tarjetas (1.1.1.5).</p></div>
+
+      <div class="alerta box"><p>No se puede desactivar ni eliminar un banco/caja si tiene
+      saldo diferente de cero o si ya tiene movimientos registrados.</p></div>
+
+      <h2>2. MOVIMIENTOS BANCARIOS</h2>
+      <p>Ruta: <span class="ruta">Bancos &rarr; Movimientos</span></p>
+      <p>Registro de todas las entradas y salidas de dinero.
+      El saldo del banco se actualiza automaticamente con cada movimiento guardado.</p>
+
+      <h3>Registrar un movimiento</h3>
+      <table class="t">
+        <tr><th>Campo</th><th>Descripcion</th><th>Req.</th></tr>
+        <tr><td><strong>Banco / Caja</strong></td><td>Donde entra o sale el dinero</td><td><span class="req">Si</span></td></tr>
+        <tr><td><strong>Tipo</strong></td><td>ingreso (entra dinero) o egreso (sale dinero)</td><td><span class="req">Si</span></td></tr>
+        <tr><td><strong>Sub-tipo</strong></td><td>transferencia / cheque / efectivo / deposito</td><td><span class="req">Si</span></td></tr>
+        <tr><td><strong>Fecha</strong></td><td>Fecha del movimiento</td><td><span class="req">Si</span></td></tr>
+        <tr><td><strong>Monto</strong></td><td>Mayor a $0.01. Si es egreso el banco debe tener saldo suficiente.</td><td><span class="req">Si</span></td></tr>
+        <tr><td><strong>Descripcion</strong></td><td>Detalle del movimiento. Ej: "Pago factura proveedor XYZ"</td><td><span class="req">Si</span></td></tr>
+        <tr><td><strong>Cuenta contrapartida</strong></td><td>Cuenta contable del otro lado del asiento (debe tener "permite asientos = Si" en el plan de cuentas)</td><td><span class="req">Si</span></td></tr>
+        <tr><td><strong>Beneficiario</strong></td><td>Nombre de quien recibe o envia el dinero</td><td>No</td></tr>
+        <tr><td><strong>N. Documento</strong></td><td>Referencia: N. transferencia, N. factura, etc.</td><td>No</td></tr>
+      </table>
+
+      <div class="tip box"><p>El sistema genera el asiento contable automaticamente al guardar:
+      Ingreso &rarr; DEBE Banco / HABER Contrapartida.
+      Egreso &rarr; DEBE Contrapartida / HABER Banco.</p></div>
+
+      <h3>Anular un movimiento</h3>
+      <ul class="lista">
+        <li>Clic en "Anular" en el detalle del movimiento. Escribir el motivo (minimo 10 caracteres).</li>
+        <li>El saldo del banco se revierte automaticamente</li>
+        <li>Queda registrado en el log de cambios criticos con el motivo ingresado</li>
+        <li><strong>No se puede anular</strong> si el movimiento ya fue conciliado con el banco</li>
+      </ul>
+
+      <h3>Filtros y exportacion</h3>
+      <p>Filtrar por banco/caja, tipo (ingreso/egreso), rango de fechas y busqueda por texto
+      (descripcion, beneficiario o N. documento).
+      Boton <strong>Excel</strong> descarga el listado con los filtros aplicados en formato .xlsx.</p>
+
+      <h2>3. CHEQUES</h2>
+      <p>Ruta: <span class="ruta">Bancos &rarr; Cheques</span></p>
+      <p>Registro y seguimiento de los cheques que emite la empresa.
+      Permite saber cuales fueron cobrados, cuales siguen pendientes y cuales protestaron.</p>
+
+      <table class="t">
+        <tr><th>Campo</th><th>Descripcion</th><th>Req.</th></tr>
+        <tr><td><strong>Banco / Caja</strong></td><td>De que cuenta bancaria se emite el cheque</td><td><span class="req">Si</span></td></tr>
+        <tr><td><strong>Numero</strong></td><td>Numero del cheque fisico. Unico por banco.</td><td><span class="req">Si</span></td></tr>
+        <tr><td><strong>Monto</strong></td><td>Valor del cheque (mayor a $0.01)</td><td><span class="req">Si</span></td></tr>
+        <tr><td><strong>Fecha emision</strong></td><td>Cuando se emite el cheque</td><td><span class="req">Si</span></td></tr>
+        <tr><td><strong>Beneficiario</strong></td><td>A quien va dirigido el cheque</td><td><span class="req">Si</span></td></tr>
+        <tr><td><strong>Banco emisor</strong></td><td>Nombre del banco que aparece en el cheque (informativo)</td><td>No</td></tr>
+        <tr><td><strong>Fecha cobro esperada</strong></td><td>Cuando se espera que lo presenten al cobro (mayor o igual a la emision)</td><td>No</td></tr>
+        <tr><td><strong>Observacion</strong></td><td>Notas adicionales</td><td>No</td></tr>
+      </table>
+
+      <h3>Estados del cheque</h3>
+      <table class="t">
+        <tr><th>Estado</th><th>Significado</th><th>Puede cambiar a...</th></tr>
+        <tr><td><span class="badge am">emitido</span></td><td>Entregado al beneficiario, pendiente de cobro</td><td>cobrado / protestado / anulado</td></tr>
+        <tr><td><span class="badge vd">cobrado</span></td><td>El beneficiario ya lo cobro en el banco</td><td>Estado final</td></tr>
+        <tr><td><span class="badge rj">protestado</span></td><td>El banco lo rechazo (sin fondos u otro motivo)</td><td>Registra en log critico</td></tr>
+        <tr><td><span class="badge gr">anulado</span></td><td>Cancelado antes de ser presentado al banco</td><td>Estado final</td></tr>
+      </table>
+
+      <div class="nota box"><p>Solo se puede cambiar el estado de un cheque que este en <em>emitido</em>.
+      Si protesta queda registrado automaticamente en el log de cambios criticos.</p></div>
+
+      <h2>4. CIERRE DE CAJAS</h2>
+      <p>Ruta: <span class="ruta">Bancos &rarr; Cierre de Cajas</span></p>
+      <p>Flujo diario para abrir y cerrar las cajas de la empresa.
+      Permite cuadrar lo que registro el sistema contra lo que hay fisicamente en caja.</p>
+
+      <h3>Abrir caja</h3>
+      <div class="paso"><div class="num">1</div><div class="paso-cont">
+        <div class="titulo">Clic en "Abrir Caja" &rarr; seleccionar la caja y el monto inicial</div>
+        <div class="detalle">El monto inicial son los billetes y monedas que hay en caja al empezar el dia.
+        No puede haber otra apertura de la misma caja en el mismo dia.</div>
+      </div></div>
+      <div class="paso"><div class="num">2</div><div class="paso-cont">
+        <div class="titulo">Guardar &rarr; la caja queda en estado "abierto"</div>
+      </div></div>
+
+      <h3>Cerrar caja (al final del dia)</h3>
+      <div class="paso"><div class="num">1</div><div class="paso-cont">
+        <div class="titulo">Clic en "Cerrar Caja" en la apertura del dia</div>
+      </div></div>
+      <div class="paso"><div class="num">2</div><div class="paso-cont">
+        <div class="titulo">Contar el dinero fisico e ingresar los totales por forma de pago</div>
+        <div class="detalle">Total efectivo + Total tarjeta + Total cheque + Total transferencia.</div>
+      </div></div>
+      <div class="paso"><div class="num">3</div><div class="paso-cont">
+        <div class="titulo">El sistema calcula la diferencia y guarda el cierre</div>
+        <div class="detalle">Diferencia = Total cobrado fisico menos Total facturado por el sistema.
+        Si supera $0.01 muestra una advertencia.</div>
+      </div></div>
+
+      <h2>5. CONCILIACION BANCARIA</h2>
+      <p>Ruta: <span class="ruta">Bancos &rarr; Conciliacion</span></p>
+      <p>Comparar los movimientos del sistema contra el estado de cuenta del banco
+      para verificar que los saldos coincidan al cierre del mes.</p>
+
+      <div class="paso"><div class="num">1</div><div class="paso-cont">
+        <div class="titulo">Clic en "+ Nueva Conciliacion"</div>
+      </div></div>
+      <div class="paso"><div class="num">2</div><div class="paso-cont">
+        <div class="titulo">Seleccionar el banco y la fecha de corte</div>
+        <div class="detalle">La fecha de corte es la fecha del estado de cuenta del banco. Ej: 30 de junio.</div>
+      </div></div>
+      <div class="paso"><div class="num">3</div><div class="paso-cont">
+        <div class="titulo">Ingresar el saldo segun el banco</div>
+        <div class="detalle">El valor que aparece en el estado de cuenta fisico enviado por el banco.</div>
+      </div></div>
+      <div class="paso"><div class="num">4</div><div class="paso-cont">
+        <div class="titulo">Subir el archivo del banco si lo tienes (CSV, TXT o Excel, max 5 MB)</div>
+      </div></div>
+      <div class="paso"><div class="num">5</div><div class="paso-cont">
+        <div class="titulo">El sistema muestra la diferencia y las partidas en transito</div>
+        <div class="detalle">Partidas en transito: movimientos del sistema que aun no aparecen en el estado
+        de cuenta del banco porque estan en camino (cheques pendientes, transferencias en proceso).</div>
+      </div></div>
+      <div class="paso"><div class="num">6</div><div class="paso-cont">
+        <div class="titulo">Marcar individualmente cada movimiento como conciliado</div>
+      </div></div>
+      <div class="paso"><div class="num">7</div><div class="paso-cont">
+        <div class="titulo">Cuando todo cuadra: "Marcar como Conciliada"</div>
+        <div class="detalle">Todos los movimientos quedan con conciliado = Si.
+        Un movimiento conciliado NO se puede anular despues.</div>
+      </div></div>
 
       <table class="t">
         <tr><th>Estado</th><th>Significado</th></tr>
-        <tr><td><span class="badge am">pendiente</span></td><td>Creado pero no ejecutado &mdash; el stock no ha cambiado todavia</td></tr>
-        <tr><td><span class="badge vd">confirmado</span></td><td>Ejecutado &mdash; el stock ya se movio entre las bodegas</td></tr>
+        <tr><td><span class="badge am">pendiente</span></td><td>Creada, en proceso de revision y marcacion</td></tr>
+        <tr><td><span class="badge vd">conciliada</span></td><td>Cuadrada y cerrada definitivamente</td></tr>
       </table>
 
-      <div class="alerta box"><p>Si se intenta trasladar mas unidades de las que hay en la bodega
-      de origen, el sistema bloquea la operacion con un mensaje de error.</p></div>
+      <h2>6. DATAFAST (pagos con tarjeta)</h2>
+      <p>Ruta: <span class="ruta">Bancos &rarr; Datafast</span></p>
+      <p>Gestiona los lotes de vouchers de tarjeta procesados por Datafast.
+      Tiene dos pasos: <strong>crear el lote</strong> cuando se procesan los vouchers del dia,
+      y <strong>liquidarlo</strong> cuando el banco hace el deposito neto.</p>
 
-      <h2>5. RECEPCIONES DE BODEGA</h2>
-      <p>Ruta: <span class="ruta">Inventario &rarr; Recepciones</span></p>
-      <p>El bodeguero confirma que la mercaderia llego fisicamente y esta en buen estado.</p>
-
-      <div class="tip box"><p><strong>Se crea automaticamente:</strong> Cuando se activa una Compra que
-      tiene bodega asignada, el sistema genera la Recepcion en estado pendiente con las cantidades
-      esperadas. No hay que crearla a mano.</p></div>
-
-      <div class="paso"><div class="num">1</div><div class="paso-cont">
-        <div class="titulo">Ir a Inventario &rarr; Recepciones y buscar la pendiente</div>
-      </div></div>
-      <div class="paso"><div class="num">2</div><div class="paso-cont">
-        <div class="titulo">Verificar las cantidades fisicamente</div>
-        <div class="detalle">Si se recibio menos de lo esperado, ajustar la cantidad recibida.
-        No puede ser mayor a la cantidad esperada.</div>
-      </div></div>
-      <div class="paso"><div class="num">3</div><div class="paso-cont">
-        <div class="titulo">Si los productos tienen etiquetas: escanear cada codigo de barras</div>
-        <div class="detalle">El sistema valida que el codigo pertenezca a esa compra.
-        Ejemplo: escanear AMP-000023. Si no pertenece, el sistema lo rechaza con un mensaje de error.
-        Cada codigo escaneado queda registrado como "recibido".</div>
-      </div></div>
-      <div class="paso"><div class="num">4</div><div class="paso-cont">
-        <div class="titulo">Confirmar recepcion &rarr; el stock queda registrado en la bodega</div>
-      </div></div>
-
-      <h2>6. ACTIVOS FIJOS</h2>
-      <p>Ruta: <span class="ruta">Inventario &rarr; Activos Fijos</span></p>
-      <p>Bienes de la empresa que duran mas de un ano: vehiculos, equipos de audio, muebles, tecnologia.</p>
-
-      <table class="t">
-        <tr><th>Campo</th><th>Descripcion</th></tr>
-        <tr><td><strong>Codigo</strong></td><td>Identificador interno. Ej: VEH-001, EQ-015</td></tr>
-        <tr><td><strong>Nombre / Descripcion</strong></td><td>Que es el bien</td></tr>
-        <tr><td><strong>Categoria</strong></td><td>Mueble, Vehiculo, Equipo de audio, Tecnologia, etc.</td></tr>
-        <tr><td><strong>Fecha adquisicion</strong></td><td>Cuando se compro o recibio</td></tr>
-        <tr><td><strong>Valor original</strong></td><td>Costo de compra</td></tr>
-        <tr><td><strong>Vida util (anos)</strong></td><td>Cuantos anos se espera que dure segun el SRI</td></tr>
-        <tr><td><strong>% Depreciacion anual</strong></td><td>Segun tablas SRI del Ecuador</td></tr>
-        <tr><td><strong>Custodio / Ubicacion</strong></td><td>Quien lo tiene y donde esta fisicamente</td></tr>
-      </table>
-    </div>';
-    }
-
-    /* ═══════════════════════════════════════════════════════
-       PERSONAS
-    ════════════════════════════════════════════════════════ */
-    private function htmlPersonas(): string
-    {
-        return '
-    <div class="page">
-      <div class="titulo-modulo">
-        <div class="nombre">PERSONAS</div>
-        <div class="sub">Clientes &middot; Proveedores &middot; Transportistas</div>
-        <div class="linea"></div>
-      </div>
-
-      <div class="intro"><p>
-        <strong>Para que sirve:</strong> Directorio central de todos los terceros del sistema.
-        Clientes, proveedores y transportistas se registran aqui una sola vez, y desde aqui
-        los usan todos los demas modulos: Ventas, Compras, Guias de Remision e Importaciones.
-      </p></div>
-
-      <div class="info box"><p>
-        <strong>Dev 1 y Dev 2:</strong> Este modulo fue construido principalmente por Dev 1
-        (rama dev1-personas-clientes). Dev 2 consume estos registros en Compras, Importaciones
-        y Guias de Remision.
-      </p></div>
-
-      <h2>QUIEN USA ESTE MODULO</h2>
-      <div class="rel-box">
-        <div class="rel-linea"><span class="rel-icono">-&gt;</span>
-          <strong>Ventas &rarr; Facturas / Proformas / NC</strong> &mdash; necesita que el cliente este aqui</div>
-        <div class="rel-linea"><span class="rel-icono">-&gt;</span>
-          <strong>Compras &rarr; Facturas / Anticipos</strong> &mdash; necesita que el proveedor este aqui</div>
-        <div class="rel-linea"><span class="rel-icono">-&gt;</span>
-          <strong>Compras &rarr; Importaciones</strong> &mdash; necesita proveedor de tipo internacional</div>
-        <div class="rel-linea"><span class="rel-icono">-&gt;</span>
-          <strong>Ventas &rarr; Guias de Remision</strong> &mdash; necesita que el transportista este aqui</div>
-      </div>
-
-      <h2>1. CLIENTES</h2>
-      <p>Ruta: <span class="ruta">Personas &rarr; Clientes</span></p>
-
+      <h3>Crear un lote</h3>
       <table class="t">
         <tr><th>Campo</th><th>Descripcion</th><th>Req.</th></tr>
-        <tr><td><strong>Tipo identificacion</strong></td><td>cedula / ruc / pasaporte</td><td><span class="req">Si</span></td></tr>
-        <tr><td><strong>Identificacion</strong></td><td>Numero del documento. Unico en el sistema.</td><td><span class="req">Si</span></td></tr>
-        <tr><td><strong>Razon Social</strong></td><td>Nombre completo o razon social legal</td><td><span class="req">Si</span></td></tr>
-        <tr><td><strong>Nombre comercial</strong></td><td>Como se conoce el negocio (puede diferir)</td><td>No</td></tr>
-        <tr><td><strong>Email</strong></td><td>Para envio de factura electronica (cuando se integre el SRI)</td><td>No</td></tr>
-        <tr><td><strong>Telefono / Celular</strong></td><td>Datos de contacto</td><td>No</td></tr>
-        <tr><td><strong>Direccion</strong></td><td>Aparece impresa en la factura</td><td>No</td></tr>
-        <tr><td><strong>Tiene credito</strong></td><td>Si = se le puede vender a credito. Habilita los campos de credito.</td><td>No</td></tr>
-        <tr><td><strong>Dias credito</strong></td><td>Cuantos dias tiene para pagar (se pre-llena en la factura)</td><td>No</td></tr>
-        <tr><td><strong>Cupo maximo</strong></td><td>Deuda maxima permitida. Si la supera no se le puede vender a credito.</td><td>No</td></tr>
-        <tr><td><strong>Agente retencion</strong></td><td>Si el cliente retiene impuestos marcar Si &mdash; afecta el calculo de la factura</td><td>No</td></tr>
+        <tr><td><strong>Banco / Caja</strong></td><td>Donde se depositara el valor neto de la liquidacion</td><td><span class="req">Si</span></td></tr>
+        <tr><td><strong>N. Lote</strong></td><td>Numero de lote de Datafast. Unico por empresa.</td><td><span class="req">Si</span></td></tr>
+        <tr><td><strong>Fecha</strong></td><td>Fecha del lote</td><td><span class="req">Si</span></td></tr>
+        <tr><td><strong>Total vouchers</strong></td><td>Suma total de todos los vouchers del lote</td><td><span class="req">Si</span></td></tr>
       </table>
 
-      <div class="tip box"><p><strong>Consumidor Final:</strong> Para ventas al publico sin datos del cliente
-      usar el registro "CONSUMIDOR FINAL" (RUC: 9999999999001) que viene preconfigurado en el sistema.
-      No hay que crear uno nuevo cada vez.</p></div>
-
-      <div class="nota box"><p><strong>Eliminar vs. Desactivar:</strong> Si el cliente ya tiene facturas,
-      CxC, proformas o prefacturas no se puede eliminar. El sistema lo desactiva automaticamente
-      (queda oculto pero el historial se preserva).</p></div>
-
-      <h2>2. PROVEEDORES</h2>
-      <p>Ruta: <span class="ruta">Personas &rarr; Proveedores</span>
-      (misma pantalla que <span class="ruta">Compras &rarr; Proveedores</span>)</p>
-
+      <h3>Liquidar el lote (cuando el banco deposita)</h3>
       <table class="t">
         <tr><th>Campo</th><th>Descripcion</th><th>Req.</th></tr>
-        <tr><td><strong>Tipo</strong></td><td><strong>nacional</strong> = de Ecuador.
-            <strong>internacional</strong> = del exterior (aparece en el selector de Importaciones).</td><td><span class="req">Si</span></td></tr>
-        <tr><td><strong>Tipo ID</strong></td><td>RUC, cedula o pasaporte</td><td><span class="req">Si</span></td></tr>
-        <tr><td><strong>Identificacion</strong></td><td>Numero del documento</td><td><span class="req">Si</span></td></tr>
-        <tr><td><strong>Razon Social</strong></td><td>Nombre legal completo</td><td><span class="req">Si</span></td></tr>
-        <tr><td><strong>Pais</strong></td><td>Se llena solo si tipo = nacional (ECUADOR automatico)</td><td>No</td></tr>
-        <tr><td><strong>Divisa</strong></td><td>Para internacionales: moneda en que factura (USD, EUR, JPY...)</td><td>No</td></tr>
-        <tr><td><strong>Dias credito</strong></td><td>Plazo habitual de pago. Se pre-llena cuando creas una compra de este proveedor.</td><td>No</td></tr>
+        <tr><td><strong>Fecha deposito</strong></td><td>Cuando el banco hizo el deposito neto</td><td><span class="req">Si</span></td></tr>
+        <tr><td><strong>Valor bruto</strong></td><td>Total que Datafast declara antes de descuentos</td><td><span class="req">Si</span></td></tr>
+        <tr><td><strong>Comision Datafast</strong></td><td>Lo que cobra Datafast por el servicio (porcentaje)</td><td><span class="req">Si</span></td></tr>
+        <tr><td><strong>Retencion IVA</strong></td><td>Retencion del IVA que aplica Datafast si corresponde</td><td>No</td></tr>
+        <tr><td><strong>Retencion IR</strong></td><td>Retencion en la fuente que aplica si corresponde</td><td>No</td></tr>
+        <tr><td><strong>Banco destino</strong></td><td>La cuenta bancaria donde llega el deposito neto</td><td><span class="req">Si</span></td></tr>
       </table>
 
-      <div class="nota box"><p>Para que un proveedor aparezca en el selector de Compras &rarr; Importaciones,
-      debe estar registrado como tipo <strong>internacional</strong>.</p></div>
-
-      <h2>3. TRANSPORTISTAS</h2>
-      <p>Ruta: <span class="ruta">Personas &rarr; Transportistas</span></p>
-      <p>Personas o empresas que transportan la mercaderia. Se necesitan para emitir
-      <strong>Guias de Remision</strong>, que es el documento obligatorio del SRI para movilizar
-      mercaderia fuera del establecimiento.</p>
-
-      <table class="t">
-        <tr><th>Campo</th><th>Descripcion</th><th>Req.</th></tr>
-        <tr><td><strong>Razon Social</strong></td><td>Nombre del transportista o empresa de transporte</td><td><span class="req">Si</span></td></tr>
-        <tr><td><strong>Identificacion</strong></td><td>CI o RUC. Unico en el sistema.</td><td>No *</td></tr>
-        <tr><td><strong>Placa</strong></td><td>Placa del vehiculo que transporta</td><td>No *</td></tr>
-        <tr><td><strong>Telefono</strong></td><td>Solo digitos, guiones y parentesis (7 a 20 caracteres)</td><td>No</td></tr>
-        <tr><td><strong>Email</strong></td><td>Correo de contacto</td><td>No</td></tr>
-      </table>
-
-      <div class="nota box"><p>* La identificacion y la placa son opcionales en el formulario del sistema,
-      pero el <strong>SRI las exige</strong> para autorizar la Guia de Remision electronica.
-      Se recomienda completarlas siempre.</p></div>
-
-      <div class="nota box"><p><strong>Eliminar vs. Desactivar:</strong> Si el transportista ya tiene guias
-      de remision emitidas, el sistema lo desactiva en lugar de eliminarlo para preservar el historial.</p></div>
-    </div>';
-    }
-
-    /* ═══════════════════════════════════════════════════════
-       VENTAS
-    ════════════════════════════════════════════════════════ */
-    private function htmlVentas(): string
-    {
-        return '
-    <div class="page">
-      <div class="titulo-modulo">
-        <div class="nombre">VENTAS</div>
-        <div class="sub">Proformas &middot; Prefacturas &middot; Facturas &middot; NC &middot; Retenciones &middot; Guias &middot; CxC</div>
-        <div class="linea"></div>
+      <div class="ejemplo">
+        <div class="ej-titulo">Ejemplo de liquidacion Datafast</div>
+        <p>Valor bruto: $1,000 &middot; Comision Datafast: $20 &middot; Retencion IVA: $15 &middot; Retencion IR: $5</p>
+        <p>Valor neto que deposita el banco: $1,000 - $20 - $15 - $5 = <strong>$960</strong></p>
+        <p>Asiento automatico: DEBE Banco $960 + DEBE Comision $20 + DEBE Ret.IVA $15 &middot; HABER Vouchers $1,000</p>
       </div>
 
-      <div class="intro"><p>
-        <strong>Para que sirve:</strong> Gestiona todo el ciclo de ventas desde la cotizacion (proforma)
-        hasta la factura oficial, cobros y devoluciones. Al emitir una factura se genera el asiento
-        contable automaticamente y, si la venta es a credito, tambien se crea la Cuenta por Cobrar.
-      </p></div>
-
-      <h2>ANTES DE USAR VENTAS &mdash; QUE SE NECESITA</h2>
-      <div class="rel-box">
-        <div class="rel-linea"><span class="rel-icono">v</span>
-          <strong>Clientes</strong> registrados en Personas &rarr; Clientes (Dev 1)</div>
-        <div class="rel-linea"><span class="rel-icono">v</span>
-          <strong>Productos con precio</strong> configurados en Inventario &rarr; Productos (Dev 1)</div>
-        <div class="rel-linea"><span class="rel-icono">v</span>
-          <strong>Parametros Contables</strong> configurados en Contabilidad &rarr; Parametros</div>
-        <div class="rel-linea"><span class="rel-icono">v</span>
-          <strong>Ejercicio contable abierto</strong> en Contabilidad &rarr; Ejercicios</div>
-        <div class="rel-linea"><span class="rel-icono">v</span>
-          <strong>Transportistas</strong> registrados en Personas &rarr; Transportistas (para Guias de Remision)</div>
-      </div>
-
-      <div class="alerta box"><p>
-        <strong>Las ventas NO bajan el stock automaticamente.</strong> Las facturas registran la venta
-        pero el inventario no se decrementa de forma automatica (modelo diferido). Cuando se integre
-        la gestion de stock con ventas se actualizara este comportamiento.
-      </p></div>
-
-      <h2>FLUJO COMPLETO DE VENTA</h2>
-      <div class="flujo">
-        <div class="flujo-fila">
-          <div class="flujo-paso">Proforma<div class="fsub">cotizacion</div></div>
-          <div class="flujo-arrow">&rarr;</div>
-          <div class="flujo-paso">Prefactura<div class="fsub">doc. interno</div></div>
-          <div class="flujo-arrow">&rarr;</div>
-          <div class="flujo-paso">Factura<div class="fsub">doc. SRI</div></div>
-          <div class="flujo-arrow">&rarr;</div>
-          <div class="flujo-paso">CxC<div class="fsub">si es credito</div></div>
-          <div class="flujo-arrow">&rarr;</div>
-          <div class="flujo-paso">Cobro<div class="fsub">cancela CxC</div></div>
-        </div>
-      </div>
-
-      <h2>1. PROFORMAS (cotizaciones)</h2>
-      <p>Ruta: <span class="ruta">Ventas &rarr; Proformas &rarr; + Nueva Proforma</span></p>
-      <p>Documento no oficial para presentar precio al cliente. No genera asiento ni afecta inventario.
-      Cuando el cliente acepta se convierte a Prefactura o directamente a Factura.</p>
-
-      <div class="paso"><div class="num">1</div><div class="paso-cont">
-        <div class="titulo">Seleccionar cliente y agregar productos</div>
-        <div class="detalle">El precio se carga desde el catalogo automaticamente.</div>
-      </div></div>
-      <div class="paso"><div class="num">2</div><div class="paso-cont">
-        <div class="titulo">Guardar e imprimir / compartir con el cliente</div>
-      </div></div>
-      <div class="paso"><div class="num">3</div><div class="paso-cont">
-        <div class="titulo">Cuando el cliente acepta: "Convertir a Prefactura" o "Convertir a Factura"</div>
-        <div class="detalle">Todos los datos pasan al nuevo documento sin reescribir nada.</div>
-      </div></div>
-
-      <h2>2. PREFACTURAS (documento interno previo a factura)</h2>
-      <p>Ruta: <span class="ruta">Ventas &rarr; Prefacturas &rarr; + Nueva Prefactura</span></p>
-      <p>Documento previo a la factura. Puede requerir aprobacion cuando el descuento supera
-      el limite autorizado para el perfil del vendedor.</p>
-
+      <h2>7. REPORTES</h2>
+      <p>Ruta: <span class="ruta">Bancos &rarr; Reportes</span></p>
       <table class="t">
-        <tr><th>Estado</th><th>Que significa</th><th>Que sigue</th></tr>
-        <tr><td><span class="badge am">pendiente</span></td><td>Esperando revision del supervisor</td><td>Aprobar o rechazar</td></tr>
-        <tr><td><span class="badge vd">aprobada</span></td><td>Lista para convertir a factura</td><td>Clic en "Convertir a Factura"</td></tr>
-        <tr><td><span class="badge rj">rechazada</span></td><td>Supervisor la rechazo con motivo</td><td>Vendedor corrige y reenvía</td></tr>
-        <tr><td><span class="badge gr">facturada</span></td><td>Ya se emitio la factura</td><td>&mdash;</td></tr>
+        <tr><th>Reporte</th><th>Que muestra</th><th>Filtros disponibles</th></tr>
+        <tr><td><strong>Estado de Cuenta</strong></td><td>Saldo inicial, movimientos del periodo con saldo acumulado corriente, saldo final, total ingresos y total egresos</td><td>Banco/caja + rango de fechas</td></tr>
+        <tr><td><strong>Movimientos</strong></td><td>Listado de movimientos sin anular en formato horizontal para impresion</td><td>Banco/caja, tipo, rango de fechas</td></tr>
+        <tr><td><strong>Caja Chica</strong></td><td>Resumen de aperturas y cierres de cajas con diferencias registradas</td><td>Banco/caja + rango de fechas</td></tr>
       </table>
 
-      <h3>Flujo de aprobacion especial por descuento</h3>
-      <div class="paso"><div class="num">1</div><div class="paso-cont">
-        <div class="titulo">Vendedor aplica descuento mayor al limite de su perfil</div>
-        <div class="detalle">El limite se configura en Configuracion &rarr; Limites de Descuento.</div>
-      </div></div>
-      <div class="paso"><div class="num">2</div><div class="paso-cont">
-        <div class="titulo">La prefactura queda en estado "pendiente" automaticamente</div>
-      </div></div>
-      <div class="paso"><div class="num">3</div><div class="paso-cont">
-        <div class="titulo">El supervisor va a Ventas &rarr; Aprobaciones e ingresa su PIN de 4 digitos</div>
-      </div></div>
-      <div class="paso"><div class="num">4</div><div class="paso-cont">
-        <div class="titulo">El vendedor convierte la prefactura aprobada en factura</div>
-      </div></div>
-
-      <h2>3. FACTURAS (documento oficial SRI)</h2>
-      <p>Ruta: <span class="ruta">Ventas &rarr; Facturas &rarr; + Nueva Factura</span></p>
-
-      <table class="t">
-        <tr><th>Campo</th><th>Descripcion</th><th>Req.</th></tr>
-        <tr><td><strong>Cliente</strong></td><td>Buscar por RUC o nombre. Si no hay datos usar "CONSUMIDOR FINAL".</td><td><span class="req">Si</span></td></tr>
-        <tr><td><strong>Fecha</strong></td><td>Por defecto el dia de hoy</td><td><span class="req">Si</span></td></tr>
-        <tr><td><strong>Detalles (lineas)</strong></td><td>Al menos 1 linea: producto + cantidad + precio + % descuento</td><td><span class="req">Si</span></td></tr>
-        <tr><td><strong>Formas de pago</strong></td><td>Al menos 1. La suma de los montos debe igualar el total de la factura (tolerancia de +/- $0.01).</td><td><span class="req">Si</span></td></tr>
-      </table>
-
-      <div style="margin:6px 0 12px;">
-        <strong>Formas de pago:</strong>&nbsp;
-        <span class="badge vd">efectivo</span>
-        <span class="badge az">transferencia</span>
-        <span class="badge mo">tarjeta</span>
-        <span class="badge am">cheque</span>
-        <span class="badge gr">credito</span>
-      </div>
-
-      <div class="nota box"><p><strong>Pago a credito:</strong> Al agregar "credito" como forma de pago,
-      ingresar los dias de plazo. El sistema crea automaticamente la CxC con la fecha de vencimiento
-      calculada.</p></div>
-
-      <h3>Al emitir la factura el sistema hace automaticamente</h3>
-      <div class="paso"><div class="num">1</div><div class="paso-cont">
-        <div class="titulo">Asigna el numero secuencial SRI</div>
-        <div class="detalle">Formato: 001-001-000000001 (establecimiento + punto emision + 9 digitos).
-        El siguiente numero lo gestiona solo desde Configuracion &rarr; Empresa.</div>
-      </div></div>
-      <div class="paso"><div class="num">2</div><div class="paso-cont">
-        <div class="titulo">Genera el asiento contable</div>
-        <div class="detalle">DEBE: Clientes (o Caja/Banco si es contado). HABER: Ventas + IVA por pagar.</div>
-      </div></div>
-      <div class="paso"><div class="num">3</div><div class="paso-cont">
-        <div class="titulo">Crea la CxC si hubo pago a credito</div>
-      </div></div>
-
-      <h3>Estados de una factura</h3>
-      <table class="t">
-        <tr><th>Estado</th><th>Estado SRI</th><th>Que significa</th></tr>
-        <tr><td><span class="badge vd">activa</span></td><td><span class="badge am">pendiente</span></td>
-            <td>Emitida en el sistema, pendiente de enviar al SRI (integracion en desarrollo)</td></tr>
-        <tr><td><span class="badge vd">activa</span></td><td><span class="badge vd">autorizada</span></td>
-            <td>Autorizada electronicamentepor el SRI (cuando se integre)</td></tr>
-        <tr><td><span class="badge rj">anulada</span></td><td><span class="badge rj">anulada</span></td>
-            <td>Solo Super Admin puede anular, solo el mismo dia antes de las 23:59</td></tr>
-      </table>
-
-      <div class="info box"><p><strong>Integracion SRI:</strong> La firma electronica y el envio automatico
-      al webservice del SRI esta pendiente de implementacion. Actualmente el estado SRI queda en
-      "pendiente" en todas las facturas.</p></div>
-
-      <h2>4. NOTAS DE CREDITO (devoluciones)</h2>
-      <p>Ruta: <span class="ruta">Ventas &rarr; Notas de Credito &rarr; + Nueva NC</span></p>
-      <p>Para reversar parcial o totalmente una factura (devoluciones, error de precio, etc.).</p>
-
-      <div class="alerta box"><p><strong>Restriccion actual:</strong> Solo se puede hacer NC sobre facturas
-      con estado SRI = autorizada. Como actualmente todas las facturas quedan en "pendiente" (la
-      integracion SRI no esta implementada), las NC estan bloqueadas en la practica hasta completar
-      esa integracion.</p></div>
-
-      <div class="paso"><div class="num">1</div><div class="paso-cont">
-        <div class="titulo">Seleccionar la factura original de referencia</div>
-      </div></div>
-      <div class="paso"><div class="num">2</div><div class="paso-cont">
-        <div class="titulo">Escribir el motivo de la devolucion</div>
-      </div></div>
-      <div class="paso"><div class="num">3</div><div class="paso-cont">
-        <div class="titulo">Seleccionar las lineas a reversar y las cantidades</div>
-        <div class="detalle">Solo lineas de la factura original. La cantidad de la NC no puede
-        superar la cantidad original.</div>
-      </div></div>
-      <div class="paso"><div class="num">4</div><div class="paso-cont">
-        <div class="titulo">Emitir &rarr; genera asiento reverso y reduce el saldo de la CxC si habia</div>
-      </div></div>
-
-      <h2>5. RETENCIONES RECIBIDAS</h2>
-      <p>Ruta: <span class="ruta">Ventas &rarr; Retenciones</span></p>
-      <p>Cuando un cliente agente de retencion nos entrega el comprobante de retencion,
-      se registra aqui para cuadrar con la factura emitida.</p>
-
-      <table class="t">
-        <tr><th>Campo</th><th>Que es</th></tr>
-        <tr><td><strong>Factura retenida</strong></td><td>La factura sobre la que aplica la retencion</td></tr>
-        <tr><td><strong>N. comprobante</strong></td><td>Numero del comprobante que entrega el cliente</td></tr>
-        <tr><td><strong>Fecha</strong></td><td>Fecha del comprobante de retencion</td></tr>
-        <tr><td><strong>% Retencion IVA</strong></td><td>0%, 30%, 70% o 100% del IVA segun el tipo de cliente</td></tr>
-        <tr><td><strong>% Retencion IR</strong></td><td>Porcentaje de retencion en la fuente segun tabla SRI</td></tr>
-      </table>
-
-      <h2>6. GUIAS DE REMISION</h2>
-      <p>Ruta: <span class="ruta">Ventas &rarr; Guias de Remision</span></p>
-      <p>Documento <strong>obligatorio del SRI</strong> para trasladar mercaderia fuera del establecimiento.
-      El transportista debe estar registrado en Personas &rarr; Transportistas.</p>
-
-      <table class="t">
-        <tr><th>Campo</th><th>Descripcion</th><th>Req.</th></tr>
-        <tr><td><strong>Transportista</strong></td><td>Quien transporta (debe existir en Personas &rarr; Transportistas)</td><td><span class="req">Si</span></td></tr>
-        <tr><td><strong>Direccion de partida</strong></td><td>Desde donde sale la mercaderia</td><td><span class="req">Si</span></td></tr>
-        <tr><td><strong>Direccion de destino</strong></td><td>A donde llega la mercaderia</td><td><span class="req">Si</span></td></tr>
-        <tr><td><strong>Fecha inicio transporte</strong></td><td>Cuando empieza el traslado</td><td><span class="req">Si</span></td></tr>
-        <tr><td><strong>Fecha fin transporte</strong></td><td>Maximo 90 dias desde el inicio. Debe ser mayor o igual al inicio.</td><td><span class="req">Si</span></td></tr>
-        <tr><td><strong>Factura referencia</strong></td><td>La factura que ampara el envio (recomendado pero opcional)</td><td>No</td></tr>
-        <tr><td><strong>Detalle de mercaderia</strong></td><td>Descripcion + Cantidad + Unidad. Minimo 1 linea.</td><td><span class="req">Si</span></td></tr>
-      </table>
-
-      <h2>7. CUENTAS POR COBRAR (CxC)</h2>
-      <p>Ruta: <span class="ruta">Ventas &rarr; CxC</span></p>
-      <p>Se crean automaticamente al emitir una factura con forma de pago "credito". No se crean
-      manualmente. Puedes ver el historial completo de pagos parciales y retenciones aplicadas
-      en el detalle de cada CxC.</p>
-
-      <h3>Registrar un cobro</h3>
-      <div class="paso"><div class="num">1</div><div class="paso-cont">
-        <div class="titulo">Buscar la CxC por cliente, numero de factura o fecha de vencimiento</div>
-      </div></div>
-      <div class="paso"><div class="num">2</div><div class="paso-cont">
-        <div class="titulo">Clic en "Cobrar" &mdash; ingresar: fecha, banco/caja destino, forma de cobro y monto</div>
-        <div class="detalle">El cobro puede ser parcial (el cliente abona solo una parte).</div>
-      </div></div>
-      <div class="paso"><div class="num">3</div><div class="paso-cont">
-        <div class="titulo">Guardar</div>
-        <div class="detalle">El saldo de la CxC se reduce. Si llega a $0: estado pagada.
-        Si queda saldo: estado parcial. El banco/caja recibe el ingreso y se genera el asiento de cobro.</div>
-      </div></div>
-
-      <div style="margin:6px 0 14px;">
-        <span class="badge am">pendiente</span>
-        <span class="badge az">parcial</span>
-        <span class="badge vd">pagada</span>
-        <span class="badge rj">vencida</span>
-      </div>
+      <div class="tip box"><p>El boton <strong>Excel</strong> en la vista de Movimientos descarga el
+      listado actual con los filtros aplicados en formato .xlsx con encabezados y totales automaticos.</p></div>
     </div>';
     }
 }
