@@ -111,11 +111,10 @@ class GenerarDocumentacion extends Command
         $dir = base_path('usos');
         if (!is_dir($dir)) mkdir($dir, 0755, true);
 
+        // Solo modulos Dev 2 (excluye RRHH, Bancos, Inventario y Personas que son Dev 1)
         $modulos = [
             'contabilidad' => ['nombre' => 'Contabilidad', 'html' => $this->htmlContabilidad()],
             'compras'      => ['nombre' => 'Compras',      'html' => $this->htmlCompras()],
-            'inventario'   => ['nombre' => 'Inventario',   'html' => $this->htmlInventario()],
-            'personas'     => ['nombre' => 'Personas',     'html' => $this->htmlPersonas()],
             'ventas'       => ['nombre' => 'Ventas',       'html' => $this->htmlVentas()],
         ];
 
