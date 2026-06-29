@@ -1,57 +1,222 @@
-import { useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { router, usePage, Head, Link } from '@inertiajs/react'
 import { toast, ToastContainer } from 'react-toastify'
 import AppLayout from '@/Layouts/AppLayout'
 import { cn } from '@/lib/utils'
-import { ChevronLeft, CheckCircle, AlertTriangle, GitMerge } from 'lucide-react'
-import type { ConciliacionBancaria, PartidaTransito, PageProps } from '@/types'
+import {
+    ChevronLeft, CheckCircle, AlertTriangle, GitMerge,
+    Upload, ArrowLeftRight, PlusCircle, Lock, Trash2,
+} from 'lucide-react'
+import type { PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+interface Partida {
+    id: number
+    tipo: 'sistema' | 'banco'
+    fecha: string
+    descripcion: string
+    monto: number
+    conciliada: boolean
+    movimiento?: {
+        id: number
+        descripcion: string
+        monto: number
+        tipo: string
+        sub_tipo: string
+    } | null
+}
+
+interface ConciliacionData {
+    id: number
+    estado: string
+    fecha_corte: string
+    saldo_banco: number
+    saldo_sistema: number
+    diferencia: number
+    descripcion: string | null
+    banco_caja: { nombre: string; saldo_actual: number }
+}
+
 interface Props extends PageProps {
-    conciliacion: ConciliacionBancaria & {
-        banco_caja: { nombre: string; saldo_actual: number }
-        partidas: (PartidaTransito & {
-            movimiento?: { descripcion: string; monto: number; tipo: string }
-        })[]
+    conciliacion: ConciliacionData
+    partidas_sistema: Partida[]
+    partidas_banco: Partida[]
+    resumen: {
+        total_sistema: number
+        total_banco: number
+        conciliadas: number
+        pendientes: number
     }
 }
 
-// ─── Notify ───────────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const S = { borderRadius: '14px', fontWeight: '600', color: '#fff' } as const
 const notify = {
     ok:    (msg: string) => toast.success(msg, { icon: () => '✅', style: { ...S, background: 'linear-gradient(135deg,#10b981,#059669)' } }),
+    warn:  (msg: string) => toast.warning(msg, { icon: () => '⚠️', style: { ...S, background: 'linear-gradient(135deg,#f59e0b,#d97706)' } }),
     error: (msg: string) => toast.error(msg,   { icon: () => '❌', autoClose: 6000, style: { ...S, background: 'linear-gradient(135deg,#ef4444,#dc2626)' } }),
 }
 
-const fmt = (n: number) => '$' + Number(n ?? 0).toLocaleString('es-EC', { minimumFractionDigits: 2 })
+const fmt = (n: number | string | null | undefined) =>
+    '$' + Number(n ?? 0).toLocaleString('es-EC', { minimumFractionDigits: 2 })
+
+// ─── Subcomponente: tabla de partidas ─────────────────────────────────────────
+
+function TablaPartidas({
+    partidas,
+    titulo,
+    color,
+    seleccionada,
+    onSeleccionar,
+    isCerrada,
+}: {
+    partidas: Partida[]
+    titulo: string
+    color: string
+    seleccionada: number | null
+    onSeleccionar: (id: number | null) => void
+    isCerrada: boolean
+}) {
+    const pendientes = partidas.filter(p => !p.conciliada)
+    const conciliadas = partidas.filter(p => p.conciliada)
+
+    return (
+        <div className="rounded-xl border overflow-hidden flex flex-col"
+            style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+            {/* Header */}
+            <div className="px-4 py-3 border-b flex items-center justify-between"
+                style={{ borderColor: 'var(--border)', borderLeft: `4px solid ${color}` }}>
+                <div>
+                    <h3 className="font-semibold text-sm" style={{ color: 'var(--text-main)' }}>{titulo}</h3>
+                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                        {pendientes.length} pendientes · {conciliadas.length} conciliadas
+                    </p>
+                </div>
+                <div className="text-right">
+                    <p className="text-xs font-mono font-semibold" style={{ color }}>
+                        {fmt(partidas.reduce((s, p) => s + Number(p.monto), 0))}
+                    </p>
+                    <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>total</p>
+                </div>
+            </div>
+
+            {/* Filas */}
+            <div className="overflow-y-auto" style={{ maxHeight: '420px' }}>
+                {partidas.length === 0 ? (
+                    <div className="py-10 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
+                        Sin partidas
+                    </div>
+                ) : (
+                    partidas.map(p => (
+                        <div key={p.id}
+                            onClick={() => !isCerrada && !p.conciliada && onSeleccionar(seleccionada === p.id ? null : p.id)}
+                            className={cn(
+                                'flex items-center gap-3 px-4 py-2.5 border-b cursor-pointer transition-colors text-sm',
+                                p.conciliada && 'opacity-50',
+                                !p.conciliada && !isCerrada && seleccionada === p.id && 'bg-amber-50 dark:bg-amber-900/20',
+                                !p.conciliada && !isCerrada && seleccionada !== p.id && 'hover:bg-gray-50 dark:hover:bg-white/5',
+                            )}
+                            style={{ borderColor: 'var(--border)' }}>
+                            <div className="flex-1 min-w-0">
+                                <p className="truncate text-xs font-medium" style={{ color: 'var(--text-main)' }}>
+                                    {p.descripcion}
+                                </p>
+                                <p className="text-[10px] font-mono" style={{ color: 'var(--text-muted)' }}>
+                                    {p.fecha}
+                                </p>
+                            </div>
+                            <div className="text-right shrink-0">
+                                <p className="text-xs font-semibold font-mono" style={{ color }}>
+                                    {fmt(p.monto)}
+                                </p>
+                            </div>
+                            <div className="shrink-0">
+                                {p.conciliada
+                                    ? <CheckCircle className="w-4 h-4 text-green-500" />
+                                    : <div className={cn(
+                                        'w-4 h-4 rounded-full border-2',
+                                        seleccionada === p.id ? 'border-amber-500 bg-amber-500' : 'border-gray-300'
+                                    )} />
+                                }
+                            </div>
+                        </div>
+                    ))
+                )}
+            </div>
+        </div>
+    )
+}
 
 // ─── Página ───────────────────────────────────────────────────────────────────
 
 export default function ConciliacionShow() {
-    const { conciliacion, flash } = usePage<Props>().props
-    const tieneDif = Math.abs(Number(conciliacion.diferencia)) > 0.01
+    const { conciliacion, partidas_sistema, partidas_banco, resumen, flash } = usePage<Props>().props
+    const tieneDif   = Math.abs(Number(conciliacion.diferencia)) > 0.01
+    const isCerrada  = conciliacion.estado === 'conciliada'
+
+    const [selSistema, setSelSistema] = useState<number | null>(null)
+    const [selBanco,   setSelBanco]   = useState<number | null>(null)
+    const [uploading,  setUploading]  = useState(false)
+    const [ajusteDesc, setAjusteDesc] = useState('')
+    const [showAjuste, setShowAjuste] = useState(false)
+    const fileRef = useRef<HTMLInputElement>(null)
 
     useEffect(() => {
-        if (flash?.success) notify.ok(flash.success)
+        if (flash?.success) notify.ok(flash.success as string)
+        if (flash?.warning) notify.warn(flash.warning as string)
         if (flash?.error)   notify.error(flash.error as string)
-    }, [flash?.success, flash?.error])
+    }, [flash])
 
-    function marcarConciliada() {
-        router.patch(route('bancos.conciliaciones.conciliar', conciliacion.id), {}, {
-            onSuccess: () => notify.ok('Conciliación marcada como conciliada'),
-            onError: () => notify.error('Error al conciliar'),
+    // ── Upload CSV ─────────────────────────────────────────────────────────────
+    function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+        const file = e.target.files?.[0]
+        if (!file) return
+        setUploading(true)
+        const data = new FormData()
+        data.append('archivo', file)
+        router.post(route('bancos.conciliaciones.upload-csv', conciliacion.id), data, {
+            forceFormData: true,
+            onFinish: () => { setUploading(false); if (fileRef.current) fileRef.current.value = '' },
         })
     }
+
+    // ── Cruce manual ───────────────────────────────────────────────────────────
+    function cruzarPartidas() {
+        if (!selSistema || !selBanco) return
+        router.post(route('bancos.conciliaciones.conciliar-partida', conciliacion.id), {
+            partida_sistema_id: selSistema,
+            partida_banco_id:   selBanco,
+        }, {
+            onSuccess: () => { setSelSistema(null); setSelBanco(null) },
+        })
+    }
+
+    // ── Asiento de ajuste ──────────────────────────────────────────────────────
+    function generarAjuste() {
+        router.post(route('bancos.conciliaciones.generar-asiento-ajuste', conciliacion.id), {
+            descripcion: ajusteDesc || undefined,
+        }, {
+            onSuccess: () => { setAjusteDesc(''); setShowAjuste(false) },
+        })
+    }
+
+    // ── Cerrar conciliación ────────────────────────────────────────────────────
+    function cerrarConciliacion() {
+        if (!confirm('¿Cerrar esta conciliación? No se podrá reabrir.')) return
+        router.patch(route('bancos.conciliaciones.cerrar', conciliacion.id))
+    }
+
+    const puedenCruzarse = selSistema !== null && selBanco !== null
 
     return (
         <AppLayout title="Detalle Conciliación" suppressFlash>
             <Head title={`Conciliación — ${conciliacion.banco_caja?.nombre}`} />
 
-            {/* Header */}
-            <div className="px-6 pt-6 mb-6">
+            {/* ── Header ─────────────────────────────────────────────────── */}
+            <div className="px-6 pt-6 mb-5">
                 <Link href={route('bancos.conciliaciones.index')}
                     className="inline-flex items-center gap-1.5 text-sm mb-4 hover:opacity-70 transition-opacity"
                     style={{ color: 'var(--text-muted)' }}>
@@ -60,7 +225,8 @@ export default function ConciliacionShow() {
 
                 <div className="flex items-start justify-between flex-wrap gap-4">
                     <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-xl" style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
+                        <div className="p-2 rounded-xl"
+                            style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
                             <GitMerge size={24} style={{ color: 'var(--primary)' }} />
                         </div>
                         <div>
@@ -68,128 +234,153 @@ export default function ConciliacionShow() {
                                 {conciliacion.banco_caja?.nombre}
                             </h1>
                             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                                Corte al {(conciliacion as any).fecha_corte}
+                                Corte al {conciliacion.fecha_corte}
                             </p>
                         </div>
                     </div>
 
-                    {conciliacion.estado !== 'conciliada' && (
-                        <button onClick={marcarConciliada}
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white"
-                            style={{ background: 'var(--primary)' }}>
-                            <CheckCircle className="w-4 h-4" /> Marcar como Conciliada
-                        </button>
+                    {/* Acciones */}
+                    {!isCerrada && (
+                        <div className="flex items-center gap-2 flex-wrap">
+                            {/* Upload CSV */}
+                            <label className={cn(
+                                'flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium cursor-pointer transition-opacity',
+                                uploading && 'opacity-50 cursor-not-allowed'
+                            )} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-main)' }}>
+                                <Upload className="w-3.5 h-3.5" />
+                                {uploading ? 'Cargando…' : 'Cargar CSV banco'}
+                                <input ref={fileRef} type="file" accept=".csv,.txt" className="hidden"
+                                    onChange={handleUpload} disabled={uploading} />
+                            </label>
+
+                            {/* Ajuste */}
+                            {tieneDif && (
+                                <button onClick={() => setShowAjuste(v => !v)}
+                                    className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-white"
+                                    style={{ background: '#7c3aed' }}>
+                                    <PlusCircle className="w-3.5 h-3.5" /> Asiento ajuste
+                                </button>
+                            )}
+
+                            {/* Cerrar */}
+                            <button onClick={cerrarConciliacion}
+                                disabled={resumen.pendientes > 0}
+                                title={resumen.pendientes > 0 ? 'Hay partidas pendientes sin conciliar' : ''}
+                                className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-white disabled:opacity-40"
+                                style={{ background: '#1d4ed8' }}>
+                                <Lock className="w-3.5 h-3.5" /> Cerrar conciliación
+                            </button>
+                        </div>
                     )}
                 </div>
             </div>
 
-            {/* Cards resumen */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 px-6 mb-6">
-                <div className="rounded-xl border p-4"
-                    style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
-                    <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>Saldo Banco (estado de cuenta)</p>
-                    <p className="text-2xl font-bold" style={{ color: 'var(--text-main)' }}>{fmt(conciliacion.saldo_banco)}</p>
-                </div>
-                <div className="rounded-xl border p-4"
-                    style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
-                    <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>Saldo Sistema</p>
-                    <p className="text-2xl font-bold" style={{ color: 'var(--text-main)' }}>{fmt(conciliacion.saldo_sistema)}</p>
-                </div>
-                <div className={cn(
-                    'rounded-xl border p-4',
-                    tieneDif
-                        ? 'border-red-300 dark:border-red-700'
-                        : 'border-green-300 dark:border-green-700'
-                )} style={{
-                    background: tieneDif ? 'rgba(239,68,68,0.08)' : 'rgba(16,185,129,0.08)',
-                    borderColor: tieneDif ? 'rgba(239,68,68,0.3)' : 'rgba(16,185,129,0.3)',
-                }}>
-                    <div className="flex items-center gap-2 mb-1">
-                        {tieneDif
-                            ? <AlertTriangle className="w-4 h-4 text-red-500" />
-                            : <CheckCircle className="w-4 h-4 text-green-500" />
-                        }
-                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Diferencia</p>
+            {/* ── Panel ajuste ─────────────────────────────────────────────── */}
+            {showAjuste && (
+                <div className="mx-6 mb-4 rounded-xl border p-4 flex items-end gap-3"
+                    style={{ background: 'rgba(124,58,237,0.06)', borderColor: 'rgba(124,58,237,0.3)' }}>
+                    <div className="flex-1">
+                        <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-muted)' }}>
+                            Descripción del ajuste (opcional)
+                        </label>
+                        <input type="text" value={ajusteDesc} onChange={e => setAjusteDesc(e.target.value)}
+                            placeholder={`Ajuste conciliación ${conciliacion.banco_caja?.nombre}`}
+                            className="input-field w-full" />
                     </div>
-                    <p className={cn('text-2xl font-bold', tieneDif ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400')}>
+                    <button onClick={generarAjuste}
+                        className="px-4 py-2 rounded-xl text-sm font-medium text-white shrink-0"
+                        style={{ background: '#7c3aed' }}>
+                        Generar
+                    </button>
+                    <button onClick={() => setShowAjuste(false)}
+                        className="px-3 py-2 rounded-xl text-sm text-gray-500 hover:text-gray-700 shrink-0">
+                        <Trash2 className="w-4 h-4" />
+                    </button>
+                </div>
+            )}
+
+            {/* ── Resumen saldos ────────────────────────────────────────────── */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 px-6 mb-5">
+                <div className="rounded-xl border p-3"
+                    style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+                    <p className="text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Saldo banco</p>
+                    <p className="text-lg font-bold" style={{ color: 'var(--text-main)' }}>{fmt(conciliacion.saldo_banco)}</p>
+                </div>
+                <div className="rounded-xl border p-3"
+                    style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+                    <p className="text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Saldo sistema</p>
+                    <p className="text-lg font-bold" style={{ color: 'var(--text-main)' }}>{fmt(conciliacion.saldo_sistema)}</p>
+                </div>
+                <div className="rounded-xl border p-3"
+                    style={{
+                        background: tieneDif ? 'rgba(239,68,68,0.06)' : 'rgba(16,185,129,0.06)',
+                        borderColor: tieneDif ? 'rgba(239,68,68,0.3)' : 'rgba(16,185,129,0.3)',
+                    }}>
+                    <div className="flex items-center gap-1.5 mb-1">
+                        {tieneDif
+                            ? <AlertTriangle className="w-3.5 h-3.5 text-red-500" />
+                            : <CheckCircle  className="w-3.5 h-3.5 text-green-500" />
+                        }
+                        <p className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Diferencia</p>
+                    </div>
+                    <p className={cn('text-lg font-bold', tieneDif ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400')}>
                         {fmt(conciliacion.diferencia)}
                     </p>
-                    {!tieneDif && <p className="text-xs text-green-600 dark:text-green-400 mt-1">Cuentas cuadradas</p>}
+                </div>
+                <div className="rounded-xl border p-3"
+                    style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+                    <p className="text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Estado</p>
+                    <div className="flex items-center gap-2">
+                        <span className={cn(
+                            'px-2 py-0.5 rounded-full text-xs font-semibold',
+                            isCerrada
+                                ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                                : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-600'
+                        )}>
+                            {isCerrada ? 'Conciliada' : 'Pendiente'}
+                        </span>
+                    </div>
+                    <p className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                        {resumen.conciliadas} cruzadas · {resumen.pendientes} pendientes
+                    </p>
                 </div>
             </div>
 
-            {/* Estado */}
-            <div className="px-6 mb-6 flex items-center gap-3">
-                {conciliacion.estado === 'conciliada'
-                    ? <span className="px-3 py-1.5 rounded-full text-sm font-semibold bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">Conciliada</span>
-                    : <span className="px-3 py-1.5 rounded-full text-sm font-semibold bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-600">Pendiente de conciliación</span>
-                }
-                {conciliacion.descripcion && (
-                    <p className="text-sm" style={{ color: 'var(--text-muted)' }}>{conciliacion.descripcion}</p>
-                )}
-            </div>
-
-            {/* Partidas en tránsito */}
-            <div className="px-6 pb-8">
-                <h2 className="text-sm font-semibold mb-3 uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
-                    Partidas en tránsito ({conciliacion.partidas?.length ?? 0})
-                </h2>
-
-                {(!conciliacion.partidas || conciliacion.partidas.length === 0) ? (
-                    <div className="rounded-xl border p-8 text-center"
-                        style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
-                        <CheckCircle className="w-10 h-10 text-green-500 opacity-50 mx-auto mb-3" />
-                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                            Sin partidas en tránsito — todos los movimientos están cuadrados
-                        </p>
+            {/* ── Botón cruce ──────────────────────────────────────────────── */}
+            {!isCerrada && (
+                <div className="px-6 mb-4 flex items-center gap-3">
+                    <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                        {selSistema && selBanco
+                            ? 'Partidas seleccionadas — listo para cruzar'
+                            : 'Selecciona una partida de cada panel para cruzarlas'}
                     </div>
-                ) : (
-                    <div className="border rounded-xl overflow-hidden"
-                        style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
-                        <div className="grid grid-cols-12 gap-2 px-4 py-2.5 border-b text-[11px] font-semibold uppercase tracking-wider"
-                            style={{ borderColor: 'var(--border)', background: 'rgba(245,158,11,0.05)', color: 'var(--text-muted)' }}>
-                            <span className="col-span-1">Tipo</span>
-                            <span className="col-span-2">Fecha</span>
-                            <span className="col-span-6">Descripción</span>
-                            <span className="col-span-2 text-right">Monto</span>
-                            <span className="col-span-1 text-center">Cuadrado</span>
-                        </div>
+                    <button onClick={cruzarPartidas}
+                        disabled={!puedenCruzarse}
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white disabled:opacity-40 transition-opacity"
+                        style={{ background: puedenCruzarse ? 'var(--primary)' : 'gray' }}>
+                        <ArrowLeftRight className="w-4 h-4" /> Cruzar partidas
+                    </button>
+                </div>
+            )}
 
-                        {conciliacion.partidas.map(p => (
-                            <div key={p.id}
-                                className="grid grid-cols-12 gap-2 px-4 py-3 border-b items-center text-sm"
-                                style={{ borderColor: 'var(--border)' }}>
-                                <div className="col-span-1">
-                                    <span className={cn(
-                                        'px-1.5 py-0.5 rounded text-[10px] font-medium',
-                                        p.tipo === 'sistema'
-                                            ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-                                            : 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
-                                    )}>
-                                        {p.tipo === 'sistema' ? 'Sistema' : 'Banco'}
-                                    </span>
-                                </div>
-                                <div className="col-span-2">
-                                    <p className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>{p.fecha ?? '—'}</p>
-                                </div>
-                                <div className="col-span-6 min-w-0">
-                                    <p className="text-xs truncate" style={{ color: 'var(--text-main)' }}>{p.descripcion ?? '—'}</p>
-                                </div>
-                                <div className="col-span-2 text-right">
-                                    <p className="text-xs font-semibold" style={{ color: 'var(--text-main)' }}>
-                                        {p.monto != null ? fmt(p.monto) : '—'}
-                                    </p>
-                                </div>
-                                <div className="col-span-1 flex justify-center">
-                                    {p.conciliada
-                                        ? <CheckCircle className="w-4 h-4 text-green-500" />
-                                        : <AlertTriangle className="w-4 h-4 text-orange-500" />
-                                    }
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
+            {/* ── Dos paneles ──────────────────────────────────────────────── */}
+            <div className="px-6 pb-8 grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <TablaPartidas
+                    partidas={partidas_sistema}
+                    titulo="Partidas del sistema"
+                    color="#1A3A5C"
+                    seleccionada={selSistema}
+                    onSeleccionar={setSelSistema}
+                    isCerrada={isCerrada}
+                />
+                <TablaPartidas
+                    partidas={partidas_banco}
+                    titulo="Partidas del banco (CSV)"
+                    color="#2D6A4F"
+                    seleccionada={selBanco}
+                    onSeleccionar={setSelBanco}
+                    isCerrada={isCerrada}
+                />
             </div>
 
             <ToastContainer position="top-right" autoClose={3500} hideProgressBar={false}
