@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Bancos;
 
 use App\Exports\MovimientosExport;
 use App\Http\Controllers\Controller;
+use App\Models\AsientoContable;
 use App\Models\BancoCaja;
 use App\Models\MovimientoBancario;
 use App\Models\PlanCuenta;
@@ -236,6 +237,18 @@ class MovimientoBancarioController extends Controller
                 $movimiento->monto,
                 $movimiento->tipo === 'ingreso' ? 'egreso' : 'ingreso'
             );
+
+            // Anular el asiento contable asociado
+            if ($movimiento->asiento_id) {
+                $asiento = AsientoContable::find($movimiento->asiento_id);
+                if ($asiento && !$asiento->anulado) {
+                    try {
+                        $this->asientoService->anular($asiento, $request->motivo);
+                    } catch (\Exception) {
+                        // No bloquear si el asiento no puede anularse (período cerrado, etc.)
+                    }
+                }
+            }
 
             DB::table('log_cambios_criticos')->insert([
                 'usuario_id'     => Auth::id(),

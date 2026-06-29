@@ -111,10 +111,17 @@ class CierreCajaController extends Controller
             + ($request->total_cheque        ?? 0)
             + ($request->total_transferencia ?? 0);
 
-        $diferencia = $totalCobrado - $cierre->total_facturado;
+        // Simular total_facturado con lo cobrado si ventas no está conectado (= 0)
+        // Cuando Dev 1 conecte ventas, total_facturado vendrá pre-cargado desde facturas
+        $totalFacturado = ((float) $cierre->total_facturado > 0.01)
+            ? (float) $cierre->total_facturado
+            : $totalCobrado;
+
+        $diferencia = $totalCobrado - $totalFacturado;
 
         $cierre->update([
             'usuario_cierre_id'   => Auth::id(),
+            'total_facturado'     => $totalFacturado,
             'total_cobrado'       => $totalCobrado,
             'total_efectivo'      => $request->total_efectivo,
             'total_tarjeta'       => $request->total_tarjeta ?? 0,

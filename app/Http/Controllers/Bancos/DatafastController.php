@@ -182,7 +182,20 @@ class DatafastController extends Controller
                                     'cuenta_id'   => $ctaRetIVA,
                                     'debe'        => $request->retencion_iva,
                                     'haber'       => 0,
-                                    'descripcion' => "Ret. IVA Datafast",
+                                    'descripcion' => "Ret. IVA Datafast lote {$lote->numero_lote}",
+                                ];
+                            }
+                        }
+
+                        // Retención IR — necesaria para cuadrar el asiento (DEBE total = HABER total)
+                        if (($request->retencion_ir ?? 0) > 0) {
+                            $ctaRetIR = ParametroContable::getCuentaId('cta_retencion_ir', $empresaId);
+                            if ($ctaRetIR) {
+                                $partidas[] = [
+                                    'cuenta_id'   => $ctaRetIR,
+                                    'debe'        => $request->retencion_ir,
+                                    'haber'       => 0,
+                                    'descripcion' => "Ret. IR Datafast lote {$lote->numero_lote}",
                                 ];
                             }
                         }

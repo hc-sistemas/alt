@@ -522,4 +522,34 @@ class AsientoService
             documentoRef: $referencia, esAutomatico: true,
         );
     }
+
+    // ── Asiento de ajuste por diferencia en conciliación bancaria ──────────────
+    public function ajusteConciliacion(
+        int    $empresaId,
+        int    $conciliacionId,
+        float  $diferencia,
+        string $descripcion = 'Ajuste conciliación bancaria',
+    ): AsientoContable {
+        // Si diferencia > 0 → falta dinero en sistema (ingreso no registrado)
+        // Si diferencia < 0 → sobra en sistema (egreso no registrado)
+        $ctaBancos = $this->cuentaId('cta_bancos_locales', $empresaId);
+        $ctaAjuste = $this->cuentaId('cta_ajuste_inventario', $empresaId);
+
+        $partidas = $diferencia > 0
+            ? [
+                ['cuenta_id' => $ctaBancos, 'debe' => abs($diferencia), 'haber' => 0,            'descripcion' => $descripcion],
+                ['cuenta_id' => $ctaAjuste, 'debe' => 0,                'haber' => abs($diferencia), 'descripcion' => $descripcion],
+              ]
+            : [
+                ['cuenta_id' => $ctaAjuste, 'debe' => abs($diferencia), 'haber' => 0,            'descripcion' => $descripcion],
+                ['cuenta_id' => $ctaBancos, 'debe' => 0,                'haber' => abs($diferencia), 'descripcion' => $descripcion],
+              ];
+
+        return $this->crear(
+            empresaId: $empresaId, concepto: $descripcion,
+            partidas: $partidas,
+            documentoTipo: 'CONCILIACION', documentoId: $conciliacionId,
+            documentoRef: "CONC-{$conciliacionId}", esAutomatico: true,
+        );
+    }
 }
