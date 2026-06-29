@@ -47,6 +47,7 @@ use App\Http\Controllers\RRHH\ColaboradorController;
 use App\Http\Controllers\RRHH\AsistenciaController;
 use App\Http\Controllers\RRHH\HorasExtrasController;
 use App\Http\Controllers\RRHH\NominaController;
+use App\Http\Controllers\ManualesController;
 use Illuminate\Support\Facades\Route;
 
 // Auth
@@ -67,6 +68,10 @@ Route::middleware('auth')->group(function () {
 Route::middleware('auth')->group(function () {
     Route::get('/', fn() => redirect()->route('dashboard'));
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+
+    // Manuales de Uso
+    Route::get('/manuales',          [ManualesController::class, 'index'])->name('manuales.index');
+    Route::get('/manuales/{clave}/pdf', [ManualesController::class, 'pdf'])->name('manuales.pdf');
 
     // Configuración
     Route::middleware('permiso:configuracion,ver')->group(function () {
