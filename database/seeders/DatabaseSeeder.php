@@ -16,6 +16,7 @@ class DatabaseSeeder extends Seeder
             UsuarioSeeder::class,
             PlanCuentaSeeder::class,
             PersonasSeeder::class,
+            PermisoSeeder::class,
         ]);
     }
 }

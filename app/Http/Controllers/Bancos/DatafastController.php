@@ -49,11 +49,6 @@ class DatafastController extends Controller
         return Inertia::render('Bancos/Datafast/Index', [
             'lotes'  => $lotes,
             'bancos' => $bancos,
-            'stats'  => [
-                'pendientes'     => $lotes->where('estado', 'pendiente')->count(),
-                'liquidados'     => $lotes->where('estado', 'liquidado')->count(),
-                'total_vouchers' => $lotes->sum('total_vouchers'),
-            ],
         ]);
     }
 
@@ -196,6 +191,18 @@ class DatafastController extends Controller
                                     'debe'        => $request->retencion_ir,
                                     'haber'       => 0,
                                     'descripcion' => "Ret. IR Datafast lote {$lote->numero_lote}",
+                                ];
+                            }
+                        }
+
+                        if (($request->retencion_ir ?? 0) > 0) {
+                            $ctaRetIR = ParametroContable::getCuentaId('cta_retencion_ir_cobrada', $empresaId);
+                            if ($ctaRetIR) {
+                                $partidas[] = [
+                                    'cuenta_id'   => $ctaRetIR,
+                                    'debe'        => $request->retencion_ir,
+                                    'haber'       => 0,
+                                    'descripcion' => "Ret. IR Datafast",
                                 ];
                             }
                         }

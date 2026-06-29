@@ -32,7 +32,7 @@ class PermisoController extends Controller
         ]);
     }
 
-    public function actualizar(Request $request): JsonResponse
+    public function actualizar(Request $request): \Illuminate\Http\RedirectResponse
     {
         $data = $request->validate([
             'perfil_id' => ['required', 'exists:perfiles,id'],
@@ -46,10 +46,10 @@ class PermisoController extends Controller
             [$data['accion'] => $data['valor']]
         );
 
-        return response()->json(['ok' => true]);
+        return back();
     }
 
-    public function actualizarLimite(Request $request): JsonResponse
+    public function actualizarLimite(Request $request): \Illuminate\Http\RedirectResponse
     {
         $data = $request->validate([
             'perfil_id' => ['required', 'exists:perfiles,id'],
@@ -63,6 +63,6 @@ class PermisoController extends Controller
             $data
         );
 
-        return response()->json(['ok' => true]);
+        return back();
     }
 }

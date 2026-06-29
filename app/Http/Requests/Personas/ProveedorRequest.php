@@ -68,8 +68,9 @@ class ProveedorRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'ciudad.required_if' => 'La ciudad es obligatoria para proveedores internacionales.',
-            'divisa.required_if' => 'La divisa es obligatoria para proveedores internacionales.',
+            'identificacion.regex' => 'Ingrese una cédula (10 dígitos) o RUC (13 dígitos)',
+            'ciudad.required_if'   => 'La ciudad es obligatoria para proveedores internacionales.',
+            'divisa.required_if'   => 'La divisa es obligatoria para proveedores internacionales.',
         ];
     }
 }

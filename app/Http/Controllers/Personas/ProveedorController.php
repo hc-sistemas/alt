@@ -24,7 +24,8 @@ class ProveedorController extends Controller
         $query = Proveedor::where('empresa_id', $empresaId)
             ->when($request->search, fn($q) => $q->where(function ($q) use ($request) {
                 $q->where('identificacion', 'ilike', "%{$request->search}%")
-                  ->orWhere('razon_social', 'ilike', "%{$request->search}%");
+                  ->orWhere('razon_social', 'ilike', "%{$request->search}%")
+                  ->orWhere('nombre_comercial', 'ilike', "%{$request->search}%");
             }))
             ->when($request->tipo && $request->tipo !== 'todos', fn($q) =>
                 $q->where('tipo', $request->tipo)

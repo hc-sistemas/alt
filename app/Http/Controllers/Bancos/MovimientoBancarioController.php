@@ -68,14 +68,6 @@ class MovimientoBancarioController extends Controller
             'filtros'     => $request->only([
                 'banco_caja_id', 'tipo', 'fecha_desde', 'fecha_hasta', 'buscar',
             ]),
-            'stats' => [
-                'total_ingresos'       => MovimientoBancario::where('empresa_id', $empresaId)
-                    ->where('tipo', 'ingreso')->where('anulado', false)->sum('monto'),
-                'total_egresos'        => MovimientoBancario::where('empresa_id', $empresaId)
-                    ->where('tipo', 'egreso')->where('anulado', false)->sum('monto'),
-                'pendientes_conciliar' => MovimientoBancario::where('empresa_id', $empresaId)
-                    ->where('conciliado', false)->where('anulado', false)->count(),
-            ],
         ]);
     }
 

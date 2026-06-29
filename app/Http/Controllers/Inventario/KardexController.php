@@ -187,7 +187,7 @@ class KardexController extends Controller
                   ->orWhere('productos.nombre', 'ilike', "%{$request->search}%");
             }))
             ->when($request->boolean('solo_criticos'), fn($q) =>
-                $q->whereColumn('inventario_saldos.cantidad', '<=', 'productos.stock_minimo')
+                $q->whereColumn('inventario_saldos.stock_actual', '<=', 'productos.stock_minimo')
             )
             ->select([
                 'inventario_saldos.*',
@@ -291,7 +291,7 @@ class KardexController extends Controller
                     0
                 );
             }
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             return back()->withErrors(['error' => $e->getMessage()])->withInput();
         }
 

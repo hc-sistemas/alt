@@ -10,6 +10,7 @@ import { cn, formatMoneda, formatFecha } from '@/lib/utils'
 import {
     Plus, Search, Eye, Ban, ChevronLeft, ChevronRight, FileText,
 } from 'lucide-react'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { PageProps, PaginatedData } from '@/types'
 
 // ── Tipos locales ─────────────────────────────────────────────────────────────
@@ -80,6 +81,7 @@ function esMismoDia(fecha: string): boolean {
 
 export default function Index() {
     const { facturas, filtros } = usePage<Props>().props
+    const { puede } = usePermiso('ventas')
 
     const [filtro, setFiltro] = useState<Filtros>({
         fecha_desde: filtros.fecha_desde ?? '',
@@ -138,14 +140,16 @@ export default function Index() {
 
             <div className="p-6 space-y-4">
 
-                <div className="flex items-center">
-                    <Link href={route('ventas.facturas.create')}>
-                        <Button>
-                            <Plus className="w-4 h-4" />
-                            Nueva Factura
-                        </Button>
-                    </Link>
-                </div>
+                {puede('crear') && (
+                    <div className="flex items-center">
+                        <Link href={route('ventas.facturas.create')}>
+                            <Button>
+                                <Plus className="w-4 h-4" />
+                                Nueva Factura
+                            </Button>
+                        </Link>
+                    </div>
+                )}
 
                 {/* Filtros */}
                 <div
@@ -238,12 +242,14 @@ export default function Index() {
                             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
                                 No se encontraron facturas
                             </p>
-                            <Link href={route('ventas.facturas.create')}>
-                                <Button size="sm">
-                                    <Plus className="w-4 h-4" />
-                                    Nueva Factura
-                                </Button>
-                            </Link>
+                            {puede('crear') && (
+                                <Link href={route('ventas.facturas.create')}>
+                                    <Button size="sm">
+                                        <Plus className="w-4 h-4" />
+                                        Nueva Factura
+                                    </Button>
+                                </Link>
+                            )}
                         </div>
                     ) : (
                         <div className="overflow-x-auto">
@@ -335,7 +341,7 @@ export default function Index() {
                                                                 Ver
                                                             </button>
                                                         </Link>
-                                                        {puedeAnular && (
+                                                        {puedeAnular && puede('anular') && (
                                                             <button
                                                                 type="button"
                                                                 className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors hover:bg-red-500/10 text-red-400"

@@ -8,7 +8,7 @@ import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
 import {
     Plus, Pencil, Package, Plane, Anchor, CheckCircle2,
-    X, DollarSign, Loader2, Eye,
+    X, DollarSign, Loader2, Eye, ExternalLink, AlertCircle,
 } from 'lucide-react'
 import type { Importacion, Proveedor, PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
@@ -21,8 +21,23 @@ interface ImportacionRow extends Omit<Importacion, 'proveedor'> {
 
 interface Props extends PageProps {
     importaciones: ImportacionRow[]
-    proveedores: Pick<Proveedor, 'id' | 'razon_social' | 'pais' | 'divisa'>[]
+    proveedores: Pick<Proveedor, 'id' | 'razon_social' | 'pais' | 'divisa' | 'tipo'>[]
 }
+
+const CONCEPTOS_COSTO = [
+    'Flete marítimo',
+    'Flete aéreo',
+    'Seguro transporte',
+    'Advalorem',
+    'FODINFA',
+    'ICE importación',
+    'ISD (Impuesto Salida Divisas)',
+    'Honorarios agente aduanero',
+    'Almacenaje puerto',
+    'Honorarios banco',
+    'Transporte nacional',
+    'Otro',
+] as const
 
 type TabKey = 'general' | 'productos' | 'gastos' | 'liquidar'
 
@@ -46,8 +61,6 @@ interface DetalleData {
     gastos: GastoImportado[]
     totales: { fob: number; gastos: number; total: number }
 }
-
-interface CostoExtra { descripcion: string; monto: string }
 
 // ─── Notify ───────────────────────────────────────────────────────────────────
 
@@ -205,9 +218,10 @@ const TABS: { key: TabKey; label: string }[] = [
     { key: 'liquidar',  label: '4. Liquidación' },
 ]
 
-function DetalleModal({ importacion, initialTab, onClose }: {
+function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
     importacion: ImportacionRow
     initialTab: TabKey
+    proveedores: Props['proveedores']
     onClose: () => void
 }) {
     const [tab,      setTab]      = useState<TabKey>(initialTab)
@@ -227,22 +241,95 @@ function DetalleModal({ importacion, initialTab, onClose }: {
         observaciones:   importacion.observaciones ?? '',
     })
 
-    // ── Tab 4: Liquidar ──
-    const [metodo,             setMetodo]    = useState<'cantidad' | 'precio'>('cantidad')
-    const [fechaLiq,           setFechaLiq]  = useState(new Date().toISOString().slice(0, 10))
-    const [costos,             setCostos]    = useState<CostoExtra[]>([{ descripcion: '', monto: '' }])
-    const [liqProcessing,      setLiqProc]   = useState(false)
-    const totalCostosExtra = costos.reduce((acc, c) => acc + (parseFloat(c.monto) || 0), 0)
-    const costoTotal       = Number(importacion.costo_fob) + totalCostosExtra
+    // ── Tab 2: Crear factura exterior ──
+    const [creandoFact,  setCreandoFact]  = useState(false)
+    const [yaExisteWarn, setYaExisteWarn] = useState(false)
 
-    useEffect(() => {
+    async function crearFacturaExterior() {
+        setCreandoFact(true)
+        setYaExisteWarn(false)
+        const csrf = (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement | null)?.content ?? ''
+        try {
+            const res = await fetch(route('compras.importaciones.crear-factura', importacion.id), {
+                method: 'POST',
+                headers: { 'X-CSRF-TOKEN': csrf, Accept: 'application/json' },
+            })
+            const datos = await res.json() as { ya_existe: boolean }
+            if (!res.ok) { notify.error('Error al verificar factura'); return }
+            if (datos.ya_existe) {
+                setYaExisteWarn(true)
+            } else {
+                router.get(route('compras.facturas.index'), { iniciar_exterior: String(importacion.id) })
+            }
+        } catch {
+            notify.error('Error de conexión')
+        } finally {
+            setCreandoFact(false)
+        }
+    }
+
+    // ── Tab 3: Costos extra ──
+    const [showFormCosto, setShowFormCosto] = useState(false)
+    const [costoSaving,   setCostoSaving]   = useState(false)
+    const [formCosto, setFormCosto] = useState({
+        concepto:     CONCEPTOS_COSTO[0] as string,
+        conceptoLibre: '',
+        proveedor_id:  '',
+        monto:         '',
+        num_factura:   '',
+    })
+
+    function refetchDetalle(initial = false) {
         fetch(route('compras.importaciones.detalle', importacion.id), {
             headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
         })
             .then(r => r.json())
-            .then((d: DetalleData) => { setDetalle(d); setCargando(false) })
-            .catch(() => setCargando(false))
-    }, [importacion.id])
+            .then((d: DetalleData) => { setDetalle(d); if (initial) setCargando(false) })
+            .catch(() => { if (initial) setCargando(false) })
+    }
+
+    async function submitCosto(e: React.FormEvent) {
+        e.preventDefault()
+        const conceptoFinal = formCosto.concepto === 'Otro' ? formCosto.conceptoLibre.trim() : formCosto.concepto
+        if (!conceptoFinal) { notify.error('Ingresa el concepto del gasto'); return }
+        const monto = parseFloat(formCosto.monto)
+        if (!monto || monto <= 0) { notify.error('Ingresa un monto válido'); return }
+
+        setCostoSaving(true)
+        const csrf = (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement | null)?.content ?? ''
+        try {
+            const res = await fetch(route('compras.importaciones.agregar-costo', importacion.id), {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf, Accept: 'application/json' },
+                body: JSON.stringify({
+                    concepto:     conceptoFinal,
+                    proveedor_id: formCosto.proveedor_id || null,
+                    monto,
+                    num_factura:  formCosto.num_factura || null,
+                }),
+            })
+            const json = await res.json() as { success?: boolean; message?: string }
+            if (res.ok && json.success) {
+                notify.ok(json.message ?? 'Costo registrado')
+                setFormCosto({ concepto: CONCEPTOS_COSTO[0], conceptoLibre: '', proveedor_id: '', monto: '', num_factura: '' })
+                setShowFormCosto(false)
+                refetchDetalle()
+            } else {
+                notify.error(json.message ?? 'Error al guardar el costo')
+            }
+        } catch {
+            notify.error('Error de conexión al guardar el costo')
+        } finally {
+            setCostoSaving(false)
+        }
+    }
+
+    // ── Tab 4: Liquidar ──
+    const [metodo,        setMetodo]    = useState<'cantidad' | 'precio'>('cantidad')
+    const [fechaLiq,      setFechaLiq]  = useState(new Date().toISOString().slice(0, 10))
+    const [liqProcessing, setLiqProc]   = useState(false)
+
+    useEffect(() => { refetchDetalle(true) }, [importacion.id])
 
     function submitGeneral(e: React.FormEvent) {
         e.preventDefault()
@@ -254,12 +341,10 @@ function DetalleModal({ importacion, initialTab, onClose }: {
 
     function submitLiquidar(e: React.FormEvent) {
         e.preventDefault()
-        const costosValidos = costos.filter(c => c.descripcion && parseFloat(c.monto) > 0)
         setLiqProc(true)
         router.patch(route('compras.importaciones.liquidar', importacion.id), {
             metodo_prorrateo:  metodo,
             fecha_liquidacion: fechaLiq,
-            costos_extra:      costosValidos as unknown as { [key: string]: string }[],
         }, {
             onSuccess: () => { notify.ok(`Importación "${importacion.nombre}" liquidada`); onClose() },
             onError:   (errs) => { notify.error('Error: ' + Object.values(errs).join(', ')); setLiqProc(false) },
@@ -387,12 +472,61 @@ function DetalleModal({ importacion, initialTab, onClose }: {
                                     Cargando productos...
                                 </div>
                             ) : !detalle || detalle.productos.length === 0 ? (
-                                <div className="py-14 text-center" style={{ color: 'var(--text-muted)' }}>
+                                <div className="py-12 text-center" style={{ color: 'var(--text-muted)' }}>
                                     <Package className="w-10 h-10 mx-auto mb-3 opacity-20" />
-                                    <p className="font-semibold text-sm">No hay productos registrados</p>
-                                    <p className="text-xs mt-1 max-w-xs mx-auto">
-                                        Vincula facturas de compra desde <strong>Compras → Facturas</strong> seleccionando esta importación.
+                                    <p className="font-semibold text-sm mb-1">No hay factura de productos vinculada</p>
+                                    <p className="text-xs mb-4 max-w-xs mx-auto">
+                                        Crea una factura de compra exterior pre-llenada con los datos de esta importación.
                                     </p>
+                                    <button
+                                        type="button"
+                                        onClick={crearFacturaExterior}
+                                        disabled={creandoFact}
+                                        className="btn-primary inline-flex items-center gap-2 text-sm">
+                                        {creandoFact
+                                            ? <Loader2 className="w-4 h-4 animate-spin" />
+                                            : <ExternalLink className="w-4 h-4" />
+                                        }
+                                        {creandoFact ? 'Verificando...' : 'Crear factura de compra exterior'}
+                                    </button>
+
+                                    {/* Aviso cuando ya existe una factura vinculada */}
+                                    {yaExisteWarn && (
+                                        <div className="mt-4 mx-auto max-w-sm rounded-xl border p-4 text-left"
+                                            style={{ borderColor: 'rgba(245,158,11,0.4)', background: 'rgba(245,158,11,0.07)' }}>
+                                            <p className="text-sm font-semibold mb-1" style={{ color: 'var(--primary)' }}>
+                                                Ya existe una factura vinculada
+                                            </p>
+                                            <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
+                                                Esta importación ya tiene una factura de productos registrada.
+                                            </p>
+                                            <div className="flex flex-col gap-1.5">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => router.get(route('compras.facturas.index'), { importacion_id: String(importacion.id) })}
+                                                    className="btn-secondary text-xs w-full">
+                                                    Ver facturas existentes
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setYaExisteWarn(false)
+                                                        router.get(route('compras.facturas.index'), { iniciar_exterior: String(importacion.id) })
+                                                    }}
+                                                    className="text-xs w-full py-1.5 px-3 rounded-lg border transition-colors"
+                                                    style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
+                                                    Crear otra factura igualmente
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setYaExisteWarn(false)}
+                                                    className="text-xs"
+                                                    style={{ color: 'var(--text-muted)' }}>
+                                                    Cancelar
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             ) : (
                                 <div className="overflow-x-auto">
@@ -460,8 +594,104 @@ function DetalleModal({ importacion, initialTab, onClose }: {
                     {/* ════ TAB 3: COSTOS EXTRA ════ */}
                     {tab === 'gastos' && (
                         <div className="p-5 space-y-4">
+                            {/* Botón + formulario inline */}
+                            {!yaLiquidada && (
+                                <div>
+                                    {!showFormCosto ? (
+                                        <button type="button"
+                                            onClick={() => setShowFormCosto(true)}
+                                            className="btn-primary flex items-center gap-2 text-sm">
+                                            <Plus className="w-4 h-4" /> Agregar costo extra
+                                        </button>
+                                    ) : (
+                                        <form onSubmit={submitCosto}
+                                            className="rounded-xl border p-4 space-y-3"
+                                            style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
+                                            <div className="flex items-center justify-between mb-1">
+                                                <p className="text-sm font-semibold" style={{ color: 'var(--text-main)' }}>
+                                                    Nuevo costo extra
+                                                </p>
+                                                <button type="button" onClick={() => setShowFormCosto(false)}
+                                                    style={{ color: 'var(--text-muted)' }}>
+                                                    <X className="w-4 h-4" />
+                                                </button>
+                                            </div>
+
+                                            {/* Concepto */}
+                                            <div className="space-y-1">
+                                                <label className="input-label">Concepto <span className="text-red-400">*</span></label>
+                                                <select
+                                                    value={formCosto.concepto}
+                                                    onChange={e => setFormCosto(p => ({ ...p, concepto: e.target.value }))}
+                                                    className="input-field select-field text-sm">
+                                                    {CONCEPTOS_COSTO.map(c => (
+                                                        <option key={c} value={c}>{c}</option>
+                                                    ))}
+                                                </select>
+                                                {formCosto.concepto === 'Otro' && (
+                                                    <input
+                                                        value={formCosto.conceptoLibre}
+                                                        onChange={e => setFormCosto(p => ({ ...p, conceptoLibre: e.target.value }))}
+                                                        placeholder="Descripción del gasto"
+                                                        className="input-field text-sm mt-1" />
+                                                )}
+                                            </div>
+
+                                            {/* Proveedor */}
+                                            <div className="space-y-1">
+                                                <label className="input-label">Proveedor</label>
+                                                <select
+                                                    value={formCosto.proveedor_id}
+                                                    onChange={e => setFormCosto(p => ({ ...p, proveedor_id: e.target.value }))}
+                                                    className="input-field select-field text-sm">
+                                                    <option value="">— Usar proveedor de importación —</option>
+                                                    {proveedores.map(p => (
+                                                        <option key={p.id} value={p.id}>{p.razon_social}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+
+                                            <div className="grid grid-cols-2 gap-3">
+                                                {/* Monto */}
+                                                <div className="space-y-1">
+                                                    <label className="input-label">Monto <span className="text-red-400">*</span></label>
+                                                    <input
+                                                        type="number" step="0.01" min="0.01"
+                                                        value={formCosto.monto}
+                                                        onChange={e => setFormCosto(p => ({ ...p, monto: e.target.value }))}
+                                                        placeholder="0.00"
+                                                        className="input-field text-sm text-right" />
+                                                </div>
+                                                {/* N° Factura */}
+                                                <div className="space-y-1">
+                                                    <label className="input-label">N° Factura</label>
+                                                    <input
+                                                        value={formCosto.num_factura}
+                                                        onChange={e => setFormCosto(p => ({ ...p, num_factura: e.target.value }))}
+                                                        placeholder="001-001-000001"
+                                                        className="input-field text-sm" />
+                                                </div>
+                                            </div>
+
+                                            <div className="flex gap-2 pt-1">
+                                                <button type="submit" disabled={costoSaving}
+                                                    className="btn-primary flex items-center gap-2 text-sm">
+                                                    {costoSaving
+                                                        ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Guardando…</>
+                                                        : <><DollarSign className="w-3.5 h-3.5" /> Guardar costo</>
+                                                    }
+                                                </button>
+                                                <button type="button" onClick={() => setShowFormCosto(false)}
+                                                    className="btn-secondary text-sm">Cancelar</button>
+                                            </div>
+                                        </form>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Lista de costos registrados */}
                             {cargando ? (
-                                <div className="flex items-center justify-center py-16 gap-2"
+                                <div className="flex items-center justify-center py-10 gap-2"
                                     style={{ color: 'var(--text-muted)' }}>
                                     <Loader2 className="w-5 h-5 animate-spin" />
                                     Cargando...
@@ -497,37 +727,39 @@ function DetalleModal({ importacion, initialTab, onClose }: {
                                     </tfoot>
                                 </table>
                             ) : (
-                                <div className="py-10 text-center" style={{ color: 'var(--text-muted)' }}>
-                                    <DollarSign className="w-8 h-8 mx-auto mb-2 opacity-20" />
-                                    <p className="font-semibold text-sm">No hay facturas de gasto vinculadas</p>
-                                    <p className="text-xs mt-1">
-                                        {Number(importacion.total_costos_extra) > 0
-                                            ? 'Los costos extra se ingresaron al liquidar. Ver resumen abajo.'
-                                            : 'Registra compras con "Gasto no deducible" asignadas a esta importación.'}
-                                    </p>
-                                </div>
+                                !showFormCosto && (
+                                    <div className="py-10 text-center" style={{ color: 'var(--text-muted)' }}>
+                                        <DollarSign className="w-8 h-8 mx-auto mb-2 opacity-20" />
+                                        <p className="font-semibold text-sm">Sin costos extra registrados</p>
+                                        <p className="text-xs mt-1">
+                                            Usa el botón de arriba para agregar flete, aduana, seguros, etc.
+                                        </p>
+                                    </div>
+                                )
                             )}
 
-                            {/* Resumen — siempre visible si hay datos */}
-                            {(yaLiquidada || Number(importacion.total_costos_extra) > 0) && (
+                            {/* Resumen — visible cuando hay gastos o ya está liquidada */}
+                            {detalle && (detalle.gastos.length > 0 || yaLiquidada) && (
                                 <div className="rounded-lg p-3 space-y-1.5 text-sm"
                                     style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)' }}>
                                     <div className="flex justify-between">
                                         <span style={{ color: 'var(--text-muted)' }}>Costo FOB</span>
                                         <span className="font-medium tabular-nums" style={{ color: 'var(--text-main)' }}>
-                                            ${Number(importacion.costo_fob).toFixed(2)}
+                                            ${Number(importacion.costo_fob).toFixed(2)} {importacion.divisa ?? 'USD'}
                                         </span>
                                     </div>
                                     <div className="flex justify-between">
                                         <span style={{ color: 'var(--text-muted)' }}>Costos extra</span>
                                         <span className="font-medium tabular-nums" style={{ color: 'var(--text-main)' }}>
-                                            ${Number(importacion.total_costos_extra).toFixed(2)}
+                                            ${detalle.gastos.reduce((s, g) => s + g.monto, 0).toFixed(2)}
                                         </span>
                                     </div>
                                     <div className="flex justify-between font-bold border-t pt-1.5"
                                         style={{ borderColor: 'rgba(245,158,11,0.3)', color: 'var(--primary)' }}>
-                                        <span>Costo total aterrizado</span>
-                                        <span className="tabular-nums">${Number(importacion.costo_total).toFixed(2)}</span>
+                                        <span>Costo total estimado</span>
+                                        <span className="tabular-nums">
+                                            ${(Number(importacion.costo_fob) + detalle.gastos.reduce((s, g) => s + g.monto, 0)).toFixed(2)}
+                                        </span>
                                     </div>
                                 </div>
                             )}
@@ -577,87 +809,114 @@ function DetalleModal({ importacion, initialTab, onClose }: {
                             </div>
                         ) : (
                             /* ── Formulario liquidar ── */
-                            <form onSubmit={submitLiquidar}>
-                                <div className="modal-body">
-                                    {/* Costos extra dinámicos */}
-                                    <div className="space-y-2">
-                                        <div className="flex items-center justify-between">
-                                            <Label>Costos extra (flete, seguro, aduana…)</Label>
-                                            <button type="button"
-                                                onClick={() => setCostos(prev => [...prev, { descripcion: '', monto: '' }])}
-                                                className="text-xs font-semibold px-2 py-1 rounded-lg transition-colors"
-                                                style={{ color: 'var(--primary)', background: 'rgba(245,158,11,0.1)' }}>
-                                                + Agregar
-                                            </button>
-                                        </div>
-                                        {costos.map((c, idx) => (
-                                            <div key={idx} className="flex gap-2 items-center">
-                                                <input
-                                                    value={c.descripcion}
-                                                    onChange={e => setCostos(prev => prev.map((x, i) => i === idx ? { ...x, descripcion: e.target.value } : x))}
-                                                    placeholder="Descripción (flete, seguro…)"
-                                                    className="input-field flex-1 text-xs" />
-                                                <input
-                                                    type="number" step="0.01" min={0}
-                                                    value={c.monto}
-                                                    onChange={e => setCostos(prev => prev.map((x, i) => i === idx ? { ...x, monto: e.target.value } : x))}
-                                                    placeholder="0.00"
-                                                    className="input-field text-xs text-right" style={{ width: '6rem' }} />
-                                                {costos.length > 1 && (
-                                                    <button type="button"
-                                                        onClick={() => setCostos(prev => prev.filter((_, i) => i !== idx))}
-                                                        className="p-1 rounded hover:text-red-500 transition-colors"
-                                                        style={{ color: 'var(--text-muted)' }}>
-                                                        <X className="w-3.5 h-3.5" />
-                                                    </button>
-                                                )}
+                            (() => {
+                                const tieneProductos = (detalle?.productos.length ?? 0) > 0
+                                const tieneCostos    = (detalle?.gastos.length   ?? 0) > 0
+                                const puedeRender    = !cargando
+
+                                if (!puedeRender) return (
+                                    <div className="flex items-center justify-center py-20 gap-2"
+                                        style={{ color: 'var(--text-muted)' }}>
+                                        <Loader2 className="w-5 h-5 animate-spin" /> Cargando...
+                                    </div>
+                                )
+
+                                if (!tieneProductos || !tieneCostos) return (
+                                    <div className="p-5 space-y-4">
+                                        <div className="rounded-xl border p-5 space-y-3"
+                                            style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
+                                            <p className="text-sm font-semibold mb-3" style={{ color: 'var(--text-main)' }}>
+                                                Prerrequisitos para liquidar
+                                            </p>
+                                            <div className="flex items-center gap-3">
+                                                {tieneProductos
+                                                    ? <CheckCircle2 className="w-5 h-5 shrink-0" style={{ color: '#10b981' }} />
+                                                    : <AlertCircle  className="w-5 h-5 shrink-0" style={{ color: '#ef4444' }} />
+                                                }
+                                                <div>
+                                                    <p className="text-sm font-medium" style={{ color: 'var(--text-main)' }}>
+                                                        Factura de productos vinculada
+                                                    </p>
+                                                    {!tieneProductos && (
+                                                        <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                                                            Ve al Tab "2. Productos" y crea la factura exterior.
+                                                        </p>
+                                                    )}
+                                                </div>
                                             </div>
-                                        ))}
-                                    </div>
-
-                                    {/* Resumen costos */}
-                                    <div className="rounded-lg p-3 space-y-1.5"
-                                        style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)' }}>
-                                        <div className="flex justify-between text-sm">
-                                            <span style={{ color: 'var(--text-muted)' }}>Costo FOB</span>
-                                            <span className="font-medium tabular-nums" style={{ color: 'var(--text-main)' }}>
-                                                ${Number(importacion.costo_fob).toFixed(2)} {importacion.divisa ?? 'USD'}
-                                            </span>
+                                            <div className="flex items-center gap-3">
+                                                {tieneCostos
+                                                    ? <CheckCircle2 className="w-5 h-5 shrink-0" style={{ color: '#10b981' }} />
+                                                    : <AlertCircle  className="w-5 h-5 shrink-0" style={{ color: '#ef4444' }} />
+                                                }
+                                                <div>
+                                                    <p className="text-sm font-medium" style={{ color: 'var(--text-main)' }}>
+                                                        Al menos un costo extra registrado
+                                                    </p>
+                                                    {!tieneCostos && (
+                                                        <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                                                            Ve al Tab "3. Costos Extra" y agrega flete, aduana, etc.
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            </div>
                                         </div>
-                                        <div className="flex justify-between text-sm">
-                                            <span style={{ color: 'var(--text-muted)' }}>Costos extra ingresados</span>
-                                            <span className="font-medium tabular-nums" style={{ color: 'var(--text-main)' }}>
-                                                ${totalCostosExtra.toFixed(2)}
-                                            </span>
-                                        </div>
-                                        <div className="flex justify-between text-sm font-bold border-t pt-1.5"
-                                            style={{ borderColor: 'rgba(245,158,11,0.3)', color: 'var(--primary)' }}>
-                                            <span>Costo total estimado</span>
-                                            <span className="tabular-nums">${costoTotal.toFixed(2)}</span>
-                                        </div>
+                                        <p className="text-xs text-center" style={{ color: 'var(--text-muted)' }}>
+                                            Completa los pasos anteriores para habilitar la liquidación.
+                                        </p>
                                     </div>
+                                )
 
-                                    <div className="space-y-1.5">
-                                        <Label>Método de prorrateo <span className="text-red-400">*</span></Label>
-                                        <select value={metodo} onChange={e => setMetodo(e.target.value as typeof metodo)}
-                                            className="input-field select-field">
-                                            <option value="cantidad">Por cantidad (unidades)</option>
-                                            <option value="precio">Por precio (valor FOB)</option>
-                                        </select>
-                                    </div>
+                                return (
+                                    <form onSubmit={submitLiquidar}>
+                                        <div className="modal-body">
+                                            {/* Resumen previo */}
+                                            <div className="rounded-lg p-3 space-y-1.5"
+                                                style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)' }}>
+                                                <div className="flex justify-between text-sm">
+                                                    <span style={{ color: 'var(--text-muted)' }}>Costo FOB</span>
+                                                    <span className="font-medium tabular-nums" style={{ color: 'var(--text-main)' }}>
+                                                        ${Number(importacion.costo_fob).toFixed(2)} {importacion.divisa ?? 'USD'}
+                                                    </span>
+                                                </div>
+                                                <div className="flex justify-between text-sm">
+                                                    <span style={{ color: 'var(--text-muted)' }}>Costos extra registrados</span>
+                                                    <span className="font-medium tabular-nums" style={{ color: 'var(--text-main)' }}>
+                                                        ${detalle!.gastos.reduce((s, g) => s + g.monto, 0).toFixed(2)}
+                                                    </span>
+                                                </div>
+                                                <div className="flex justify-between text-sm font-bold border-t pt-1.5"
+                                                    style={{ borderColor: 'rgba(245,158,11,0.3)', color: 'var(--primary)' }}>
+                                                    <span>Costo total estimado</span>
+                                                    <span className="tabular-nums">
+                                                        ${(Number(importacion.costo_fob) + detalle!.gastos.reduce((s, g) => s + g.monto, 0)).toFixed(2)}
+                                                    </span>
+                                                </div>
+                                            </div>
 
-                                    <div className="space-y-1.5">
-                                        <Label>Fecha de liquidación <span className="text-red-400">*</span></Label>
-                                        <Input type="date" value={fechaLiq} onChange={e => setFechaLiq(e.target.value)} />
-                                    </div>
-                                </div>
-                                <div className="modal-footer">
-                                    <Button type="submit" disabled={liqProcessing || totalCostosExtra <= 0}>
-                                        <CheckCircle2 className="w-4 h-4" /> Liquidar
-                                    </Button>
-                                    <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
-                                </div>
-                            </form>
+                                            <div className="space-y-1.5">
+                                                <Label>Método de prorrateo <span className="text-red-400">*</span></Label>
+                                                <select value={metodo} onChange={e => setMetodo(e.target.value as typeof metodo)}
+                                                    className="input-field select-field">
+                                                    <option value="cantidad">Por cantidad (unidades)</option>
+                                                    <option value="precio">Por precio (valor FOB)</option>
+                                                </select>
+                                            </div>
+
+                                            <div className="space-y-1.5">
+                                                <Label>Fecha de liquidación <span className="text-red-400">*</span></Label>
+                                                <Input type="date" value={fechaLiq} onChange={e => setFechaLiq(e.target.value)} />
+                                            </div>
+                                        </div>
+                                        <div className="modal-footer">
+                                            <Button type="submit" disabled={liqProcessing}>
+                                                <CheckCircle2 className="w-4 h-4" /> Liquidar importación
+                                            </Button>
+                                            <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
+                                        </div>
+                                    </form>
+                                )
+                            })()
                         )
                     )}
 
@@ -816,6 +1075,7 @@ export default function ImportacionesIndex() {
                 <DetalleModal
                     importacion={modal.importacion}
                     initialTab={modal.tab}
+                    proveedores={proveedores}
                     onClose={cerrar} />
             )}
 

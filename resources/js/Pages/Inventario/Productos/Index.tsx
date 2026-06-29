@@ -8,6 +8,7 @@ import { Input } from '@/Components/ui/input'
 import { Plus, Search, Pencil, Trash2, FileText, FileSpreadsheet } from 'lucide-react'
 import { confirmarEliminar } from '@/lib/swal'
 import { toastExito, toastError } from '@/lib/toast'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { Producto, PaginatedData, PageProps } from '@/types'
 
 interface Props extends PageProps {
@@ -28,6 +29,7 @@ const TIPO_LABELS: Record<string, string> = { producto: 'Producto', servicio: 'S
 
 export default function ProductosIndex() {
     const { productos, filters, marcas, categorias } = usePage<Props>().props
+    const { puede } = usePermiso('inventario')
 
     const [search, setSearch]       = useState(filters.search ?? '')
     const [marcaId, setMarcaId]     = useState(filters.marca_id ?? '')
@@ -108,12 +110,14 @@ export default function ProductosIndex() {
             <div className="p-6">
                 {/* Barra de filtros */}
                 <div className="flex items-center gap-3 mb-4 flex-wrap">
-                    <Link href={route('inventario.productos.create')}>
-                        <Button>
-                            <Plus className="w-4 h-4" />
-                            Nuevo Producto
-                        </Button>
-                    </Link>
+                    {puede('crear') && (
+                        <Link href={route('inventario.productos.create')}>
+                            <Button>
+                                <Plus className="w-4 h-4" />
+                                Nuevo Producto
+                            </Button>
+                        </Link>
+                    )}
 
                     <div className="relative">
                         <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
@@ -243,15 +247,19 @@ export default function ProductosIndex() {
                                     </td>
                                     <td className="px-3 py-2.5">
                                         <div className="flex items-center justify-end gap-1">
-                                            <Link href={route('inventario.productos.edit', producto.id)}>
-                                                <Button variant="ghost" size="icon" title="Editar">
-                                                    <Pencil className="w-3.5 h-3.5" />
+                                            {puede('editar') && (
+                                                <Link href={route('inventario.productos.edit', producto.id)}>
+                                                    <Button variant="ghost" size="icon" title="Editar">
+                                                        <Pencil className="w-3.5 h-3.5" />
+                                                    </Button>
+                                                </Link>
+                                            )}
+                                            {puede('eliminar') && (
+                                                <Button variant="ghost" size="icon" title="Eliminar"
+                                                    onClick={() => eliminar(producto)}>
+                                                    <Trash2 className="w-3.5 h-3.5 text-red-400" />
                                                 </Button>
-                                            </Link>
-                                            <Button variant="ghost" size="icon" title="Eliminar"
-                                                onClick={() => eliminar(producto)}>
-                                                <Trash2 className="w-3.5 h-3.5 text-red-400" />
-                                            </Button>
+                                            )}
                                         </div>
                                     </td>
                                 </tr>

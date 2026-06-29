@@ -19,6 +19,8 @@ class Compra extends Model
         'subtotal_0', 'subtotal_iva', 'total_iva', 'total_ice', 'total',
         'iva_asumido', 'gasto_no_deducible', 'sustento_tributario',
         'asiento_id', 'tiene_pago', 'concepto', 'estado', 'created_by',
+        'metodo_envio', 'divisa', 'tipo_cambio',
+        'num_orden_compra', 'num_contrato', 'vigencia_desde', 'vigencia_hasta',
     ];
 
     protected function casts(): array
@@ -36,6 +38,9 @@ class Compra extends Model
             'iva_asumido'        => 'boolean',
             'gasto_no_deducible' => 'boolean',
             'tiene_pago'         => 'boolean',
+            'tipo_cambio'        => 'decimal:4',
+            'vigencia_desde'     => 'date',
+            'vigencia_hasta'     => 'date',
         ];
     }
 

@@ -409,7 +409,10 @@ export default function RecepcionShow() {
                             Confirmar recepción
                         </Button>
                     )}
-                    <Button variant="outline" onClick={() => router.visit(route('inventario.recepciones.index'))}>
+                    <Button variant="outline" onClick={() => {
+                        const redirectTo = new URLSearchParams(window.location.search).get('redirect_to')
+                        router.visit(redirectTo ?? route('inventario.recepciones.index'))
+                    }}>
                         Volver
                     </Button>
                 </div>

@@ -14,6 +14,7 @@ use App\Models\Proveedor;
 use App\Models\PlanCuenta;
 use App\Models\RecepcionBodega;
 use App\Models\CentroCosto;
+use App\Models\Importacion;
 use App\Models\Producto;
 use App\Services\AsientoService;
 use App\Services\Contracts\InventarioServiceInterface;
@@ -84,16 +85,45 @@ class CompraController extends Controller
         $productos = Producto::where('empresa_id', $empresaId)
             ->where('estado', true)
             ->orderBy('codigo')
-            ->get(['id', 'codigo', 'nombre', 'unidad', 'costo', 'porcentaje_iva']);
+            ->get(['id', 'codigo', 'nombre', 'unidad', 'costo', 'porcentaje_iva', 'tipo', 'pvp']);
+
+        $importacionesActivas = Importacion::where('empresa_id', $empresaId)
+            ->whereIn('estado', ['en_transito', 'en_aduana'])
+            ->orderByDesc('created_at')
+            ->get(['id', 'nombre', 'pais_embarque', 'costo_fob', 'divisa', 'estado']);
+
+        // Soporte para abrir el modal pre-llenado desde importaciones
+        $prefillExterior = null;
+        if ($request->filled('iniciar_exterior')) {
+            $imp = Importacion::find((int) $request->iniciar_exterior);
+            if ($imp && $imp->empresa_id === $empresaId) {
+                $prefillExterior = [
+                    'tipo_documento'      => 'EXT',
+                    'proveedor_id'        => $imp->proveedor_id,
+                    'num_documento'       => $imp->num_invoice ?? '',
+                    'fecha_emision'       => $imp->fecha_llegada
+                                            ? $imp->fecha_llegada->format('Y-m-d')
+                                            : now()->format('Y-m-d'),
+                    'importacion_id'      => $imp->id,
+                    'sustento_tributario' => '06',
+                    'dias_credito'        => 0,
+                    'metodo_envio'        => 'FOB',
+                    'divisa'              => $imp->divisa ?? 'USD',
+                    'concepto'            => $imp->nombre,
+                ];
+            }
+        }
 
         return Inertia::render('Compras/Compras/Index', [
-            'compras'     => $compras,
-            'proveedores' => $proveedores,
-            'centros'     => $centros,
-            'cuentas'     => $cuentas,
-            'bodegas'     => $bodegas,
-            'productos'   => $productos,
-            'filtros'     => $request->only(['buscar', 'estado', 'fecha_desde', 'fecha_hasta']),
+            'compras'               => $compras,
+            'proveedores'           => $proveedores,
+            'centros'               => $centros,
+            'cuentas'               => $cuentas,
+            'bodegas'               => $bodegas,
+            'productos'             => $productos,
+            'importacionesActivas'  => $importacionesActivas,
+            'prefillExterior'       => $prefillExterior,
+            'filtros'               => $request->only(['buscar', 'estado', 'fecha_desde', 'fecha_hasta']),
         ]);
     }
 
@@ -107,8 +137,16 @@ class CompraController extends Controller
             'fecha_emision'              => 'required|date',
             'dias_credito'               => 'integer|min:0',
             'bodega_id'                  => 'nullable|exists:bodegas,id',
+            'importacion_id'             => 'nullable|exists:importaciones,id',
             'gasto_no_deducible'         => 'boolean',
             'concepto'                   => 'nullable|string|max:500',
+            'metodo_envio'               => 'nullable|string|max:10',
+            'divisa'                     => 'nullable|string|max:10',
+            'tipo_cambio'                => 'nullable|numeric|min:0.0001',
+            'num_orden_compra'           => 'nullable|string|max:50',
+            'num_contrato'               => 'nullable|string|max:50',
+            'vigencia_desde'             => 'nullable|date',
+            'vigencia_hasta'             => 'nullable|date',
             'detalles'                   => 'required|array|min:1',
             'detalles.*.descripcion'     => 'required|string|max:500',
             'detalles.*.cantidad'        => 'required|numeric|min:0.0001',
@@ -131,10 +169,12 @@ class CompraController extends Controller
                 $subtotal0   = 0;
                 $subtotalIva = 0;
                 $totalIva    = 0;
+                $esExterior  = $request->tipo_documento === 'EXT';
 
-                $detalles = collect($request->detalles)->map(function ($d) use (&$subtotal0, &$subtotalIva, &$totalIva) {
+                $detalles = collect($request->detalles)->map(function ($d) use (&$subtotal0, &$subtotalIva, &$totalIva, $esExterior) {
                     $subtotal = round($d['cantidad'] * $d['precio_unitario'] - ($d['descuento'] ?? 0), 4);
-                    $porcIva  = (float)($d['porcentaje_iva'] ?? 15);
+                    // Exterior siempre IVA 0%
+                    $porcIva  = $esExterior ? 0 : (float)($d['porcentaje_iva'] ?? 15);
                     $iva      = $porcIva > 0 ? round($subtotal * $porcIva / 100, 4) : 0;
 
                     if ($porcIva > 0) $subtotalIva += $subtotal;
@@ -155,29 +195,42 @@ class CompraController extends Controller
                     ? now()->addDays($request->dias_credito)->toDateString()
                     : $request->fecha_emision;
 
+                $tipo = $request->tipo_documento;
+                $sustento = match($tipo) {
+                    'EXT'   => 6,
+                    default => $request->sustento_tributario ? (int) $request->sustento_tributario : null,
+                };
+
                 $compra = Compra::create([
                     'empresa_id'          => $empresaId,
                     'proveedor_id'        => $request->proveedor_id,
                     'centro_costo_id'     => $request->centro_costo_id,
-                    'importacion_id'      => $request->importacion_id,
+                    'importacion_id'      => in_array($tipo, ['EXT', 'LIQ']) ? $request->importacion_id : null,
                     'bodega_id'           => $request->bodega_id,
-                    'tipo_documento'      => $request->tipo_documento,
+                    'tipo_documento'      => $tipo,
                     'num_documento'       => $request->num_documento,
-                    'num_autorizacion'    => $request->num_autorizacion,
+                    'num_autorizacion'    => in_array($tipo, ['EXT', 'TIK']) ? null : $request->num_autorizacion,
                     'fecha_emision'       => $request->fecha_emision,
                     'fecha_registro'      => now()->toDateString(),
                     'fecha_vencimiento'   => $fechaVenc,
-                    'dias_credito'        => $request->dias_credito ?? 0,
+                    'dias_credito'        => $tipo === 'TIK' ? 0 : ($request->dias_credito ?? 0),
                     'subtotal_0'          => $subtotal0,
                     'subtotal_iva'        => $subtotalIva,
                     'total_iva'           => $totalIva,
                     'total'               => $total,
                     'iva_asumido'         => $request->boolean('iva_asumido'),
                     'gasto_no_deducible'  => $request->boolean('gasto_no_deducible'),
-                    'sustento_tributario' => $request->sustento_tributario,
+                    'sustento_tributario' => $sustento,
                     'concepto'            => $request->concepto,
                     'estado'              => 'pendiente',
                     'created_by'          => Auth::id(),
+                    'metodo_envio'        => $tipo === 'EXT' ? $request->metodo_envio : null,
+                    'divisa'              => $tipo === 'EXT' ? ($request->divisa ?? 'USD') : null,
+                    'tipo_cambio'         => $tipo === 'EXT' && $request->divisa !== 'USD' ? $request->tipo_cambio : null,
+                    'num_orden_compra'    => $tipo === 'EXT' ? $request->num_orden_compra : null,
+                    'num_contrato'        => $tipo === 'CON' ? $request->num_contrato : null,
+                    'vigencia_desde'      => $tipo === 'CON' ? $request->vigencia_desde : null,
+                    'vigencia_hasta'      => $tipo === 'CON' ? $request->vigencia_hasta : null,
                 ]);
 
                 foreach ($detalles as $d) {
@@ -191,36 +244,6 @@ class CompraController extends Controller
                     ));
                 }
 
-                // Crear recepción pendiente automáticamente si hay productos y bodega seleccionada
-                $detallesProducto = collect($request->detalles)->filter(
-                    fn($d) => !empty($d['producto_id'])
-                );
-                $yaExisteRecepcion = \App\Models\RecepcionBodega::where('compra_id', $compra->id)->exists();
-                if (!$yaExisteRecepcion && $detallesProducto->isNotEmpty() && !empty($request->bodega_id)) {
-                    $recepcion = \App\Models\RecepcionBodega::create([
-                        'empresa_id' => $empresaId,
-                        'compra_id'  => $compra->id,
-                        'bodega_id'  => $request->bodega_id,
-                        'estado'     => 'pendiente',
-                    ]);
-
-                    foreach ($detallesProducto as $d) {
-                        $detalle = CompraDetalle::where('compra_id', $compra->id)
-                            ->where('producto_id', $d['producto_id'])
-                            ->first();
-
-                        if ($detalle) {
-                            \App\Models\RecepcionDetalle::create([
-                                'recepcion_id'      => $recepcion->id,
-                                'compra_detalle_id' => $detalle->id,
-                                'producto_id'       => $d['producto_id'],
-                                'cantidad_esperada' => $d['cantidad'],
-                                'cantidad_recibida' => 0,
-                                'estado'            => 'pendiente',
-                            ]);
-                        }
-                    }
-                }
             });
 
             return back()->with('success',

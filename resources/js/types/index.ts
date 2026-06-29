@@ -107,11 +107,20 @@ export interface LogSesion {
     created_at: string
 }
 
+export interface PermisoAcciones {
+    ver: boolean
+    crear: boolean
+    editar: boolean
+    eliminar: boolean
+    anular: boolean
+}
+
 export interface AuthUser {
     id: number
     nombre: string
     email: string
     perfil?: string
+    perfil_clave?: string
     empresa_id: number
     centro_costo_id?: number
     avatar?: string
@@ -119,6 +128,7 @@ export interface AuthUser {
 
 export interface PageProps {
     auth: { user: AuthUser | null }
+    permisos: '*' | Record<string, PermisoAcciones>
     empresa_activa?: Partial<Empresa> | null
     empresas_usuario: Partial<Empresa>[]
     flash: { success?: string; error?: string; warning?: string }
@@ -559,6 +569,13 @@ export interface Compra {
     tiene_productos_codificados: number
     created_at: string
     detalles?: CompraDetalle[]
+    metodo_envio: string | null
+    divisa: string | null
+    tipo_cambio: number | null
+    num_orden_compra: string | null
+    num_contrato: string | null
+    vigencia_desde: string | null
+    vigencia_hasta: string | null
 }
 
 export interface EtiquetaGrupoProducto {

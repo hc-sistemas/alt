@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use App\Models\BancoCaja;
 
 class AnticipoProveedor extends Model
 {
@@ -46,6 +47,11 @@ class AnticipoProveedor extends Model
     public function asiento(): BelongsTo
     {
         return $this->belongsTo(AsientoContable::class, 'asiento_id');
+    }
+
+    public function bancoCaja(): BelongsTo
+    {
+        return $this->belongsTo(BancoCaja::class, 'banco_id');
     }
 
     public function scopePendientes(Builder $q): Builder
