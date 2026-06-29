@@ -8,7 +8,7 @@ import { Label } from '@/Components/ui/label'
 import { cn, formatFecha } from '@/lib/utils'
 import {
     Plus, X, ArrowUpCircle, ArrowDownCircle, Search,
-    Ban, DollarSign, Clock, FileSpreadsheet,
+    Ban, DollarSign, Clock, FileSpreadsheet, BookOpen,
 } from 'lucide-react'
 import type { MovimientoBancario, BancoCaja, PlanCuenta, PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
@@ -349,6 +349,7 @@ export default function MovimientosIndex() {
     const [showModal, setShowModal] = useState(false)
     const [anularMov, setAnularMov] = useState<MovimientoBancario | null>(null)
     const [filtro, setFiltro] = useState(filtros)
+    const [showManual, setShowManual] = useState(false)
 
     useEffect(() => {
         if (flash?.success) notify.ok(flash.success)
@@ -386,6 +387,11 @@ export default function MovimientosIndex() {
                     <div className="flex items-center gap-2 flex-wrap">
                         <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-2 whitespace-nowrap">
                             <Plus size={15} /> Nuevo Movimiento
+                        </button>
+                        <button onClick={() => setShowManual(true)}
+                            className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm whitespace-nowrap transition-all hover:opacity-80 border"
+                            style={{ color: 'var(--text-main)', borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
+                            <BookOpen size={15} /> Manual
                         </button>
 
                         <div className="input-with-icon">
@@ -556,6 +562,23 @@ export default function MovimientosIndex() {
 
             {showModal && <MovimientoModal bancos={bancos} cuentas={cuentas} onClose={() => setShowModal(false)} />}
             {anularMov && <AnularModal movimiento={anularMov} onClose={() => setAnularMov(null)} />}
+
+            {showManual && (
+                <div className="modal-overlay" style={{ zIndex: 70 }} onClick={() => setShowManual(false)}>
+                    <div className="modal-card" style={{ maxWidth: '860px', height: '90vh', padding: 0 }}
+                        onClick={e => e.stopPropagation()}>
+                        <div className="modal-header" style={{ padding: '12px 16px' }}>
+                            <h2 className="flex items-center gap-2"><BookOpen size={16} /> Manual de Uso — Módulo Bancos</h2>
+                            <button className="modal-close" onClick={() => setShowManual(false)}>×</button>
+                        </div>
+                        <iframe
+                            src={route('bancos.manual-pdf')}
+                            style={{ width: '100%', height: 'calc(100% - 48px)', border: 'none', borderRadius: '0 0 16px 16px' }}
+                            title="Manual Bancos"
+                        />
+                    </div>
+                </div>
+            )}
 
             <ToastContainer position="top-right" autoClose={3500} hideProgressBar={false}
                 newestOnTop closeOnClick pauseOnHover draggable theme="colored"

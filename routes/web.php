@@ -295,10 +295,15 @@ Route::middleware('auth')->group(function () {
 
     // Bancos - Conciliaciones
     Route::prefix('bancos/conciliaciones')->name('bancos.conciliaciones.')->group(function () {
-        Route::get('/',                             [ConciliacionController::class, 'index'])           ->name('index');
-        Route::post('/',                            [ConciliacionController::class, 'store'])           ->name('store');
-        Route::get('/{conciliacion}',               [ConciliacionController::class, 'show'])            ->name('show');
-        Route::patch('/{conciliacion}/conciliar',   [ConciliacionController::class, 'marcarConciliada'])->name('conciliar');
+        Route::get('/',                                            [ConciliacionController::class, 'index'])              ->name('index');
+        Route::post('/',                                           [ConciliacionController::class, 'store'])              ->name('store');
+        Route::get('/{conciliacion}',                              [ConciliacionController::class, 'show'])               ->name('show');
+        Route::delete('/{conciliacion}',                           [ConciliacionController::class, 'destroy'])            ->name('destroy');
+        Route::post('/{conciliacion}/upload-csv',                  [ConciliacionController::class, 'uploadEstadoCuenta']) ->name('upload-csv');
+        Route::post('/{conciliacion}/conciliar-partida',           [ConciliacionController::class, 'conciliarPartida'])   ->name('conciliar-partida');
+        Route::post('/{conciliacion}/generar-asiento-ajuste',      [ConciliacionController::class, 'generarAsientoAjuste'])->name('generar-asiento-ajuste');
+        Route::patch('/{conciliacion}/cerrar',                     [ConciliacionController::class, 'cerrar'])             ->name('cerrar');
+        Route::patch('/{conciliacion}/conciliar',                  [ConciliacionController::class, 'marcarConciliada'])   ->name('conciliar');
     });
 
     // Bancos - Cheques
@@ -310,11 +315,23 @@ Route::middleware('auth')->group(function () {
 
     // Bancos - Reportes
     Route::prefix('bancos/reportes')->name('bancos.reportes.')->group(function () {
-        Route::get('/',                [BancoReporteController::class, 'index'])             ->name('index');
-        Route::get('/estado-cuenta',   [BancoReporteController::class, 'estadoCuenta'])      ->name('estado-cuenta');
-        Route::get('/movimientos',     [BancoReporteController::class, 'reporteMovimientos']) ->name('movimientos');
-        Route::get('/caja-chica',      [BancoReporteController::class, 'reporteCajaChica'])  ->name('caja-chica');
+        Route::get('/',                    [BancoReporteController::class, 'index'])               ->name('index');
+        Route::get('/estado-cuenta',       [BancoReporteController::class, 'estadoCuenta'])        ->name('estado-cuenta');
+        Route::get('/movimientos',         [BancoReporteController::class, 'reporteMovimientos'])   ->name('movimientos');
+        Route::get('/caja-chica',          [BancoReporteController::class, 'reporteCajaChica'])    ->name('caja-chica');
+        Route::get('/consulta',            [BancoReporteController::class, 'consultaCobrosPagos']) ->name('consulta');
+        Route::get('/consulta-excel',      [BancoReporteController::class, 'consultaExcel'])       ->name('consulta-excel');
+        Route::get('/consulta-pdf',        [BancoReporteController::class, 'consultaPdf'])         ->name('consulta-pdf');
     });
+
+    // Bancos - Manual PDF
+    Route::get('/bancos/manual-pdf', function () {
+        $empresa = \App\Models\Empresa::find(session('empresa_activa_id'));
+        $usuario = auth()->user();
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.manual-bancos', compact('empresa', 'usuario'))
+            ->setPaper('letter', 'portrait');
+        return $pdf->stream('manual-bancos.pdf');
+    })->name('bancos.manual-pdf');
 
     // ── RRHH ──────────────────────────────────────────────────────────────────
     Route::prefix('rrhh')->name('rrhh.')->group(function () {
