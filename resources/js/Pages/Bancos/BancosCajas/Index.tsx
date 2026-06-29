@@ -8,7 +8,7 @@ import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
 import {
     Plus, Pencil, ToggleLeft, ToggleRight, X, Trash2,
-    Landmark, Wallet, CreditCard, PiggyBank, TrendingUp, Search, BookOpen,
+    Landmark, Wallet, CreditCard, PiggyBank, TrendingUp, Search,
 } from 'lucide-react'
 import type { BancoCaja, PlanCuenta, PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
@@ -419,7 +419,7 @@ function BancoModal({ banco, cuentas, onClose }: ModalProps) {
 export default function BancosCajasIndex() {
     const { bancos, cuentas, stats, flash } = usePage<Props>().props
     const [modal, setModal] = useState<{ open: boolean; banco?: Props['bancos'][0] }>({ open: false })
-    const [showManual, setShowManual] = useState(false)
+
 
     useEffect(() => {
         if (flash?.success) notify.ok(flash.success)
@@ -516,11 +516,7 @@ export default function BancosCajasIndex() {
                         style={{ background: 'var(--primary)' }}>
                         <Plus size={15} /> Nuevo Banco/Caja
                     </button>
-                    <button onClick={() => setShowManual(true)}
-                        className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm whitespace-nowrap transition-all hover:opacity-80 border"
-                        style={{ color: 'var(--text-main)', borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
-                        <BookOpen size={15} /> Manual
-                    </button>
+
                 </div>
             </div>
 
@@ -573,22 +569,6 @@ export default function BancosCajasIndex() {
                 <BancoModal banco={modal.banco} cuentas={cuentas} onClose={() => setModal({ open: false })} />
             )}
 
-            {showManual && (
-                <div className="modal-overlay" style={{ zIndex: 70 }} onClick={() => setShowManual(false)}>
-                    <div className="modal-card" style={{ maxWidth: '860px', height: '90vh', padding: 0 }}
-                        onClick={e => e.stopPropagation()}>
-                        <div className="modal-header" style={{ padding: '12px 16px' }}>
-                            <h2 className="flex items-center gap-2"><BookOpen size={16} /> Manual de Uso — Módulo Bancos</h2>
-                            <button className="modal-close" onClick={() => setShowManual(false)}>×</button>
-                        </div>
-                        <iframe
-                            src={route('bancos.manual-pdf')}
-                            style={{ width: '100%', height: 'calc(100% - 48px)', border: 'none', borderRadius: '0 0 16px 16px' }}
-                            title="Manual Bancos"
-                        />
-                    </div>
-                </div>
-            )}
 
             <ToastContainer position="top-right" autoClose={3500} hideProgressBar={false}
                 newestOnTop closeOnClick pauseOnHover draggable theme="colored"
