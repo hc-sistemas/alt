@@ -8,7 +8,7 @@ import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
 import {
     Plus, Pencil, ToggleLeft, ToggleRight, X, Trash2,
-    Landmark, Wallet, CreditCard, PiggyBank, Search,
+    Landmark, Wallet, CreditCard, PiggyBank, TrendingUp, Search,
 } from 'lucide-react'
 import type { BancoCaja, PlanCuenta, PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
@@ -18,6 +18,7 @@ import 'react-toastify/dist/ReactToastify.css'
 interface Props extends PageProps {
     bancos: (BancoCaja & { cuenta: string | null })[]
     cuentas: Pick<PlanCuenta, 'id' | 'codigo' | 'nombre'>[]
+    stats: { total_bancos: number; total_cajas: number; saldo_bancos: number; saldo_cajas: number }
 }
 
 // ─── Notify / Swal ───────────────────────────────────────────────────────────
@@ -53,6 +54,21 @@ const tipoBg: Record<string, string> = {
 }
 
 function fmt(n: number) { return '$' + Number(n).toLocaleString('es-EC', { minimumFractionDigits: 2 }) }
+
+// ─── StatCard ─────────────────────────────────────────────────────────────────
+
+function StatCard({ label, value, icon: Icon, cls, valueCls }: {
+    label: string; value: string | number; icon: React.ElementType; cls: string; valueCls: string
+}) {
+    return (
+        <div className="rounded-xl border p-4 flex items-center gap-3 hover:shadow-md transition-shadow"
+            style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+            <div className={cn('rounded-lg p-2.5 shrink-0', cls)}><Icon className="w-5 h-5" /></div>
+            <div><p className={cn('text-2xl font-bold leading-none mb-1', valueCls)}>{value}</p>
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{label}</p></div>
+        </div>
+    )
+}
 
 // ─── BancoCajaCard ────────────────────────────────────────────────────────────
 
@@ -401,8 +417,9 @@ function BancoModal({ banco, cuentas, onClose }: ModalProps) {
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function BancosCajasIndex() {
-    const { bancos, cuentas, flash } = usePage<Props>().props
+    const { bancos, cuentas, stats, flash } = usePage<Props>().props
     const [modal, setModal] = useState<{ open: boolean; banco?: Props['bancos'][0] }>({ open: false })
+
 
     useEffect(() => {
         if (flash?.success) notify.ok(flash.success)
@@ -499,7 +516,24 @@ export default function BancosCajasIndex() {
                         style={{ background: 'var(--primary)' }}>
                         <Plus size={15} /> Nuevo Banco/Caja
                     </button>
+
                 </div>
+            </div>
+
+            {/* Stats */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 px-6 py-4">
+                <StatCard label="Bancos" value={stats.total_bancos} icon={Landmark}
+                    cls="bg-blue-500/15 text-blue-600 dark:text-blue-400"
+                    valueCls="text-blue-600 dark:text-blue-400" />
+                <StatCard label="Cajas" value={stats.total_cajas} icon={Wallet}
+                    cls="bg-green-500/15 text-green-600 dark:text-green-400"
+                    valueCls="text-green-600 dark:text-green-400" />
+                <StatCard label="Saldo Bancos" value={fmt(stats.saldo_bancos)} icon={TrendingUp}
+                    cls="bg-blue-500/15 text-blue-600 dark:text-blue-400"
+                    valueCls="text-blue-600 dark:text-blue-400" />
+                <StatCard label="Saldo Cajas" value={fmt(stats.saldo_cajas)} icon={PiggyBank}
+                    cls="bg-green-500/15 text-green-600 dark:text-green-400"
+                    valueCls="text-green-600 dark:text-green-400" />
             </div>
 
             {/* Cards por grupo */}
@@ -534,6 +568,7 @@ export default function BancosCajasIndex() {
             {modal.open && (
                 <BancoModal banco={modal.banco} cuentas={cuentas} onClose={() => setModal({ open: false })} />
             )}
+
 
             <ToastContainer position="top-right" autoClose={3500} hideProgressBar={false}
                 newestOnTop closeOnClick pauseOnHover draggable theme="colored"

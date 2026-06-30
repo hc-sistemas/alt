@@ -5,10 +5,10 @@ import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
-import { cn } from '@/lib/utils'
+import { cn, formatFecha } from '@/lib/utils'
 import {
     Plus, X, ArrowUpCircle, ArrowDownCircle, Search,
-    Ban, DollarSign, Download,
+    Ban, DollarSign, Clock, FileSpreadsheet,
 } from 'lucide-react'
 import type { MovimientoBancario, BancoCaja, PlanCuenta, PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
@@ -35,6 +35,7 @@ interface Props extends PageProps {
     bancos: Pick<BancoCaja, 'id' | 'nombre' | 'tipo' | 'saldo_actual'>[]
     cuentas: Pick<PlanCuenta, 'id' | 'codigo' | 'nombre'>[]
     filtros: { banco_caja_id?: string; tipo?: string; fecha_desde?: string; fecha_hasta?: string; buscar?: string }
+    stats: { total_ingresos: number; total_egresos: number; pendientes_conciliar: number }
 }
 
 // ─── Notify / Swal ───────────────────────────────────────────────────────────
@@ -60,6 +61,21 @@ const swalBase = {
 const fmt = (n: number) => '$' + Number(n).toLocaleString('es-EC', { minimumFractionDigits: 2 })
 const subTipoLabel: Record<string, string> = {
     transferencia: 'Transferencia', cheque: 'Cheque', efectivo: 'Efectivo', deposito: 'Depósito',
+}
+
+// ─── StatCard ─────────────────────────────────────────────────────────────────
+
+function StatCard({ label, value, icon: Icon, cls, valueCls }: {
+    label: string; value: string | number; icon: React.ElementType; cls: string; valueCls: string
+}) {
+    return (
+        <div className="rounded-xl border p-4 flex items-center gap-3 hover:shadow-md transition-shadow"
+            style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+            <div className={cn('rounded-lg p-2.5 shrink-0', cls)}><Icon className="w-5 h-5" /></div>
+            <div><p className={cn('text-2xl font-bold leading-none mb-1', valueCls)}>{value}</p>
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{label}</p></div>
+        </div>
+    )
 }
 
 // ─── Modal Nuevo Movimiento ───────────────────────────────────────────────────
@@ -329,10 +345,11 @@ function AnularModal({ movimiento, onClose }: { movimiento: MovimientoBancario; 
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function MovimientosIndex() {
-    const { movimientos, bancos, cuentas, filtros, flash } = usePage<Props>().props
+    const { movimientos, bancos, cuentas, filtros, stats, flash } = usePage<Props>().props
     const [showModal, setShowModal] = useState(false)
     const [anularMov, setAnularMov] = useState<MovimientoBancario | null>(null)
     const [filtro, setFiltro] = useState(filtros)
+
 
     useEffect(() => {
         if (flash?.success) notify.ok(flash.success)
@@ -409,12 +426,29 @@ export default function MovimientosIndex() {
                     </div>
 
                     <div className="flex items-center gap-2">
-                        <a href={route('bancos.movimientos.exportar-xml')}
-                           className="btn-excel flex items-center gap-2 whitespace-nowrap">
-                            <Download size={15} /> XML
+                        <a href={route('bancos.movimientos.export-excel') + '?' + new URLSearchParams(
+                                Object.fromEntries(Object.entries(filtro).filter(([,v]) => v)) as Record<string, string>
+                            ).toString()}
+                           className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-sm font-medium text-white whitespace-nowrap transition-opacity hover:opacity-90"
+                           style={{ background: '#16a34a' }}>
+                            <FileSpreadsheet size={15} /> Excel
                         </a>
+
                     </div>
                 </div>
+            </div>
+
+            {/* Stats */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 px-6 py-4">
+                <StatCard label="Total Ingresos" value={fmt(stats.total_ingresos)} icon={ArrowUpCircle}
+                    cls="bg-green-500/15 text-green-600 dark:text-green-400"
+                    valueCls="text-green-600 dark:text-green-400" />
+                <StatCard label="Total Egresos" value={fmt(stats.total_egresos)} icon={ArrowDownCircle}
+                    cls="bg-red-500/15 text-red-600 dark:text-red-400"
+                    valueCls="text-red-600 dark:text-red-400" />
+                <StatCard label="Pendientes conciliar" value={stats.pendientes_conciliar} icon={Clock}
+                    cls="bg-orange-500/15 text-orange-600 dark:text-orange-400"
+                    valueCls="text-orange-600 dark:text-orange-400" />
             </div>
 
             {/* Tabla */}
@@ -451,7 +485,7 @@ export default function MovimientosIndex() {
                             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
 
                             <div className="col-span-1">
-                                <p className="text-xs font-mono" style={{ color: 'var(--text-main)' }}>{m.fecha}</p>
+                                <p className="text-xs font-mono" style={{ color: 'var(--text-main)' }}>{formatFecha(m.fecha)}</p>
                             </div>
                             <div className="col-span-2 min-w-0">
                                 <p className="text-xs truncate font-medium" style={{ color: 'var(--text-main)' }}>
@@ -523,6 +557,8 @@ export default function MovimientosIndex() {
 
             {showModal && <MovimientoModal bancos={bancos} cuentas={cuentas} onClose={() => setShowModal(false)} />}
             {anularMov && <AnularModal movimiento={anularMov} onClose={() => setAnularMov(null)} />}
+
+
 
             <ToastContainer position="top-right" autoClose={3500} hideProgressBar={false}
                 newestOnTop closeOnClick pauseOnHover draggable theme="colored"

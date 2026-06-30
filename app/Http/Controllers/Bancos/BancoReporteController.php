@@ -10,6 +10,11 @@ use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
+use Maatwebsite\Excel\Facades\Excel;
+use Maatwebsite\Excel\Concerns\FromCollection;
+use Maatwebsite\Excel\Concerns\WithHeadings;
+use Maatwebsite\Excel\Concerns\WithStyles;
+use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 class BancoReporteController extends Controller
 {
@@ -153,5 +158,130 @@ class BancoReporteController extends Controller
         ))->setPaper('a4', 'landscape');
 
         return $pdf->stream('caja-chica-' . now()->format('Y-m-d') . '.pdf');
+    }
+
+    // ── Consulta avanzada de cobros y pagos (página Inertia) ──────────────────
+    public function consultaCobrosPagos(Request $request): Response
+    {
+        $empresaId = session('empresa_activa_id');
+
+        $bancos = BancoCaja::where('empresa_id', $empresaId)
+            ->activos()->orderBy('tipo')->orderBy('nombre')
+            ->get(['id', 'nombre', 'tipo']);
+
+        $movimientos = collect();
+
+        if ($request->hasAny(['banco_caja_id', 'tipo', 'sub_tipo', 'fecha_desde', 'fecha_hasta', 'beneficiario'])) {
+            $query = MovimientoBancario::with('bancoCaja')
+                ->where('empresa_id', $empresaId)
+                ->where('anulado', false);
+
+            if ($request->filled('banco_caja_id')) $query->where('banco_caja_id', $request->banco_caja_id);
+            if ($request->filled('tipo'))           $query->where('tipo',          $request->tipo);
+            if ($request->filled('sub_tipo'))       $query->where('sub_tipo',      $request->sub_tipo);
+            if ($request->filled('fecha_desde'))    $query->where('fecha', '>=',   $request->fecha_desde);
+            if ($request->filled('fecha_hasta'))    $query->where('fecha', '<=',   $request->fecha_hasta);
+            if ($request->filled('beneficiario'))   $query->where('beneficiario', 'ilike', '%' . $request->beneficiario . '%');
+
+            $movimientos = $query->orderByDesc('fecha')->orderByDesc('id')
+                ->get()
+                ->map(fn($m) => [
+                    'id'            => $m->id,
+                    'banco'         => $m->bancoCaja?->nombre,
+                    'tipo'          => $m->tipo,
+                    'sub_tipo'      => $m->sub_tipo,
+                    'fecha'         => $m->fecha?->format('d/m/Y'),
+                    'monto'         => $m->monto,
+                    'beneficiario'  => $m->beneficiario,
+                    'descripcion'   => $m->descripcion,
+                    'num_documento' => $m->num_documento,
+                    'conciliado'    => $m->conciliado,
+                ]);
+        }
+
+        return Inertia::render('Bancos/Reportes/ConsultaCobrosPagos', [
+            'bancos'       => $bancos,
+            'movimientos'  => $movimientos->values(),
+            'filtros'      => $request->only(['banco_caja_id', 'tipo', 'sub_tipo', 'fecha_desde', 'fecha_hasta', 'beneficiario']),
+            'totales'      => [
+                'ingresos' => $movimientos->where('tipo', 'ingreso')->sum('monto'),
+                'egresos'  => $movimientos->where('tipo', 'egreso')->sum('monto'),
+                'count'    => $movimientos->count(),
+            ],
+        ]);
+    }
+
+    // ── Exportar consulta a Excel ─────────────────────────────────────────────
+    public function consultaExcel(Request $request): \Symfony\Component\HttpFoundation\BinaryFileResponse
+    {
+        $empresaId   = session('empresa_activa_id');
+        $movimientos = $this->consultaQuery($request, $empresaId);
+
+        $filas = $movimientos->map(fn($m) => [
+            $m->bancoCaja?->nombre,
+            $m->fecha?->format('d/m/Y'),
+            ucfirst($m->tipo),
+            ucfirst(str_replace('_', ' ', $m->sub_tipo ?? '')),
+            $m->beneficiario,
+            $m->descripcion,
+            $m->num_documento,
+            $m->tipo === 'ingreso' ? number_format($m->monto, 2) : '',
+            $m->tipo === 'egreso'  ? number_format($m->monto, 2) : '',
+            $m->conciliado ? 'Sí' : 'No',
+        ]);
+
+        $export = new class($filas) implements FromCollection, WithHeadings, WithStyles {
+            public function __construct(private $filas) {}
+            public function collection() { return $this->filas; }
+            public function headings(): array {
+                return ['Banco/Caja', 'Fecha', 'Tipo', 'Sub-tipo', 'Beneficiario',
+                        'Descripción', 'Nº Documento', 'Ingreso', 'Egreso', 'Conciliado'];
+            }
+            public function styles(Worksheet $sheet): array {
+                return [
+                    1 => ['font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
+                          'fill' => ['fillType' => 'solid', 'startColor' => ['rgb' => '1F2D3D']]],
+                ];
+            }
+        };
+
+        return Excel::download($export, 'consulta-cobros-pagos-' . now()->format('Y-m-d') . '.xlsx');
+    }
+
+    // ── Exportar consulta a PDF ────────────────────────────────────────────────
+    public function consultaPdf(Request $request): \Illuminate\Http\Response
+    {
+        $empresaId   = session('empresa_activa_id');
+        $movimientos = $this->consultaQuery($request, $empresaId);
+        $empresa     = Empresa::find($empresaId);
+
+        $totalIngresos = $movimientos->where('tipo', 'ingreso')->sum('monto');
+        $totalEgresos  = $movimientos->where('tipo', 'egreso')->sum('monto');
+        $fecha_desde   = $request->fecha_desde;
+        $fecha_hasta   = $request->fecha_hasta;
+
+        $pdf = Pdf::loadView('pdf.bancos-movimientos', compact(
+            'movimientos', 'totalIngresos', 'totalEgresos', 'empresa',
+            'fecha_desde', 'fecha_hasta'
+        ))->setPaper('a4', 'landscape');
+
+        return $pdf->stream('consulta-cobros-pagos-' . now()->format('Y-m-d') . '.pdf');
+    }
+
+    // ── Consulta compartida ────────────────────────────────────────────────────
+    private function consultaQuery(Request $request, int $empresaId)
+    {
+        $query = MovimientoBancario::with('bancoCaja')
+            ->where('empresa_id', $empresaId)
+            ->where('anulado', false);
+
+        if ($request->filled('banco_caja_id')) $query->where('banco_caja_id', $request->banco_caja_id);
+        if ($request->filled('tipo'))           $query->where('tipo',          $request->tipo);
+        if ($request->filled('sub_tipo'))       $query->where('sub_tipo',      $request->sub_tipo);
+        if ($request->filled('fecha_desde'))    $query->where('fecha', '>=',   $request->fecha_desde);
+        if ($request->filled('fecha_hasta'))    $query->where('fecha', '<=',   $request->fecha_hasta);
+        if ($request->filled('beneficiario'))   $query->where('beneficiario', 'ilike', '%' . $request->beneficiario . '%');
+
+        return $query->orderByDesc('fecha')->orderByDesc('id')->get();
     }
 }

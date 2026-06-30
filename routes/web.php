@@ -47,6 +47,7 @@ use App\Http\Controllers\RRHH\ColaboradorController;
 use App\Http\Controllers\RRHH\AsistenciaController;
 use App\Http\Controllers\RRHH\HorasExtrasController;
 use App\Http\Controllers\RRHH\NominaController;
+use App\Http\Controllers\ManualesController;
 use Illuminate\Support\Facades\Route;
 
 // Auth
@@ -67,6 +68,10 @@ Route::middleware('auth')->group(function () {
 Route::middleware('auth')->group(function () {
     Route::get('/', fn() => redirect()->route('dashboard'));
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+
+    // Manuales de Uso
+    Route::get('/manuales',          [ManualesController::class, 'index'])->name('manuales.index');
+    Route::get('/manuales/{clave}/pdf', [ManualesController::class, 'pdf'])->name('manuales.pdf');
 
     // Configuración
     Route::middleware('permiso:configuracion,ver')->group(function () {
@@ -311,10 +316,11 @@ Route::middleware('auth')->group(function () {
         });
 
         Route::prefix('bancos/movimientos')->name('bancos.movimientos.')->group(function () {
-            Route::get('/',                      [MovimientoBancarioController::class, 'index'])      ->name('index');
-            Route::post('/',                     [MovimientoBancarioController::class, 'store'])      ->name('store');
-            Route::patch('/{movimiento}/anular', [MovimientoBancarioController::class, 'anular'])     ->name('anular');
-            Route::get('/exportar-xml',          [MovimientoBancarioController::class, 'exportarXml'])->name('exportar-xml');
+            Route::get('/',                      [MovimientoBancarioController::class, 'index'])       ->name('index');
+            Route::post('/',                     [MovimientoBancarioController::class, 'store'])       ->name('store');
+            Route::patch('/{movimiento}/anular', [MovimientoBancarioController::class, 'anular'])      ->name('anular');
+            Route::get('/export-excel',          [MovimientoBancarioController::class, 'exportExcel']) ->name('export-excel');
+            Route::get('/exportar-xml',          [MovimientoBancarioController::class, 'exportarXml']) ->name('exportar-xml');
         });
 
         Route::prefix('bancos/cajas')->name('bancos.cajas.')->group(function () {
@@ -330,13 +336,15 @@ Route::middleware('auth')->group(function () {
         });
 
         Route::prefix('bancos/conciliaciones')->name('bancos.conciliaciones.')->group(function () {
-            Route::get('/',                                         [ConciliacionController::class, 'index'])              ->name('index');
-            Route::post('/',                                        [ConciliacionController::class, 'store'])              ->name('store');
-            Route::get('/{conciliacion}',                           [ConciliacionController::class, 'show'])               ->name('show');
-            Route::patch('/{conciliacion}/conciliar',               [ConciliacionController::class, 'marcarConciliada'])   ->name('conciliar');
-            Route::post('/{conciliacion}/upload-csv',               [ConciliacionController::class, 'uploadCsv'])          ->name('upload-csv');
-            Route::post('/{conciliacion}/conciliar-partida',        [ConciliacionController::class, 'conciliarPartida'])   ->name('conciliar-partida');
-            Route::post('/{conciliacion}/generar-asiento-ajuste',   [ConciliacionController::class, 'generarAsientoAjuste'])->name('generar-asiento-ajuste');
+            Route::get('/',                                        [ConciliacionController::class, 'index'])               ->name('index');
+            Route::post('/',                                       [ConciliacionController::class, 'store'])               ->name('store');
+            Route::get('/{conciliacion}',                          [ConciliacionController::class, 'show'])                ->name('show');
+            Route::delete('/{conciliacion}',                       [ConciliacionController::class, 'destroy'])             ->name('destroy');
+            Route::post('/{conciliacion}/upload-csv',              [ConciliacionController::class, 'uploadEstadoCuenta'])  ->name('upload-csv');
+            Route::post('/{conciliacion}/conciliar-partida',       [ConciliacionController::class, 'conciliarPartida'])    ->name('conciliar-partida');
+            Route::post('/{conciliacion}/generar-asiento-ajuste',  [ConciliacionController::class, 'generarAsientoAjuste'])->name('generar-asiento-ajuste');
+            Route::patch('/{conciliacion}/cerrar',                 [ConciliacionController::class, 'cerrar'])              ->name('cerrar');
+            Route::patch('/{conciliacion}/conciliar',              [ConciliacionController::class, 'marcarConciliada'])    ->name('conciliar');
         });
 
         Route::prefix('bancos/cheques')->name('bancos.cheques.')->group(function () {
@@ -346,12 +354,24 @@ Route::middleware('auth')->group(function () {
         });
 
         Route::prefix('bancos/reportes')->name('bancos.reportes.')->group(function () {
-            Route::get('/',                [BancoReporteController::class, 'index'])             ->name('index');
-            Route::get('/estado-cuenta',   [BancoReporteController::class, 'estadoCuenta'])      ->name('estado-cuenta');
-            Route::get('/movimientos',     [BancoReporteController::class, 'reporteMovimientos']) ->name('movimientos');
-            Route::get('/caja-chica',      [BancoReporteController::class, 'reporteCajaChica'])  ->name('caja-chica');
+            Route::get('/',                [BancoReporteController::class, 'index'])               ->name('index');
+            Route::get('/estado-cuenta',   [BancoReporteController::class, 'estadoCuenta'])        ->name('estado-cuenta');
+            Route::get('/movimientos',     [BancoReporteController::class, 'reporteMovimientos'])   ->name('movimientos');
+            Route::get('/caja-chica',      [BancoReporteController::class, 'reporteCajaChica'])    ->name('caja-chica');
+            Route::get('/consulta',        [BancoReporteController::class, 'consultaCobrosPagos']) ->name('consulta');
+            Route::get('/consulta-excel',  [BancoReporteController::class, 'consultaExcel'])       ->name('consulta-excel');
+            Route::get('/consulta-pdf',    [BancoReporteController::class, 'consultaPdf'])         ->name('consulta-pdf');
         });
     }); // cierra permiso:bancos,ver
+
+    // Bancos - Manual PDF (fuera del grupo de permisos para que la ruta sea directamente accesible)
+    Route::get('/bancos/manual-pdf', function () {
+        $empresa = \App\Models\Empresa::find(session('empresa_activa_id'));
+        $usuario = auth()->user();
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.manual-bancos', compact('empresa', 'usuario'))
+            ->setPaper('letter', 'portrait');
+        return $pdf->stream('manual-bancos.pdf');
+    })->name('bancos.manual-pdf');
 
     // RRHH
     Route::middleware('permiso:rrhh,ver')->prefix('rrhh')->name('rrhh.')->group(function () {

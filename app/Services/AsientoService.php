@@ -523,183 +523,33 @@ class AsientoService
         );
     }
 
-    // ══════════════════════════════════════════════════════════
-    // ANTICIPO A PROVEEDOR
-    // DEBE:  1.1.3.3 Anticipos a Proveedores (activo)
-    // HABER: cuenta bancaria del banco usado (activo)
-    // ══════════════════════════════════════════════════════════
-    public function anticipoProveedor(
-        int    $empresaId,
-        int    $anticiPoId,
-        string $referencia,
-        float  $monto,
-        int    $bancoCajaId,
-        string $fecha,
-    ): AsientoContable {
-        // Cuenta 1.1.3.3 — Anticipos a Proveedores (catálogo global)
-        $ctaAnticipo = PlanCuenta::where('codigo', '1.1.3.3')
-            ->whereNull('empresa_id')
-            ->where('permite_asientos', true)
-            ->value('id');
-
-        if (!$ctaAnticipo) {
-            throw new \Exception(
-                'No se encontró la cuenta 1.1.3.3 (Anticipos a Proveedores) en el plan de cuentas.'
-            );
-        }
-
-        // Cuenta del banco: usar cuenta_id asignada al banco, si no → 1.1.1.3
-        $bancoCuenta = \App\Models\BancoCaja::where('id', $bancoCajaId)->value('cuenta_id');
-        if (!$bancoCuenta) {
-            $bancoCuenta = PlanCuenta::where('codigo', '1.1.1.3')
-                ->whereNull('empresa_id')
-                ->where('permite_asientos', true)
-                ->value('id');
-        }
-
-        if (!$bancoCuenta) {
-            throw new \Exception(
-                'No se encontró la cuenta bancaria (1.1.1.3) para el asiento de anticipo.'
-            );
-        }
-
-        return $this->crear(
-            empresaId:    $empresaId,
-            concepto:     "Anticipo a proveedor — {$referencia}",
-            partidas: [
-                ['cuenta_id' => $ctaAnticipo, 'debe' => $monto, 'haber' => 0,
-                 'descripcion' => "Anticipo {$referencia}"],
-                ['cuenta_id' => $bancoCuenta,  'debe' => 0,     'haber' => $monto,
-                 'descripcion' => "Pago anticipo {$referencia}"],
-            ],
-            documentoTipo: 'ANTICIPO',
-            documentoId:   $anticiPoId,
-            documentoRef:  $referencia,
-            esAutomatico:  true,
-            fecha:         $fecha,
-        );
-    }
-
-    // ══════════════════════════════════════════════════════════
-    // CRUCE ANTICIPO CON CxP AL LIQUIDAR IMPORTACIÓN
-    // DEBE:  2.1.xx.xx Proveedores Locales (pasivo — reducir)
-    // HABER: 1.1.3.3   Anticipos a Proveedores (activo — reducir)
-    // ══════════════════════════════════════════════════════════
-    public function cruciarAnticipo(
-        int    $empresaId,
-        int    $anticipoId,
-        string $referencia,
-        float  $monto,
-        string $fecha,
-    ): AsientoContable {
-        $ctaAnticipo = PlanCuenta::where('codigo', '1.1.3.3')
-            ->whereNull('empresa_id')
-            ->where('permite_asientos', true)
-            ->value('id');
-
-        if (!$ctaAnticipo) {
-            throw new \Exception(
-                'No se encontró la cuenta 1.1.3.3 (Anticipos a Proveedores) en el plan de cuentas.'
-            );
-        }
-
-        return $this->crear(
-            empresaId:    $empresaId,
-            concepto:     "Cruce anticipo proveedor — {$referencia}",
-            partidas: [
-                ['cuenta_id' => $this->cuentaId('cta_proveedores_locales', $empresaId),
-                 'debe' => $monto, 'haber' => 0,
-                 'descripcion' => "Cruce CxP {$referencia}"],
-                ['cuenta_id' => $ctaAnticipo, 'debe' => 0, 'haber' => $monto,
-                 'descripcion' => "Anticipo aplicado {$referencia}"],
-            ],
-            documentoTipo: 'CRUCE',
-            documentoId:   $anticipoId,
-            documentoRef:  $referencia,
-            esAutomatico:  true,
-            fecha:         $fecha,
-        );
-    }
-
-    // ══════════════════════════════════════════════════════════
-    // CIERRE DE CAJA
-    // DEBE:  Cuenta Bancaria destino (donde va el efectivo)
-    // HABER: Cuenta de la caja chica (de donde sale)
-    // ══════════════════════════════════════════════════════════
-    public function cierreCaja(
-        int    $empresaId,
-        int    $cierreId,
-        float  $totalCobrado,
-        int    $bancoCajaId,
-        string $fecha,
-    ): AsientoContable {
-        $ctaCaja = \App\Models\BancoCaja::where('id', $bancoCajaId)->value('cuenta_id');
-        if (!$ctaCaja) {
-            throw new \Exception('La caja no tiene cuenta contable asignada.');
-        }
-
-        $ctaDestino = $this->cuentaId('cta_bancos_locales', $empresaId);
-
-        return $this->crear(
-            empresaId:    $empresaId,
-            concepto:     "Cierre de caja #{$cierreId}",
-            partidas: [
-                ['cuenta_id' => $ctaDestino, 'debe' => $totalCobrado, 'haber' => 0,
-                 'descripcion' => "Depósito cierre caja #{$cierreId}"],
-                ['cuenta_id' => $ctaCaja,    'debe' => 0, 'haber' => $totalCobrado,
-                 'descripcion' => "Cierre caja #{$cierreId}"],
-            ],
-            documentoTipo: 'BANCO',
-            documentoId:   $cierreId,
-            documentoRef:  "CAJA-{$cierreId}",
-            esAutomatico:  true,
-            fecha:         $fecha,
-        );
-    }
-
-    // ══════════════════════════════════════════════════════════
-    // AJUSTE DE CONCILIACIÓN BANCARIA
-    // diferencia > 0: banco tiene más → DEBE banco / HABER ajuste
-    // diferencia < 0: sistema tiene más → DEBE ajuste / HABER banco
-    // ══════════════════════════════════════════════════════════
+    // ── Asiento de ajuste por diferencia en conciliación bancaria ──────────────
     public function ajusteConciliacion(
         int    $empresaId,
         int    $conciliacionId,
         float  $diferencia,
-        int    $bancoCajaId,
-        string $fecha,
+        string $descripcion = 'Ajuste conciliación bancaria',
     ): AsientoContable {
-        $ctaBanco = \App\Models\BancoCaja::where('id', $bancoCajaId)->value('cuenta_id');
-        if (!$ctaBanco) {
-            throw new \Exception('El banco no tiene cuenta contable asignada.');
-        }
-
-        $ctaAjuste = $this->cuentaId('cta_gastos_bancarios', $empresaId);
-        $abs       = round(abs($diferencia), 4);
+        // Si diferencia > 0 → falta dinero en sistema (ingreso no registrado)
+        // Si diferencia < 0 → sobra en sistema (egreso no registrado)
+        $ctaBancos = $this->cuentaId('cta_bancos_locales', $empresaId);
+        $ctaAjuste = $this->cuentaId('cta_ajuste_inventario', $empresaId);
 
         $partidas = $diferencia > 0
             ? [
-                ['cuenta_id' => $ctaBanco,  'debe' => $abs, 'haber' => 0,
-                 'descripcion' => "Ajuste conciliación #{$conciliacionId}"],
-                ['cuenta_id' => $ctaAjuste, 'debe' => 0,    'haber' => $abs,
-                 'descripcion' => "Diferencia conciliación #{$conciliacionId}"],
+                ['cuenta_id' => $ctaBancos, 'debe' => abs($diferencia), 'haber' => 0,            'descripcion' => $descripcion],
+                ['cuenta_id' => $ctaAjuste, 'debe' => 0,                'haber' => abs($diferencia), 'descripcion' => $descripcion],
               ]
             : [
-                ['cuenta_id' => $ctaAjuste, 'debe' => $abs, 'haber' => 0,
-                 'descripcion' => "Diferencia conciliación #{$conciliacionId}"],
-                ['cuenta_id' => $ctaBanco,  'debe' => 0,    'haber' => $abs,
-                 'descripcion' => "Ajuste conciliación #{$conciliacionId}"],
+                ['cuenta_id' => $ctaAjuste, 'debe' => abs($diferencia), 'haber' => 0,            'descripcion' => $descripcion],
+                ['cuenta_id' => $ctaBancos, 'debe' => 0,                'haber' => abs($diferencia), 'descripcion' => $descripcion],
               ];
 
         return $this->crear(
-            empresaId:    $empresaId,
-            concepto:     "Ajuste conciliación bancaria #{$conciliacionId}",
-            partidas:     $partidas,
-            documentoTipo:'BANCO',
-            documentoId:  $conciliacionId,
-            documentoRef: "CONC-{$conciliacionId}",
-            esAutomatico: true,
-            fecha:        $fecha,
+            empresaId: $empresaId, concepto: $descripcion,
+            partidas: $partidas,
+            documentoTipo: 'CONCILIACION', documentoId: $conciliacionId,
+            documentoRef: "CONC-{$conciliacionId}", esAutomatico: true,
         );
     }
 }

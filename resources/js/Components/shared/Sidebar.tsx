@@ -3,12 +3,12 @@ import { useState, useEffect, useMemo } from 'react'
 import {
     LayoutDashboard, FileText, ShoppingCart, Package, BookOpen,
     Landmark, Users, Wrench, BarChart2, Settings, Settings2, ClipboardList, ArrowLeftRight, ChevronDown,
-    ChevronLeft, ChevronRight, X, UserCircle
+    ChevronLeft, ChevronRight, X, UserCircle, Library,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { PageProps } from '@/types'
 
-const MODULOS_SIN_PERMISO = new Set(['dashboard', 'personas'])
+const MODULOS_SIN_PERMISO = new Set(['dashboard', 'personas', 'manuales'])
 
 interface NavSubgrupo {
     nombre: string
@@ -116,6 +116,7 @@ const navItems: NavItem[] = [
         ]
     },
     { nombre: 'Reportes', clave: 'reportes', icon: BarChart2, href: '/reportes' },
+    { nombre: 'Manuales', clave: 'manuales', icon: Library, href: '/manuales' },
     {
         nombre: 'Configuración', clave: 'configuracion', icon: Settings,
         hijos: [

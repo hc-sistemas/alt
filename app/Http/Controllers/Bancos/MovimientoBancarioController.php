@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers\Bancos;
 
+use App\Exports\MovimientosExport;
 use App\Http\Controllers\Controller;
+use App\Models\AsientoContable;
 use App\Models\BancoCaja;
 use App\Models\MovimientoBancario;
 use App\Models\PlanCuenta;
@@ -13,6 +15,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
+use Maatwebsite\Excel\Facades\Excel;
 
 class MovimientoBancarioController extends Controller
 {
@@ -65,6 +68,14 @@ class MovimientoBancarioController extends Controller
             'filtros'     => $request->only([
                 'banco_caja_id', 'tipo', 'fecha_desde', 'fecha_hasta', 'buscar',
             ]),
+            'stats' => [
+                'total_ingresos'       => MovimientoBancario::where('empresa_id', $empresaId)
+                    ->where('tipo', 'ingreso')->where('anulado', false)->sum('monto'),
+                'total_egresos'        => MovimientoBancario::where('empresa_id', $empresaId)
+                    ->where('tipo', 'egreso')->where('anulado', false)->sum('monto'),
+                'pendientes_conciliar' => MovimientoBancario::where('empresa_id', $empresaId)
+                    ->where('conciliado', false)->where('anulado', false)->count(),
+            ],
         ]);
     }
 
@@ -151,6 +162,22 @@ class MovimientoBancarioController extends Controller
         }
     }
 
+    public function exportExcel(Request $request): \Symfony\Component\HttpFoundation\BinaryFileResponse
+    {
+        $empresaId = session('empresa_activa_id');
+
+        $filtros = $request->only([
+            'banco_caja_id', 'tipo', 'fecha_desde', 'fecha_hasta', 'buscar',
+        ]);
+
+        $fecha = now()->format('Y-m-d');
+
+        return Excel::download(
+            new MovimientosExport($empresaId, $filtros),
+            "movimientos-bancarios-{$fecha}.xlsx"
+        );
+    }
+
     public function exportarXml(Request $request): \Illuminate\Http\Response
     {
         $empresaId   = session('empresa_activa_id');
@@ -210,6 +237,18 @@ class MovimientoBancarioController extends Controller
                 $movimiento->monto,
                 $movimiento->tipo === 'ingreso' ? 'egreso' : 'ingreso'
             );
+
+            // Anular el asiento contable asociado
+            if ($movimiento->asiento_id) {
+                $asiento = AsientoContable::find($movimiento->asiento_id);
+                if ($asiento && !$asiento->anulado) {
+                    try {
+                        $this->asientoService->anular($asiento, $request->motivo);
+                    } catch (\Exception) {
+                        // No bloquear si el asiento no puede anularse (período cerrado, etc.)
+                    }
+                }
+            }
 
             DB::table('log_cambios_criticos')->insert([
                 'usuario_id'     => Auth::id(),
