@@ -16,6 +16,7 @@ use App\Http\Controllers\Compras\CompraController;
 use App\Http\Controllers\Compras\CuentaPagarController;
 use App\Http\Controllers\Compras\AnticipoProveedorController;
 use App\Http\Controllers\Compras\ImportacionController;
+use App\Http\Controllers\Compras\DevolucionCompraController;
 use App\Http\Controllers\Inventario\MarcaController;
 use App\Http\Controllers\Inventario\CategoriaProductoController;
 use App\Http\Controllers\Inventario\BodegaController;
@@ -70,8 +71,25 @@ Route::middleware('auth')->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
     // Manuales de Uso
-    Route::get('/manuales',          [ManualesController::class, 'index'])->name('manuales.index');
+    Route::get('/manuales',             [ManualesController::class, 'index'])->name('manuales.index');
     Route::get('/manuales/{clave}/pdf', [ManualesController::class, 'pdf'])->name('manuales.pdf');
+
+    // Manuales dinámicos (DomPDF) — Contabilidad y Compras
+    Route::get('/manuales/contabilidad/pdf-dinamico', function () {
+        $empresa = \App\Models\Empresa::find(session('empresa_activa_id'));
+        $usuario = auth()->user();
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.manual-contabilidad', compact('empresa', 'usuario'))
+            ->setPaper('letter', 'portrait');
+        return $pdf->stream('manual-contabilidad.pdf');
+    })->name('manuales.contabilidad-pdf');
+
+    Route::get('/manuales/compras/pdf-dinamico', function () {
+        $empresa = \App\Models\Empresa::find(session('empresa_activa_id'));
+        $usuario = auth()->user();
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.manual-compras', compact('empresa', 'usuario'))
+            ->setPaper('letter', 'portrait');
+        return $pdf->stream('manual-compras.pdf');
+    })->name('manuales.compras-pdf');
 
     // Configuración
     Route::middleware('permiso:configuracion,ver')->group(function () {
@@ -109,6 +127,7 @@ Route::middleware('auth')->group(function () {
         Route::prefix('contabilidad/plan-cuentas')->name('contabilidad.plan-cuentas.')->group(function () {
             Route::get('/', [PlanCuentaController::class, 'index'])->name('index');
             Route::get('/exportar', [PlanCuentaController::class, 'exportar'])->name('exportar');
+            Route::post('/importar', [PlanCuentaController::class, 'importarExcel'])->name('importar');
             Route::post('/', [PlanCuentaController::class, 'store'])->name('store');
             Route::put('/{cuenta}', [PlanCuentaController::class, 'update'])->name('update');
             Route::patch('/{cuenta}/toggle-estado', [PlanCuentaController::class, 'toggleEstado'])->name('toggle-estado');
@@ -120,12 +139,16 @@ Route::middleware('auth')->group(function () {
             Route::post('/',                     [EjercicioContableController::class, 'store']) ->name('store');
             Route::patch('/{ejercicio}/cerrar',  [EjercicioContableController::class, 'cerrar'])->name('cerrar');
             Route::patch('/{ejercicio}/reabrir', [EjercicioContableController::class, 'reabrir'])->name('reabrir');
+            Route::post('/cierre-fiscal-anual',  [EjercicioContableController::class, 'cierreFiscalAnual'])->name('cierre-fiscal-anual');
         });
 
         Route::prefix('contabilidad/reportes')->name('contabilidad.reportes.')->group(function () {
-            Route::get('/',             [ReporteContableController::class, 'index'])      ->name('index');
-            Route::get('/libro-diario', [ReporteContableController::class, 'libroDiario'])->name('libro-diario');
-            Route::get('/mayor',        [ReporteContableController::class, 'mayor'])      ->name('mayor');
+            Route::get('/',                      [ReporteContableController::class, 'index'])              ->name('index');
+            Route::get('/libro-diario',          [ReporteContableController::class, 'libroDiario'])        ->name('libro-diario');
+            Route::get('/mayor',                 [ReporteContableController::class, 'mayor'])              ->name('mayor');
+            Route::get('/balance-comprobacion',  [ReporteContableController::class, 'balanceComprobacion'])->name('balance-comprobacion');
+            Route::get('/balance-general',       [ReporteContableController::class, 'balanceGeneral'])     ->name('balance-general');
+            Route::get('/estado-resultados',     [ReporteContableController::class, 'estadoResultados'])   ->name('estado-resultados');
         });
 
         Route::prefix('contabilidad/asientos')->name('contabilidad.asientos.')->group(function () {
@@ -156,6 +179,7 @@ Route::middleware('auth')->group(function () {
         Route::prefix('compras/facturas')->name('compras.facturas.')->group(function () {
             Route::get('/',                  [CompraController::class, 'index']) ->name('index');
             Route::post('/',                 [CompraController::class, 'store']) ->name('store');
+            Route::post('/parsear-xml',      [CompraController::class, 'parsearXml'])->name('parsear-xml');
             Route::get('/pdf',               [CompraController::class, 'pdf'])   ->name('pdf');
             Route::get('/excel',             [CompraController::class, 'excel']) ->name('excel');
             Route::get('/{compra}',                    [CompraController::class, 'show'])              ->name('show');
@@ -272,6 +296,13 @@ Route::middleware('auth')->group(function () {
         Route::get('/cxp-pendientes',        [AnticipoProveedorController::class, 'cxpPendientes'])->name('cxp-pendientes');
         Route::patch('/{anticipo}/cruzar',   [AnticipoProveedorController::class, 'cruzar'])      ->name('cruzar');
         Route::patch('/{anticipo}/anular',   [AnticipoProveedorController::class, 'anular'])      ->name('anular');
+    });
+
+    // Compras - Devoluciones
+    Route::prefix('compras/devoluciones')->name('compras.devoluciones.')->group(function () {
+        Route::get('/',                        [DevolucionCompraController::class, 'index'])->name('index');
+        Route::post('/',                       [DevolucionCompraController::class, 'store'])->name('store');
+        Route::patch('/{devolucion}/anular',   [DevolucionCompraController::class, 'anular'])->name('anular');
     });
 
     // Compras - Importaciones

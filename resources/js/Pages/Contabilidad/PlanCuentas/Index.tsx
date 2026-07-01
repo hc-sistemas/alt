@@ -13,6 +13,7 @@ import {
     ToggleLeft, ToggleRight, Download, Search, X,
     ChevronsUpDown, ChevronsDownUp, BookOpen,
     TrendingUp, TrendingDown, DollarSign, Shield, BarChart3,
+    Upload,
 } from 'lucide-react'
 import type { PlanCuenta, PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
@@ -779,6 +780,72 @@ function CuentaNode({
     )
 }
 
+// ─── Modal Importar Excel ─────────────────────────────────────────────────────
+
+function ImportarExcelModal({ onClose }: { onClose: () => void }) {
+    const [archivo, setArchivo] = useState<File | null>(null)
+    const [processing, setProcessing] = useState(false)
+
+    function submit(e: React.FormEvent) {
+        e.preventDefault()
+        if (!archivo) return
+        setProcessing(true)
+        const data = new FormData()
+        data.append('archivo', archivo)
+        router.post(route('contabilidad.plan-cuentas.importar'), data, {
+            forceFormData: true,
+            onSuccess: () => onClose(),
+            onError: (err) => notify.error(Object.values(err)[0] as string ?? 'Error al importar'),
+            onFinish: () => setProcessing(false),
+        })
+    }
+
+    return (
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal-card max-w-md" onClick={e => e.stopPropagation()}>
+                <div className="modal-header">
+                    <h2 className="flex items-center gap-2">
+                        <Upload className="w-5 h-5" style={{ color: '#059669' }} />
+                        Importar Plan de Cuentas desde Excel
+                    </h2>
+                    <button className="modal-close" onClick={onClose}><X className="w-4 h-4" /></button>
+                </div>
+                <form onSubmit={submit}>
+                    <div className="modal-body space-y-4">
+                        <div className="rounded-lg p-3 text-xs space-y-1"
+                            style={{ background: 'rgba(5,150,105,0.07)', border: '1px solid rgba(5,150,105,0.2)', color: 'var(--text-muted)' }}>
+                            <p className="font-semibold" style={{ color: '#059669' }}>Formato requerido del archivo:</p>
+                            <p>Columnas: <strong>codigo | nombre | tipo | permite_asientos</strong></p>
+                            <p>Tipos válidos: activo, pasivo, patrimonio, ingreso, gasto</p>
+                            <p>Permite asientos: si / no</p>
+                            <p>Las cuentas con código ya existente serán omitidas (no se duplican).</p>
+                        </div>
+                        <div className="space-y-1.5">
+                            <label className="input-label">Archivo Excel (.xlsx / .xls) <span className="text-red-400">*</span></label>
+                            <input
+                                type="file"
+                                accept=".xlsx,.xls"
+                                onChange={e => setArchivo(e.target.files?.[0] ?? null)}
+                                className="input-field"
+                                style={{ padding: '6px 10px' }}
+                            />
+                        </div>
+                    </div>
+                    <div className="modal-footer" style={{ justifyContent: 'space-between' }}>
+                        <button type="submit" disabled={!archivo || processing}
+                            className="btn-primary flex items-center gap-2"
+                            style={{ background: '#059669', opacity: (!archivo || processing) ? 0.6 : 1 }}>
+                            <Upload size={15} />
+                            {processing ? 'Importando...' : 'Importar'}
+                        </button>
+                        <button type="button" onClick={onClose} className="btn-secondary">Cancelar</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    )
+}
+
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function PlanCuentasIndex() {
@@ -791,6 +858,7 @@ export default function PlanCuentasIndex() {
         cuenta?: PlanCuenta
         padre?: PlanCuenta | null
     }>({ open: false })
+    const [modalImportar, setModalImportar] = useState(false)
 
     const todosFlat = useMemo(() => flattenTree(cuentas), [cuentas])
 
@@ -897,6 +965,12 @@ export default function PlanCuentasIndex() {
                 </div>
 
                 <div className="flex items-center gap-2">
+                    <button onClick={() => setModalImportar(true)}
+                        className="btn-primary flex items-center gap-2 whitespace-nowrap"
+                        style={{ background: '#059669' }}>
+                        <Upload className="w-3.5 h-3.5" />
+                        Importar Excel
+                    </button>
                     <a href={route('contabilidad.plan-cuentas.exportar')}
                        className="btn-excel flex items-center gap-2 whitespace-nowrap">
                         <Download className="w-3.5 h-3.5" />
@@ -973,6 +1047,10 @@ export default function PlanCuentasIndex() {
                     todasLasCuentas={todasLasCuentas}
                     onClose={() => setModal({ open: false })}
                 />
+            )}
+
+            {modalImportar && (
+                <ImportarExcelModal onClose={() => setModalImportar(false)} />
             )}
 
             {/* Toast container propio de esta página */}

@@ -28,6 +28,7 @@ class ParametroContableController extends Controller
         ['codigo' => 'cta_retencion_ir',          'descripcion' => 'Retenciones en la Fuente de IR por Pagar',     'grupo' => 'Compras'],
         ['codigo' => 'cta_retencion_iva',         'descripcion' => 'Retenciones de IVA por Pagar',                 'grupo' => 'Compras'],
         ['codigo' => 'cta_gasto_compras',         'descripcion' => 'Gastos Generales (compras no inventariables)', 'grupo' => 'Compras'],
+        ['codigo' => 'cta_anticipos_proveedores', 'descripcion' => 'Anticipos a Proveedores (internacionales/locales)', 'grupo' => 'Compras'],
         // Inventario
         ['codigo' => 'cta_inventario_mercaderia', 'descripcion' => 'Inventario de Mercadería',                     'grupo' => 'Inventario'],
         ['codigo' => 'cta_ajuste_inventario',     'descripcion' => 'Ajustes por Faltantes o Mermas de Inventario', 'grupo' => 'Inventario'],

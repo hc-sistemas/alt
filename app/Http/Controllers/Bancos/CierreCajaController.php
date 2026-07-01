@@ -6,14 +6,17 @@ use App\Http\Controllers\Controller;
 use App\Models\BancoCaja;
 use App\Models\CentroCosto;
 use App\Models\CierreCaja;
+use App\Services\AsientoService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class CierreCajaController extends Controller
 {
+    public function __construct(private AsientoService $asientoService) {}
     public function index(): Response
     {
         $empresaId = session('empresa_activa_id');
@@ -132,6 +135,24 @@ class CierreCajaController extends Controller
             'estado'              => 'cerrado',
             'hora_cierre'         => now(),
         ]);
+
+        // Asiento contable por diferencia (sobrante/faltante)
+        $cuentaCajaId = $cierre->bancoCaja?->cuenta_contable_id;
+        if ($cuentaCajaId) {
+            try {
+                $this->asientoService->cierreCaja(
+                    empresaId:      (int) session('empresa_activa_id'),
+                    cierreId:       $cierre->id,
+                    codigo:         "CAJA-{$cierre->id}",
+                    fecha:          $cierre->fecha->format('Y-m-d'),
+                    montoDeclarado: $totalCobrado,
+                    montoEsperado:  $totalFacturado,
+                    cuentaCajaId:   $cuentaCajaId,
+                );
+            } catch (\Exception $e) {
+                Log::warning("Asiento cierre caja fallido: " . $e->getMessage());
+            }
+        }
 
         $msg = 'Caja cerrada correctamente.';
         if (abs($diferencia) > 0.01) {

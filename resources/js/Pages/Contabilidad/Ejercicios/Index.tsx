@@ -7,8 +7,8 @@ import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import {
-    Calendar, Lock, Unlock, Plus, CheckCircle,
-    AlertTriangle, XCircle,
+    Calendar, Lock, Plus, CheckCircle,
+    AlertTriangle, XCircle, Unlock, ShieldCheck,
 } from 'lucide-react'
 import type { EjercicioContable, PageProps } from '@/types'
 import { notify, MESES, swalBase, injectSwalStyles } from '@/utils/contabilidad'
@@ -24,6 +24,7 @@ export default function EjerciciosIndex() {
     const esSuperAdmin = auth.user?.perfil === 'super_admin'
 
     const [modalAbierto, setModalAbierto] = useState(false)
+    const [modalCierreFiscal, setModalCierreFiscal] = useState(false)
     const [processing,   setProcessing]   = useState(false)
     const [form, setForm] = useState({
         anio:        new Date().getFullYear(),
@@ -157,37 +158,6 @@ conciliación bancaria completada..."
         }
     }
 
-    const confirmarReapertura = async (ejercicio: EjercicioContable) => {
-        const result = await Swal.fire({
-            ...swalBase,
-            title: 'Reabrir período',
-            html: `
-                <div style="text-align:center;padding:8px 0">
-                    <div style="font-size:3rem;margin-bottom:12px">🔓</div>
-                    <p style="color:#374151;font-size:0.95rem;margin:0 0 12px 0">
-                        ¿Reabrir <strong>${ejercicio.periodo_label}</strong>?
-                    </p>
-                    <div style="background:#fef3c7;border-radius:8px;padding:10px">
-                        <p style="color:#92400e;font-size:0.82rem;margin:0">
-                            Recuerda cerrarlo nuevamente cuando termines los ajustes.
-                        </p>
-                    </div>
-                </div>
-            `,
-            icon: 'question',
-            showCancelButton: true,
-            confirmButtonColor: '#f59e0b',
-            cancelButtonColor: '#6b7280',
-            confirmButtonText: '🔓 Sí, reabrir',
-            cancelButtonText: 'Cancelar',
-            reverseButtons: true,
-        })
-
-        if (result.isConfirmed) {
-            router.patch(route('contabilidad.ejercicios.reabrir', ejercicio.id))
-        }
-    }
-
     const aniosDisponibles = Array.from({ length: 6 }, (_, i) => new Date().getFullYear() + 1 - i)
 
     return (
@@ -222,6 +192,16 @@ conciliación bancaria completada..."
                             <Plus size={15} />
                             Abrir Nuevo Período
                         </button>
+                        {esSuperAdmin && (
+                            <button
+                                onClick={() => setModalCierreFiscal(true)}
+                                className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5"
+                                style={{ background: '#7C3AED' }}
+                            >
+                                <ShieldCheck size={15} />
+                                Cierre Fiscal Anual
+                            </button>
+                        )}
                     </div>
                 </div>
                 {/* Banner período activo */}
@@ -339,16 +319,9 @@ conciliación bancaria completada..."
                                                                hover:bg-red-100 dark:hover:bg-red-900/30">
                                                     <Lock size={15} className="text-red-500" />
                                                 </button>
-                                            ) : esSuperAdmin ? (
-                                                <button
-                                                    onClick={() => confirmarReapertura(e)}
-                                                    title="Reabrir período"
-                                                    className="p-1.5 rounded-lg transition-colors
-                                                               hover:bg-amber-100 dark:hover:bg-amber-900/30">
-                                                    <Unlock size={15} className="text-amber-500" />
-                                                </button>
                                             ) : (
-                                                <Lock size={15} className="text-gray-300 cursor-not-allowed" />
+                                                <Lock size={15} className="text-gray-300 cursor-not-allowed"
+                                                      title="Período cerrado permanentemente" />
                                             )}
                                         </td>
                                     </tr>
@@ -443,6 +416,10 @@ conciliación bancaria completada..."
                 </div>
             )}
 
+            {modalCierreFiscal && (
+                <CierreFiscalModal onClose={() => setModalCierreFiscal(false)} />
+            )}
+
             <ToastContainer position="top-right" autoClose={3500}
                 hideProgressBar={false} newestOnTop closeOnClick
                 pauseOnHover draggable theme="colored" style={{ zIndex: 9999 }}
@@ -450,5 +427,71 @@ conciliación bancaria completada..."
                               fontWeight: '500', boxShadow: '0 8px 32px rgba(0,0,0,0.18)' }}
             />
         </AppLayout>
+    )
+}
+
+// ─── Modal Cierre Fiscal Anual ────────────────────────────────────────────────
+
+function CierreFiscalModal({ onClose }: { onClose: () => void }) {
+    const [anio, setAnio] = useState(new Date().getFullYear() - 1)
+    const [motivo, setMotivo] = useState('')
+    const [processing, setProcessing] = useState(false)
+    const anios = Array.from({ length: 6 }, (_, i) => new Date().getFullYear() - i)
+
+    function submit(e: React.FormEvent) {
+        e.preventDefault()
+        if (motivo.trim().length < 10) return
+        setProcessing(true)
+        router.post(route('contabilidad.ejercicios.cierre-fiscal-anual'), { anio, motivo }, {
+            onSuccess: () => onClose(),
+            onError: () => {},
+            onFinish: () => setProcessing(false),
+        })
+    }
+
+    return (
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal-card max-w-md" onClick={e => e.stopPropagation()}>
+                <div className="modal-header">
+                    <h2 className="flex items-center gap-2">
+                        <ShieldCheck className="w-5 h-5" style={{ color: '#7C3AED' }} />
+                        Cierre Fiscal Anual
+                    </h2>
+                    <button className="modal-close" onClick={onClose}><XCircle className="w-4 h-4" /></button>
+                </div>
+                <form onSubmit={submit}>
+                    <div className="modal-body space-y-4">
+                        <div className="rounded-lg p-3 text-xs"
+                            style={{ background: 'rgba(124,58,237,0.07)', border: '1px solid rgba(124,58,237,0.2)', color: 'var(--text-muted)' }}>
+                            <p className="font-semibold mb-1" style={{ color: '#7C3AED' }}>⚠️ Acción permanente e irreversible</p>
+                            <p>Todos los períodos mensuales del año seleccionado deben estar cerrados. Se registrará el asiento de cierre fiscal y quedará documentado en los registros del sistema.</p>
+                        </div>
+                        <div className="space-y-1.5">
+                            <label className="input-label">Año fiscal <span className="text-red-400">*</span></label>
+                            <select value={anio} onChange={e => setAnio(Number(e.target.value))} className="input-field select-field">
+                                {anios.map(a => <option key={a} value={a}>{a}</option>)}
+                            </select>
+                        </div>
+                        <div className="space-y-1.5">
+                            <label className="input-label">Motivo del cierre <span className="text-red-400">*</span></label>
+                            <textarea value={motivo} onChange={e => setMotivo(e.target.value)}
+                                rows={3} className="input-field textarea-field"
+                                placeholder="ej: Cierre ejercicio fiscal 2025, declaración impuesto a la renta presentada..."
+                                minLength={10} />
+                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Mínimo 10 caracteres</p>
+                        </div>
+                    </div>
+                    <div className="modal-footer" style={{ justifyContent: 'space-between' }}>
+                        <button type="submit" disabled={motivo.trim().length < 10 || processing}
+                            className="btn-primary flex items-center gap-2"
+                            style={{ background: '#7C3AED', opacity: (motivo.trim().length < 10 || processing) ? 0.6 : 1 }}>
+                            <ShieldCheck size={15} />
+                            {processing ? 'Procesando...' : `Ejecutar Cierre ${anio}`}
+                        </button>
+                        <button type="button" onClick={onClose} className="btn-secondary">Cancelar</button>
+                    </div>
+                </form>
+            </div>
+        </div>
     )
 }

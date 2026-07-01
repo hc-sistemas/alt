@@ -63,7 +63,7 @@ function ManualCard({ manual, onAbrir }: { manual: Manual; onAbrir: () => void }
                     <Icon className={cn('w-6 h-6', cfg.color)} />
                 </div>
                 <span className={cn('text-[10px] font-semibold px-2 py-0.5 rounded-full', cfg.badge)}>
-                    {manual.clave === 'bancos' ? 'Dinámico' : 'PDF'}
+                    {['bancos', 'compras', 'contabilidad'].includes(manual.clave) ? 'Dinámico' : 'PDF'}
                 </span>
             </div>
 

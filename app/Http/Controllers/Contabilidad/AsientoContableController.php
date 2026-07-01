@@ -146,6 +146,13 @@ class AsientoContableController extends Controller
 
     public function anular(Request $request, AsientoContable $asiento): RedirectResponse
     {
+        $perfil = Auth::user()->perfil->nombre ?? '';
+        if ($perfil !== 'super_admin') {
+            return back()->with('error',
+                'Solo el Super Administrador puede anular asientos contables. ' .
+                'Contacta al administrador del sistema.');
+        }
+
         $request->validate([
             'motivo' => 'required|string|min:10|max:300',
         ], [

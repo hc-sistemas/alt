@@ -19,24 +19,39 @@ class ConciliacionController extends Controller
 {
     public function __construct(private readonly AsientoService $asientoService) {}
 
-    public function index(): Response
+    public function index(Request $request): Response
     {
-        $empresaId      = session('empresa_activa_id');
-        $conciliaciones = ConciliacionBancaria::where('empresa_id', $empresaId)
+        $empresaId = session('empresa_activa_id');
+
+        $query = ConciliacionBancaria::where('empresa_id', $empresaId)
             ->with('bancoCaja')
-            ->orderByDesc('fecha_corte')
-            ->get()
-            ->map(fn($c) => [
-                'id'            => $c->id,
-                'banco'         => $c->bancoCaja?->nombre,
-                'fecha_corte'   => $c->fecha_corte?->format('d/m/Y'),
-                'saldo_banco'   => $c->saldo_banco,
-                'saldo_sistema' => $c->saldo_sistema,
-                'diferencia'    => $c->diferencia,
-                'estado'        => $c->estado,
-                'tiene_dif'     => $c->tieneDiferencia(),
-                'created_at'    => $c->created_at?->format('d/m/Y'),
-            ]);
+            ->orderByDesc('fecha_corte');
+
+        if ($request->filled('banco_caja_id')) {
+            $query->where('banco_caja_id', $request->banco_caja_id);
+        }
+        if ($request->filled('fecha_desde')) {
+            $query->where('fecha_corte', '>=', $request->fecha_desde);
+        }
+        if ($request->filled('fecha_hasta')) {
+            $query->where('fecha_corte', '<=', $request->fecha_hasta);
+        }
+        if ($request->filled('estado')) {
+            $query->where('estado', $request->estado);
+        }
+
+        $conciliaciones = $query->get()->map(fn($c) => [
+            'id'            => $c->id,
+            'banco_caja_id' => $c->banco_caja_id,
+            'banco'         => $c->bancoCaja?->nombre,
+            'fecha_corte'   => $c->fecha_corte?->format('d/m/Y'),
+            'saldo_banco'   => $c->saldo_banco,
+            'saldo_sistema' => $c->saldo_sistema,
+            'diferencia'    => $c->diferencia,
+            'estado'        => $c->estado,
+            'tiene_dif'     => $c->tieneDiferencia(),
+            'created_at'    => $c->created_at?->format('d/m/Y'),
+        ]);
 
         $bancos = BancoCaja::where('empresa_id', $empresaId)
             ->bancos()->activos()->orderBy('nombre')
@@ -45,6 +60,7 @@ class ConciliacionController extends Controller
         return Inertia::render('Bancos/Conciliaciones/Index', [
             'conciliaciones' => $conciliaciones,
             'bancos'         => $bancos,
+            'filtros'        => $request->only(['banco_caja_id', 'fecha_desde', 'fecha_hasta', 'estado']),
         ]);
     }
 
@@ -165,11 +181,18 @@ class ConciliacionController extends Controller
     public function uploadEstadoCuenta(Request $request, ConciliacionBancaria $conciliacion): RedirectResponse
     {
         $request->validate([
-            'archivo' => 'required|file|mimes:csv,txt|max:5120',
+            'archivo' => 'required|file|mimes:csv,txt,xlsx,xls|max:5120',
         ]);
 
         if ($conciliacion->estaConciliada()) {
             return back()->with('error', 'La conciliación ya está cerrada.');
+        }
+
+        $ext = strtolower($request->file('archivo')->getClientOriginalExtension());
+
+        // Procesar XLSX/XLS con maatwebsite
+        if (in_array($ext, ['xlsx', 'xls'])) {
+            return $this->uploadEstadoCuentaExcel($request, $conciliacion);
         }
 
         $contenido = file_get_contents($request->file('archivo')->getRealPath());
@@ -368,6 +391,76 @@ class ConciliacionController extends Controller
         $conciliacion->update(['estado' => 'conciliada']);
 
         return back()->with('success', 'Conciliación marcada como conciliada correctamente.');
+    }
+
+    // ── Helper: procesar XLSX/XLS ─────────────────────────────────────────────
+    private function uploadEstadoCuentaExcel(Request $request, ConciliacionBancaria $conciliacion): RedirectResponse
+    {
+        try {
+            $rows = \Maatwebsite\Excel\Facades\Excel::toArray([], $request->file('archivo'))[0] ?? [];
+        } catch (\Exception $e) {
+            return back()->with('error', 'Error leyendo el archivo Excel: ' . $e->getMessage());
+        }
+
+        if (count($rows) < 2) {
+            return back()->with('error', 'El archivo Excel está vacío o no tiene datos.');
+        }
+
+        $cabecera    = array_map(fn($c) => strtolower(trim((string)$c)), $rows[0]);
+        $idxFecha    = $this->encontrarColumna($cabecera, ['fecha', 'date', 'dia']);
+        $idxDesc     = $this->encontrarColumna($cabecera, ['descripcion', 'concepto', 'detalle', 'description']);
+        $idxMonto    = $this->encontrarColumna($cabecera, ['monto', 'valor', 'importe', 'amount', 'credito', 'debito']);
+
+        if ($idxFecha === null || $idxMonto === null) {
+            return back()->with('error', 'No se pudo detectar las columnas de fecha y monto en el Excel.');
+        }
+
+        $importadas = 0;
+        $errores    = 0;
+
+        DB::transaction(function () use ($rows, $idxFecha, $idxDesc, $idxMonto, $conciliacion, &$importadas, &$errores) {
+            foreach (array_slice($rows, 1) as $row) {
+                $fechaRaw = isset($row[$idxFecha]) ? trim((string)$row[$idxFecha]) : null;
+                $montoRaw = isset($row[$idxMonto]) ? $row[$idxMonto] : null;
+                $desc     = $idxDesc !== null ? trim((string)($row[$idxDesc] ?? 'Sin descripción')) : 'Sin descripción';
+
+                if (!$fechaRaw || $montoRaw === null || $montoRaw === '') { $errores++; continue; }
+
+                $monto = (float) str_replace([',', ' '], ['.', ''], (string)$montoRaw);
+                if ($monto == 0) { $errores++; continue; }
+
+                // Excel puede dar fecha como número serial
+                $fecha = null;
+                if (is_numeric($fechaRaw)) {
+                    try {
+                        $fecha = \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject((float)$fechaRaw)
+                            ->format('Y-m-d');
+                    } catch (\Exception) {}
+                }
+                if (!$fecha) {
+                    foreach (['Y-m-d', 'd/m/Y', 'm/d/Y', 'd-m-Y'] as $fmt) {
+                        $dt = \DateTime::createFromFormat($fmt, $fechaRaw);
+                        if ($dt) { $fecha = $dt->format('Y-m-d'); break; }
+                    }
+                }
+                if (!$fecha) { $errores++; continue; }
+
+                PartidaTransito::create([
+                    'conciliacion_id' => $conciliacion->id,
+                    'tipo'            => 'banco',
+                    'fecha'           => $fecha,
+                    'descripcion'     => substr($desc, 0, 300),
+                    'monto'           => abs($monto),
+                    'conciliada'      => false,
+                ]);
+                $importadas++;
+            }
+        });
+
+        $msg = "Excel importado: {$importadas} movimientos del banco cargados.";
+        if ($errores > 0) $msg .= " ({$errores} filas omitidas)";
+
+        return back()->with('success', $msg);
     }
 
     // ── Helper: detectar columna por palabras clave ───────────────────────────

@@ -35,6 +35,29 @@ class CuentaPagarController extends Controller
         if ($request->filled('proveedor_id')) {
             $query->where('proveedor_id', $request->proveedor_id);
         }
+        if ($request->filled('periodo')) {
+            $hoy = now();
+            match ($request->periodo) {
+                'hoy'    => $query->whereDate('fecha_vencimiento', $hoy),
+                'semana' => $query->whereBetween('fecha_vencimiento', [
+                    $hoy->copy()->startOfWeek(), $hoy->copy()->endOfWeek()
+                ]),
+                'mes'    => $query->whereBetween('fecha_vencimiento', [
+                    $hoy->copy()->startOfMonth(), $hoy->copy()->endOfMonth()
+                ]),
+                'anio'   => $query->whereBetween('fecha_vencimiento', [
+                    $hoy->copy()->startOfYear(), $hoy->copy()->endOfYear()
+                ]),
+                'vencidas' => $query->where('fecha_vencimiento', '<', $hoy),
+                default  => null,
+            };
+        }
+        if ($request->filled('fecha_desde')) {
+            $query->where('fecha_vencimiento', '>=', $request->fecha_desde);
+        }
+        if ($request->filled('fecha_hasta')) {
+            $query->where('fecha_vencimiento', '<=', $request->fecha_hasta);
+        }
 
         $cxp = $query->orderBy('fecha_vencimiento')->get()
             ->map(fn($c) => [
@@ -65,7 +88,7 @@ class CuentaPagarController extends Controller
             'cxp'         => $cxp,
             'proveedores' => $proveedores,
             'bancos'      => $bancos,
-            'filtros'     => $request->only(['estado', 'proveedor_id']),
+            'filtros'     => $request->only(['estado', 'proveedor_id', 'periodo', 'fecha_desde', 'fecha_hasta']),
         ]);
     }
 
