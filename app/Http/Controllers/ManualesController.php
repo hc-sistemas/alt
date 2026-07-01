@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -16,18 +15,19 @@ class ManualesController extends Controller
                 'titulo'      => 'Bancos',
                 'descripcion' => 'Movimientos bancarios, conciliación, Datafast, cheques y reportes.',
                 'tipo'        => 'dinamico',
+                'route'       => 'bancos.manual-pdf',
             ],
             'compras' => [
                 'titulo'      => 'Compras',
-                'descripcion' => 'Facturas de compra, proveedores, CxP, anticipos e importaciones.',
-                'tipo'        => 'estatico',
-                'archivo'     => base_path('usos/compras.pdf'),
+                'descripcion' => 'Facturas de compra, proveedores, CxP, anticipos, importaciones y devoluciones.',
+                'tipo'        => 'dinamico',
+                'route'       => 'manuales.compras-pdf',
             ],
             'contabilidad' => [
                 'titulo'      => 'Contabilidad',
-                'descripcion' => 'Plan de cuentas, asientos contables, ejercicios y reportes.',
-                'tipo'        => 'estatico',
-                'archivo'     => base_path('usos/contabilidad.pdf'),
+                'descripcion' => 'Plan de cuentas, asientos automáticos, ejercicios, parámetros y reportes contables.',
+                'tipo'        => 'dinamico',
+                'route'       => 'manuales.contabilidad-pdf',
             ],
             'configuracion' => [
                 'titulo'      => 'Configuración',
@@ -55,12 +55,13 @@ class ManualesController extends Controller
         $catalogo = $this->catalogo();
 
         $manuales = collect($catalogo)->map(function ($m, $clave) {
-            $url = $m['tipo'] === 'dinamico'
-                ? route('bancos.manual-pdf')
-                : route('manuales.pdf', $clave);
-
-            $disponible = $m['tipo'] === 'dinamico'
-                || file_exists($m['archivo']);
+            if ($m['tipo'] === 'dinamico') {
+                $url        = route($m['route']);
+                $disponible = true;
+            } else {
+                $url        = route('manuales.pdf', $clave);
+                $disponible = file_exists($m['archivo']);
+            }
 
             return [
                 'clave'       => $clave,
