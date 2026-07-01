@@ -103,22 +103,30 @@ class RetencionController extends Controller
 
         $retencion = DB::transaction(function () use ($request, $empresaId, $factura, $total) {
             $numero = $this->secuencial->siguiente($empresaId, 'RET');
+            [$est, $pe, $sec] = explode('-', $numero);
 
             $retencion = Retencion::create([
-                'empresa_id'      => $empresaId,
-                'factura_id'      => $factura->id,
-                'cliente_id'      => $factura->cliente_id,
-                'usuario_id'      => Auth::id(),
-                'numero_completo' => $numero,
-                'fecha_emision'   => now()->toDateString(),
-                'total'           => $total,
-                'estado_sri'      => 'pendiente',
-                'estado'          => 'activa',
+                'empresa_id'        => $empresaId,
+                'factura_id'        => $factura->id,
+                'cliente_id'        => $factura->cliente_id,
+                'usuario_id'        => Auth::id(),
+                'numero_completo'   => $numero,
+                'establecimiento'   => $est,
+                'punto_emision'     => $pe,
+                'secuencial'        => ltrim($sec, '0') ?: '1',
+                'identificacion'    => $factura->identificacion,
+                'razon_social'      => $factura->razon_social,
+                'num_comp_retenido' => $factura->numero_completo,
+                'fecha_emision'     => now()->toDateString(),
+                'total'             => $total,
+                'estado_sri'        => 'pendiente',
+                'estado'            => 'activa',
             ]);
 
             foreach ($request->detalles as $det) {
                 RetencionDetalle::create([
                     'retencion_id'   => $retencion->id,
+                    'tipo'           => $det['tipo'],
                     'codigo'         => $det['codigo'],
                     'base_imponible' => $det['base'],
                     'porcentaje'     => $det['porcentaje'],
@@ -129,10 +137,10 @@ class RetencionController extends Controller
             return $retencion;
         });
 
-        $this->auditoria->documento('crear', 'ventas', 'retenciones', $retencion->id, "Retención {$retencion->numero} creada");
+        $this->auditoria->documento('crear', 'ventas', 'retenciones', $retencion->id, "Retención {$retencion->numero_completo} creada");
 
         return redirect()->route('ventas.retenciones.show', $retencion->id)
-            ->with('flash', ['tipo' => 'exito', 'mensaje' => "Retención {$retencion->numero} creada correctamente."]);
+            ->with('flash', ['tipo' => 'exito', 'mensaje' => "Retención {$retencion->numero_completo} creada correctamente."]);
     }
 
     public function show(Retencion $retencion)

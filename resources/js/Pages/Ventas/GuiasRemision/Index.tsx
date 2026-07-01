@@ -12,9 +12,9 @@ import type { PageProps, PaginatedData } from '@/types'
 interface GuiaRemisionItem {
     id: number
     numero_completo: string
-    fecha: string
-    factura_numero: string | null
-    transportista_nombre: string | null
+    fecha_emision: string
+    factura: { numero_completo: string } | null
+    transportista: { razon_social: string } | null
     destino: string
     estado_sri: 'pendiente' | 'autorizada' | 'rechazada' | 'anulada'
 }
@@ -174,13 +174,13 @@ export default function Index() {
                                                     {g.numero_completo}
                                                 </td>
                                                 <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-muted)' }}>
-                                                    {formatFecha(g.fecha)}
+                                                    {formatFecha(g.fecha_emision)}
                                                 </td>
                                                 <td className="px-4 py-3 font-mono text-xs" style={{ color: 'var(--text-muted)' }}>
-                                                    {g.factura_numero ?? '—'}
+                                                    {g.factura?.numero_completo ?? '—'}
                                                 </td>
                                                 <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-main)' }}>
-                                                    {g.transportista_nombre ?? '—'}
+                                                    {g.transportista?.razon_social ?? '—'}
                                                 </td>
                                                 <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-muted)' }}>
                                                     {g.destino}

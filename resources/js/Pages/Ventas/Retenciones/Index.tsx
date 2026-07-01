@@ -12,10 +12,10 @@ import type { PageProps, PaginatedData } from '@/types'
 interface RetencionItem {
     id: number
     numero_completo: string
-    fecha: string
-    factura_numero: string
-    cliente_razon: string
-    total_retenido: number
+    fecha_emision: string
+    factura: { numero_completo: string } | null
+    cliente: { razon_social: string } | null
+    total: number
     estado_sri: 'pendiente' | 'autorizada' | 'rechazada' | 'anulada'
 }
 
@@ -158,16 +158,16 @@ export default function Index() {
                                                     {r.numero_completo}
                                                 </td>
                                                 <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-muted)' }}>
-                                                    {formatFecha(r.fecha)}
+                                                    {formatFecha(r.fecha_emision)}
                                                 </td>
                                                 <td className="px-4 py-3 font-mono text-xs" style={{ color: 'var(--text-muted)' }}>
-                                                    {r.factura_numero}
+                                                    {r.factura?.numero_completo ?? '—'}
                                                 </td>
                                                 <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-main)' }}>
-                                                    {r.cliente_razon}
+                                                    {r.cliente?.razon_social ?? '—'}
                                                 </td>
                                                 <td className="px-4 py-3 text-xs font-semibold text-red-400">
-                                                    {formatMoneda(r.total_retenido)}
+                                                    {formatMoneda(r.total)}
                                                 </td>
                                                 <td className="px-4 py-3">
                                                     <Badge variant={cfg.variant}>{cfg.label}</Badge>

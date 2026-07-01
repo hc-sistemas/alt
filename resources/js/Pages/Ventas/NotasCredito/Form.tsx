@@ -109,7 +109,7 @@ export default function Form() {
             factura_id: factura.id,
             motivo,
             detalles: seleccionadas.map(l => ({
-                factura_detalle_id: l.detalle_id,
+                detalle_id: l.detalle_id,
                 cantidad: l.cantidad_devolver,
             })),
         }, {

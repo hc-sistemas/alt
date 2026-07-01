@@ -1,9 +1,9 @@
-import { Head, usePage, Link } from '@inertiajs/react'
+import { Head, usePage, router } from '@inertiajs/react'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
 import { Badge } from '@/Components/ui/badge'
+import { Button } from '@/Components/ui/button'
 import { formatMoneda, formatFecha } from '@/lib/utils'
-import { ArrowLeft } from 'lucide-react'
 import type { PageProps } from '@/types'
 
 interface RetencionDetalleFull {
@@ -19,8 +19,8 @@ interface RetencionDetalleFull {
 interface RetencionFull {
     id: number
     numero_completo: string
-    fecha: string
-    total_retenido: number
+    fecha_emision: string
+    total: number
     estado_sri: 'pendiente' | 'autorizada' | 'rechazada' | 'anulada'
     factura: {
         numero_completo: string
@@ -74,12 +74,6 @@ export default function Show() {
 
                 <div className="flex items-center gap-3">
                     <Badge variant={cfg.variant}>{cfg.label}</Badge>
-                    <Link href={route('ventas.retenciones.index')}>
-                        <button type="button" className="flex items-center gap-1 text-xs transition-colors hover:text-amber-500" style={{ color: 'var(--text-muted)' }}>
-                            <ArrowLeft className="w-3.5 h-3.5" />
-                            Volver a Retenciones
-                        </button>
-                    </Link>
                 </div>
 
                 {/* Datos del documento */}
@@ -90,9 +84,9 @@ export default function Show() {
                     <p className="text-xs font-semibold uppercase tracking-wider mb-4" style={{ color: 'var(--text-muted)' }}>Datos del Documento</p>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                         <InfoRow label="Número" value={<span className="font-mono">{retencion.numero_completo}</span>} />
-                        <InfoRow label="Fecha" value={formatFecha(retencion.fecha)} />
+                        <InfoRow label="Fecha" value={formatFecha(retencion.fecha_emision)} />
                         <InfoRow label="Factura origen" value={<span className="font-mono">{retencion.factura.numero_completo}</span>} />
-                        <InfoRow label="Total retenido" value={<span className="font-semibold text-red-400">{formatMoneda(retencion.total_retenido)}</span>} />
+                        <InfoRow label="Total retenido" value={<span className="font-semibold text-red-400">{formatMoneda(retencion.total)}</span>} />
                     </div>
                 </div>
 
@@ -155,12 +149,18 @@ export default function Show() {
                                         Total Retenido:
                                     </td>
                                     <td className="px-4 py-3 text-right">
-                                        <span className="text-base font-bold text-red-400">{formatMoneda(retencion.total_retenido)}</span>
+                                        <span className="text-base font-bold text-red-400">{formatMoneda(retencion.total)}</span>
                                     </td>
                                 </tr>
                             </tfoot>
                         </table>
                     </div>
+                </div>
+
+                <div className="flex gap-3 pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
+                    <Button variant="outline" onClick={() => router.visit(route('ventas.retenciones.index'))}>
+                        Volver
+                    </Button>
                 </div>
             </div>
         </AppLayout>

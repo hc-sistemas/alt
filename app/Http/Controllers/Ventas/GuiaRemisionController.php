@@ -52,8 +52,7 @@ class GuiaRemisionController extends Controller
     {
         $empresaId = session('empresa_activa_id');
 
-        $transportistas = Transportista::where('empresa_id', $empresaId)
-            ->where('estado', true)
+        $transportistas = Transportista::where('estado', true)
             ->orderBy('razon_social')
             ->get();
 
@@ -88,12 +87,16 @@ class GuiaRemisionController extends Controller
 
         $guia = DB::transaction(function () use ($request, $empresaId) {
             $numero = $this->secuencial->siguiente($empresaId, 'GR');
+            [$est, $pe, $sec] = explode('-', $numero);
 
             $guia = GuiaRemision::create([
                 'empresa_id'              => $empresaId,
                 'factura_id'              => $request->factura_id,
                 'transportista_id'        => $request->transportista_id,
                 'numero_completo'         => $numero,
+                'establecimiento'         => $est,
+                'punto_emision'           => $pe,
+                'secuencial'              => ltrim($sec, '0') ?: '1',
                 'fecha_emision'           => now()->toDateString(),
                 'origen'                  => $request->direccion_partida,
                 'destino'                 => $request->direccion_destino,

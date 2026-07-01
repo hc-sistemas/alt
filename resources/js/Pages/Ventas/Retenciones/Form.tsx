@@ -105,7 +105,7 @@ export default function Form() {
                 codigo: l.codigo,
                 descripcion: l.descripcion,
                 porcentaje: l.porcentaje,
-                base_imponible: l.base_imponible,
+                base: l.base_imponible,
                 valor_retenido: l.valor_retenido,
             })),
         }, {

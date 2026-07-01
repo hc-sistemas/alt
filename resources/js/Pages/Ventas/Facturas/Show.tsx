@@ -4,7 +4,7 @@ import PageHeader from '@/Components/shared/PageHeader'
 import { Button } from '@/Components/ui/button'
 import { Badge } from '@/Components/ui/badge'
 import { formatMoneda, formatFecha } from '@/lib/utils'
-import { FileMinus2, Receipt } from 'lucide-react'
+import { FileMinus2, Receipt, Truck } from 'lucide-react'
 import type { PageProps } from '@/types'
 
 interface FacturaDetalle {
@@ -93,27 +93,9 @@ export default function Show() {
                     { label: numero },
                 ]}
                 actions={
-                    <div className="flex items-center gap-2">
-                        {factura.estado === 'activa' && (
-                            <>
-                                <Link href={route('ventas.notas-credito.create', { factura_id: factura.id })}>
-                                    <Button size="sm" variant="secondary">
-                                        <FileMinus2 className="w-4 h-4" />
-                                        Generar Nota de Crédito
-                                    </Button>
-                                </Link>
-                                <Badge variant="warning">MODO PRUEBA — sin SRI</Badge>
-                            </>
-                        )}
-                        {factura.cliente.agente_retencion === true && (
-                            <Link href={route('ventas.retenciones.create', { factura_id: factura.id })}>
-                                <Button size="sm" variant="secondary">
-                                    <Receipt className="w-4 h-4" />
-                                    Generar Retención
-                                </Button>
-                            </Link>
-                        )}
-                    </div>
+                    factura.estado === 'activa'
+                        ? <Badge variant="warning">Modo prueba — sin SRI</Badge>
+                        : undefined
                 }
             />
 
@@ -262,10 +244,36 @@ export default function Show() {
                 )}
 
                 {/* Acciones */}
-                <div className="flex gap-3 pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
+                <div className="flex justify-between pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
                     <Button variant="outline" onClick={() => router.visit(route('ventas.facturas.index'))}>
                         Volver
                     </Button>
+                    <div className="flex gap-2">
+                        {factura.estado === 'activa' && (
+                            <>
+                                <Link href={route('ventas.notas-credito.create', { factura_id: factura.id })}>
+                                    <Button variant="outline">
+                                        <FileMinus2 className="w-4 h-4" />
+                                        Generar Nota de Crédito
+                                    </Button>
+                                </Link>
+                                <Link href={route('ventas.guias-remision.create', { factura_id: factura.id })}>
+                                    <Button variant="outline">
+                                        <Truck className="w-4 h-4" />
+                                        Generar Guía de Remisión
+                                    </Button>
+                                </Link>
+                            </>
+                        )}
+                        {factura.cliente.agente_retencion === true && (
+                            <Link href={route('ventas.retenciones.create', { factura_id: factura.id })}>
+                                <Button variant="outline">
+                                    <Receipt className="w-4 h-4" />
+                                    Generar Retención
+                                </Button>
+                            </Link>
+                        )}
+                    </div>
                 </div>
             </div>
         </AppLayout>
