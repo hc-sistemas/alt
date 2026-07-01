@@ -58,16 +58,30 @@ class RetencionController extends Controller
             'factura_id' => 'required|integer|exists:facturas,id',
         ]);
 
-        $factura = Factura::with(['cliente.empresa', 'detalles'])
+        $factura = Factura::with(['cliente', 'detalles'])
             ->findOrFail($request->factura_id);
 
         // Solo para facturas de clientes con agente_retencion = true
-        if (!$factura->cliente?->empresa?->agente_retencion) {
+        if (!$factura->cliente?->agente_retencion) {
             return back()->withErrors(['error' => 'El cliente no es agente de retención.']);
         }
 
+        // ⚠️ CATÁLOGO PROVISIONAL DE PRUEBA — NO son los porcentajes oficiales vigentes del SRI.
+        // Confirmar/reemplazar con valores oficiales (Res. NAC-DGERCGC26-00000009 u otra vigente)
+        // cuando el licen integre el módulo SRI real.
+        $impuestos = [
+            ['codigo' => '303', 'descripcion' => 'Honorarios profesionales', 'tipo' => 'IR', 'porcentaje' => 10],
+            ['codigo' => '304', 'descripcion' => 'Servicios predomina mano de obra', 'tipo' => 'IR', 'porcentaje' => 3],
+            ['codigo' => '312', 'descripcion' => 'Transferencia de bienes muebles', 'tipo' => 'IR', 'porcentaje' => 2],
+            ['codigo' => '343', 'descripcion' => 'Arrendamiento de bienes inmuebles', 'tipo' => 'IR', 'porcentaje' => 10],
+            ['codigo' => '725', 'descripcion' => 'Retención IVA bienes', 'tipo' => 'IVA', 'porcentaje' => 30],
+            ['codigo' => '727', 'descripcion' => 'Retención IVA servicios', 'tipo' => 'IVA', 'porcentaje' => 70],
+            ['codigo' => '729', 'descripcion' => 'Retención IVA servicios profesionales', 'tipo' => 'IVA', 'porcentaje' => 100],
+        ];
+
         return Inertia::render('Ventas/Retenciones/Form', [
-            'factura' => $factura->load('cliente'),
+            'factura'   => $factura->load('cliente'),
+            'impuestos' => $impuestos,
         ]);
     }
 

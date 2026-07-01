@@ -78,7 +78,8 @@ class NotaCreditoController extends Controller
 
         $factura = Factura::with(['detalles.producto', 'cliente', 'empresa'])
             ->where('estado', 'activa')
-            ->where('estado_sri', 'autorizada')
+            // DESHABILITADO TEMPORALMENTE para pruebas sin SRI — reactivar cuando el licen integre SRI.
+            // ->where('estado_sri', 'autorizada')
             ->findOrFail($request->factura_id);
 
         return Inertia::render('Ventas/NotasCredito/Form', [

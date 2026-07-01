@@ -130,7 +130,7 @@ class ProformaController extends Controller
             'cliente_id'             => 'required|integer|exists:clientes,id',
             'detalles'               => 'required|array|min:1',
             'detalles.*.producto_id' => 'required|integer',
-            'detalles.*.cantidad'    => 'required|numeric|min:0.01',
+            'detalles.*.cantidad'    => 'required|integer|min:1',
             'detalles.*.precio'      => 'required|numeric|min:0.01',
         ]);
 

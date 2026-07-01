@@ -601,7 +601,18 @@ export default function Form() {
                                                 )}
                                             </td>
                                             <td className="py-1.5 px-2" style={{ minWidth: 72 }}>
-                                                <Input type="number" min="0.01" step="0.01" value={det.cantidad} className="text-xs text-right" onChange={e => updateDetalle(idx, { cantidad: Number(e.target.value) })} />
+                                                <Input
+                                                    type="number"
+                                                    min="1"
+                                                    step="1"
+                                                    value={det.cantidad}
+                                                    className="text-xs text-right"
+                                                    onKeyDown={e => { if (e.key === '.' || e.key === ',') e.preventDefault() }}
+                                                    onChange={e => {
+                                                        const val = parseInt(e.target.value, 10)
+                                                        updateDetalle(idx, { cantidad: isNaN(val) || val < 1 ? 1 : val })
+                                                    }}
+                                                />
                                             </td>
                                             <td className="py-1.5 px-2" style={{ minWidth: 96 }}>
                                                 <Input type="number" min="0" step="0.01" value={det.precio_unitario} className="text-xs text-right" onChange={e => updateDetalle(idx, { precio_unitario: Number(e.target.value) })} />

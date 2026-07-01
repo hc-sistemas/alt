@@ -9,6 +9,7 @@ import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import BuscadorClienteModal from '@/Components/shared/BuscadorClienteModal'
 import { cn, formatMoneda } from '@/lib/utils'
+import { toastError } from '@/lib/toast'
 import { Plus, Trash2, Search, Save, X, AlertTriangle } from 'lucide-react'
 import type { PageProps, Empresa, Usuario, Cliente } from '@/types'
 
@@ -276,6 +277,17 @@ export default function Form() {
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault()
+
+        // Validación de stock disponible por línea — feedback vía toast, sin duplicar en el bloque rojo
+        for (const d of detalles) {
+            const disponible = getDisponible(d.producto_id, d.bodega_id)
+            if (disponible !== null && d.cantidad > disponible) {
+                const ref = d.codigo || d.descripcion || 'el producto'
+                toastError(`Stock insuficiente para ${ref}. Disponible: ${disponible}, solicitado: ${d.cantidad}.`)
+                return
+            }
+        }
+
         const errs: string[] = []
         if (!clienteSeleccionado) errs.push('Debe seleccionar un cliente.')
         if (detalles.length === 0) errs.push('Agregue al menos un producto.')

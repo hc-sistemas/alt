@@ -1,9 +1,10 @@
-import { Head, usePage, Link } from '@inertiajs/react'
+import { Head, usePage, Link, router } from '@inertiajs/react'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
+import { Button } from '@/Components/ui/button'
 import { Badge } from '@/Components/ui/badge'
 import { formatMoneda, formatFecha } from '@/lib/utils'
-import { ArrowLeft } from 'lucide-react'
+import { FileMinus2, Receipt } from 'lucide-react'
 import type { PageProps } from '@/types'
 
 interface FacturaDetalle {
@@ -49,7 +50,7 @@ interface Factura {
     total_iva: number
     total: number
     observaciones: string | null
-    cliente: { id: number; razon_social: string; identificacion: string }
+    cliente: { id: number; razon_social: string; identificacion: string; agente_retencion: boolean }
     usuario: { id: number; nombre: string } | null
     empresa: { id: number; razon_social: string }
     detalles: FacturaDetalle[]
@@ -91,19 +92,36 @@ export default function Show() {
                     { label: 'Facturas', href: route('ventas.facturas.index') },
                     { label: numero },
                 ]}
+                actions={
+                    <div className="flex items-center gap-2">
+                        {factura.estado === 'activa' && (
+                            <>
+                                <Link href={route('ventas.notas-credito.create', { factura_id: factura.id })}>
+                                    <Button size="sm" variant="secondary">
+                                        <FileMinus2 className="w-4 h-4" />
+                                        Generar Nota de Crédito
+                                    </Button>
+                                </Link>
+                                <Badge variant="warning">MODO PRUEBA — sin SRI</Badge>
+                            </>
+                        )}
+                        {factura.cliente.agente_retencion === true && (
+                            <Link href={route('ventas.retenciones.create', { factura_id: factura.id })}>
+                                <Button size="sm" variant="secondary">
+                                    <Receipt className="w-4 h-4" />
+                                    Generar Retención
+                                </Button>
+                            </Link>
+                        )}
+                    </div>
+                }
             />
 
             <div className="p-6 space-y-6 max-w-5xl">
 
-                {/* Estado + volver */}
+                {/* Estado */}
                 <div className="flex items-center gap-3">
                     <Badge variant={sriCfg.variant}>{sriCfg.label}</Badge>
-                    <Link href={route('ventas.facturas.index')}>
-                        <button type="button" className="flex items-center gap-1 text-xs transition-colors hover:text-amber-500" style={{ color: 'var(--text-muted)' }}>
-                            <ArrowLeft className="w-3.5 h-3.5" />
-                            Volver a Facturas
-                        </button>
-                    </Link>
                 </div>
 
                 {/* Datos generales */}
@@ -242,6 +260,13 @@ export default function Show() {
                         <p className="text-sm" style={{ color: 'var(--text-main)' }}>{factura.observaciones}</p>
                     </div>
                 )}
+
+                {/* Acciones */}
+                <div className="flex gap-3 pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
+                    <Button variant="outline" onClick={() => router.visit(route('ventas.facturas.index'))}>
+                        Volver
+                    </Button>
+                </div>
             </div>
         </AppLayout>
     )
