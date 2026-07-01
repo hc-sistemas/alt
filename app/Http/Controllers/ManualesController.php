@@ -11,6 +11,12 @@ class ManualesController extends Controller
     private function catalogo(): array
     {
         return [
+            'diagnostico' => [
+                'titulo'      => 'Diagnóstico Dev 2',
+                'descripcion' => 'Estado de avance Dev 2: Contabilidad 73%, Compras 92%, Bancos 95%. Ítems completados, parciales y pendientes críticos para Dev 3.',
+                'tipo'        => 'dinamico',
+                'route'       => 'manuales.diagnostico-pdf',
+            ],
             'bancos' => [
                 'titulo'      => 'Bancos',
                 'descripcion' => 'Movimientos bancarios, conciliación, Datafast, cheques y reportes.',

@@ -4,7 +4,7 @@ import AppLayout from '@/Layouts/AppLayout'
 import {
     Library, Landmark, ShoppingCart, BookOpen,
     Settings, Package, UserCircle, X, ExternalLink,
-    FileText, AlertCircle,
+    FileText, AlertCircle, ClipboardList,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { PageProps } from '@/types'
@@ -31,6 +31,7 @@ const CONFIG: Record<string, {
     bg: string
     badge: string
 }> = {
+    diagnostico:   { icon: ClipboardList, color: 'text-violet-500', bg: 'bg-violet-500/10', badge: 'bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-300' },
     bancos:        { icon: Landmark,     color: 'text-blue-500',   bg: 'bg-blue-500/10',   badge: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300' },
     compras:       { icon: ShoppingCart, color: 'text-orange-500', bg: 'bg-orange-500/10', badge: 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300' },
     contabilidad:  { icon: BookOpen,     color: 'text-green-500',  bg: 'bg-green-500/10',  badge: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300' },
@@ -63,14 +64,14 @@ function ManualCard({ manual, onAbrir }: { manual: Manual; onAbrir: () => void }
                     <Icon className={cn('w-6 h-6', cfg.color)} />
                 </div>
                 <span className={cn('text-[10px] font-semibold px-2 py-0.5 rounded-full', cfg.badge)}>
-                    {['bancos', 'compras', 'contabilidad'].includes(manual.clave) ? 'Dinámico' : 'PDF'}
+                    {['bancos', 'compras', 'contabilidad', 'diagnostico'].includes(manual.clave) ? 'Dinámico' : 'PDF'}
                 </span>
             </div>
 
             {/* Texto */}
             <div className="flex-1">
                 <h3 className="font-bold text-base mb-1" style={{ color: 'var(--text-main)' }}>
-                    Manual de {manual.titulo}
+                    {manual.clave === 'diagnostico' ? manual.titulo : `Manual de ${manual.titulo}`}
                 </h3>
                 <p className="text-sm leading-relaxed" style={{ color: 'var(--text-muted)' }}>
                     {manual.descripcion}

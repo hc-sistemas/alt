@@ -91,6 +91,14 @@ Route::middleware('auth')->group(function () {
         return $pdf->stream('manual-compras.pdf');
     })->name('manuales.compras-pdf');
 
+    Route::get('/manuales/diagnostico/pdf-dinamico', function () {
+        $empresa = \App\Models\Empresa::find(session('empresa_activa_id'));
+        $usuario = auth()->user();
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.diagnostico-dev2', compact('empresa', 'usuario'))
+            ->setPaper('letter', 'portrait');
+        return $pdf->stream('diagnostico-dev2.pdf');
+    })->name('manuales.diagnostico-pdf');
+
     // Configuración
     Route::middleware('permiso:configuracion,ver')->group(function () {
         Route::prefix('configuracion/usuarios')->name('configuracion.usuarios.')->group(function () {
