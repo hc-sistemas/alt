@@ -6,8 +6,10 @@ use App\Exports\MovimientosExport;
 use App\Http\Controllers\Controller;
 use App\Models\AsientoContable;
 use App\Models\BancoCaja;
+use App\Models\Cliente;
 use App\Models\MovimientoBancario;
 use App\Models\PlanCuenta;
+use App\Models\Proveedor;
 use App\Services\AsientoService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -61,10 +63,19 @@ class MovimientoBancarioController extends Controller
                     ->where('estado', true)->orderBy('codigo')
                     ->get(['id', 'codigo', 'nombre']);
 
+        $proveedores = Proveedor::where('empresa_id', $empresaId)
+            ->activos()->orderBy('razon_social')
+            ->get(['id', 'razon_social as nombre', 'identificacion']);
+        $clientes = Cliente::where('empresa_id', $empresaId)
+            ->activos()->orderBy('razon_social')
+            ->get(['id', 'razon_social as nombre', 'identificacion']);
+
         return Inertia::render('Bancos/Movimientos/Index', [
             'movimientos' => $movimientos,
             'bancos'      => $bancos,
             'cuentas'     => $cuentas,
+            'proveedores' => $proveedores,
+            'clientes'    => $clientes,
             'filtros'     => $request->only([
                 'banco_caja_id', 'tipo', 'fecha_desde', 'fecha_hasta', 'buscar',
             ]),

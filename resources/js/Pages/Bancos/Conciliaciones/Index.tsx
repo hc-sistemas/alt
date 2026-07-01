@@ -12,14 +12,22 @@ import 'react-toastify/dist/ReactToastify.css'
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface ConcRow {
-    id: number; banco: string | null; fecha_corte: string
+    id: number; banco_caja_id: number; banco: string | null; fecha_corte: string
     saldo_banco: number; saldo_sistema: number; diferencia: number
     estado: string; tiene_dif: boolean; created_at: string
 }
 
+interface Filtros {
+    banco_caja_id?: string
+    fecha_desde?:   string
+    fecha_hasta?:   string
+    estado?:        string
+}
+
 interface Props extends PageProps {
     conciliaciones: ConcRow[]
-    bancos: Pick<BancoCaja, 'id' | 'nombre' | 'saldo_actual'>[]
+    bancos:  Pick<BancoCaja, 'id' | 'nombre' | 'saldo_actual'>[]
+    filtros: Filtros
 }
 
 // ─── Notify ───────────────────────────────────────────────────────────────────
@@ -151,14 +159,32 @@ function ConciliacionModal({ bancos, onClose }: { bancos: Props['bancos']; onClo
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function ConciliacionesIndex() {
-    const { conciliaciones, bancos, flash } = usePage<Props>().props
+    const { conciliaciones, bancos, filtros, flash } = usePage<Props>().props
     const [showModal, setShowModal] = useState(false)
+    const [bancoId,     setBancoId]     = useState(filtros.banco_caja_id ?? '')
+    const [fechaDesde,  setFechaDesde]  = useState(filtros.fecha_desde   ?? '')
+    const [fechaHasta,  setFechaHasta]  = useState(filtros.fecha_hasta   ?? '')
+    const [estadoFiltro, setEstadoFiltro] = useState(filtros.estado      ?? '')
 
     useEffect(() => {
         if (flash?.success) notify.ok(flash.success)
         if (flash?.error)   notify.error(flash.error)
         if (flash?.warning) notify.warn(flash.warning as string)
     }, [flash?.success, flash?.error])
+
+    function aplicarFiltros() {
+        router.get(route('bancos.conciliaciones.index'), {
+            banco_caja_id: bancoId, fecha_desde: fechaDesde,
+            fecha_hasta: fechaHasta, estado: estadoFiltro,
+        }, { preserveState: true, replace: true })
+    }
+
+    function limpiar() {
+        setBancoId(''); setFechaDesde(''); setFechaHasta(''); setEstadoFiltro('')
+        router.get(route('bancos.conciliaciones.index'), {}, { preserveState: false })
+    }
+
+    const hayFiltros = !!(bancoId || fechaDesde || fechaHasta || estadoFiltro)
 
     return (
         <AppLayout title="Conciliación Bancaria" suppressFlash>
@@ -175,11 +201,36 @@ export default function ConciliacionesIndex() {
                     </div>
                 </div>
                 {/* Toolbar */}
-                <div className="flex items-center justify-between gap-3 mb-6">
-                    <div className="flex items-center gap-2">
+                <div className="flex items-center justify-between gap-3 mb-6 flex-wrap">
+                    <div className="flex flex-wrap items-center gap-2">
                         <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-2 whitespace-nowrap">
                             <Plus size={15} /> Nueva Conciliación
                         </button>
+
+                        <select value={bancoId} onChange={e => setBancoId(e.target.value)}
+                            className="input-field select-field" style={{ width: 'auto' }}>
+                            <option value="">Todos los bancos</option>
+                            {bancos.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
+                        </select>
+
+                        <input type="date" value={fechaDesde} onChange={e => setFechaDesde(e.target.value)}
+                            className="input-field" style={{ width: 'auto' }} />
+                        <input type="date" value={fechaHasta} onChange={e => setFechaHasta(e.target.value)}
+                            className="input-field" style={{ width: 'auto' }} />
+
+                        <select value={estadoFiltro} onChange={e => setEstadoFiltro(e.target.value)}
+                            className="input-field select-field" style={{ width: 'auto' }}>
+                            <option value="">Todos los estados</option>
+                            <option value="pendiente">Pendiente</option>
+                            <option value="conciliada">Conciliada</option>
+                        </select>
+
+                        <button onClick={aplicarFiltros} className="btn-secondary whitespace-nowrap">Filtrar</button>
+                        {hayFiltros && (
+                            <button onClick={limpiar} className="btn-secondary flex items-center gap-1 whitespace-nowrap">
+                                <X size={13} /> Limpiar
+                            </button>
+                        )}
                     </div>
                 </div>
             </div>
