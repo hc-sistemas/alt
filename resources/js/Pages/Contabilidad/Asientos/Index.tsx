@@ -54,7 +54,7 @@ export default function AsientosIndex() {
         = usePage<Props>().props
     const perfil = auth.user?.perfil ?? ''
     const puedeCrear = ['super_admin', 'admin', 'contador'].includes(perfil)
-    const puedeAnular = ['super_admin', 'admin', 'contador'].includes(perfil)
+    const puedeAnular = perfil === 'super_admin'
 
     // Filtros
     const [buscar, setBuscar] = useState(filtros.buscar ?? '')

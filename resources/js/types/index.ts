@@ -489,6 +489,8 @@ export interface PaginatedData<T> {
     total: number
     from: number
     to: number
+    prev_page_url: string | null
+    next_page_url: string | null
     meta?: {
         current_page: number
         last_page: number

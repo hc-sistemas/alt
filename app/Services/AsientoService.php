@@ -523,6 +523,110 @@ class AsientoService
         );
     }
 
+    // ══════════════════════════════════════════════════════════
+    // ANTICIPO PROVEEDOR — Dev 2
+    // ══════════════════════════════════════════════════════════
+    public function anticipoProveedor(
+        int    $empresaId,
+        int    $anticiPoId,
+        string $referencia,
+        float  $monto,
+        int    $bancoCajaId,
+        string $fecha,
+    ): AsientoContable {
+        $banco = \App\Models\BancoCaja::findOrFail($bancoCajaId);
+        $cuentaBancoId = $banco->cuenta_contable_id;
+
+        if (!$cuentaBancoId) {
+            throw new \Exception(
+                "El banco/caja '{$banco->nombre}' no tiene cuenta contable configurada. " .
+                "Configure la cuenta en Bancos → Catálogo."
+            );
+        }
+
+        try {
+            $cuentaAnticipoId = $this->cuentaId('cta_anticipos_proveedores', $empresaId);
+        } catch (\Exception) {
+            $cuenta = PlanCuenta::where('empresa_id', $empresaId)
+                ->where('permite_asientos', true)
+                ->where('estado', true)
+                ->whereIn('codigo', ['1.1.3.3', '1.1.04.04', '1.1.4.4', '1.1.4.03'])
+                ->first();
+            if (!$cuenta) {
+                throw new \Exception(
+                    "Configure el parámetro 'cta_anticipos_proveedores' en Contabilidad → Configuración."
+                );
+            }
+            $cuentaAnticipoId = $cuenta->id;
+        }
+
+        return $this->crear(
+            empresaId:    $empresaId,
+            concepto:     "Anticipo proveedor {$referencia}",
+            partidas: [
+                ['cuenta_id' => $cuentaAnticipoId, 'debe' => $monto, 'haber' => 0,
+                 'descripcion' => "Anticipo {$referencia}"],
+                ['cuenta_id' => $cuentaBancoId,    'debe' => 0, 'haber' => $monto,
+                 'descripcion' => "Salida banco {$referencia}"],
+            ],
+            documentoTipo: 'ANTICIPO_PROV',
+            documentoId:   $anticiPoId,
+            documentoRef:  $referencia,
+            esAutomatico:  true,
+            fecha:         $fecha,
+        );
+    }
+
+    // ══════════════════════════════════════════════════════════
+    // CIERRE DE CAJA — Dev 2
+    // ══════════════════════════════════════════════════════════
+    public function cierreCaja(
+        int    $empresaId,
+        int    $cierreId,
+        string $codigo,
+        string $fecha,
+        float  $montoDeclarado,
+        float  $montoEsperado,
+        int    $cuentaCajaId,
+    ): ?AsientoContable {
+        $diferencia = round($montoDeclarado - $montoEsperado, 2);
+
+        if (abs($diferencia) < 0.01) {
+            return null;
+        }
+
+        try {
+            $cuentaAjusteId = $this->cuentaId('cta_ajuste_inventario', $empresaId);
+        } catch (\Exception) {
+            $cuentaAjusteId = $cuentaCajaId;
+        }
+
+        $partidas = $diferencia > 0
+            ? [
+                ['cuenta_id' => $cuentaCajaId,   'debe' => $diferencia, 'haber' => 0,
+                 'descripcion' => "Sobrante cierre caja {$codigo}"],
+                ['cuenta_id' => $cuentaAjusteId, 'debe' => 0, 'haber' => $diferencia,
+                 'descripcion' => "Sobrante cierre caja {$codigo}"],
+              ]
+            : [
+                ['cuenta_id' => $cuentaAjusteId, 'debe' => abs($diferencia), 'haber' => 0,
+                 'descripcion' => "Faltante cierre caja {$codigo}"],
+                ['cuenta_id' => $cuentaCajaId,   'debe' => 0, 'haber' => abs($diferencia),
+                 'descripcion' => "Faltante cierre caja {$codigo}"],
+              ];
+
+        return $this->crear(
+            empresaId:    $empresaId,
+            concepto:     "Cierre de caja {$codigo} — " . ($diferencia > 0 ? 'sobrante' : 'faltante'),
+            partidas:     $partidas,
+            documentoTipo: 'CIERRE_CAJA',
+            documentoId:  $cierreId,
+            documentoRef: $codigo,
+            esAutomatico: true,
+            fecha:        $fecha,
+        );
+    }
+
     // ── Asiento de ajuste por diferencia en conciliación bancaria ──────────────
     public function ajusteConciliacion(
         int    $empresaId,

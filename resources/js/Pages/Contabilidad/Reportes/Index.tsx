@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import AppLayout from '@/Layouts/AppLayout'
 import {
     BookOpen, TrendingUp, FileText,
-    Search, Download
+    Search, Download, Scale, BarChart3, LineChart,
 } from 'lucide-react'
 import type { PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
@@ -38,6 +38,20 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
     const [mayorBusqueda,   setMayorBusqueda]   = useState('')
     const [mayorFechaDesde, setMayorFechaDesde] = useState('')
     const [mayorFechaHasta, setMayorFechaHasta] = useState('')
+
+    // Estado filtros Balance Comprobación
+    const [bcEjercicio,  setBcEjercicio]  = useState('')
+    const [bcFechaDesde, setBcFechaDesde] = useState('')
+    const [bcFechaHasta, setBcFechaHasta] = useState('')
+
+    // Estado filtros Balance General
+    const [bgEjercicio, setBgEjercicio] = useState('')
+
+    // Estado filtros Estado Resultados
+    const [erEjercicio,  setErEjercicio]  = useState('')
+    const [erFechaDesde, setErFechaDesde] = useState('')
+    const [erFechaHasta, setErFechaHasta] = useState('')
+
     const [modalPdf,    setModalPdf]    = useState(false)
     const [urlPdf,      setUrlPdf]      = useState('')
     const [tituloModal, setTituloModal] = useState('')
@@ -82,6 +96,28 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
         )
     }
 
+    const generarBalanceComprobacion = () => {
+        const params = new URLSearchParams()
+        if (bcEjercicio)  params.set('ejercicio_id', bcEjercicio)
+        if (bcFechaDesde) params.set('fecha_desde',  bcFechaDesde)
+        if (bcFechaHasta) params.set('fecha_hasta',  bcFechaHasta)
+        abrirPdf(route('contabilidad.reportes.balance-comprobacion') + '?' + params, 'Balance de Comprobación')
+    }
+
+    const generarBalanceGeneral = () => {
+        const params = new URLSearchParams()
+        if (bgEjercicio) params.set('ejercicio_id', bgEjercicio)
+        abrirPdf(route('contabilidad.reportes.balance-general') + '?' + params, 'Balance General')
+    }
+
+    const generarEstadoResultados = () => {
+        const params = new URLSearchParams()
+        if (erEjercicio)  params.set('ejercicio_id', erEjercicio)
+        if (erFechaDesde) params.set('fecha_desde',  erFechaDesde)
+        if (erFechaHasta) params.set('fecha_hasta',  erFechaHasta)
+        abrirPdf(route('contabilidad.reportes.estado-resultados') + '?' + params, 'Estado de Resultados')
+    }
+
     return (
         <AppLayout>
             <div className="p-4 md:p-6 space-y-6"
@@ -103,7 +139,7 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
                             </h1>
                             <p className="text-sm"
                                style={{ color: 'var(--text-muted)' }}>
-                                Libro Diario y Mayor Contable
+                                Libro Diario, Mayor, Balance de Comprobación, Balance General y Estado de Resultados
                             </p>
                         </div>
                     </div>
@@ -334,6 +370,113 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
                                 Generar Mayor Contable PDF
                             </button>
                         </div>
+                    </div>
+                </div>
+
+                {/* ── BALANCE DE COMPROBACIÓN ── */}
+                <div className="rounded-2xl border overflow-hidden"
+                     style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+                    <div className="px-5 py-4 border-b flex items-center gap-3"
+                         style={{ borderColor: 'var(--border)', borderLeft: '4px solid #7C3AED' }}>
+                        <Scale size={20} style={{ color: '#7C3AED' }} />
+                        <div>
+                            <h2 className="font-bold text-sm" style={{ color: 'var(--text-main)' }}>Balance de Comprobación</h2>
+                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Suma DEBE/HABER y saldos por cuenta</p>
+                        </div>
+                    </div>
+                    <div className="p-5 space-y-3">
+                        <div>
+                            <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>Período contable</label>
+                            <select value={bcEjercicio} onChange={e => setBcEjercicio(e.target.value)} className="input-field select-field">
+                                <option value="">Todos los períodos</option>
+                                {ejercicios.map(e => (
+                                    <option key={e.id} value={e.id}>{meses[e.mes]} {e.anio}{e.estado === 'abierto' ? ' (Abierto)' : ''}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>Desde</label>
+                                <input type="date" value={bcFechaDesde} onChange={e => setBcFechaDesde(e.target.value)} className="input-field" />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>Hasta</label>
+                                <input type="date" value={bcFechaHasta} onChange={e => setBcFechaHasta(e.target.value)} className="input-field" />
+                            </div>
+                        </div>
+                        <button onClick={generarBalanceComprobacion}
+                            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90 hover:-translate-y-0.5"
+                            style={{ background: '#7C3AED' }}>
+                            <Scale size={15} /> Generar Balance de Comprobación PDF
+                        </button>
+                    </div>
+                </div>
+
+                {/* ── BALANCE GENERAL ── */}
+                <div className="rounded-2xl border overflow-hidden"
+                     style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+                    <div className="px-5 py-4 border-b flex items-center gap-3"
+                         style={{ borderColor: 'var(--border)', borderLeft: '4px solid #0891b2' }}>
+                        <BarChart3 size={20} style={{ color: '#0891b2' }} />
+                        <div>
+                            <h2 className="font-bold text-sm" style={{ color: 'var(--text-main)' }}>Balance General</h2>
+                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Estado de Situación Financiera</p>
+                        </div>
+                    </div>
+                    <div className="p-5 space-y-3">
+                        <div>
+                            <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>Período contable</label>
+                            <select value={bgEjercicio} onChange={e => setBgEjercicio(e.target.value)} className="input-field select-field">
+                                <option value="">Todos los períodos</option>
+                                {ejercicios.map(e => (
+                                    <option key={e.id} value={e.id}>{meses[e.mes]} {e.anio}{e.estado === 'abierto' ? ' (Abierto)' : ''}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <button onClick={generarBalanceGeneral}
+                            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90 hover:-translate-y-0.5"
+                            style={{ background: '#0891b2' }}>
+                            <BarChart3 size={15} /> Generar Balance General PDF
+                        </button>
+                    </div>
+                </div>
+
+                {/* ── ESTADO DE RESULTADOS ── */}
+                <div className="rounded-2xl border overflow-hidden"
+                     style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+                    <div className="px-5 py-4 border-b flex items-center gap-3"
+                         style={{ borderColor: 'var(--border)', borderLeft: '4px solid #059669' }}>
+                        <LineChart size={20} style={{ color: '#059669' }} />
+                        <div>
+                            <h2 className="font-bold text-sm" style={{ color: 'var(--text-main)' }}>Estado de Resultados</h2>
+                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Ingresos vs. Gastos — Utilidad o Pérdida</p>
+                        </div>
+                    </div>
+                    <div className="p-5 space-y-3">
+                        <div>
+                            <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>Período contable</label>
+                            <select value={erEjercicio} onChange={e => setErEjercicio(e.target.value)} className="input-field select-field">
+                                <option value="">Todos los períodos</option>
+                                {ejercicios.map(e => (
+                                    <option key={e.id} value={e.id}>{meses[e.mes]} {e.anio}{e.estado === 'abierto' ? ' (Abierto)' : ''}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>Desde</label>
+                                <input type="date" value={erFechaDesde} onChange={e => setErFechaDesde(e.target.value)} className="input-field" />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>Hasta</label>
+                                <input type="date" value={erFechaHasta} onChange={e => setErFechaHasta(e.target.value)} className="input-field" />
+                            </div>
+                        </div>
+                        <button onClick={generarEstadoResultados}
+                            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90 hover:-translate-y-0.5"
+                            style={{ background: '#059669' }}>
+                            <LineChart size={15} /> Generar Estado de Resultados PDF
+                        </button>
                     </div>
                 </div>
 

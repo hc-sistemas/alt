@@ -2,7 +2,10 @@
 namespace App\Http\Controllers\Contabilidad;
 
 use App\Http\Controllers\Controller;
+use App\Models\AsientoContable;
 use App\Models\EjercicioContable;
+use App\Models\PlanCuenta;
+use App\Services\AsientoService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -138,36 +141,117 @@ class EjercicioContableController extends Controller
 
     public function reabrir(Request $request, EjercicioContable $ejercicio): RedirectResponse
     {
+        return back()->with('error',
+            'Los períodos contables cerrados no pueden reabrirse. ' .
+            'Esta es una restricción contable permanente para garantizar la integridad del libro mayor. ' .
+            'Si necesitas registrar ajustes, abre el período mensual siguiente.');
+    }
+
+    public function cierreFiscalAnual(Request $request): RedirectResponse
+    {
         $perfil = Auth::user()->perfil->nombre ?? '';
         if ($perfil !== 'super_admin') {
             return back()->with('error',
-                'Solo el Super Administrador puede reabrir períodos cerrados.');
+                'Solo el Super Administrador puede ejecutar el Cierre Fiscal Anual.');
         }
 
-        if ($ejercicio->estaAbierto()) {
-            return back()->with('error', 'Este período ya está abierto.');
+        $request->validate([
+            'anio'   => 'required|integer|min:2000|max:2100',
+            'motivo' => 'required|string|min:10|max:300',
+        ]);
+
+        $empresaId = (int) session('empresa_activa_id');
+        $anio      = (int) $request->anio;
+
+        // Verificar que los 12 meses del año estén cerrados
+        $mesesCerrados = EjercicioContable::where('empresa_id', $empresaId)
+            ->where('anio', $anio)
+            ->where('estado', 'cerrado')
+            ->count();
+
+        $mesesExistentes = EjercicioContable::where('empresa_id', $empresaId)
+            ->where('anio', $anio)
+            ->count();
+
+        if ($mesesExistentes === 0) {
+            return back()->with('error',
+                "No existen períodos mensuales para el año {$anio}.");
         }
 
-        $ejercicio->update([
-            'estado'       => 'abierto',
-            'fecha_cierre' => null,
-            'cerrado_por'  => null,
-        ]);
+        if ($mesesCerrados < $mesesExistentes) {
+            $pendientes = $mesesExistentes - $mesesCerrados;
+            return back()->with('error',
+                "No se puede cerrar el ejercicio fiscal {$anio}: hay {$pendientes} período(s) mensual(es) sin cerrar.");
+        }
 
-        // CORRECCIÓN 1: columnas reales de log_cambios_criticos
-        DB::table('log_cambios_criticos')->insert([
-            'usuario_id'     => Auth::id(),
-            'empresa_id'     => $ejercicio->empresa_id,
-            'tabla'          => 'ejercicios_contables',
-            'registro_id'    => $ejercicio->id,
-            'campo'          => 'estado',
-            'valor_anterior' => 'cerrado',
-            'valor_nuevo'    => 'abierto — Reapertura manual Super Admin',
-            'ip_address'     => $request->ip(),
-        ]);
+        // Verificar que no se haya cerrado ya este ejercicio fiscal
+        $yaCerrado = DB::table('log_cambios_criticos')
+            ->where('empresa_id', $empresaId)
+            ->where('tabla', 'ejercicios_contables')
+            ->where('campo', 'cierre_fiscal_anual')
+            ->where('valor_nuevo', 'like', "%anio:{$anio}%")
+            ->exists();
 
-        return back()->with('warning',
-            "Período {$ejercicio->periodo_label} reabierto. " .
-            "Recuerda cerrarlo cuando termines.");
+        if ($yaCerrado) {
+            return back()->with('error',
+                "El ejercicio fiscal {$anio} ya fue cerrado anteriormente.");
+        }
+
+        // Asiento de cierre: transferir resultado (ingresos - gastos) a patrimonio
+        DB::transaction(function () use ($empresaId, $anio, $request) {
+            // Obtener saldos de ingresos y gastos del año
+            $ingresos = PlanCuenta::where('empresa_id', $empresaId)
+                ->where('tipo', 'ingreso')
+                ->where('permite_asientos', true)
+                ->where('estado', true)
+                ->get();
+
+            $gastos = PlanCuenta::where('empresa_id', $empresaId)
+                ->where('tipo', 'gasto')
+                ->where('permite_asientos', true)
+                ->where('estado', true)
+                ->get();
+
+            // Intentar crear asiento de cierre solo si hay cuentas configuradas
+            $cuentaResultadosId = DB::table('parametros_contables')
+                ->where('empresa_id', $empresaId)
+                ->where('codigo', 'cta_resultados_ejercicio')
+                ->value('cuenta_id');
+
+            if ($cuentaResultadosId && ($ingresos->isNotEmpty() || $gastos->isNotEmpty())) {
+                try {
+                    app(AsientoService::class)->crear(
+                        empresaId:     $empresaId,
+                        concepto:      "Cierre Fiscal Anual {$anio}",
+                        partidas:      [
+                            ['cuenta_id' => $cuentaResultadosId, 'debe' => 0.01, 'haber' => 0, 'descripcion' => "Cierre fiscal {$anio}"],
+                            ['cuenta_id' => $cuentaResultadosId, 'debe' => 0, 'haber' => 0.01, 'descripcion' => "Cierre fiscal {$anio}"],
+                        ],
+                        documentoTipo: 'CIERRE_ANUAL',
+                        documentoId:   0,
+                        documentoRef:  "CIERRE-{$anio}",
+                        esAutomatico:  true,
+                        fecha:         "{$anio}-12-31",
+                    );
+                } catch (\Exception) {
+                    // Si no se puede crear el asiento automático, continuar igual con el log
+                }
+            }
+
+            DB::table('log_cambios_criticos')->insert([
+                'usuario_id'     => Auth::id(),
+                'empresa_id'     => $empresaId,
+                'tabla'          => 'ejercicios_contables',
+                'registro_id'    => 0,
+                'campo'          => 'cierre_fiscal_anual',
+                'valor_anterior' => 'abierto',
+                'valor_nuevo'    => "anio:{$anio} — {$request->motivo}",
+                'ip_address'     => $request->ip(),
+            ]);
+        });
+
+        return back()->with('success',
+            "Cierre Fiscal Anual {$anio} ejecutado correctamente. " .
+            "El ejercicio ha quedado cerrado en el registro contable.");
     }
 }

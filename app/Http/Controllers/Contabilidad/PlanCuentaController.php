@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Contabilidad;
 
 use App\Exports\PlanCuentasExport;
 use App\Http\Controllers\Controller;
+use App\Imports\PlanCuentasImport;
 use App\Models\PlanCuenta;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -113,5 +114,27 @@ class PlanCuentaController extends Controller
             "plan-cuentas-altamira-{$fecha}.xlsx",
             \Maatwebsite\Excel\Excel::XLSX
         );
+    }
+
+    public function importarExcel(Request $request): RedirectResponse
+    {
+        $request->validate([
+            'archivo' => 'required|file|mimes:xlsx,xls|max:5120',
+        ], [
+            'archivo.required' => 'Selecciona un archivo Excel.',
+            'archivo.mimes'    => 'El archivo debe ser .xlsx o .xls.',
+            'archivo.max'      => 'El archivo no debe superar 5 MB.',
+        ]);
+
+        $import = new PlanCuentasImport();
+        Excel::import($import, $request->file('archivo'));
+
+        $msg = "Importación completada: {$import->creadas} cuenta(s) creada(s), {$import->omitidas} omitida(s).";
+
+        if (!empty($import->errores)) {
+            $msg .= ' Errores: ' . implode(' | ', array_slice($import->errores, 0, 5));
+        }
+
+        return back()->with('success', $msg);
     }
 }
