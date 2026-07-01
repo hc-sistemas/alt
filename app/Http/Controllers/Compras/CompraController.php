@@ -953,4 +953,93 @@ class CompraController extends Controller
             \Maatwebsite\Excel\Excel::XLSX
         );
     }
+
+    public function parsearXml(Request $request): JsonResponse
+    {
+        $request->validate([
+            'archivo' => 'required|file|mimes:xml|max:2048',
+        ]);
+
+        try {
+            $contenido = file_get_contents($request->file('archivo')->getRealPath());
+            $xml = new \SimpleXMLElement($contenido);
+
+            // Extraer información tributaria del proveedor
+            $info    = $xml->infoTributaria ?? $xml->InfoTributaria ?? null;
+            $factura = $xml->infoFactura    ?? $xml->InfoFactura    ?? null;
+
+            $ruc          = (string) ($info->ruc            ?? $info->rucProveedor       ?? '');
+            $razonSocial  = (string) ($info->razonSocial    ?? $info->nombreComercial     ?? '');
+            $estab        = (string) ($info->estab          ?? '001');
+            $ptoEmi       = (string) ($info->ptoEmi         ?? '001');
+            $secuencial   = (string) ($info->secuencial     ?? '');
+            $claveAcceso  = (string) ($info->claveAcceso    ?? '');
+
+            $fechaEmision     = (string) ($factura->fechaEmision        ?? '');
+            $totalSinIva      = (float)  ($factura->totalSinImpuestos   ?? 0);
+            $descuento        = (float)  ($factura->totalDescuento       ?? 0);
+            $importeTotal     = (float)  ($factura->importeTotal         ?? 0);
+
+            // Calcular IVA desde totalConImpuestos
+            $totalIva = 0.0;
+            foreach ($factura->totalConImpuestos->totalImpuesto ?? [] as $imp) {
+                if ((int)($imp->codigo ?? 0) === 2) {  // código 2 = IVA
+                    $totalIva += (float) ($imp->valor ?? 0);
+                }
+            }
+
+            // Num documento: estab-ptoEmi-secuencial
+            $numDocumento = trim("{$estab}-{$ptoEmi}-{$secuencial}", '-');
+
+            // Buscar proveedor por RUC
+            $empresaId = session('empresa_activa_id');
+            $proveedor = null;
+            if ($ruc) {
+                $proveedor = Proveedor::where('empresa_id', $empresaId)
+                    ->where('identificacion', $ruc)
+                    ->first(['id', 'razon_social', 'identificacion']);
+            }
+
+            // Detalles de la factura
+            $detalles = [];
+            foreach ($xml->detalles->detalle ?? [] as $d) {
+                $detalles[] = [
+                    'codigo'       => (string) ($d->codigoPrincipal  ?? $d->codigoAuxiliar ?? ''),
+                    'descripcion'  => (string) ($d->descripcion ?? ''),
+                    'cantidad'     => (float)  ($d->cantidad       ?? 1),
+                    'precio'       => (float)  ($d->precioUnitario ?? 0),
+                    'subtotal'     => (float)  ($d->precioTotalSinImpuesto ?? $d->subtotal ?? 0),
+                ];
+            }
+
+            // Convertir fecha dd/mm/yyyy → yyyy-mm-dd
+            $fechaFormateada = null;
+            if ($fechaEmision) {
+                $partes = explode('/', $fechaEmision);
+                if (count($partes) === 3) {
+                    $fechaFormateada = "{$partes[2]}-{$partes[1]}-{$partes[0]}";
+                }
+            }
+
+            return response()->json([
+                'ok'           => true,
+                'ruc'          => $ruc,
+                'razon_social' => $razonSocial,
+                'proveedor_id' => $proveedor?->id,
+                'num_documento'=> $numDocumento,
+                'clave_acceso' => $claveAcceso,
+                'fecha_emision'=> $fechaFormateada,
+                'subtotal'     => round($totalSinIva - $descuento, 4),
+                'descuento'    => round($descuento, 4),
+                'iva'          => round($totalIva, 4),
+                'total'        => round($importeTotal, 4),
+                'detalles'     => $detalles,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'ok'      => false,
+                'message' => 'No se pudo leer el archivo XML: ' . $e->getMessage(),
+            ], 422);
+        }
+    }
 }

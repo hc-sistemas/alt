@@ -44,6 +44,7 @@ const navItems: NavItem[] = [
             { nombre: 'Proveedores',        href: '/compras/proveedores' },
             { nombre: 'Cuentas por Pagar',      href: '/compras/cuentas-pagar' },
             { nombre: 'Anticipos Proveedores', href: '/compras/anticipos' },
+            { nombre: 'Devoluciones',          href: '/compras/devoluciones' },
             { nombre: 'Importaciones',         href: '/compras/importaciones' },
         ]
     },

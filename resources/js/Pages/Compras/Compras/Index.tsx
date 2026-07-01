@@ -12,7 +12,7 @@ import { formatFecha } from '@/utils/contabilidad'
 import {
     Plus, Search, X, FileText, Download, ChevronLeft, ChevronRight, ChevronDown,
     Eye, ShoppingCart, Trash2, CreditCard,
-    Barcode, CheckCircle, XCircle, RefreshCw,
+    Barcode, CheckCircle, XCircle, RefreshCw, Upload,
 } from 'lucide-react'
 import type { Compra, Importacion, Proveedor, CentroCosto, PlanCuenta, Bodega, PageProps, PaginatedData, Producto, EtiquetaDetalleData, EtiquetaGrupoProducto } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
@@ -1409,6 +1409,86 @@ type EscenarioAnulacion =
 
 // ─── Página principal ─────────────────────────────────────────────────────────
 
+// ─── Modal Cargar XML SRI ─────────────────────────────────────────────────────
+
+function CargarXmlModal({ onParsed, onClose }: {
+    onParsed: (data: Partial<PrefillExterior>) => void
+    onClose: () => void
+}) {
+    const [archivo, setArchivo] = useState<File | null>(null)
+    const [loading, setLoading] = useState(false)
+    const [error, setError] = useState('')
+
+    async function submit(e: React.FormEvent) {
+        e.preventDefault()
+        if (!archivo) return
+        setLoading(true)
+        setError('')
+        const form = new FormData()
+        form.append('archivo', archivo)
+        form.append('_token', (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content ?? '')
+        try {
+            const res = await fetch(route('compras.facturas.parsear-xml'), { method: 'POST', body: form })
+            const json = await res.json()
+            if (!json.ok) { setError(json.message ?? 'Error al procesar el XML'); setLoading(false); return }
+            onParsed({
+                proveedor_id:   json.proveedor_id ?? null,
+                num_documento:  json.num_documento ?? '',
+                fecha_emision:  json.fecha_emision ?? '',
+                tipo_documento: 'FAC',
+                sustento_tributario: '01',
+                dias_credito: 0,
+            })
+        } catch {
+            setError('No se pudo conectar al servidor')
+            setLoading(false)
+        }
+    }
+
+    return (
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal-card max-w-md" onClick={e => e.stopPropagation()}>
+                <div className="modal-header">
+                    <h2 className="flex items-center gap-2">
+                        <Upload className="w-5 h-5" style={{ color: '#0891b2' }} />
+                        Cargar Factura XML del SRI
+                    </h2>
+                    <button className="modal-close" onClick={onClose}><X className="w-4 h-4" /></button>
+                </div>
+                <form onSubmit={submit}>
+                    <div className="modal-body space-y-4">
+                        <div className="rounded-lg p-3 text-xs"
+                            style={{ background: 'rgba(8,145,178,0.07)', border: '1px solid rgba(8,145,178,0.2)', color: 'var(--text-muted)' }}>
+                            <p>Sube el XML de la factura del proveedor emitido por el SRI. Se pre-llenarán automáticamente el proveedor, número de documento y fecha.</p>
+                        </div>
+                        <div className="space-y-1.5">
+                            <label className="input-label">Archivo XML <span className="text-red-400">*</span></label>
+                            <input type="file" accept=".xml"
+                                onChange={e => { setArchivo(e.target.files?.[0] ?? null); setError('') }}
+                                className="input-field" style={{ padding: '6px 10px' }} />
+                        </div>
+                        {error && (
+                            <div className="rounded-lg p-3 text-xs"
+                                style={{ background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.2)', color: '#dc2626' }}>
+                                {error}
+                            </div>
+                        )}
+                    </div>
+                    <div className="modal-footer" style={{ justifyContent: 'space-between' }}>
+                        <button type="submit" disabled={!archivo || loading}
+                            className="btn-primary flex items-center gap-2"
+                            style={{ background: '#0891b2', opacity: (!archivo || loading) ? 0.6 : 1 }}>
+                            <Upload size={15} />
+                            {loading ? 'Procesando...' : 'Cargar XML'}
+                        </button>
+                        <button type="button" onClick={onClose} className="btn-secondary">Cancelar</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    )
+}
+
 type ModalState =
     | { type: 'none' }
     | { type: 'nueva' }
@@ -1637,6 +1717,8 @@ export default function ComprasIndex() {
     useEffect(() => { setComprasData(compras.data) }, [compras])
 
     const [modal, setModal] = useState<ModalState>(prefillExterior ? { type: 'nueva' } : { type: 'none' })
+    const [modalXml, setModalXml] = useState(false)
+    const [xmlPrefill, setXmlPrefill] = useState<Partial<PrefillExterior> | null>(null)
     const [buscar, setBuscar]       = useState(filtros.buscar ?? '')
     const [estado, setEstado]       = useState(filtros.estado ?? '')
     const [fechaDesde, setFechaDesde] = useState(filtros.fecha_desde ?? '')
@@ -1829,6 +1911,11 @@ export default function ComprasIndex() {
                     <div className="flex items-center gap-2 flex-wrap">
                         <button onClick={() => setModal({ type: 'nueva' })} className="btn-primary flex items-center gap-2 whitespace-nowrap">
                             <Plus size={15} /> Nueva Factura de Compra
+                        </button>
+                        <button onClick={() => setModalXml(true)}
+                            className="btn-primary flex items-center gap-2 whitespace-nowrap"
+                            style={{ background: '#0891b2' }}>
+                            <Upload size={15} /> Cargar XML SRI
                         </button>
 
                         <div className="input-with-icon">
@@ -2083,8 +2170,20 @@ export default function ComprasIndex() {
                 </div>
             )}
 
+            {modalXml && (
+                <CargarXmlModal
+                    onParsed={(data) => {
+                        setXmlPrefill(data)
+                        setModalXml(false)
+                        setModal({ type: 'nueva' })
+                    }}
+                    onClose={() => setModalXml(false)}
+                />
+            )}
+
             {modal.type === 'nueva' && (
                 <NuevaCompraModal
+                    key={xmlPrefill ? JSON.stringify(xmlPrefill) : 'default'}
                     proveedores={proveedores}
                     centros={centros}
                     cuentas={cuentas}
@@ -2093,8 +2192,8 @@ export default function ComprasIndex() {
                     importacionesActivas={importacionesActivas}
                     centroMatrizId={centros.find(c => c.codigo === 'MATRIZ')?.id ?? centros[0]?.id ?? null}
                     bodegaDefaultId={bodegas.find(b => b.tipo === 'general')?.id ?? bodegas[0]?.id ?? null}
-                    initialValues={prefillExterior ?? undefined}
-                    onClose={() => setModal({ type: 'none' })}
+                    initialValues={xmlPrefill ?? prefillExterior ?? undefined}
+                    onClose={() => { setModal({ type: 'none' }); setXmlPrefill(null) }}
                 />
             )}
             {modal.type === 'etiquetas' && (

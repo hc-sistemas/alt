@@ -25,17 +25,18 @@ interface Props extends PageProps {
 }
 
 const CONCEPTOS_COSTO = [
-    'Flete marítimo',
-    'Flete aéreo',
-    'Seguro transporte',
+    'ISD',
+    'IVA 15%',
+    'Seguro Transporte Internacional',
     'Advalorem',
     'FODINFA',
-    'ICE importación',
-    'ISD (Impuesto Salida Divisas)',
-    'Honorarios agente aduanero',
-    'Almacenaje puerto',
-    'Honorarios banco',
-    'Transporte nacional',
+    'ICE',
+    'Flete Marítimo',
+    'Gastos Destino Ecuador',
+    'Honorarios Aduanero',
+    'Almacenaje',
+    'Honorarios Banco',
+    'Transporte Nacional',
     'Otro',
 ] as const
 

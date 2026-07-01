@@ -32,6 +32,9 @@ interface CxPRow {
 interface Filtros {
     estado?: string
     proveedor_id?: string
+    periodo?: string
+    fecha_desde?: string
+    fecha_hasta?: string
 }
 
 interface Props extends PageProps {
@@ -233,6 +236,9 @@ export default function CuentasPagarIndex() {
     const [buscar,      setBuscar]      = useState('')
     const [estado,      setEstado]      = useState(filtros.estado ?? '')
     const [proveedorId, setProveedorId] = useState(filtros.proveedor_id ?? '')
+    const [periodo,     setPeriodo]     = useState(filtros.periodo ?? '')
+    const [fechaDesde,  setFechaDesde]  = useState(filtros.fecha_desde ?? '')
+    const [fechaHasta,  setFechaHasta]  = useState(filtros.fecha_hasta ?? '')
     const [modalPago,   setModalPago]   = useState<CxPRow | null>(null)
     const [modalPdf,    setModalPdf]    = useState(false)
     const [urlPdf,      setUrlPdf]      = useState('')
@@ -247,12 +253,15 @@ export default function CuentasPagarIndex() {
         router.get(route('compras.cxp.index'), {
             ...(estado      && { estado }),
             ...(proveedorId && { proveedor_id: proveedorId }),
+            ...(periodo     && { periodo }),
+            ...(fechaDesde  && { fecha_desde: fechaDesde }),
+            ...(fechaHasta  && { fecha_hasta: fechaHasta }),
         }, { preserveState: true, replace: true })
     }
 
     function limpiar() {
-        setEstado('')
-        setProveedorId('')
+        setEstado(''); setProveedorId(''); setPeriodo('')
+        setFechaDesde(''); setFechaHasta('')
         router.get(route('compras.cxp.index'), {}, { preserveState: false })
     }
 
@@ -413,6 +422,33 @@ export default function CuentasPagarIndex() {
                             <option value="parcial">Parcial</option>
                             <option value="pagada">Pagada / Anulada</option>
                         </select>
+
+                        {/* Filtro período */}
+                        <div className="flex items-center gap-1 border rounded-lg p-0.5"
+                             style={{ borderColor: 'var(--border)', background: 'var(--bg-main)' }}>
+                            {[
+                                { val: '',        label: 'Todos' },
+                                { val: 'vencidas', label: 'Vencidas' },
+                                { val: 'hoy',     label: 'Hoy' },
+                                { val: 'semana',  label: 'Semana' },
+                                { val: 'mes',     label: 'Mes' },
+                                { val: 'anio',    label: 'Año' },
+                            ].map(({ val, label }) => (
+                                <button key={val}
+                                    onClick={() => { setPeriodo(val); setTimeout(aplicarFiltros, 0) }}
+                                    className={cn('px-2 py-1 rounded text-xs font-semibold transition-colors whitespace-nowrap',
+                                        periodo === val
+                                            ? 'text-white'
+                                            : 'hover:opacity-80'
+                                    )}
+                                    style={periodo === val
+                                        ? { background: 'var(--primary)', color: '#fff' }
+                                        : { color: 'var(--text-muted)' }}
+                                >
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
 
                         <select value={proveedorId} onChange={e => setProveedorId(e.target.value)}
                             className="input-field select-field" style={{ width: 'auto' }}>
