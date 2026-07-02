@@ -461,11 +461,37 @@ function CierreFiscalModal({ onClose }: { onClose: () => void }) {
                 </div>
                 <form onSubmit={submit}>
                     <div className="modal-body space-y-4">
+                        {/* Aviso */}
                         <div className="rounded-lg p-3 text-xs"
                             style={{ background: 'rgba(124,58,237,0.07)', border: '1px solid rgba(124,58,237,0.2)', color: 'var(--text-muted)' }}>
                             <p className="font-semibold mb-1" style={{ color: '#7C3AED' }}>⚠️ Acción permanente e irreversible</p>
-                            <p>Todos los períodos mensuales del año seleccionado deben estar cerrados. Se registrará el asiento de cierre fiscal y quedará documentado en los registros del sistema.</p>
+                            <p>El sistema ejecutará los 6 pasos a continuación de forma automática y atómica. Cualquier error revierte todo.</p>
                         </div>
+
+                        {/* 6 pasos */}
+                        <div className="rounded-lg overflow-hidden" style={{ border: '1px solid var(--border)' }}>
+                            {[
+                                { n: 1, label: 'Verificar períodos cerrados',    desc: 'Los 12 meses del año deben estar cerrados antes de continuar.' },
+                                { n: 2, label: 'Calcular saldos clases 4 y 5',   desc: 'Suma debe/haber de cada cuenta de ingreso y gasto activa del año.' },
+                                { n: 3, label: 'Crear asiento de cierre',         desc: 'Encera cuentas: ingresos con DEBE, gastos con HABER; saldo a Resultado del Ejercicio.' },
+                                { n: 4, label: 'Determinar utilidad / pérdida',   desc: 'Resultado = Total ingresos − Total gastos. Puede ser positivo (utilidad) o negativo (pérdida).' },
+                                { n: 5, label: 'Crear asiento de arrastre',       desc: 'Transfiere el resultado a Ganancias/Pérdidas Acumuladas (clase 3).' },
+                                { n: 6, label: 'Registrar en auditoría',          desc: 'Guarda el evento en log_cambios_criticos con usuario, IP y montos.' },
+                            ].map(({ n, label, desc }) => (
+                                <div key={n} className="flex items-start gap-3 px-3 py-2.5"
+                                    style={{ borderBottom: n < 6 ? '1px solid var(--border)' : 'none' }}>
+                                    <span className="flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold shrink-0 mt-0.5"
+                                        style={{ background: '#7C3AED', color: '#fff' }}>
+                                        {n}
+                                    </span>
+                                    <div>
+                                        <p className="text-xs font-semibold" style={{ color: 'var(--text-main)' }}>{label}</p>
+                                        <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>{desc}</p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+
                         <div className="space-y-1.5">
                             <label className="input-label">Año fiscal <span className="text-red-400">*</span></label>
                             <select value={anio} onChange={e => setAnio(Number(e.target.value))} className="input-field select-field">

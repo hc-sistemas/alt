@@ -3,6 +3,7 @@ namespace App\Http\Controllers\Contabilidad;
 
 use App\Http\Controllers\Controller;
 use App\Models\AsientoContable;
+use App\Models\CentroCosto;
 use App\Models\EjercicioContable;
 use App\Models\Empresa;
 use App\Models\PlanCuenta;
@@ -60,10 +61,16 @@ class AsientoContableController extends Controller
             ->orderBy('codigo')
             ->get(['id','codigo','nombre','tipo']);
 
+        $centros = CentroCosto::where('empresa_id', $empresaId)
+            ->where('estado', true)
+            ->orderBy('nombre')
+            ->get(['id', 'codigo', 'nombre']);
+
         return Inertia::render('Contabilidad/Asientos/Index', [
             'asientos'      => $asientos,
             'ejercicios'    => $ejercicios,
             'cuentas'       => $cuentas,
+            'centros'       => $centros,
             'periodoActivo' => $empresaId
                 ? EjercicioContable::periodoActivo((int)$empresaId)
                 : null,
@@ -88,10 +95,11 @@ class AsientoContableController extends Controller
             'concepto'               => 'required|string|max:500',
             'fecha'                  => 'required|date',
             'partidas'               => 'required|array|min:2',
-            'partidas.*.cuenta_id'   => 'required|exists:plan_cuentas,id',
-            'partidas.*.debe'        => 'required|numeric|min:0',
-            'partidas.*.haber'       => 'required|numeric|min:0',
-            'partidas.*.descripcion' => 'nullable|string|max:300',
+            'partidas.*.cuenta_id'       => 'required|exists:plan_cuentas,id',
+            'partidas.*.centro_costo_id' => 'nullable|integer|exists:centros_costo,id',
+            'partidas.*.debe'            => 'required|numeric|min:0',
+            'partidas.*.haber'           => 'required|numeric|min:0',
+            'partidas.*.descripcion'     => 'nullable|string|max:300',
         ], [
             'concepto.required'             => 'El concepto es obligatorio.',
             'fecha.required'                => 'La fecha es obligatoria.',
