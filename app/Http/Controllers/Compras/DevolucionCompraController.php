@@ -8,6 +8,7 @@ use App\Models\DevolucionCompra;
 use App\Models\DevolucionCompraDetalle;
 use App\Models\Proveedor;
 use App\Services\AsientoService;
+use App\Services\Contracts\InventarioServiceInterface;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -18,7 +19,10 @@ use Inertia\Response;
 
 class DevolucionCompraController extends Controller
 {
-    public function __construct(private AsientoService $asientoService) {}
+    public function __construct(
+        private AsientoService $asientoService,
+        private InventarioServiceInterface $inventario,
+    ) {}
 
     public function index(Request $request): Response
     {
@@ -81,16 +85,17 @@ class DevolucionCompraController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $request->validate([
-            'proveedor_id'      => 'required|exists:proveedores,id',
-            'compra_id'         => 'nullable|exists:compras,id',
-            'num_documento'     => 'nullable|string|max:30',
-            'fecha'             => 'required|date',
-            'motivo'            => 'required|string|min:5|max:300',
-            'detalles'          => 'required|array|min:1',
+            'proveedor_id'              => 'required|exists:proveedores,id',
+            'compra_id'                 => 'nullable|exists:compras,id',
+            'num_documento'             => 'nullable|string|max:30',
+            'fecha'                     => 'required|date',
+            'motivo'                    => 'required|string|min:5|max:300',
+            'porcentaje_iva'            => 'integer|in:0,5,8,12,15',
+            'detalles'                  => 'required|array|min:1',
             'detalles.*.descripcion'    => 'required|string|max:200',
             'detalles.*.cantidad'       => 'required|numeric|min:0.001',
             'detalles.*.precio_unitario'=> 'required|numeric|min:0',
-            'porcentaje_iva'    => 'integer|in:0,5,8,12,15',
+            'detalles.*.producto_id'    => 'nullable|integer|exists:productos,id',
         ]);
 
         $empresaId = session('empresa_activa_id');
@@ -117,6 +122,16 @@ class DevolucionCompraController extends Controller
                 'created_by'    => Auth::id(),
             ]);
 
+            // Bodega: usar la de la compra de origen o la primera disponible
+            $bodegaId = null;
+            if ($request->compra_id) {
+                $bodegaId = Compra::where('id', $request->compra_id)->value('bodega_id');
+            }
+            if (!$bodegaId) {
+                $bodegaId = \App\Models\Bodega::where('empresa_id', $empresaId)
+                    ->where('tipo', 'general')->value('id');
+            }
+
             foreach ($request->detalles as $d) {
                 $sub = round((float)$d['cantidad'] * (float)$d['precio_unitario'], 4);
                 DevolucionCompraDetalle::create([
@@ -127,6 +142,22 @@ class DevolucionCompraController extends Controller
                     'precio_unitario' => (float) $d['precio_unitario'],
                     'subtotal'        => $sub,
                 ]);
+
+                // Descontar del inventario cuando hay producto y bodega
+                if (!empty($d['producto_id']) && $bodegaId) {
+                    try {
+                        $this->inventario->egresarStock(
+                            productoId:  (int) $d['producto_id'],
+                            bodegaId:    (int) $bodegaId,
+                            cantidad:    (float) $d['cantidad'],
+                            docTipo:     'DEVOLUCION',
+                            docId:       $dev->id,
+                            observacion: "Devolución compra #{$dev->id}: {$dev->motivo}",
+                        );
+                    } catch (\Exception $e) {
+                        Log::warning("Inventario devolución #{$dev->id} producto {$d['producto_id']}: {$e->getMessage()}");
+                    }
+                }
             }
 
             // Asiento contable automático (Nota Crédito Proveedor)
@@ -218,8 +249,7 @@ class DevolucionCompraController extends Controller
 
     private function cuentaPorCodigos(array $codigos, int $empresaId): ?int
     {
-        return \App\Models\PlanCuenta::where('empresa_id', $empresaId)
-            ->whereIn('codigo', $codigos)
+        return \App\Models\PlanCuenta::whereIn('codigo', $codigos)
             ->where('permite_asientos', true)
             ->where('estado', true)
             ->value('id');
@@ -227,8 +257,7 @@ class DevolucionCompraController extends Controller
 
     private function primeraDelTipo(string $tipo, int $empresaId): int
     {
-        return \App\Models\PlanCuenta::where('empresa_id', $empresaId)
-            ->where('tipo', $tipo)
+        return \App\Models\PlanCuenta::where('tipo', $tipo)
             ->where('permite_asientos', true)
             ->where('estado', true)
             ->value('id') ?? 1;

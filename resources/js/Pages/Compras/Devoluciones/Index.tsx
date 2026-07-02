@@ -3,7 +3,7 @@ import { router, usePage, Head } from '@inertiajs/react'
 import { toast, ToastContainer } from 'react-toastify'
 import AppLayout from '@/Layouts/AppLayout'
 import {
-    RotateCcw, Plus, Search, X, CheckCircle, XCircle, Clock,
+    RotateCcw, Plus, Search, X, CheckCircle, XCircle, Clock, PackageX,
 } from 'lucide-react'
 import type { PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
@@ -28,7 +28,17 @@ interface Devolucion {
     total: number
 }
 
+interface CompraDetalle {
+    id: number
+    producto_id: number | null
+    descripcion: string
+    cantidad: number
+    precio_unitario: number
+    porcentaje_iva: number
+}
+
 interface DetalleItem {
+    producto_id: number | null
     descripcion: string
     cantidad: number | string
     precio_unitario: number | string
@@ -79,24 +89,66 @@ function NuevaDevolucionModal({ proveedores, compras, onClose }: {
     compras:     CompraRef[]
     onClose:     () => void
 }) {
-    const [proveedorId, setProveedorId] = useState('')
-    const [compraId, setCompraId]       = useState('')
-    const [numDoc, setNumDoc]           = useState('')
-    const [fecha, setFecha]             = useState(new Date().toISOString().split('T')[0])
-    const [motivo, setMotivo]           = useState('')
-    const [pctIva, setPctIva]           = useState(15)
-    const [detalles, setDetalles]       = useState<DetalleItem[]>([
-        { descripcion: '', cantidad: 1, precio_unitario: '' }
+    const [proveedorId, setProveedorId]     = useState('')
+    const [compraId, setCompraId]           = useState('')
+    const [numDoc, setNumDoc]               = useState('')
+    const [fecha, setFecha]                 = useState(new Date().toISOString().split('T')[0])
+    const [motivo, setMotivo]               = useState('')
+    const [pctIva, setPctIva]               = useState(15)
+    const [detalles, setDetalles]           = useState<DetalleItem[]>([
+        { producto_id: null, descripcion: '', cantidad: 1, precio_unitario: '' }
     ])
-    const [processing, setProcessing] = useState(false)
+    const [processing, setProcessing]       = useState(false)
+    const [compraDetalles, setCompraDetalles] = useState<CompraDetalle[]>([])
+    const [loadingDetalles, setLoadingDetalles] = useState(false)
+    const [selectedDetalles, setSelectedDetalles] = useState<Set<number>>(new Set())
 
     const comprasDelProveedor = useMemo(() =>
         compras.filter(c => !proveedorId || c.proveedor_id === Number(proveedorId)),
         [compras, proveedorId]
     )
 
+    useEffect(() => {
+        if (!compraId) {
+            setCompraDetalles([])
+            setSelectedDetalles(new Set())
+            return
+        }
+        setLoadingDetalles(true)
+        fetch(route('compras.facturas.detalles', compraId))
+            .then(r => r.json())
+            .then(data => {
+                setCompraDetalles(data.detalles ?? [])
+                const allIds = new Set<number>((data.detalles ?? []).map((d: CompraDetalle) => d.id))
+                setSelectedDetalles(allIds)
+            })
+            .catch(() => setCompraDetalles([]))
+            .finally(() => setLoadingDetalles(false))
+    }, [compraId])
+
+    function toggleDetalle(id: number) {
+        setSelectedDetalles(prev => {
+            const next = new Set(prev)
+            if (next.has(id)) next.delete(id)
+            else next.add(id)
+            return next
+        })
+    }
+
+    function usarDetallesCompra() {
+        const selected = compraDetalles.filter(d => selectedDetalles.has(d.id))
+        if (selected.length === 0) return
+        setDetalles(selected.map(d => ({
+            producto_id:    d.producto_id,
+            descripcion:    d.descripcion,
+            cantidad:       d.cantidad,
+            precio_unitario: d.precio_unitario,
+        })))
+        setPctIva(compraDetalles[0]?.porcentaje_iva ?? 15)
+    }
+
     function addDetalle() {
-        setDetalles(d => [...d, { descripcion: '', cantidad: 1, precio_unitario: '' }])
+        setDetalles(d => [...d, { producto_id: null, descripcion: '', cantidad: 1, precio_unitario: '' }])
     }
     function removeDetalle(i: number) {
         setDetalles(d => d.filter((_, idx) => idx !== i))
@@ -122,8 +174,9 @@ function NuevaDevolucionModal({ proveedores, compras, onClose }: {
             motivo,
             porcentaje_iva: pctIva,
             detalles: detalles.map(d => ({
-                descripcion:    d.descripcion,
-                cantidad:       Number(d.cantidad),
+                producto_id:     d.producto_id ?? null,
+                descripcion:     d.descripcion,
+                cantidad:        Number(d.cantidad),
                 precio_unitario: Number(d.precio_unitario),
             })),
         }, {
@@ -150,7 +203,7 @@ function NuevaDevolucionModal({ proveedores, compras, onClose }: {
                         <div className="grid grid-cols-2 gap-3">
                             <div className="space-y-1.5">
                                 <label className="input-label">Proveedor <span className="text-red-400">*</span></label>
-                                <select value={proveedorId} onChange={e => setProveedorId(e.target.value)}
+                                <select value={proveedorId} onChange={e => { setProveedorId(e.target.value); setCompraId('') }}
                                     className="input-field select-field" required>
                                     <option value="">— Seleccionar —</option>
                                     {proveedores.map(p => <option key={p.id} value={p.id}>{p.razon_social}</option>)}
@@ -167,6 +220,44 @@ function NuevaDevolucionModal({ proveedores, compras, onClose }: {
                                 </select>
                             </div>
                         </div>
+
+                        {/* Detalles de la compra seleccionada */}
+                        {compraId && (
+                            <div className="rounded-xl border overflow-hidden"
+                                style={{ borderColor: 'var(--border)' }}>
+                                <div className="flex items-center justify-between px-3 py-2 border-b"
+                                    style={{ background: 'rgba(245,158,11,0.07)', borderColor: 'var(--border)' }}>
+                                    <span className="text-xs font-semibold flex items-center gap-1.5"
+                                        style={{ color: 'var(--text-main)' }}>
+                                        <PackageX size={13} style={{ color: 'var(--primary)' }} />
+                                        Ítems de la compra
+                                    </span>
+                                    <button type="button" onClick={usarDetallesCompra}
+                                        className="text-xs px-2 py-1 rounded-lg font-medium"
+                                        style={{ background: 'var(--primary)', color: '#fff' }}>
+                                        Usar seleccionados ↓
+                                    </button>
+                                </div>
+                                {loadingDetalles ? (
+                                    <p className="text-xs px-3 py-2" style={{ color: 'var(--text-muted)' }}>Cargando...</p>
+                                ) : compraDetalles.length === 0 ? (
+                                    <p className="text-xs px-3 py-2" style={{ color: 'var(--text-muted)' }}>Sin detalles</p>
+                                ) : compraDetalles.map(d => (
+                                    <label key={d.id} className="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-black/5 border-b"
+                                        style={{ borderColor: 'var(--border)' }}>
+                                        <input type="checkbox" checked={selectedDetalles.has(d.id)}
+                                            onChange={() => toggleDetalle(d.id)}
+                                            className="rounded w-3.5 h-3.5 accent-amber-500" />
+                                        <span className="text-xs flex-1 truncate" style={{ color: 'var(--text-main)' }}>
+                                            {d.descripcion}
+                                        </span>
+                                        <span className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>
+                                            {d.cantidad} × ${d.precio_unitario.toFixed(2)}
+                                        </span>
+                                    </label>
+                                ))}
+                            </div>
+                        )}
 
                         {/* Fila 2: N° Nota Crédito + Fecha */}
                         <div className="grid grid-cols-2 gap-3">

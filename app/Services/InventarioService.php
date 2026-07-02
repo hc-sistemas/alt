@@ -27,7 +27,7 @@ class InventarioService implements InventarioServiceInterface
                 ->where('bodega_id', $bodegaId)
                 ->first();
 
-            $cantActual    = $saldoActual ? (float) $saldoActual->stock_actual : 0;
+            $cantActual    = $saldoActual ? (float) $saldoActual->cantidad : 0;
             $costoActual   = $saldoActual ? (float) $saldoActual->costo_promedio  : 0;
             $nuevaCant     = $cantActual + $cantidad;
             $costoPromedio = $nuevaCant > 0
@@ -38,12 +38,12 @@ class InventarioService implements InventarioServiceInterface
                 [
                     'producto_id'    => $productoId,
                     'bodega_id'      => $bodegaId,
-                    'stock_actual'   => $nuevaCant,
+                    'cantidad'       => $nuevaCant,
                     'costo_promedio' => round($costoPromedio, 4),
                     'updated_at'     => now(),
                 ],
                 ['producto_id', 'bodega_id'],
-                ['stock_actual', 'costo_promedio', 'updated_at']
+                ['cantidad', 'costo_promedio', 'updated_at']
             );
 
             $empresaId = DB::table('bodegas')->where('id', $bodegaId)->value('empresa_id');
@@ -82,7 +82,7 @@ class InventarioService implements InventarioServiceInterface
                 ->where('bodega_id', $bodegaId)
                 ->first();
 
-            $cantActual    = $saldo ? (float) $saldo->stock_actual : 0;
+            $cantActual    = $saldo ? (float) $saldo->cantidad : 0;
             $costoPromedio = $saldo ? (float) $saldo->costo_promedio  : 0;
             $nuevaCant     = max(0, $cantActual - $cantidad);
 
@@ -90,12 +90,12 @@ class InventarioService implements InventarioServiceInterface
                 [
                     'producto_id'    => $productoId,
                     'bodega_id'      => $bodegaId,
-                    'stock_actual'   => $nuevaCant,
+                    'cantidad'       => $nuevaCant,
                     'costo_promedio' => $costoPromedio,
                     'updated_at'     => now(),
                 ],
                 ['producto_id', 'bodega_id'],
-                ['stock_actual', 'updated_at']
+                ['cantidad', 'updated_at']
             );
 
             $empresaId = DB::table('bodegas')->where('id', $bodegaId)->value('empresa_id');

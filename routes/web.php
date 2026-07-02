@@ -194,6 +194,7 @@ Route::middleware('auth')->group(function () {
             Route::get('/{compra}/pdf',               [CompraController::class, 'pdfIndividual'])    ->name('pdf-individual');
             Route::patch('/{compra}/anular',          [CompraController::class, 'anular'])            ->name('anular');
             Route::post('/{compra}/activar',          [CompraController::class, 'activar'])           ->name('activar');
+            Route::get('/{compra}/detalles',                        [CompraController::class, 'detallesCompra'])          ->name('detalles');
             Route::get('/{compra}/etiquetas-data',                  [CompraController::class, 'etiquetasData'])           ->name('etiquetas-data');
             Route::post('/{compra}/etiquetas-pdf',                  [CompraController::class, 'generarEtiquetasPdf'])     ->name('etiquetas-pdf');
             Route::get('/{compra}/etiquetas-reimprimir',            [CompraController::class, 'reimprimirEtiquetasPdf'])  ->name('etiquetas-reimprimir');
