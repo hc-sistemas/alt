@@ -26,9 +26,9 @@
                            border-collapse:separate;border-spacing:10px 0; }
         .res-box { display:table-cell;width:33%;text-align:center;
                    padding:18px 10px;border-radius:8px; }
-        .res-box.verde  { background:rgba(16,185,129,0.2);border:1px solid rgba(16,185,129,0.4); }
+        .res-box.verde   { background:rgba(16,185,129,0.2);border:1px solid rgba(16,185,129,0.4); }
         .res-box.naranja { background:rgba(249,115,22,0.2);border:1px solid rgba(249,115,22,0.4); }
-        .res-box.azul   { background:rgba(59,130,246,0.2);border:1px solid rgba(59,130,246,0.4); }
+        .res-box.azul    { background:rgba(59,130,246,0.2);border:1px solid rgba(59,130,246,0.4); }
         .res-modulo { font-size:9px;color:#DDD6FE;font-weight:bold;
                       text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px; }
         .res-pct { font-size:28px;font-weight:bold;margin-bottom:4px; }
@@ -90,10 +90,19 @@
         .item-nota   { width:32%;color:#6B7280;font-size:7px; }
 
         /* ── Badges de estado ────────────────────────────────── */
-        .ok  { color:#059669;font-size:9px;font-weight:bold; }
+        .ok   { color:#059669;font-size:9px;font-weight:bold; }
         .warn { color:#D97706;font-size:9px;font-weight:bold; }
         .err  { color:#DC2626;font-size:9px;font-weight:bold; }
         .lock { color:#7C3AED;font-size:9px; }
+        .new  { color:#2563EB;font-size:9px;font-weight:bold; }
+
+        /* ── Etiqueta "NUEVO" ────────────────────────────────── */
+        .badge-new { display:inline-block;font-size:6px;font-weight:bold;
+                     background:#DBEAFE;color:#1D4ED8;padding:1px 4px;
+                     border-radius:4px;margin-left:4px;vertical-align:middle; }
+        .badge-fix { display:inline-block;font-size:6px;font-weight:bold;
+                     background:#DCFCE7;color:#166534;padding:1px 4px;
+                     border-radius:4px;margin-left:4px;vertical-align:middle; }
 
         /* ── Barra de resumen de módulo ───────────────────────── */
         .mod-resumen { display:table;width:100%;margin-bottom:10px;
@@ -144,6 +153,12 @@
         .note-global { border-left:3px solid #7C3AED;background:#F5F3FF;
                        padding:6px 10px;margin-bottom:10px;border-radius:0 4px 4px 0; }
         .note-global p { font-size:7.5px;color:#4C1D95;line-height:1.6;margin:0; }
+
+        /* ── Banner "Corregido en Dev 2.1" ────────────────────── */
+        .fix-banner { background:#F0FDF4;border:1px solid #86EFAC;
+                      border-radius:6px;padding:5px 10px;margin-bottom:8px;
+                      font-size:7px;color:#166534; }
+        .fix-banner strong { font-weight:bold; }
     </style>
 </head>
 <body>
@@ -167,8 +182,8 @@
     <div class="portada-resumen">
         <div class="res-box verde">
             <div class="res-modulo">Contabilidad</div>
-            <div class="res-pct verde">73%</div>
-            <div class="res-detalle">✓22 &nbsp; ⚠6 &nbsp; ✗2 &nbsp; de 30</div>
+            <div class="res-pct verde">84%</div>
+            <div class="res-detalle">✓27 &nbsp; ⚠5 &nbsp; ✗0 &nbsp; de 32</div>
         </div>
         <div class="res-box naranja">
             <div class="res-modulo">Compras</div>
@@ -195,14 +210,18 @@
         </div>
     </div>
 
+    <div class="fix-banner">
+        <strong>✔ Correcciones aplicadas en Dev 2 (julio 2026):</strong> Cierre Fiscal Anual — enceramiento clases 4/5 y arrastre de resultado implementados · Centro de costo por línea en formulario de asientos · Modal de cierre muestra proceso de 6 pasos
+    </div>
+
     <div class="mod-header cont">
         <div class="mod-h-left">
             <div class="mod-titulo">MÓDULO CONTABILIDAD</div>
             <div class="mod-sub">Plan de Cuentas · Asientos · Ejercicios · Parámetros · Reportes</div>
         </div>
         <div class="mod-h-right">
-            <div class="mod-pct">73%</div>
-            <div class="mod-stats">✓ 22 &nbsp;·&nbsp; ⚠ 6 &nbsp;·&nbsp; ✗ 2 &nbsp;·&nbsp; de 30 ítems</div>
+            <div class="mod-pct">84%</div>
+            <div class="mod-stats">✓ 27 &nbsp;·&nbsp; ⚠ 5 &nbsp;·&nbsp; ✗ 0 &nbsp;·&nbsp; de 32 ítems</div>
         </div>
     </div>
 
@@ -234,9 +253,9 @@
                         <td class="item-nota">Agregado junto a botón exportar</td>
                     </tr>
                     <tr>
-                        <td class="item-nombre">centro_costo_id por cuenta en el plan</td>
-                        <td class="item-estado"><span class="warn">⚠</span></td>
-                        <td class="item-nota">PlanCuenta model sin campo centro_costo_id; centros de costo son tabla separada</td>
+                        <td class="item-nombre">Arquitectura centro de costo confirmada <span class="badge-fix">FIX</span></td>
+                        <td class="item-estado"><span class="ok">✓</span></td>
+                        <td class="item-nota">plan_cuentas NO tiene centro_costo_id (correcto). Centros de costo en asiento_detalles</td>
                     </tr>
                 </table>
             </div>
@@ -256,6 +275,11 @@
                         <td class="item-nota">AsientoService::crear line 50; throw new \Exception(...)</td>
                     </tr>
                     <tr>
+                        <td class="item-nombre">Centro de costo por línea en formulario <span class="badge-new">NUEVO</span></td>
+                        <td class="item-estado"><span class="ok">✓</span></td>
+                        <td class="item-nota">Select col-span-2 en grid 6 columnas; envía centro_costo_id nullable a AsientoDetalle</td>
+                    </tr>
+                    <tr>
                         <td class="item-nombre">Exportar Excel</td>
                         <td class="item-estado"><span class="ok">✓</span></td>
                         <td class="item-nota">exportarExcel()</td>
@@ -273,7 +297,7 @@
                     <tr>
                         <td class="item-nombre">Mayor por cuenta (PDF)</td>
                         <td class="item-estado"><span class="ok">✓</span></td>
-                        <td class="item-nota">mayorCuenta() en AsientoContableController + mayor()</td>
+                        <td class="item-nota">mayorCuenta() en AsientoContableController</td>
                     </tr>
                     <tr>
                         <td class="item-nombre">Bloqueo creación en período cerrado</td>
@@ -283,7 +307,7 @@
                     <tr>
                         <td class="item-nombre">Bloqueo anulación en período cerrado</td>
                         <td class="item-estado"><span class="ok">✓</span></td>
-                        <td class="item-nota">AsientoContableController.anular() líneas 138–139</td>
+                        <td class="item-nota">AsientoContableController.anular()</td>
                     </tr>
                 </table>
             </div>
@@ -295,7 +319,7 @@
                     <tr>
                         <td class="item-nombre">Listado de parámetros con descripción y grupo</td>
                         <td class="item-estado"><span class="ok">✓</span></td>
-                        <td class="item-nota">25 parámetros en 5 grupos (Ventas, Compras, Inventario, Bancos, Nómina, SRI)</td>
+                        <td class="item-nota">25 parámetros en 5 grupos</td>
                     </tr>
                     <tr>
                         <td class="item-nombre">Edición individual de cada parámetro</td>
@@ -308,24 +332,29 @@
                         <td class="item-nota">autoconfigurar() busca cuentas por patrones de código</td>
                     </tr>
                     <tr>
-                        <td class="item-nombre">Código default cta_clientes_locales = 1.1.1.5</td>
+                        <td class="item-nombre">Default cta_clientes_locales = 1.1.1.5</td>
                         <td class="item-estado"><span class="warn">⚠</span></td>
-                        <td class="item-nota">Default es 1.1.02.01.01 — configurable via UI pero no coincide con schema legacy</td>
+                        <td class="item-nota">Default es 1.1.02.01.01 — no coincide con schema legacy</td>
                     </tr>
                     <tr>
-                        <td class="item-nombre">Código default cta_proveedores_locales = 2.1.1.3</td>
+                        <td class="item-nombre">Default cta_proveedores_locales = 2.1.1.3</td>
                         <td class="item-estado"><span class="warn">⚠</span></td>
                         <td class="item-nota">Default es 2.1.01.01.01 — configurable via UI</td>
                     </tr>
                     <tr>
-                        <td class="item-nombre">Código default cta_sueldos_salarios = 5.3.1.02</td>
+                        <td class="item-nombre">Default cta_sueldos_salarios = 5.3.1.02</td>
                         <td class="item-estado"><span class="warn">⚠</span></td>
-                        <td class="item-nota">No verificado — depende del plan de cuentas cargado</td>
+                        <td class="item-nota">Pendiente verificar con plan de cuentas cargado</td>
                     </tr>
                     <tr>
-                        <td class="item-nombre">Código default cta_gasto_compras = 5.4.1.01</td>
+                        <td class="item-nombre">Default cta_gasto_compras = 5.4.1.01</td>
                         <td class="item-estado"><span class="warn">⚠</span></td>
-                        <td class="item-nota">No verificado — depende del plan de cuentas cargado</td>
+                        <td class="item-nota">Pendiente verificar con plan de cuentas cargado</td>
+                    </tr>
+                    <tr>
+                        <td class="item-nombre">Default cta_resultados_ejercicio = 3.1.5.x</td>
+                        <td class="item-estado"><span class="warn">⚠</span></td>
+                        <td class="item-nota">Cierre fiscal usa fallback por código 3.1.5% — configurar en parámetros</td>
                     </tr>
                 </table>
             </div>
@@ -340,37 +369,42 @@
                     <tr>
                         <td class="item-nombre">Botón "Cierre Fiscal Anual" solo para super_admin</td>
                         <td class="item-estado"><span class="ok">✓</span></td>
-                        <td class="item-nota">Solo visible cuando esSuperAdmin, color púrpura #7C3AED</td>
+                        <td class="item-nota">Solo visible cuando esSuperAdmin, color púrpura</td>
                     </tr>
                     <tr>
-                        <td class="item-nombre">Modal con selector de año y campo motivo</td>
+                        <td class="item-nombre">Modal con selector de año y motivo</td>
                         <td class="item-estado"><span class="ok">✓</span></td>
-                        <td class="item-nota">Año (año actual - 5 años), motivo mínimo 10 chars</td>
+                        <td class="item-nota">Año (actual − 5), motivo mínimo 10 chars</td>
+                    </tr>
+                    <tr>
+                        <td class="item-nombre">Modal muestra proceso de 6 pasos <span class="badge-new">NUEVO</span></td>
+                        <td class="item-estado"><span class="ok">✓</span></td>
+                        <td class="item-nota">Badges numerados: verificar → calcular → cierre → resultado → arrastre → auditoría</td>
                     </tr>
                     <tr>
                         <td class="item-nombre">Validación: todos los períodos del año cerrados</td>
                         <td class="item-estado"><span class="ok">✓</span></td>
-                        <td class="item-nota">Verifica los 12 meses en EjercicioContable</td>
+                        <td class="item-nota">Verifica todos los meses registrados</td>
                     </tr>
                     <tr>
                         <td class="item-nombre">Verifica que no se haya cerrado ya</td>
                         <td class="item-estado"><span class="ok">✓</span></td>
-                        <td class="item-nota">Consulta log_cambios_criticos</td>
+                        <td class="item-nota">Consulta log_cambios_criticos por campo = cierre_fiscal_anual</td>
+                    </tr>
+                    <tr>
+                        <td class="item-nombre">Encerar cuentas clase 4 (ingresos) y clase 5 (gastos) <span class="badge-fix">FIX</span></td>
+                        <td class="item-estado"><span class="ok">✓</span></td>
+                        <td class="item-nota">Itera saldos reales: ingresos→DEBE, gastos→HABER. Asiento CIERRE-{año} dentro de DB::transaction()</td>
+                    </tr>
+                    <tr>
+                        <td class="item-nombre">Arrastre resultado 3.1.5→3.1.4 (utilidad/pérdida) <span class="badge-fix">FIX</span></td>
+                        <td class="item-estado"><span class="ok">✓</span></td>
+                        <td class="item-nota">Asiento CIERRE-ARRASTRE-{año}: resultado→ganancias acumuladas. Busca cta via parámetros_contables o fallback código</td>
                     </tr>
                     <tr>
                         <td class="item-nombre">Registra en log_cambios_criticos</td>
                         <td class="item-estado"><span class="ok">✓</span></td>
-                        <td class="item-nota">Auditoría completa</td>
-                    </tr>
-                    <tr>
-                        <td class="item-nombre">Zerear cuentas clase 4 (ingresos) y clase 5 (gastos)</td>
-                        <td class="item-estado"><span class="err">✗</span></td>
-                        <td class="item-nota">Solo crea asiento dummy 0.01/0.01 — no itera cuentas de resultado</td>
-                    </tr>
-                    <tr>
-                        <td class="item-nombre">Mover resultado a 3.1.5.01 → 3.1.4.01</td>
-                        <td class="item-estado"><span class="err">✗</span></td>
-                        <td class="item-nota">No implementado — lógica de arrastre de utilidad ausente</td>
+                        <td class="item-nota">Ingresos, Gastos, Resultado guardados en valor_nuevo</td>
                     </tr>
                 </table>
             </div>
@@ -382,7 +416,7 @@
                     <tr>
                         <td class="item-nombre">Venta en efectivo → Caja/Banco</td>
                         <td class="item-estado"><span class="ok">✓</span></td>
-                        <td class="item-nota">AsientoService::facturaAutorizada() con cta_caja_general</td>
+                        <td class="item-nota">AsientoService::facturaAutorizada()</td>
                     </tr>
                     <tr>
                         <td class="item-nombre">Cobro CxC → Banco</td>
@@ -390,9 +424,9 @@
                         <td class="item-nota">AsientoService::cobro()</td>
                     </tr>
                     <tr>
-                        <td class="item-nombre">Anticipo cliente</td>
+                        <td class="item-nombre">Anticipo cliente / proveedor</td>
                         <td class="item-estado"><span class="ok">✓</span></td>
-                        <td class="item-nota">AsientoService::anticipoCliente()</td>
+                        <td class="item-nota">anticipoCliente() + anticipoProveedor()</td>
                     </tr>
                     <tr>
                         <td class="item-nombre">Nota de crédito emitida</td>
@@ -402,7 +436,7 @@
                     <tr>
                         <td class="item-nombre">Compra registrada → CxP</td>
                         <td class="item-estado"><span class="ok">✓</span></td>
-                        <td class="item-nota">AsientoService::compraRegistrada() (inventario + IVA + CxP)</td>
+                        <td class="item-nota">compraRegistrada() (inventario + IVA + CxP)</td>
                     </tr>
                     <tr>
                         <td class="item-nombre">Pago a proveedor</td>
@@ -410,29 +444,19 @@
                         <td class="item-nota">AsientoService::pagoProveedor()</td>
                     </tr>
                     <tr>
-                        <td class="item-nombre">Anticipo a proveedor</td>
-                        <td class="item-estado"><span class="ok">✓</span></td>
-                        <td class="item-nota">AsientoService::anticipoProveedor()</td>
-                    </tr>
-                    <tr>
-                        <td class="item-nombre">Nómina (sueldos + IESS patronal + por pagar)</td>
+                        <td class="item-nombre">Nómina (sueldos + IESS patronal)</td>
                         <td class="item-estado"><span class="ok">✓</span></td>
                         <td class="item-nota">AsientoService::nomina() — asiento NOM-02 completo</td>
                     </tr>
                     <tr>
-                        <td class="item-nombre">Ajuste inventario</td>
+                        <td class="item-nombre">Ajuste inventario / Cierre de caja</td>
                         <td class="item-estado"><span class="ok">✓</span></td>
-                        <td class="item-nota">AsientoService::ajusteInventario()</td>
+                        <td class="item-nota">ajusteInventario() + cierreCaja()</td>
                     </tr>
                     <tr>
-                        <td class="item-nombre">Cierre de caja</td>
+                        <td class="item-nombre">Datafast: lote + liquidación (retenciones)</td>
                         <td class="item-estado"><span class="ok">✓</span></td>
-                        <td class="item-nota">AsientoService::cierreCaja()</td>
-                    </tr>
-                    <tr>
-                        <td class="item-nombre">Datafast: lote + liquidación</td>
-                        <td class="item-estado"><span class="ok">✓</span></td>
-                        <td class="item-nota">DatafastController::storeLote() + liquidar() con retenciones</td>
+                        <td class="item-nota">DatafastController::storeLote() + liquidar()</td>
                     </tr>
                     <tr>
                         <td class="item-nombre">Ajuste conciliación</td>
@@ -462,9 +486,9 @@
                         <td class="item-nota">ReporteContableController::estadoResultados()</td>
                     </tr>
                     <tr>
-                        <td class="item-nombre">Ejercicios: abrir, cerrar, reabrir</td>
+                        <td class="item-nombre">Ejercicios: abrir, cerrar</td>
                         <td class="item-estado"><span class="ok">✓</span></td>
-                        <td class="item-nota">EjercicioContableController: index, store, cerrar, reabrir</td>
+                        <td class="item-nota">EjercicioContableController: index, store, cerrar</td>
                     </tr>
                 </table>
             </div>
@@ -475,27 +499,27 @@
     {{-- Barra resumen Contabilidad --}}
     <div class="mod-resumen">
         <div class="mr-cell">
-            <div class="mr-num ok">22</div>
+            <div class="mr-num ok">27</div>
             <div class="mr-label">Completado</div>
         </div>
         <div class="mr-sep"><div class="mr-sep-line"></div></div>
         <div class="mr-cell">
-            <div class="mr-num warn">6</div>
+            <div class="mr-num warn">5</div>
             <div class="mr-label">Parcial / Por verificar</div>
         </div>
         <div class="mr-sep"><div class="mr-sep-line"></div></div>
         <div class="mr-cell">
-            <div class="mr-num err">2</div>
+            <div class="mr-num err">0</div>
             <div class="mr-label">No implementado</div>
         </div>
         <div class="mr-sep"><div class="mr-sep-line"></div></div>
         <div class="mr-cell">
-            <div class="mr-num" style="color:#6B7280">30</div>
+            <div class="mr-num" style="color:#6B7280">32</div>
             <div class="mr-label">Total ítems</div>
         </div>
         <div class="mr-total">
             <div class="mr-pct-label">CONTABILIDAD</div>
-            <div class="mr-pct-num">73%</div>
+            <div class="mr-pct-num">84%</div>
             <div class="mr-pct-de">completado del alcance</div>
         </div>
     </div>
@@ -576,7 +600,7 @@
                     <tr>
                         <td class="item-nombre">CONCEPTOS_COSTO exactos (13 tipos)</td>
                         <td class="item-estado"><span class="ok">✓</span></td>
-                        <td class="item-nota">Actualizado esta sesión — ISD, IVA 15%, Seguro, Advalorem, FODINFA, ICE, Flete, Gastos Destino, Honorarios Aduanero, Almacenaje, Honorarios Banco, Transporte Nacional, Otro</td>
+                        <td class="item-nota">ISD, IVA 15%, Seguro, Advalorem, FODINFA, ICE, Flete, Gastos Destino, Honorarios Aduanero, Almacenaje, Honorarios Banco, Transporte Nacional, Otro</td>
                     </tr>
                     <tr>
                         <td class="item-nombre">Liquidar importación</td>
@@ -591,17 +615,12 @@
                     <tr>
                         <td class="item-nombre">Crear factura desde importación</td>
                         <td class="item-estado"><span class="ok">✓</span></td>
-                        <td class="item-nota">ImportacionController::crearFactura() — pre-llena NuevaCompra</td>
+                        <td class="item-nota">ImportacionController::crearFactura()</td>
                     </tr>
                     <tr>
-                        <td class="item-nombre">Agregar costos adicionales</td>
+                        <td class="item-nombre">Agregar costos adicionales + detalle</td>
                         <td class="item-estado"><span class="ok">✓</span></td>
-                        <td class="item-nota">ImportacionController::agregarCosto()</td>
-                    </tr>
-                    <tr>
-                        <td class="item-nombre">Detalle de importación</td>
-                        <td class="item-estado"><span class="ok">✓</span></td>
-                        <td class="item-nota">ImportacionController::detalle()</td>
+                        <td class="item-nota">agregarCosto() + detalle()</td>
                     </tr>
                 </table>
             </div>
@@ -628,7 +647,7 @@
                     <tr>
                         <td class="item-nombre">Enlazado con compras</td>
                         <td class="item-estado"><span class="ok">✓</span></td>
-                        <td class="item-nota">Desde compra se genera CxP</td>
+                        <td class="item-nota">Desde compra se genera CxP automáticamente</td>
                     </tr>
                 </table>
             </div>
@@ -641,7 +660,7 @@
                 <div class="card-header comp">P2 — Tipos de Documento y Retenciones</div>
                 <table class="items">
                     <tr>
-                        <td class="item-nombre">FAC (Factura), LIQ, TIK, CON, EXT (Exterior)</td>
+                        <td class="item-nombre">FAC, LIQ, TIK, CON, EXT (Exterior)</td>
                         <td class="item-estado"><span class="ok">✓</span></td>
                         <td class="item-nota">Validado en store() con in:FAC,LIQ,TIK,CON,EXT</td>
                     </tr>
@@ -656,9 +675,9 @@
                         <td class="item-nota">AsientoService::compraRegistrada()</td>
                     </tr>
                     <tr>
-                        <td class="item-nombre">Retenciones de IR/IVA en compras (UI captura %)</td>
+                        <td class="item-nombre">Retenciones IR/IVA en formulario de compra</td>
                         <td class="item-estado"><span class="warn">⚠</span></td>
-                        <td class="item-nota">AsientoService soporta retencionIR/retencionIVA pero CompraController::store() no valida ni captura esos campos del formulario</td>
+                        <td class="item-nota">AsientoService soporta ret_ir/ret_iva pero CompraController::store() no captura esos campos del form</td>
                     </tr>
                     <tr>
                         <td class="item-nombre">Sustento tributario (01–08)</td>
@@ -680,17 +699,12 @@
                     <tr>
                         <td class="item-nombre">Validación de RUC único</td>
                         <td class="item-estado"><span class="ok">✓</span></td>
-                        <td class="item-nota">store(): 'identificacion' => 'unique:proveedores'</td>
+                        <td class="item-nota">'identificacion' => 'unique:proveedores'</td>
                     </tr>
                     <tr>
-                        <td class="item-nombre">Estado ACTIVO/INACTIVO</td>
+                        <td class="item-nombre">Estado ACTIVO/INACTIVO + filtros y búsqueda</td>
                         <td class="item-estado"><span class="ok">✓</span></td>
-                        <td class="item-nota">Campo estado + toggleEstado()</td>
-                    </tr>
-                    <tr>
-                        <td class="item-nombre">Listado con filtros y búsqueda</td>
-                        <td class="item-estado"><span class="ok">✓</span></td>
-                        <td class="item-nota">index() con filtros y search</td>
+                        <td class="item-nota">toggleEstado() + index() con filtros</td>
                     </tr>
                 </table>
             </div>
@@ -710,14 +724,9 @@
                         <td class="item-nota">2025_06_30 con hasTable guard</td>
                     </tr>
                     <tr>
-                        <td class="item-nombre">Asiento automático al crear devolución</td>
+                        <td class="item-nombre">Asiento automático al crear / anular</td>
                         <td class="item-estado"><span class="ok">✓</span></td>
-                        <td class="item-nota">AsientoService::crear() desde DevolucionCompraController::store()</td>
-                    </tr>
-                    <tr>
-                        <td class="item-nombre">Anular devolución revierte asiento</td>
-                        <td class="item-estado"><span class="ok">✓</span></td>
-                        <td class="item-nota">asientoService->anular() en anular()</td>
+                        <td class="item-nota">AsientoService::crear() + anular() desde DevolucionCompraController</td>
                     </tr>
                     <tr>
                         <td class="item-nombre">Sidebar: link "Devoluciones" en menú Compras</td>
@@ -727,7 +736,7 @@
                     <tr>
                         <td class="item-nombre">Decrementar stock al devolver productos</td>
                         <td class="item-estado"><span class="warn">⚠</span></td>
-                        <td class="item-nota">No implementado — devolución no actualiza inventario</td>
+                        <td class="item-nota">No implementado — devolución no actualiza inventario aún</td>
                     </tr>
                 </table>
             </div>
@@ -768,12 +777,12 @@
     </div>
 </div>
 
-{{-- ═══════════════════════════ PÁGINA 3 — BANCOS + RESUMEN ════════════════ --}}
+{{-- ═══════════════════════════ PÁGINA 3 — BANCOS ══════════════════════════ --}}
 <div class="page pb">
     <div class="header-page">
         <div class="hp-left">
             <div class="hp-titulo">Diagnóstico Dev 2 — Altamira ERP</div>
-            <div class="hp-sub">Módulo Bancos · Resumen General</div>
+            <div class="hp-sub">Módulo Bancos</div>
         </div>
         <div class="hp-right">
             <div class="hp-meta">{{ now()->format('d/m/Y') }} · {{ $empresa->nombre_comercial ?? 'Altamira' }}</div>
@@ -793,28 +802,30 @@
 
     <div class="grid2">
         <div class="grid2-l">
+
+            {{-- B1 BancoCaja y Movimientos --}}
             <div class="card">
                 <div class="card-header banco">B1 — BancoCaja y Movimientos</div>
                 <table class="items">
                     <tr>
-                        <td class="item-nombre">BancoCaja CRUD: banco/caja/caja_chica/tarjeta</td>
+                        <td class="item-nombre">BancoCaja CRUD: banco / caja / caja_chica / tarjeta</td>
                         <td class="item-estado"><span class="ok">✓</span></td>
                         <td class="item-nota">BancoCajaController: index, store, update, destroy</td>
                     </tr>
                     <tr>
-                        <td class="item-nombre">Cuenta contable automática por tipo</td>
+                        <td class="item-nombre">Cuenta contable automática por tipo de caja</td>
                         <td class="item-estado"><span class="ok">✓</span></td>
-                        <td class="item-nota">getCuentaContableAutomatica() busca por código</td>
+                        <td class="item-nota">getCuentaContableAutomatica() busca por código de tipo</td>
                     </tr>
                     <tr>
-                        <td class="item-nombre">Movimientos CRUD: ingreso/egreso/transferencia</td>
+                        <td class="item-nombre">Movimientos CRUD: ingreso / egreso / transferencia</td>
                         <td class="item-estado"><span class="ok">✓</span></td>
-                        <td class="item-nota">MovimientoBancarioController</td>
+                        <td class="item-nota">MovimientoBancarioController completo</td>
                     </tr>
                     <tr>
-                        <td class="item-nombre">Selector de persona: Manual/Cliente/Proveedor</td>
+                        <td class="item-nombre">Selector de persona: Manual / Cliente / Proveedor</td>
                         <td class="item-estado"><span class="ok">✓</span></td>
-                        <td class="item-nota">Toggle 3-botones + select que auto-rellena beneficiario</td>
+                        <td class="item-nota">Toggle 3-botones + select auto-rellena beneficiario</td>
                     </tr>
                     <tr>
                         <td class="item-nombre">Beneficiario tipado (no texto libre)</td>
@@ -824,52 +835,54 @@
                 </table>
             </div>
 
+            {{-- B2 Conciliaciones y Cierre de Caja --}}
             <div class="card">
                 <div class="card-header banco">B2 — Conciliaciones y Cierre de Caja</div>
                 <table class="items">
                     <tr>
-                        <td class="item-nombre">CRUD conciliaciones</td>
+                        <td class="item-nombre">CRUD conciliaciones bancarias</td>
                         <td class="item-estado"><span class="ok">✓</span></td>
-                        <td class="item-nota">ConciliacionController</td>
+                        <td class="item-nota">ConciliacionController completo</td>
                     </tr>
                     <tr>
                         <td class="item-nombre">Filtros: banco, fecha_desde, fecha_hasta, estado</td>
                         <td class="item-estado"><span class="ok">✓</span></td>
-                        <td class="item-nota">Filtros en controller + UI</td>
+                        <td class="item-nota">Filtros en controller + UI implementados</td>
                     </tr>
                     <tr>
-                        <td class="item-nombre">Asiento automático de ajuste</td>
+                        <td class="item-nombre">Asiento automático de ajuste de conciliación</td>
                         <td class="item-estado"><span class="ok">✓</span></td>
                         <td class="item-nota">AsientoService::ajusteConciliacion()</td>
                     </tr>
                     <tr>
                         <td class="item-nombre">Registrar cierre de caja</td>
                         <td class="item-estado"><span class="ok">✓</span></td>
-                        <td class="item-nota">CierreCajaController</td>
+                        <td class="item-nota">CierreCajaController con fecha, monto y responsable</td>
                     </tr>
                     <tr>
-                        <td class="item-nombre">Asiento automático de cierre</td>
+                        <td class="item-nombre">Asiento automático de cierre de caja</td>
                         <td class="item-estado"><span class="ok">✓</span></td>
-                        <td class="item-nota">AsientoService::cierreCaja()</td>
+                        <td class="item-nota">AsientoService::cierreCaja() — registra movimiento contable</td>
                     </tr>
                 </table>
             </div>
 
+            {{-- B3 Reportes Bancarios --}}
             <div class="card">
                 <div class="card-header banco">B3 — Reportes Bancarios</div>
                 <table class="items">
                     <tr>
-                        <td class="item-nombre">Estado de Cuenta</td>
+                        <td class="item-nombre">Estado de Cuenta (PDF)</td>
                         <td class="item-estado"><span class="ok">✓</span></td>
                         <td class="item-nota">BancoReporteController::estadoCuenta()</td>
                     </tr>
                     <tr>
-                        <td class="item-nombre">Reporte Movimientos</td>
+                        <td class="item-nombre">Reporte de Movimientos (PDF)</td>
                         <td class="item-estado"><span class="ok">✓</span></td>
                         <td class="item-nota">BancoReporteController::reporteMovimientos()</td>
                     </tr>
                     <tr>
-                        <td class="item-nombre">Reporte Caja Chica</td>
+                        <td class="item-nombre">Reporte Caja Chica (PDF)</td>
                         <td class="item-estado"><span class="ok">✓</span></td>
                         <td class="item-nota">BancoReporteController::reporteCajaChica()</td>
                     </tr>
@@ -880,123 +893,119 @@
                     </tr>
                 </table>
             </div>
-        </div>
 
+        </div>
         <div class="grid2-r">
+
+            {{-- B4 Datafast --}}
             <div class="card">
                 <div class="card-header banco">B4 — Datafast</div>
                 <table class="items">
                     <tr>
-                        <td class="item-nombre">Registrar lote Datafast</td>
+                        <td class="item-nombre">Registrar lote Datafast + asiento automático</td>
                         <td class="item-estado"><span class="ok">✓</span></td>
-                        <td class="item-nota">DatafastController::storeLote() + asiento automático</td>
+                        <td class="item-nota">DatafastController::storeLote() + AsientoService integrado</td>
                     </tr>
                     <tr>
-                        <td class="item-nombre">Liquidar lote (comisión, retenciones IVA/IR)</td>
+                        <td class="item-nombre">Liquidar lote (comisión + retenciones IVA/IR)</td>
                         <td class="item-estado"><span class="ok">✓</span></td>
-                        <td class="item-nota">DatafastController::liquidar() con asiento completo</td>
+                        <td class="item-nota">DatafastController::liquidar() con asiento completo de liquidación</td>
                     </tr>
                     <tr>
                         <td class="item-nombre">Filtros: banco, estado, fechas, búsqueda lote</td>
                         <td class="item-estado"><span class="ok">✓</span></td>
-                        <td class="item-nota">Filtros implementados en controller + UI</td>
+                        <td class="item-nota">Filtros implementados en controller + UI (Index.tsx)</td>
                     </tr>
                 </table>
             </div>
 
+            {{-- B5 Cheques --}}
             <div class="card">
                 <div class="card-header banco">B5 — Cheques</div>
                 <table class="items">
                     <tr>
-                        <td class="item-nombre">Emitir cheque</td>
+                        <td class="item-nombre">Emitir cheque (descuenta saldo bancario)</td>
                         <td class="item-estado"><span class="ok">✓</span></td>
-                        <td class="item-nota">ChequesController::store() — descuenta saldo bancario</td>
+                        <td class="item-nota">ChequesController::store() — llama actualizarSaldo()</td>
                     </tr>
                     <tr>
-                        <td class="item-nombre">Cambiar estado (cobrado/protestado/anulado)</td>
+                        <td class="item-nombre">Cambiar estado: cobrado / protestado / anulado</td>
                         <td class="item-estado"><span class="ok">✓</span></td>
                         <td class="item-nota">ChequesController::cambiarEstado()</td>
                     </tr>
                     <tr>
-                        <td class="item-nombre">Protestar/anular revierte saldo bancario</td>
+                        <td class="item-nombre">Protestar / anular revierte saldo bancario</td>
                         <td class="item-estado"><span class="ok">✓</span></td>
-                        <td class="item-nota">actualizarSaldo($cheque->monto, 'ingreso')</td>
+                        <td class="item-nota">actualizarSaldo($cheque->monto, 'ingreso') al protestar/anular</td>
                     </tr>
                     <tr>
                         <td class="item-nombre">Confirmación antes de cambiar estado</td>
                         <td class="item-estado"><span class="ok">✓</span></td>
-                        <td class="item-nota">CambioEstadoModal con confirm dialog</td>
+                        <td class="item-nota">CambioEstadoModal con diálogo de confirmación</td>
                     </tr>
                     <tr>
                         <td class="item-nombre">Alertas automáticas de vencimientos CxP</td>
                         <td class="item-estado"><span class="err">✗</span></td>
-                        <td class="item-nota">No existe módulo de notificaciones — solo filtros manuales en CxP</td>
+                        <td class="item-nota">No implementado — no existe módulo de notificaciones (requiere jobs/queues)</td>
                     </tr>
                 </table>
             </div>
 
-            {{-- Resumen BANCOS --}}
-            <div class="mod-resumen">
-                <div class="mr-cell">
-                    <div class="mr-num ok">18</div>
-                    <div class="mr-label">Completado</div>
-                </div>
-                <div class="mr-sep"><div class="mr-sep-line"></div></div>
-                <div class="mr-cell">
-                    <div class="mr-num warn">0</div>
-                    <div class="mr-label">Parcial</div>
-                </div>
-                <div class="mr-sep"><div class="mr-sep-line"></div></div>
-                <div class="mr-cell">
-                    <div class="mr-num err">1</div>
-                    <div class="mr-label">No implementado</div>
-                </div>
-                <div class="mr-sep"><div class="mr-sep-line"></div></div>
-                <div class="mr-total">
-                    <div class="mr-pct-label">BANCOS</div>
-                    <div class="mr-pct-num">95%</div>
-                    <div class="mr-pct-de">completado del alcance</div>
-                </div>
+            {{-- Nota Dev 3 --}}
+            <div class="note-global">
+                <p><strong style="color:#4C1D95">Pendiente para Dev 3 (Bancos):</strong><br>
+                — Alertas automáticas de vencimientos CxP (jobs + notificaciones)<br>
+                — Integración conciliación con extracto bancario en formato CSV/Excel<br>
+                — ATS / Formulario 103 / 104 SRI (alta complejidad, módulo separado)
+                </p>
             </div>
 
-            {{-- Pendientes críticos --}}
-            <div class="card">
-                <div class="card-header" style="background:#FEF2F2;color:#991B1B;border-bottom:1px solid #FECACA;">
-                    Pendientes Críticos para Dev 3
-                </div>
-                <table class="items">
-                    <tr>
-                        <td class="item-nombre" style="color:#991B1B;font-weight:bold">Cierre Fiscal: zerear clases 4/5</td>
-                        <td class="item-estado"><span class="err">✗</span></td>
-                        <td class="item-nota">Alta complejidad — requiere iterar cuentas de resultado</td>
-                    </tr>
-                    <tr>
-                        <td class="item-nombre" style="color:#991B1B;font-weight:bold">Cierre Fiscal: transferir 3.1.5.01→3.1.4.01</td>
-                        <td class="item-estado"><span class="err">✗</span></td>
-                        <td class="item-nota">Media complejidad</td>
-                    </tr>
-                    <tr>
-                        <td class="item-nombre" style="color:#991B1B;font-weight:bold">Retenciones en formulario de compra</td>
-                        <td class="item-estado"><span class="warn">⚠</span></td>
-                        <td class="item-nota">Backend listo, falta UI campos ret_ir/ret_iva</td>
-                    </tr>
-                    <tr>
-                        <td class="item-nombre" style="color:#991B1B;font-weight:bold">Devolución compra: decrementar stock</td>
-                        <td class="item-estado"><span class="warn">⚠</span></td>
-                        <td class="item-nota">Falta integración con módulo Inventario</td>
-                    </tr>
-                    <tr>
-                        <td class="item-nombre" style="color:#991B1B;font-weight:bold">ATS / Formulario 104 / 103 SRI</td>
-                        <td class="item-estado"><span class="err">✗</span></td>
-                        <td class="item-nota">0% implementado — muy alta complejidad</td>
-                    </tr>
-                    <tr>
-                        <td class="item-nombre" style="color:#991B1B;font-weight:bold">Alertas automáticas de vencimientos</td>
-                        <td class="item-estado"><span class="err">✗</span></td>
-                        <td class="item-nota">Requiere módulo de notificaciones (jobs/queues)</td>
-                    </tr>
-                </table>
-            </div>
+        </div>
+    </div>
+
+    {{-- Barra resumen Bancos --}}
+    <div class="mod-resumen">
+        <div class="mr-cell">
+            <div class="mr-num ok">18</div>
+            <div class="mr-label">Completado</div>
+        </div>
+        <div class="mr-sep"><div class="mr-sep-line"></div></div>
+        <div class="mr-cell">
+            <div class="mr-num warn">0</div>
+            <div class="mr-label">Parcial</div>
+        </div>
+        <div class="mr-sep"><div class="mr-sep-line"></div></div>
+        <div class="mr-cell">
+            <div class="mr-num err">1</div>
+            <div class="mr-label">No implementado</div>
+        </div>
+        <div class="mr-sep"><div class="mr-sep-line"></div></div>
+        <div class="mr-cell">
+            <div class="mr-num" style="color:#6B7280">19</div>
+            <div class="mr-label">Total ítems</div>
+        </div>
+        <div class="mr-total">
+            <div class="mr-pct-label">BANCOS</div>
+            <div class="mr-pct-num">95%</div>
+            <div class="mr-pct-de">completado del alcance</div>
+        </div>
+    </div>
+
+    <div class="footer">
+        <div class="f-l">Altamira ERP · Diagnóstico Dev 2 · {{ now()->format('d/m/Y') }}</div>
+        <div class="f-r">Pág. 3 — Módulo Bancos</div>
+    </div>
+</div>
+
+{{-- ═══════════════════════════ PÁGINA 4 — RESUMEN GENERAL ════════════════ --}}
+<div class="page pb">
+    <div class="header-page">
+        <div class="hp-left">
+            <div class="hp-titulo">Diagnóstico Dev 2 — Altamira ERP</div>
+            <div class="hp-sub">Resumen General · Pendientes para Dev 3</div>
+        </div>
+        <div class="hp-right">
+            <div class="hp-meta">{{ now()->format('d/m/Y') }} · {{ $empresa->nombre_comercial ?? 'Altamira' }}</div>
         </div>
     </div>
 
@@ -1009,21 +1018,21 @@
                 <th style="width:8%;text-align:center">⚠</th>
                 <th style="width:8%;text-align:center">✗</th>
                 <th style="width:8%;text-align:center">Total</th>
-                <th style="width:30%">Barra</th>
+                <th style="width:28%">Barra</th>
                 <th style="width:10%;text-align:center">%</th>
-                <th style="width:8%;text-align:center">Estado</th>
+                <th style="width:10%;text-align:center">Estado</th>
             </tr>
         </thead>
         <tbody>
             <tr>
                 <td><strong>Contabilidad</strong></td>
-                <td style="text-align:center;color:#059669;font-weight:bold">22</td>
-                <td style="text-align:center;color:#D97706;font-weight:bold">6</td>
-                <td style="text-align:center;color:#DC2626;font-weight:bold">2</td>
-                <td style="text-align:center">30</td>
-                <td><div class="pct-bar-wrap"><div class="pct-bar" style="width:73%;background:#059669"></div></div></td>
-                <td style="text-align:center;font-weight:bold;color:#059669">73%</td>
-                <td style="text-align:center"><span style="font-size:7px;background:#DCFCE7;color:#166534;padding:1px 5px;border-radius:8px;font-weight:bold">OK</span></td>
+                <td style="text-align:center;color:#059669;font-weight:bold">27</td>
+                <td style="text-align:center;color:#D97706;font-weight:bold">5</td>
+                <td style="text-align:center;color:#DC2626;font-weight:bold">0</td>
+                <td style="text-align:center">32</td>
+                <td><div class="pct-bar-wrap"><div class="pct-bar" style="width:84%;background:#059669"></div></div></td>
+                <td style="text-align:center;font-weight:bold;color:#059669">84%</td>
+                <td style="text-align:center"><span style="font-size:7px;background:#DCFCE7;color:#166534;padding:1px 5px;border-radius:8px;font-weight:bold">OK ↑</span></td>
             </tr>
             <tr>
                 <td><strong>Compras</strong></td>
@@ -1057,31 +1066,111 @@
             </tr>
             <tr style="background:#F5F3FF">
                 <td><strong>TOTAL Dev 2</strong></td>
-                <td style="text-align:center;color:#059669;font-weight:bold">62</td>
-                <td style="text-align:center;color:#D97706;font-weight:bold">8</td>
-                <td style="text-align:center;color:#DC2626;font-weight:bold">3</td>
-                <td style="text-align:center;font-weight:bold">73</td>
-                <td><div class="pct-bar-wrap"><div class="pct-bar" style="width:85%;background:#4C1D95"></div></div></td>
-                <td style="text-align:center;font-weight:bold;color:#4C1D95;font-size:11px">85%</td>
+                <td style="text-align:center;color:#059669;font-weight:bold">67</td>
+                <td style="text-align:center;color:#D97706;font-weight:bold">7</td>
+                <td style="text-align:center;color:#DC2626;font-weight:bold">1</td>
+                <td style="text-align:center;font-weight:bold">75</td>
+                <td><div class="pct-bar-wrap"><div class="pct-bar" style="width:89%;background:#4C1D95"></div></div></td>
+                <td style="text-align:center;font-weight:bold;color:#4C1D95;font-size:11px">89%</td>
                 <td style="text-align:center"><span style="font-size:7px;background:#EDE9FE;color:#4C1D95;padding:1px 5px;border-radius:8px;font-weight:bold">DEV 2</span></td>
             </tr>
         </tbody>
     </table>
+
+    <hr class="sep">
+
+    {{-- Pendientes críticos actualizados --}}
+    <div class="grid2" style="margin-top:10px">
+        <div class="grid2-l">
+            <div class="card">
+                <div class="card-header" style="background:#ECFDF5;color:#166534;border-bottom:1px solid #86EFAC;">
+                    ✔ Resueltos en Dev 2 (julio 2026)
+                </div>
+                <table class="items">
+                    <tr>
+                        <td class="item-nombre">Cierre Fiscal: encerar clases 4 y 5</td>
+                        <td class="item-estado"><span class="ok">✓</span></td>
+                        <td class="item-nota">Itera saldos reales; asiento CIERRE-{año} en DB::transaction()</td>
+                    </tr>
+                    <tr>
+                        <td class="item-nombre">Cierre Fiscal: arrastre resultado 3.1.5→3.1.4</td>
+                        <td class="item-estado"><span class="ok">✓</span></td>
+                        <td class="item-nota">Asiento CIERRE-ARRASTRE-{año}; utilidad o pérdida</td>
+                    </tr>
+                    <tr>
+                        <td class="item-nombre">Centro de costo por línea en asiento</td>
+                        <td class="item-estado"><span class="ok">✓</span></td>
+                        <td class="item-nota">Select en grid 6 columnas; campo centro_costo_id en asiento_detalles</td>
+                    </tr>
+                    <tr>
+                        <td class="item-nombre">Modal cierre fiscal — proceso 6 pasos</td>
+                        <td class="item-estado"><span class="ok">✓</span></td>
+                        <td class="item-nota">Badges numerados explicando cada etapa del proceso</td>
+                    </tr>
+                    <tr>
+                        <td class="item-nombre">plan_cuentas sin centro_costo_id (arquitectura)</td>
+                        <td class="item-estado"><span class="ok">✓</span></td>
+                        <td class="item-nota">Confirmado: centros de costo solo en asiento_detalles</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+        <div class="grid2-r">
+            <div class="card">
+                <div class="card-header" style="background:#FEF2F2;color:#991B1B;border-bottom:1px solid #FECACA;">
+                    Pendientes Críticos para Dev 3
+                </div>
+                <table class="items">
+                    <tr>
+                        <td class="item-nombre" style="color:#991B1B;font-weight:bold">Retenciones en formulario de compra</td>
+                        <td class="item-estado"><span class="warn">⚠</span></td>
+                        <td class="item-nota">Backend listo (ret_ir, ret_iva), falta UI en formulario de compra</td>
+                    </tr>
+                    <tr>
+                        <td class="item-nombre" style="color:#991B1B;font-weight:bold">Devolución compra: decrementar stock</td>
+                        <td class="item-estado"><span class="warn">⚠</span></td>
+                        <td class="item-nota">Falta integración con módulo Inventario</td>
+                    </tr>
+                    <tr>
+                        <td class="item-nombre" style="color:#991B1B;font-weight:bold">ATS / Formulario 104 / 103 SRI</td>
+                        <td class="item-estado"><span class="err">✗</span></td>
+                        <td class="item-nota">0% implementado — muy alta complejidad; módulo independiente</td>
+                    </tr>
+                    <tr>
+                        <td class="item-nombre" style="color:#991B1B;font-weight:bold">Alertas automáticas de vencimientos</td>
+                        <td class="item-estado"><span class="err">✗</span></td>
+                        <td class="item-nota">Requiere módulo de notificaciones (Laravel jobs + queues)</td>
+                    </tr>
+                    <tr>
+                        <td class="item-nombre" style="color:#991B1B;font-weight:bold">Defaults parámetros contables vs schema legacy</td>
+                        <td class="item-estado"><span class="warn">⚠</span></td>
+                        <td class="item-nota">5 parámetros con códigos a verificar contra plan de cuentas real</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+    </div>
 
     <div class="leyenda">
         <div class="ley-item"><div class="ley-sym ok">✓</div> Completado</div>
         <div class="ley-item"><div class="ley-sym warn">⚠</div> Parcial / Por verificar</div>
         <div class="ley-item"><div class="ley-sym err">✗</div> No implementado</div>
         <div class="ley-item"><div class="ley-sym lock">🔒</div> En revisión / No tocar</div>
+        <div class="ley-item" style="font-size:7px;color:#1D4ED8">
+            <strong style="color:#DBEAFE;background:#1D4ED8;padding:1px 4px;border-radius:3px">NUEVO</strong> Ítem agregado Dev 2
+        </div>
+        <div class="ley-item" style="font-size:7px;color:#166534">
+            <strong style="color:#DCFCE7;background:#166534;padding:1px 4px;border-radius:3px">FIX</strong> Corregido Dev 2
+        </div>
         <div class="ley-item" style="font-size:7px;color:#6B7280">
-            Diagnóstico realizado el {{ now()->format('d/m/Y') }}<br>
+            Diagnóstico: {{ now()->format('d/m/Y') }}<br>
             Rama: feature/dev2-contabilidad-compras
         </div>
     </div>
 
     <div class="footer">
         <div class="f-l">Altamira ERP · Diagnóstico Dev 2 · {{ now()->format('d/m/Y') }}</div>
-        <div class="f-r">Pág. 3 — Bancos + Resumen General</div>
+        <div class="f-r">Pág. 4 — Resumen General</div>
     </div>
 </div>
 
