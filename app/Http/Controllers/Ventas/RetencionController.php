@@ -128,6 +128,7 @@ class RetencionController extends Controller
                     'retencion_id'   => $retencion->id,
                     'tipo'           => $det['tipo'],
                     'codigo'         => $det['codigo'],
+                    'descripcion'    => $det['descripcion'] ?? null,
                     'base_imponible' => $det['base'],
                     'porcentaje'     => $det['porcentaje'],
                     'valor_retenido' => $det['base'] * $det['porcentaje'] / 100,

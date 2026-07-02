@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import { Head, usePage, router, Link } from '@inertiajs/react'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
@@ -6,7 +6,8 @@ import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { cn, formatMoneda, formatFecha } from '@/lib/utils'
-import { X, Save, Send, AlertTriangle } from 'lucide-react'
+import { toastError } from '@/lib/toast'
+import { X, Save, Send } from 'lucide-react'
 import type { PageProps, Empresa } from '@/types'
 
 interface FacturaDetalleItem {
@@ -45,6 +46,7 @@ interface LineaNC {
 interface Props extends PageProps {
     factura: FacturaOrigen
     empresa_activa: Empresa
+    errors: { detalles?: string }
 }
 
 function calcularTotal(linea: LineaNC): number {
@@ -53,7 +55,7 @@ function calcularTotal(linea: LineaNC): number {
 }
 
 export default function Form() {
-    const { factura } = usePage<Props>().props
+    const { factura, errors } = usePage<Props>().props
 
     const [lineas, setLineas] = useState<LineaNC[]>(
         factura.detalles.map(d => ({
@@ -61,7 +63,7 @@ export default function Form() {
             seleccionada: false,
             descripcion: d.descripcion,
             cantidad_original: d.cantidad,
-            cantidad_devolver: d.cantidad,
+            cantidad_devolver: Math.floor(d.cantidad),
             precio_unitario: d.precio_unitario,
             porcentaje_iva: d.porcentaje_iva,
             total: d.total,
@@ -70,7 +72,12 @@ export default function Form() {
 
     const [motivo, setMotivo] = useState('')
     const [guardando, setGuardando] = useState(false)
-    const [errores, setErrores] = useState<string[]>([])
+
+    useEffect(() => {
+        if (errors?.detalles) {
+            toastError(errors.detalles)
+        }
+    }, [errors?.detalles])
 
     const toggleLinea = (idx: number) => {
         setLineas(prev => {
@@ -83,7 +90,7 @@ export default function Form() {
     const updateCantidad = (idx: number, cantidad: number) => {
         setLineas(prev => {
             const next = [...prev]
-            const linea = { ...next[idx], cantidad_devolver: Math.min(Math.max(0.01, cantidad), next[idx].cantidad_original) }
+            const linea = { ...next[idx], cantidad_devolver: Math.min(Math.max(1, parseInt(String(cantidad), 10) || 1), Math.floor(next[idx].cantidad_original)) }
             linea.total = calcularTotal(linea)
             next[idx] = linea
             return next
@@ -99,11 +106,14 @@ export default function Form() {
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault()
-        const errs: string[] = []
-        if (seleccionadas.length === 0) errs.push('Seleccione al menos un ítem para la nota de crédito.')
-        if (!motivo.trim()) errs.push('El motivo de la nota de crédito es obligatorio.')
-        if (errs.length > 0) { setErrores(errs); return }
-        setErrores([])
+        if (seleccionadas.length === 0) {
+            toastError('Seleccione al menos un ítem para la nota de crédito.')
+            return
+        }
+        if (!motivo.trim()) {
+            toastError('El motivo de la nota de crédito es obligatorio.')
+            return
+        }
         setGuardando(true)
         router.post(route('ventas.notas-credito.store'), {
             factura_id: factura.id,
@@ -131,21 +141,6 @@ export default function Form() {
             />
 
             <form onSubmit={handleSubmit} className="p-6 space-y-6 max-w-5xl">
-
-                {errores.length > 0 && (
-                    <div
-                        className="rounded-lg p-4 border"
-                        style={{ background: 'rgba(239,68,68,.1)', borderColor: 'rgba(239,68,68,.3)' }}
-                    >
-                        <ul className="space-y-1">
-                            {errores.map((e, i) => (
-                                <li key={i} className="text-sm text-red-400 flex items-center gap-2">
-                                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" /> {e}
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
-                )}
 
                 {/* Factura origen */}
                 <div
@@ -219,12 +214,16 @@ export default function Form() {
                                             {l.seleccionada ? (
                                                 <Input
                                                     type="number"
-                                                    min="0.01"
+                                                    min="1"
                                                     max={l.cantidad_original}
-                                                    step="0.01"
+                                                    step="1"
                                                     value={l.cantidad_devolver}
                                                     className="text-xs text-right h-7"
-                                                    onChange={e => updateCantidad(idx, Number(e.target.value))}
+                                                    onKeyDown={e => { if (e.key === '.' || e.key === ',') e.preventDefault() }}
+                                                    onChange={e => {
+                                                        const val = parseInt(e.target.value, 10)
+                                                        updateCantidad(idx, isNaN(val) || val < 1 ? 1 : val)
+                                                    }}
                                                 />
                                             ) : (
                                                 <span style={{ color: 'var(--text-muted)' }}>—</span>

@@ -6,6 +6,7 @@ import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Badge } from '@/Components/ui/badge'
 import { cn, formatFecha } from '@/lib/utils'
+import { usePermiso } from '@/Hooks/usePermiso'
 import { Plus, Search, Eye, FileText, ChevronLeft, ChevronRight } from 'lucide-react'
 import type { PageProps, PaginatedData } from '@/types'
 
@@ -39,6 +40,7 @@ const SRI_CONFIG = {
 
 export default function Index() {
     const { guias, filtros } = usePage<Props>().props
+    const { puede } = usePermiso('ventas')
 
     const [filtro, setFiltro] = useState<Filtros>({
         fecha_desde: filtros.fecha_desde ?? '',
@@ -65,14 +67,6 @@ export default function Index() {
                 title="Guías de Remisión"
                 description="Gestión de guías de remisión"
                 breadcrumbs={[{ label: 'Ventas' }, { label: 'Guías de Remisión' }]}
-                actions={
-                    <Link href={route('ventas.guias-remision.create')}>
-                        <Button size="sm">
-                            <Plus className="w-4 h-4" />
-                            Nueva Guía
-                        </Button>
-                    </Link>
-                }
             />
 
             <div className="p-6 space-y-4">
@@ -81,6 +75,16 @@ export default function Index() {
                     className="rounded-xl p-4 border"
                     style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
                 >
+                    <div className="flex items-center gap-3 mb-4 flex-wrap">
+                        {puede('crear') && (
+                            <Link href={route('ventas.guias-remision.create')}>
+                                <Button>
+                                    <Plus className="w-4 h-4" />
+                                    Nueva Guía
+                                </Button>
+                            </Link>
+                        )}
+                    </div>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <div>
                             <label className="text-xs mb-1 block" style={{ color: 'var(--text-muted)' }}>Desde</label>

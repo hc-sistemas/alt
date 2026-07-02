@@ -107,6 +107,18 @@ class NotaCreditoController extends Controller
             if (!$original || $det['cantidad'] > $original->cantidad) {
                 return back()->withErrors(['detalles' => 'La cantidad a devolver no puede superar la cantidad original.']);
             }
+
+            $yaDevuelto = \App\Models\NotaCreditoDetalle::where('producto_id', $original->producto_id)
+                ->whereHas('notaCredito', fn($q) => $q
+                    ->where('factura_id', $factura->id)
+                    ->where('estado', 'activa')
+                )->sum('cantidad');
+
+            if ((float)$yaDevuelto + (float)$det['cantidad'] > (float)$original->cantidad) {
+                return back()->withErrors([
+                    'detalles' => "La cantidad a devolver para \"{$original->descripcion}\" supera lo disponible. Ya devuelto: {$yaDevuelto}, original: {$original->cantidad}."
+                ]);
+            }
         }
 
         $subtotal = 0;
@@ -115,11 +127,11 @@ class NotaCreditoController extends Controller
         foreach ($request->detalles as $det) {
             $original   = $factura->detalles->firstWhere('id', $det['detalle_id']);
             $cantidad   = (float)$det['cantidad'];
-            $precio     = (float)$original->precio;
+            $precio     = (float)$original->precio_unitario;
             $descPct    = (float)$original->descuento_pct;
             $descuento  = $precio * $cantidad * ($descPct / 100);
             $neto       = ($precio * $cantidad) - $descuento;
-            $iva        = (float)$original->iva_pct > 0 ? $neto * ($original->iva_pct / 100) : 0;
+            $iva        = (float)$original->porcentaje_iva > 0 ? $neto * ($original->porcentaje_iva / 100) : 0;
 
             $subtotal += $neto;
             $totalIva += $iva;
@@ -157,11 +169,11 @@ class NotaCreditoController extends Controller
             foreach ($request->detalles as $det) {
                 $original  = $factura->detalles->firstWhere('id', $det['detalle_id']);
                 $cantidad  = (float)$det['cantidad'];
-                $precio    = (float)$original->precio;
+                $precio    = (float)$original->precio_unitario;
                 $descPct   = (float)$original->descuento_pct;
                 $descuento = $precio * $cantidad * ($descPct / 100);
                 $neto      = ($precio * $cantidad) - $descuento;
-                $ivaPct    = (float)$original->iva_pct;
+                $ivaPct    = (float)$original->porcentaje_iva;
                 $iva       = $ivaPct > 0 ? $neto * ($ivaPct / 100) : 0;
 
                 NotaCreditoDetalle::create([
@@ -179,7 +191,7 @@ class NotaCreditoController extends Controller
                             productoId: $original->producto_id,
                             bodegaId:   $bodegaCuarentena->id,
                             cantidad:   $cantidad,
-                            costoUnitario: (float)$original->precio,
+                            costoUnitario: (float)$original->precio_unitario,
                             docTipo:    'NC',
                             docId:      $notaCredito->id,
                         );
