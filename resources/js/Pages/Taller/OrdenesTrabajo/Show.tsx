@@ -511,6 +511,11 @@ export default function OrdenTrabajoShow() {
                     <Button variant="outline" onClick={() => router.visit(route('taller.ordenes.index'))}>
                         Volver al Ingreso
                     </Button>
+                    {orden.estado === 'listo' && (
+                        <Button onClick={() => router.visit(route('taller.liquidacion.show', orden.id))}>
+                            Liquidar Orden
+                        </Button>
+                    )}
                 </div>
             </div>
 

@@ -39,5 +39,12 @@ interface InventarioServiceInterface
         float $cantidad
     ): void;
 
+    public function confirmarSalida(
+        int $productoId,
+        int $bodegaId,
+        string $docTipo,
+        int $docId
+    ): void;
+
     public function getSaldoDisponible(int $productoId, int $bodegaId): float;
 }
