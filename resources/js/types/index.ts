@@ -966,3 +966,98 @@ export interface Nomina {
     procesadoPor?: { id: number; nombre: string }
     pagadoPor?: { id: number; nombre: string }
 }
+
+// ── Taller ───────────────────────────────────────────────────────────────────
+
+export interface TallerTipoEquipo {
+    id: number
+    descripcion: string
+    estado: boolean
+}
+
+export interface TallerEquipo {
+    id: number
+    tipo_id: number | null
+    marca: string | null
+    modelo: string | null
+    numero_serie: string | null
+    color: string | null
+    medida: string | null
+    adicional: string | null
+    observaciones: string | null
+    estado: number
+    tipo?: TallerTipoEquipo
+}
+
+export interface TallerDiagnostico {
+    id: number
+    orden_id: number
+    tecnico_id: number | null
+    fecha: string
+    hora: string | null
+    diagnostico: string
+    tiempo_estimado: number | null
+    tipo_tiempo: 'horas' | 'dias' | null
+    cliente_aprueba: boolean | null
+    fecha_aprobacion: string | null
+    observacion_aprobacion: string | null
+    usuario_aprobacion_id: number | null
+    estado: 'pendiente' | 'aprobado' | 'rechazado'
+    tecnico?: { id: number; nombre: string } | null
+}
+
+export interface TallerOtRepuesto {
+    id: number
+    orden_id: number
+    producto_id: number
+    numero_serie: string | null
+    cantidad: number
+    costo_unitario: number
+    precio_venta: number
+    estado: string
+    producto?: Producto
+}
+
+export interface TallerOrdenTrabajo {
+    id: number
+    empresa_id: number
+    ingreso_id: number
+    tecnico_id: number | null
+    numero: string | null
+    fecha_inicio: string
+    fecha_fin_estimada: string | null
+    fecha_fin_real: string | null
+    tipo_orden: number
+    descripcion_trabajo: string | null
+    costo_mano_obra: number
+    costo_repuestos: number
+    costo_total: number
+    es_garantia: boolean
+    factura_id: number | null
+    estado: string
+    observaciones: string | null
+    ingreso?: TallerIngreso
+    tecnico?: { id: number; nombre: string } | null
+    diagnosticos?: TallerDiagnostico[]
+    repuestos?: TallerOtRepuesto[]
+}
+
+export interface TallerIngreso {
+    id: number
+    empresa_id: number
+    cliente_id: number
+    equipo_id: number
+    usuario_id: number | null
+    fecha: string
+    hora: string | null
+    diagnostico_inicial: string | null
+    imagen: string | null
+    video: string | null
+    observaciones: string | null
+    estado: number
+    created_at: string
+    cliente?: Cliente
+    equipo?: TallerEquipo
+    usuario?: { id: number; nombre: string }
+    ordenesTrabajo?: TallerOrdenTrabajo[]
+}

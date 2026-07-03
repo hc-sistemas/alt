@@ -465,11 +465,13 @@ Route::middleware('auth')->group(function () {
         Route::get('/ingresos/crear', [IngresoController::class, 'create'])->name('ingresos.create');
         Route::post('/ingresos', [IngresoController::class, 'store'])->name('ingresos.store');
         Route::get('/ingresos/{ingreso}', [IngresoController::class, 'show'])->name('ingresos.show');
+        Route::get('/equipos/buscar', [IngresoController::class, 'buscarEquipo'])->name('equipos.buscar');
 
         // Órdenes de trabajo
         Route::get('/ordenes', [OrdenTrabajoController::class, 'index'])->name('ordenes.index');
         Route::get('/ordenes/{orden}', [OrdenTrabajoController::class, 'show'])->name('ordenes.show');
         Route::patch('/ordenes/{orden}/estado', [OrdenTrabajoController::class, 'cambiarEstado'])->name('ordenes.cambiar-estado');
+        Route::post('/ordenes/{orden}/repuestos', [LiquidacionController::class, 'agregarRepuesto'])->name('ordenes.repuestos.store');
 
         // Diagnósticos
         Route::get('/ordenes/{orden}/diagnostico', [DiagnosticoController::class, 'create'])->name('diagnosticos.create');
