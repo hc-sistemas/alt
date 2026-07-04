@@ -108,7 +108,6 @@ const navItems: NavItem[] = [
         hijos: [
             { nombre: 'Ingresos', href: '/taller/ingresos' },
             { nombre: 'Órdenes de Trabajo', href: '/taller/ordenes' },
-            { nombre: 'Equipos', href: '/taller/equipos' },
             { nombre: 'Tipos de Equipo', href: '/taller/tipos-equipo' },
         ]
     },

@@ -52,7 +52,6 @@ export default function IngresoForm() {
     const [imagen, setImagen] = useState('')
 
     const [guardando, setGuardando] = useState(false)
-    const [erroresForm, setErroresForm] = useState<string[]>([])
 
     // ── Handlers: cliente ────────────────────────────────────────────────────
 
@@ -125,8 +124,15 @@ export default function IngresoForm() {
 
         const errs: string[] = []
         if (!clienteSeleccionado) errs.push('Debe seleccionar un cliente.')
-        if (errs.length > 0) { setErroresForm(errs); return }
-        setErroresForm([])
+        if (estadoEquipo === 'idle') {
+            errs.push('Debe buscar o registrar el equipo.')
+        }
+        if (estadoEquipo === 'new') {
+            if (!equipoForm.tipo_id) errs.push('El tipo de equipo es obligatorio.')
+            if (!equipoForm.marca.trim()) errs.push('La marca del equipo es obligatoria.')
+            if (!equipoForm.modelo.trim()) errs.push('El modelo del equipo es obligatorio.')
+        }
+        if (errs.length > 0) { errs.forEach(toastError); return }
         setGuardando(true)
 
         router.post(route('taller.ingresos.store'), {
@@ -173,18 +179,6 @@ export default function IngresoForm() {
                             <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
                             {errors.error}
                         </p>
-                    </div>
-                )}
-
-                {erroresForm.length > 0 && (
-                    <div className="rounded-lg p-4 border" style={{ background: 'rgba(239,68,68,.1)', borderColor: 'rgba(239,68,68,.3)' }}>
-                        <ul className="space-y-1">
-                            {erroresForm.map((e, i) => (
-                                <li key={i} className="text-sm text-red-400 flex items-center gap-2">
-                                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" /> {e}
-                                </li>
-                            ))}
-                        </ul>
                     </div>
                 )}
 
@@ -307,7 +301,7 @@ export default function IngresoForm() {
                     {estadoEquipo === 'new' && (
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div>
-                                <Label style={{ color: 'var(--text-main)' }}>Tipo</Label>
+                                <Label style={{ color: 'var(--text-main)' }}>Tipo *</Label>
                                 <select
                                     className="mt-1 w-full h-9 rounded-md border px-3 text-sm"
                                     style={{ background: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
@@ -321,12 +315,12 @@ export default function IngresoForm() {
                                 </select>
                             </div>
                             <div>
-                                <Label style={{ color: 'var(--text-main)' }}>Marca</Label>
+                                <Label style={{ color: 'var(--text-main)' }}>Marca *</Label>
                                 <Input className="mt-1" value={equipoForm.marca}
                                     onChange={e => setEquipoForm(f => ({ ...f, marca: e.target.value }))} />
                             </div>
                             <div>
-                                <Label style={{ color: 'var(--text-main)' }}>Modelo</Label>
+                                <Label style={{ color: 'var(--text-main)' }}>Modelo *</Label>
                                 <Input className="mt-1" value={equipoForm.modelo}
                                     onChange={e => setEquipoForm(f => ({ ...f, modelo: e.target.value }))} />
                             </div>

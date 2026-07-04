@@ -1059,5 +1059,5 @@ export interface TallerIngreso {
     cliente?: Cliente
     equipo?: TallerEquipo
     usuario?: { id: number; nombre: string }
-    ordenesTrabajo?: TallerOrdenTrabajo[]
+    ordenes_trabajo?: TallerOrdenTrabajo[]
 }

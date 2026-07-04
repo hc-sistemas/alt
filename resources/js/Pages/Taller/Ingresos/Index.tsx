@@ -108,7 +108,7 @@ export default function IngresosIndex() {
                                 </tr>
                             ) : ingresos.data.map(ingreso => {
                                 const cfg = ESTADO_CONFIG[ingreso.estado] ?? ESTADO_CONFIG[0]
-                                const ot = ingreso.ordenesTrabajo?.[0]
+                                const ot = ingreso.ordenes_trabajo?.[0]
                                 return (
                                     <tr key={ingreso.id}
                                         className="border-t hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"

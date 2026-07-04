@@ -152,7 +152,7 @@ export default function IngresoShow() {
                     <div className="px-4 py-3" style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
                         <h3 className="text-sm font-semibold" style={{ color: 'var(--text-main)' }}>Órdenes de Trabajo</h3>
                     </div>
-                    {(ingreso.ordenesTrabajo ?? []).length === 0 ? (
+                    {(ingreso.ordenes_trabajo ?? []).length === 0 ? (
                         <p className="p-4 text-sm" style={{ color: 'var(--text-muted)' }}>No hay órdenes de trabajo generadas.</p>
                     ) : (
                         <table className="w-full text-sm">
@@ -165,7 +165,7 @@ export default function IngresoShow() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {(ingreso.ordenesTrabajo ?? []).map(ot => {
+                                {(ingreso.ordenes_trabajo ?? []).map(ot => {
                                     const cfg = ESTADO_OT[ot.estado] ?? { label: ot.estado, variant: 'secondary' as const }
                                     return (
                                         <tr key={ot.id} className="border-t" style={{ borderColor: 'var(--border)' }}>
