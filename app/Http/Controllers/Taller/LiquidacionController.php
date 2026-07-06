@@ -30,6 +30,8 @@ class LiquidacionController extends Controller
 
     public function show(TallerOrdenTrabajo $orden): Response
     {
+        abort_if((int) $orden->empresa_id !== (int) session('empresa_activa_id'), 403);
+
         $orden->load(['ingreso.cliente', 'ingreso.equipo', 'repuestos.producto', 'tecnico']);
 
         return Inertia::render('Taller/Liquidacion/Show', [
@@ -39,6 +41,8 @@ class LiquidacionController extends Controller
 
     public function liquidar(Request $request, TallerOrdenTrabajo $orden): RedirectResponse
     {
+        abort_if((int) $orden->empresa_id !== (int) session('empresa_activa_id'), 403);
+
         $data = $request->validate([
             'costo_mano_obra' => 'required|numeric|min:0',
             'forma_pago'      => 'required|string',
@@ -192,6 +196,8 @@ class LiquidacionController extends Controller
 
     public function agregarRepuesto(Request $request, TallerOrdenTrabajo $orden): RedirectResponse
     {
+        abort_if((int) $orden->empresa_id !== (int) session('empresa_activa_id'), 403);
+
         $data = $request->validate([
             'producto_id'  => 'required|integer|exists:productos,id',
             'cantidad'     => 'required|integer|min:1',

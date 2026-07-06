@@ -84,8 +84,8 @@
 | # | Descripción | Estado |
 |---|---|---|
 | B-01 | Migración `create_liquidaciones_table` faltaba — causaba `SQLSTATE[42P01]` en `/rrhh/liquidaciones` | ✅ Corregido: creada `2026_07_06_000002_create_liquidaciones_table.php` |
-| B-02 | `taller_ingresos` no tiene columna `updated_at` — Eloquent timestamps causaría error en ORM | ✅ Documentado: usar `DB::table()` o `public $timestamps = false` en el modelo |
-| B-03 | `taller_equipos` no tiene `empresa_id` — filtrar por empresa no es posible directamente | ✅ Documentado: filtrar a través de `taller_ingresos.empresa_id` |
+| B-02 | `taller_ingresos` no tiene columna `updated_at` — Eloquent timestamps causaría error en ORM | ✅ Corregido (2026-07-06): `TallerIngreso` ya tenía `const UPDATED_AT = null` — Laravel omite `updated_at` en CREATE/UPDATE/SAVE. Verificado con tests tinker: create/update/save/query-builder sin errores. |
+| B-03 | `taller_equipos` no tiene `empresa_id` — acceso cruzado entre empresas en `show()` methods | ✅ Corregido (2026-07-06): Ningún query filtra `empresa_id` directo en `taller_equipos` (los listados index ya filtran vía `taller_ingresos.empresa_id`). Agregado `abort_if(empresa_id mismatch, 403)` en todos los métodos con route model binding: `IngresoController::show`, `OrdenTrabajoController::show/cambiarEstado`, `DiagnosticoController::create/store/aprobar`, `LiquidacionController::show/liquidar/agregarRepuesto`. |
 | B-04 | `datafast_lotes` pre-existentes (id=1,2) sin registro en `datafast_liquidaciones` — inconsistencia de datos legacy | ⚠️ Data legacy — no bloquea nuevos flujos |
 
 ---
@@ -97,6 +97,7 @@ Migraciones:    100/100 Ran  ✅
 npm run build:  0 errores    ✅
 php artisan:    OK           ✅
 Tests:          10/10        ✅
+Bugs B-02/B-03: ✅ Corregidos (2026-07-06)
 ```
 
 **Rama lista para revisión final antes de push a `origin/feature/dev2-contabilidad-compras`.**

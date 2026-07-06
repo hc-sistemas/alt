@@ -50,6 +50,8 @@ class OrdenTrabajoController extends Controller
 
     public function show(TallerOrdenTrabajo $orden): Response
     {
+        abort_if((int) $orden->empresa_id !== (int) session('empresa_activa_id'), 403);
+
         $orden->load(['ingreso.cliente', 'ingreso.equipo.tipo', 'tecnico', 'diagnosticos.tecnico', 'repuestos.producto']);
 
         return Inertia::render('Taller/OrdenesTrabajo/Show', [
@@ -65,6 +67,8 @@ class OrdenTrabajoController extends Controller
 
     public function cambiarEstado(Request $request, TallerOrdenTrabajo $orden): RedirectResponse
     {
+        abort_if((int) $orden->empresa_id !== (int) session('empresa_activa_id'), 403);
+
         $data = $request->validate([
             'estado'     => 'required|string|in:pendiente,en_proceso,listo,entregado,facturado,garantia',
             'tecnico_id' => 'nullable|integer|exists:usuarios,id',

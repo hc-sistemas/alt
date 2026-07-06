@@ -21,6 +21,8 @@ class DiagnosticoController extends Controller
 
     public function create(TallerOrdenTrabajo $orden): Response
     {
+        abort_if((int) $orden->empresa_id !== (int) session('empresa_activa_id'), 403);
+
         $orden->load(['ingreso.cliente', 'ingreso.equipo']);
 
         return Inertia::render('Taller/Diagnosticos/Form', [
@@ -30,6 +32,8 @@ class DiagnosticoController extends Controller
 
     public function store(Request $request, TallerOrdenTrabajo $orden): RedirectResponse
     {
+        abort_if((int) $orden->empresa_id !== (int) session('empresa_activa_id'), 403);
+
         $data = $request->validate([
             'diagnostico'     => 'required|string',
             'tiempo_estimado' => 'nullable|integer',
@@ -67,6 +71,8 @@ class DiagnosticoController extends Controller
 
     public function aprobar(Request $request, TallerDiagnostico $diagnostico): RedirectResponse
     {
+        abort_if((int) $diagnostico->orden->empresa_id !== (int) session('empresa_activa_id'), 403);
+
         $data = $request->validate([
             'aprueba'     => 'required|boolean',
             'observacion' => 'nullable|string',
