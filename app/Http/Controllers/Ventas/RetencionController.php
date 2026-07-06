@@ -58,16 +58,30 @@ class RetencionController extends Controller
             'factura_id' => 'required|integer|exists:facturas,id',
         ]);
 
-        $factura = Factura::with(['cliente.empresa', 'detalles'])
+        $factura = Factura::with(['cliente', 'detalles'])
             ->findOrFail($request->factura_id);
 
         // Solo para facturas de clientes con agente_retencion = true
-        if (!$factura->cliente?->empresa?->agente_retencion) {
+        if (!$factura->cliente?->agente_retencion) {
             return back()->withErrors(['error' => 'El cliente no es agente de retención.']);
         }
 
+        // ⚠️ CATÁLOGO PROVISIONAL DE PRUEBA — NO son los porcentajes oficiales vigentes del SRI.
+        // Confirmar/reemplazar con valores oficiales (Res. NAC-DGERCGC26-00000009 u otra vigente)
+        // cuando el licen integre el módulo SRI real.
+        $impuestos = [
+            ['codigo' => '303', 'descripcion' => 'Honorarios profesionales', 'tipo' => 'IR', 'porcentaje' => 10],
+            ['codigo' => '304', 'descripcion' => 'Servicios predomina mano de obra', 'tipo' => 'IR', 'porcentaje' => 3],
+            ['codigo' => '312', 'descripcion' => 'Transferencia de bienes muebles', 'tipo' => 'IR', 'porcentaje' => 2],
+            ['codigo' => '343', 'descripcion' => 'Arrendamiento de bienes inmuebles', 'tipo' => 'IR', 'porcentaje' => 10],
+            ['codigo' => '725', 'descripcion' => 'Retención IVA bienes', 'tipo' => 'IVA', 'porcentaje' => 30],
+            ['codigo' => '727', 'descripcion' => 'Retención IVA servicios', 'tipo' => 'IVA', 'porcentaje' => 70],
+            ['codigo' => '729', 'descripcion' => 'Retención IVA servicios profesionales', 'tipo' => 'IVA', 'porcentaje' => 100],
+        ];
+
         return Inertia::render('Ventas/Retenciones/Form', [
-            'factura' => $factura->load('cliente'),
+            'factura'   => $factura->load('cliente'),
+            'impuestos' => $impuestos,
         ]);
     }
 
@@ -89,37 +103,45 @@ class RetencionController extends Controller
 
         $retencion = DB::transaction(function () use ($request, $empresaId, $factura, $total) {
             $numero = $this->secuencial->siguiente($empresaId, 'RET');
+            [$est, $pe, $sec] = explode('-', $numero);
 
             $retencion = Retencion::create([
-                'empresa_id'   => $empresaId,
-                'factura_id'   => $factura->id,
-                'cliente_id'   => $factura->cliente_id,
-                'usuario_id'   => Auth::id(),
-                'numero'       => $numero,
-                'fecha_emision'=> now()->toDateString(),
-                'total'        => $total,
-                'estado_sri'   => 'pendiente',
-                'estado'       => 'activa',
+                'empresa_id'        => $empresaId,
+                'factura_id'        => $factura->id,
+                'cliente_id'        => $factura->cliente_id,
+                'usuario_id'        => Auth::id(),
+                'numero_completo'   => $numero,
+                'establecimiento'   => $est,
+                'punto_emision'     => $pe,
+                'secuencial'        => ltrim($sec, '0') ?: '1',
+                'identificacion'    => $factura->identificacion,
+                'razon_social'      => $factura->razon_social,
+                'num_comp_retenido' => $factura->numero_completo,
+                'fecha_emision'     => now()->toDateString(),
+                'total'             => $total,
+                'estado_sri'        => 'pendiente',
+                'estado'            => 'activa',
             ]);
 
             foreach ($request->detalles as $det) {
                 RetencionDetalle::create([
-                    'retencion_id' => $retencion->id,
-                    'codigo'       => $det['codigo'],
-                    'descripcion'  => $det['descripcion'],
-                    'base'         => $det['base'],
-                    'porcentaje'   => $det['porcentaje'],
-                    'valor'        => $det['base'] * $det['porcentaje'] / 100,
+                    'retencion_id'   => $retencion->id,
+                    'tipo'           => $det['tipo'],
+                    'codigo'         => $det['codigo'],
+                    'descripcion'    => $det['descripcion'] ?? null,
+                    'base_imponible' => $det['base'],
+                    'porcentaje'     => $det['porcentaje'],
+                    'valor_retenido' => $det['base'] * $det['porcentaje'] / 100,
                 ]);
             }
 
             return $retencion;
         });
 
-        $this->auditoria->documento('crear', 'ventas', 'retenciones', $retencion->id, "Retención {$retencion->numero} creada");
+        $this->auditoria->documento('crear', 'ventas', 'retenciones', $retencion->id, "Retención {$retencion->numero_completo} creada");
 
         return redirect()->route('ventas.retenciones.show', $retencion->id)
-            ->with('flash', ['tipo' => 'exito', 'mensaje' => "Retención {$retencion->numero} creada correctamente."]);
+            ->with('flash', ['tipo' => 'exito', 'mensaje' => "Retención {$retencion->numero_completo} creada correctamente."]);
     }
 
     public function show(Retencion $retencion)

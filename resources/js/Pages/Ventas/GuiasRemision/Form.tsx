@@ -6,8 +6,9 @@ import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { formatMoneda } from '@/lib/utils'
-import { Plus, Trash2, Save, X, Send, AlertTriangle } from 'lucide-react'
-import type { PageProps, Empresa, Transportista } from '@/types'
+import { toastError } from '@/lib/toast'
+import { Plus, Trash2, Save, X, Send } from 'lucide-react'
+import type { PageProps, Transportista } from '@/types'
 
 interface FacturaDetalleItem {
     id: number
@@ -31,7 +32,6 @@ interface ItemTransporte {
 interface Props extends PageProps {
     factura: FacturaOrigen | null
     transportistas: Transportista[]
-    empresa_activa: Empresa
 }
 
 function itemDesdeDetalle(d: FacturaDetalleItem): ItemTransporte {
@@ -61,7 +61,6 @@ export default function Form() {
     )
 
     const [guardando, setGuardando] = useState(false)
-    const [errores, setErrores] = useState<string[]>([])
 
     const updateItem = (idx: number, patch: Partial<ItemTransporte>) => {
         setItems(prev => {
@@ -76,25 +75,23 @@ export default function Form() {
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault()
-        const errs: string[] = []
-        if (!transportistaId) errs.push('Seleccione un transportista.')
-        if (!fechaInicio) errs.push('La fecha de inicio de transporte es obligatoria.')
-        if (!destino.trim()) errs.push('El destino es obligatorio.')
-        if (!motivo.trim()) errs.push('El motivo es obligatorio.')
-        if (items.length === 0) errs.push('Agregue al menos un ítem a transportar.')
-        if (errs.length > 0) { setErrores(errs); return }
-        setErrores([])
+        if (!transportistaId) { toastError('Seleccione un transportista.'); return }
+        if (!fechaInicio) { toastError('La fecha de inicio de transporte es obligatoria.'); return }
+        if (!origen.trim()) { toastError('La dirección de partida es obligatoria.'); return }
+        if (!destino.trim()) { toastError('El destino es obligatorio.'); return }
+        if (!motivo.trim()) { toastError('El motivo es obligatorio.'); return }
+        if (items.length === 0) { toastError('Agregue al menos un ítem a transportar.'); return }
         setGuardando(true)
         router.post(route('ventas.guias-remision.store'), {
             factura_id: factura?.id ?? null,
             transportista_id: transportistaId,
-            fecha_inicio: fechaInicio,
-            fecha_fin: fechaFin,
-            origen,
-            destino,
+            fecha_ini_transporte: fechaInicio,
+            fecha_fin_transporte: fechaFin,
+            direccion_partida: origen,
+            direccion_destino: destino,
             ruta,
-            motivo,
-            items: items.map(i => ({ descripcion: i.descripcion, cantidad: i.cantidad })),
+            observaciones: motivo,
+            detalles: items.map(i => ({ descripcion: i.descripcion, cantidad: i.cantidad, unidad: 'unidad' })),
         }, {
             onError: () => setGuardando(false),
             onFinish: () => setGuardando(false),
@@ -114,21 +111,6 @@ export default function Form() {
             />
 
             <form onSubmit={handleSubmit} className="p-6 space-y-6 max-w-5xl">
-
-                {errores.length > 0 && (
-                    <div
-                        className="rounded-lg p-4 border"
-                        style={{ background: 'rgba(239,68,68,.1)', borderColor: 'rgba(239,68,68,.3)' }}
-                    >
-                        <ul className="space-y-1">
-                            {errores.map((e, i) => (
-                                <li key={i} className="text-sm text-red-400 flex items-center gap-2">
-                                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" /> {e}
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
-                )}
 
                 {/* Encabezado */}
                 <div
@@ -193,12 +175,13 @@ export default function Form() {
                             />
                         </div>
                         <div>
-                            <Label style={{ color: 'var(--text-main)' }}>Origen</Label>
+                            <Label style={{ color: 'var(--text-main)' }}>Origen *</Label>
                             <Input
                                 className="mt-1"
                                 placeholder="Punto de origen..."
                                 value={origen}
                                 onChange={e => setOrigen(e.target.value)}
+                                required
                             />
                         </div>
                         <div>
@@ -280,11 +263,17 @@ export default function Form() {
                                             ) : (
                                                 <Input
                                                     type="number"
-                                                    min="0.01"
-                                                    step="0.01"
+                                                    min="1"
+                                                    step="1"
                                                     value={item.cantidad}
                                                     className="text-xs text-right"
-                                                    onChange={e => updateItem(idx, { cantidad: Number(e.target.value) })}
+                                                    onKeyDown={e => {
+                                                        if (e.key === '.' || e.key === ',') e.preventDefault()
+                                                    }}
+                                                    onChange={e => {
+                                                        const val = parseInt(e.target.value, 10)
+                                                        updateItem(idx, { cantidad: isNaN(val) || val < 1 ? 1 : val })
+                                                    }}
                                                 />
                                             )}
                                         </td>

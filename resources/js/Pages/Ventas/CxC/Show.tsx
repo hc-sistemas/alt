@@ -1,9 +1,9 @@
-import { Head, usePage, Link } from '@inertiajs/react'
+import { Head, usePage, router } from '@inertiajs/react'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
 import { Badge } from '@/Components/ui/badge'
+import { Button } from '@/Components/ui/button'
 import { formatMoneda, formatFecha } from '@/lib/utils'
-import { ArrowLeft } from 'lucide-react'
 import type { PageProps } from '@/types'
 
 interface CxCCobro {
@@ -72,12 +72,6 @@ export default function Show() {
 
                 <div className="flex items-center gap-3">
                     <Badge variant={cfg.variant}>{cfg.label}</Badge>
-                    <Link href={route('ventas.cxc.index')}>
-                        <button type="button" className="flex items-center gap-1 text-xs transition-colors hover:text-amber-500" style={{ color: 'var(--text-muted)' }}>
-                            <ArrowLeft className="w-3.5 h-3.5" />
-                            Volver a Cuentas por Cobrar
-                        </button>
-                    </Link>
                 </div>
 
                 {/* Resumen financiero */}
@@ -110,7 +104,7 @@ export default function Show() {
                         <InfoRow label="Tipo documento" value={cuenta.documento_tipo} />
                         <InfoRow label="N° Documento" value={<span className="font-mono">{cuenta.documento_numero}</span>} />
                         <InfoRow label="Fecha emisión" value={formatFecha(cuenta.fecha_emision)} />
-                        <InfoRow label="Fecha vencimiento" value={formatFecha(cuenta.fecha_vencimiento)} />
+                        <InfoRow label="Fecha vencimiento" value={cuenta.fecha_vencimiento ? formatFecha(cuenta.fecha_vencimiento) : '—'} />
                         {cuenta.dias_vencido > 0 && (
                             <InfoRow
                                 label="Días vencido"
@@ -171,6 +165,12 @@ export default function Show() {
                             </table>
                         </div>
                     )}
+                </div>
+
+                <div className="flex gap-3 pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
+                    <Button variant="outline" onClick={() => router.visit(route('ventas.cxc.index'))}>
+                        Volver
+                    </Button>
                 </div>
             </div>
         </AppLayout>

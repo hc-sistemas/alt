@@ -37,8 +37,8 @@ interface PrefacturaCliente {
 
 interface PrefacturaFull {
     id: number
-    numero_completo: string
-    fecha: string
+    numero: string
+    fecha_emision: string
     estado: 'pendiente' | 'parcial' | 'liquidada' | 'anulada'
     total: number
     total_abonado: number
@@ -54,10 +54,10 @@ interface Props extends PageProps {
 }
 
 const ESTADO_CONFIG = {
-    pendiente: { label: 'Pendiente', variant: 'warning'   as const },
-    parcial:   { label: 'Parcial',   variant: 'info'      as const },
-    liquidada: { label: 'Liquidada', variant: 'success'   as const },
-    anulada:   { label: 'Anulada',   variant: 'secondary' as const },
+    pendiente: { label: 'Pendiente', variant: 'warning' as const },
+    parcial: { label: 'Parcial', variant: 'info' as const },
+    liquidada: { label: 'Liquidada', variant: 'success' as const },
+    anulada: { label: 'Anulada', variant: 'secondary' as const },
 }
 
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
@@ -132,13 +132,13 @@ export default function Show() {
 
     return (
         <AppLayout>
-            <Head title={`Prefactura ${prefactura.numero_completo}`} />
+            <Head title={`Prefactura ${prefactura.numero}`} />
             <PageHeader
-                title={`Prefactura ${prefactura.numero_completo}`}
+                title={`Prefactura ${prefactura.numero}`}
                 breadcrumbs={[
                     { label: 'Ventas' },
                     { label: 'Prefacturas', href: route('ventas.prefacturas.index') },
-                    { label: prefactura.numero_completo },
+                    { label: prefactura.numero },
                 ]}
                 actions={
                     <div className="flex gap-2">
@@ -195,8 +195,8 @@ export default function Show() {
                 >
                     <p className="text-xs font-semibold uppercase tracking-wider mb-4" style={{ color: 'var(--text-muted)' }}>Información</p>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                        <InfoRow label="Número" value={<span className="font-mono">{prefactura.numero_completo}</span>} />
-                        <InfoRow label="Fecha" value={formatFecha(prefactura.fecha)} />
+                        <InfoRow label="Número" value={<span className="font-mono">{prefactura.numero}</span>} />
+                        <InfoRow label="Fecha" value={formatFecha(prefactura.fecha_emision)} />
                         <InfoRow label="Cliente" value={prefactura.cliente?.razon_social ?? '—'} />
                         <InfoRow label="Identificación" value={prefactura.cliente?.identificacion ?? '—'} />
                     </div>
@@ -260,7 +260,7 @@ export default function Show() {
                                 <tbody>
                                     {prefactura.abonos.map(a => (
                                         <tr key={a.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                                            <td className="px-4 py-3" style={{ color: 'var(--text-muted)' }}>{formatFecha(a.fecha)}</td>
+                                            <td className="px-4 py-3" style={{ color: 'var(--text-muted)' }}>{a.fecha ? formatFecha(a.fecha) : '—'}</td>
                                             <td className="px-4 py-3 capitalize" style={{ color: 'var(--text-main)' }}>{a.forma_pago}</td>
                                             <td className="px-4 py-3 font-mono" style={{ color: 'var(--text-muted)' }}>{a.num_comprobante ?? '—'}</td>
                                             <td className="px-4 py-3" style={{ color: 'var(--text-muted)' }}>{a.usuario_nombre ?? '—'}</td>

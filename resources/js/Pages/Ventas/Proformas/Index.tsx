@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Head, usePage, router, Link } from '@inertiajs/react'
 import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
@@ -7,7 +8,7 @@ import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Badge } from '@/Components/ui/badge'
 import { cn, formatMoneda, formatFecha } from '@/lib/utils'
-import { Plus, Search, Eye, Ban, FileText, ChevronLeft, ChevronRight, ArrowRightLeft } from 'lucide-react'
+import { Plus, Search, Eye, Ban, FileText, ChevronLeft, ChevronRight, ArrowRightLeft, X, Trash2 } from 'lucide-react'
 import { usePermiso } from '@/Hooks/usePermiso'
 import type { PageProps, PaginatedData } from '@/types'
 
@@ -19,7 +20,7 @@ interface ProformaCliente {
 interface Proforma {
     id: number
     numero_completo: string
-    fecha: string
+    fecha_emision: string
     fecha_vencimiento: string
     total: number
     estado: 'pendiente' | 'facturada' | 'vencida' | 'anulada'
@@ -38,11 +39,19 @@ interface Props extends PageProps {
     filtros: Filtros
 }
 
+interface FormaPago {
+    [key: string]: string | number
+    forma: string
+    monto: number
+}
+
+const FORMAS_PAGO = ['efectivo', 'transferencia', 'tarjeta', 'cheque', 'credito']
+
 const ESTADO_CONFIG = {
-    pendiente:  { label: 'Pendiente',  variant: 'secondary' as const },
-    facturada:  { label: 'Facturada',  variant: 'success'   as const },
-    vencida:    { label: 'Vencida',    variant: 'danger'    as const },
-    anulada:    { label: 'Anulada',    variant: 'warning'   as const },
+    pendiente: { label: 'Pendiente', variant: 'secondary' as const },
+    facturada: { label: 'Facturada', variant: 'success' as const },
+    vencida: { label: 'Vencida', variant: 'danger' as const },
+    anulada: { label: 'Anulada', variant: 'warning' as const },
 }
 
 export default function Index() {
@@ -50,11 +59,15 @@ export default function Index() {
     const { puede } = usePermiso('ventas')
 
     const [filtro, setFiltro] = useState<Filtros>({
-        estado:      filtros.estado      ?? '',
-        cliente:     filtros.cliente     ?? '',
+        estado: filtros.estado ?? '',
+        cliente: filtros.cliente ?? '',
         fecha_desde: filtros.fecha_desde ?? '',
         fecha_hasta: filtros.fecha_hasta ?? '',
     })
+    const [modalConvertir, setModalConvertir] = useState<Proforma | null>(null)
+    const [formasPago, setFormasPago] = useState<FormaPago[]>([])
+    const [convirtiendo, setConvirtiendo] = useState(false)
+    const [errorPago, setErrorPago] = useState('')
 
     const aplicarFiltros = () => {
         router.get(route('ventas.proformas.index'), filtro as Record<string, string | undefined>, { preserveState: true })
@@ -66,18 +79,33 @@ export default function Index() {
         router.get(route('ventas.proformas.index'), {}, { preserveState: false })
     }
 
-    const handleConvertir = async (p: Proforma) => {
-        const result = await Swal.fire({
-            title: 'Convertir a Factura',
-            text: `¿Desea convertir la proforma ${p.numero_completo} en una factura?`,
-            icon: 'question',
-            showCancelButton: true,
-            confirmButtonText: 'Sí, convertir',
-            cancelButtonText: 'Cancelar',
-            confirmButtonColor: '#F59E0B',
-        })
-        if (!result.isConfirmed) return
-        router.post(route('ventas.proformas.convertir', p.id), {}, { preserveState: true })
+    const handleConvertir = (p: Proforma) => {
+        setFormasPago([{ forma: 'efectivo', monto: p.total }])
+        setErrorPago('')
+        setModalConvertir(p)
+    }
+
+    const handleConfirmarConversion = () => {
+        if (!modalConvertir) return
+        const totalPagos = formasPago.reduce((sum, p) => sum + p.monto, 0)
+        if (Math.abs(totalPagos - modalConvertir.total) > 0.01) {
+            setErrorPago(`Las formas de pago deben sumar ${formatMoneda(modalConvertir.total)}. Actual: ${formatMoneda(totalPagos)}`)
+            return
+        }
+        if (formasPago.some(p => !p.forma || p.monto <= 0)) {
+            setErrorPago('Todas las formas de pago deben tener forma y monto válido.')
+            return
+        }
+        setErrorPago('')
+        setConvirtiendo(true)
+        router.post(
+            route('ventas.proformas.convertir', modalConvertir.id),
+            { formas_pago: formasPago },
+            {
+                onError: () => setConvirtiendo(false),
+                onFinish: () => { setConvirtiendo(false); setModalConvertir(null) },
+            }
+        )
     }
 
     const handleAnular = async (p: Proforma) => {
@@ -230,10 +258,10 @@ export default function Index() {
                                                     {p.numero_completo}
                                                 </td>
                                                 <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-muted)' }}>
-                                                    {formatFecha(p.fecha)}
+                                                    {formatFecha(p.fecha_emision)}
                                                 </td>
                                                 <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-muted)' }}>
-                                                    {formatFecha(p.fecha_vencimiento)}
+                                                    {p.fecha_vencimiento ? formatFecha(p.fecha_vencimiento) : '—'}
                                                 </td>
                                                 <td className="px-4 py-3">
                                                     {p.cliente ? (
@@ -267,7 +295,7 @@ export default function Index() {
                                                             <button
                                                                 type="button"
                                                                 className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors hover:bg-emerald-500/10 text-emerald-400"
-                                                                onClick={() => void handleConvertir(p)}
+                                                                onClick={() => handleConvertir(p)}
                                                             >
                                                                 <ArrowRightLeft className="w-3.5 h-3.5" />
                                                                 Convertir
@@ -305,8 +333,8 @@ export default function Index() {
                                     const isPrev = link.label.includes('Prev') || link.label === '&laquo; Previous'
                                     const isNext = link.label.includes('Next') || link.label === 'Next &raquo;'
                                     const label = isPrev ? <ChevronLeft className="w-3.5 h-3.5" /> :
-                                                  isNext ? <ChevronRight className="w-3.5 h-3.5" /> :
-                                                  link.label
+                                        isNext ? <ChevronRight className="w-3.5 h-3.5" /> :
+                                            link.label
                                     return (
                                         <button
                                             key={i}
@@ -329,6 +357,123 @@ export default function Index() {
                     )}
                 </div>
             </div>
+            {modalConvertir && createPortal(
+                <>
+                    <div
+                        className="fixed inset-0"
+                        style={{ background: 'rgba(0,0,0,0.5)', zIndex: 50 }}
+                        onClick={() => !convirtiendo && setModalConvertir(null)}
+                    />
+                    <div
+                        className="fixed inset-0 flex items-center justify-center p-4"
+                        style={{ zIndex: 51 }}
+                    >
+                        <div
+                            className="w-full rounded-xl shadow-xl flex flex-col gap-4 p-5"
+                            style={{ maxWidth: 480, background: 'var(--bg-card)', border: '1px solid var(--border)' }}
+                        >
+                            <div className="flex items-center justify-between">
+                                <span className="text-sm font-semibold" style={{ color: 'var(--text-main)' }}>
+                                    Formas de Pago
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={() => setModalConvertir(null)}
+                                    className="p-1 rounded-md transition-colors"
+                                    style={{ color: 'var(--text-muted)' }}
+                                >
+                                    <X className="w-4 h-4" />
+                                </button>
+                            </div>
+
+                            <div
+                                className="rounded-lg px-3 py-2 text-sm"
+                                style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)' }}
+                            >
+                                <span style={{ color: 'var(--text-muted)' }}>Total a cobrar: </span>
+                                <span className="font-bold" style={{ color: 'var(--primary)' }}>{formatMoneda(modalConvertir.total)}</span>
+                            </div>
+
+                            <div className="space-y-2">
+                                {formasPago.map((p, idx) => (
+                                    <div key={idx} className="flex items-center gap-2">
+                                        <select
+                                            className="h-8 rounded-md border px-2 text-sm flex-1"
+                                            style={{ background: 'var(--bg-main)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
+                                            value={p.forma}
+                                            onChange={e => {
+                                                const next = [...formasPago]
+                                                next[idx] = { ...next[idx], forma: e.target.value }
+                                                setFormasPago(next)
+                                            }}
+                                        >
+                                            {FORMAS_PAGO.map(f => (
+                                                <option key={f} value={f}>{f}</option>
+                                            ))}
+                                        </select>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            step="0.01"
+                                            className="h-8 rounded-md border px-2 text-sm w-28 text-right"
+                                            style={{ background: 'var(--bg-main)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
+                                            value={p.monto}
+                                            onChange={e => {
+                                                const next = [...formasPago]
+                                                next[idx] = { ...next[idx], monto: Number(e.target.value) }
+                                                setFormasPago(next)
+                                            }}
+                                        />
+                                        {formasPago.length > 1 && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setFormasPago(prev => prev.filter((_, i) => i !== idx))}
+                                                className="p-1 rounded hover:bg-red-500/10 transition-colors"
+                                            >
+                                                <Trash2 className="w-4 h-4 text-red-400" />
+                                            </button>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+
+                            <button
+                                type="button"
+                                onClick={() => setFormasPago(prev => [...prev, { forma: 'efectivo', monto: 0 }])}
+                                className="flex items-center gap-1 text-xs transition-colors hover:text-amber-500 w-fit"
+                                style={{ color: 'var(--text-muted)' }}
+                            >
+                                <Plus className="w-3.5 h-3.5" />
+                                Agregar forma de pago
+                            </button>
+
+                            {errorPago && (
+                                <p className="text-xs" style={{ color: '#ef4444' }}>{errorPago}</p>
+                            )}
+
+                            <div className="flex justify-end gap-2 pt-1">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setModalConvertir(null)}
+                                >
+                                    Cancelar
+                                </Button>
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    loading={convirtiendo}
+                                    onClick={handleConfirmarConversion}
+                                >
+                                    Convertir a Factura
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                </>,
+                document.body
+            )}
         </AppLayout>
     )
 }

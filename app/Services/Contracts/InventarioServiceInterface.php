@@ -28,13 +28,22 @@ interface InventarioServiceInterface
     public function reservarStock(
         int $productoId,
         int $bodegaId,
-        float $cantidad
+        float $cantidad,
+        string $documentoTipo = '',
+        int $documentoId = 0
     ): void;
 
     public function liberarReserva(
         int $productoId,
         int $bodegaId,
         float $cantidad
+    ): void;
+
+    public function confirmarSalida(
+        int $productoId,
+        int $bodegaId,
+        string $docTipo,
+        int $docId
     ): void;
 
     public function getSaldoDisponible(int $productoId, int $bodegaId): float;

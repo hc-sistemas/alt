@@ -33,16 +33,19 @@ const navItems: NavItem[] = [
         hijos: [
             { nombre: 'Facturas', href: '/ventas/facturas' },
             { nombre: 'Proformas', href: '/ventas/proformas' },
+            { nombre: 'Prefacturas', href: '/ventas/prefacturas' },
             { nombre: 'CxC', href: '/ventas/cxc' },
             { nombre: 'Notas de Crédito', href: '/ventas/notas-credito' },
+            { nombre: 'Retenciones', href: '/ventas/retenciones' },
+            { nombre: 'Guías de Remisión', href: '/ventas/guias-remision' },
         ]
     },
     {
         nombre: 'Compras', clave: 'compras', icon: ShoppingCart,
         hijos: [
             { nombre: 'Facturas de Compra', href: '/compras/facturas' },
-            { nombre: 'Proveedores',        href: '/compras/proveedores' },
-            { nombre: 'Cuentas por Pagar',      href: '/compras/cuentas-pagar' },
+            { nombre: 'Proveedores', href: '/compras/proveedores' },
+            { nombre: 'Cuentas por Pagar', href: '/compras/cuentas-pagar' },
             { nombre: 'Anticipos Proveedores', href: '/compras/anticipos' },
             { nombre: 'Devoluciones',          href: '/compras/devoluciones' },
             { nombre: 'Importaciones',         href: '/compras/importaciones' },
@@ -83,13 +86,13 @@ const navItems: NavItem[] = [
     {
         nombre: 'Bancos', clave: 'bancos', icon: Landmark,
         hijos: [
-            { nombre: 'Bancos y Cajas',        href: '/bancos/catalogo'        },
-            { nombre: 'Movimientos',            href: '/bancos/movimientos'     },
-            { nombre: 'Cajas',                  href: '/bancos/cajas'           },
-            { nombre: 'Datafast',               href: '/bancos/datafast'        },
-            { nombre: 'Conciliación Bancaria',  href: '/bancos/conciliaciones'  },
-            { nombre: 'Cheques',                href: '/bancos/cheques'          },
-            { nombre: 'Reportes',               href: '/bancos/reportes'         },
+            { nombre: 'Bancos y Cajas', href: '/bancos/catalogo' },
+            { nombre: 'Movimientos', href: '/bancos/movimientos' },
+            { nombre: 'Cajas', href: '/bancos/cajas' },
+            { nombre: 'Datafast', href: '/bancos/datafast' },
+            { nombre: 'Conciliación Bancaria', href: '/bancos/conciliaciones' },
+            { nombre: 'Cheques', href: '/bancos/cheques' },
+            { nombre: 'Reportes', href: '/bancos/reportes' },
         ]
     },
     {
@@ -106,8 +109,9 @@ const navItems: NavItem[] = [
     {
         nombre: 'Taller', clave: 'taller', icon: Wrench,
         hijos: [
+            { nombre: 'Ingresos', href: '/taller/ingresos' },
             { nombre: 'Órdenes de Trabajo', href: '/taller/ordenes' },
-            { nombre: 'Equipos', href: '/taller/equipos' },
+            { nombre: 'Tipos de Equipo', href: '/taller/tipos-equipo' },
         ]
     },
     {
@@ -235,7 +239,7 @@ export default function Sidebar({ collapsed, onCollapse, mobileOpen, onMobileClo
                     const isItemActive = item.href
                         ? isActive(item.href)
                         : (item.hijos?.some(h => isActive(h.href)) ?? false) ||
-                          (item.subgrupos?.some(sg => sg.hijos.some(h => isActive(h.href))) ?? false)
+                        (item.subgrupos?.some(sg => sg.hijos.some(h => isActive(h.href))) ?? false)
 
                     return (
                         <div key={item.clave}>

@@ -117,7 +117,7 @@ export default function Index() {
         })
         if (!result.isConfirmed || !result.value) return
 
-        router.post(
+        router.patch(
             route('ventas.facturas.anular', factura.id),
             { codigo_aprobacion: result.value as string },
             { preserveState: true },

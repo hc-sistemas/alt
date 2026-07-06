@@ -52,8 +52,7 @@ class GuiaRemisionController extends Controller
     {
         $empresaId = session('empresa_activa_id');
 
-        $transportistas = Transportista::where('empresa_id', $empresaId)
-            ->where('estado', true)
+        $transportistas = Transportista::where('estado', true)
             ->orderBy('razon_social')
             ->get();
 
@@ -88,31 +87,32 @@ class GuiaRemisionController extends Controller
 
         $guia = DB::transaction(function () use ($request, $empresaId) {
             $numero = $this->secuencial->siguiente($empresaId, 'GR');
+            [$est, $pe, $sec] = explode('-', $numero);
 
             $guia = GuiaRemision::create([
-                'empresa_id'           => $empresaId,
-                'factura_id'           => $request->factura_id,
-                'transportista_id'     => $request->transportista_id,
-                'usuario_id'           => Auth::id(),
-                'numero'               => $numero,
-                'fecha_emision'        => now()->toDateString(),
-                'direccion_partida'    => $request->direccion_partida,
-                'direccion_destino'    => $request->direccion_destino,
-                'fecha_ini_transporte' => $request->fecha_ini_transporte,
-                'fecha_fin_transporte' => $request->fecha_fin_transporte,
-                'placa'                => $request->placa,
-                'observaciones'        => $request->observaciones,
-                'estado_sri'           => 'pendiente',
-                'estado'               => 'activa',
+                'empresa_id'              => $empresaId,
+                'factura_id'              => $request->factura_id,
+                'transportista_id'        => $request->transportista_id,
+                'numero_completo'         => $numero,
+                'establecimiento'         => $est,
+                'punto_emision'           => $pe,
+                'secuencial'              => ltrim($sec, '0') ?: '1',
+                'fecha_emision'           => now()->toDateString(),
+                'origen'                  => $request->direccion_partida,
+                'destino'                 => $request->direccion_destino,
+                'fecha_inicio_transporte' => $request->fecha_ini_transporte,
+                'fecha_fin_transporte'    => $request->fecha_fin_transporte,
+                'motivo'                  => $request->observaciones,
+                'estado_sri'              => 'pendiente',
+                'estado'                  => 'activa',
             ]);
 
             foreach ($request->detalles as $det) {
                 GuiaRemisionDetalle::create([
-                    'guia_remision_id' => $guia->id,
-                    'producto_id'      => $det['producto_id'] ?? null,
-                    'descripcion'      => $det['descripcion'],
-                    'cantidad'         => $det['cantidad'],
-                    'unidad'           => $det['unidad'],
+                    'guia_id'     => $guia->id,
+                    'producto_id' => $det['producto_id'] ?? null,
+                    'descripcion' => $det['descripcion'],
+                    'cantidad'    => $det['cantidad'],
                 ]);
             }
 

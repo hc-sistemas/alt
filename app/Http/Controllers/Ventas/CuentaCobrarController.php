@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Ventas;
 
 use App\Http\Controllers\Controller;
 use App\Models\CuentaCobrar;
+use App\Models\CuentaCobrarCobro;
 use App\Services\AsientoService;
 use App\Services\AuditoriaService;
 use Illuminate\Http\Request;
@@ -96,7 +97,7 @@ class CuentaCobrarController extends Controller
 
     public function show(CuentaCobrar $cuentaCobrar)
     {
-        $cuentaCobrar->load(['cliente', 'factura']);
+        $cuentaCobrar->load(['cliente', 'factura', 'cobros.usuario']);
 
         $hoy         = now()->toDateString();
         $fv          = $cuentaCobrar->fecha_vencimiento?->toDateString();
@@ -117,7 +118,14 @@ class CuentaCobrarController extends Controller
                 'saldo'                  => (float) $cuentaCobrar->saldo,
                 'dias_vencido'           => $diasVencido,
                 'estado'                 => $cuentaCobrar->estado,
-                'cobros'                 => [],
+                'cobros'                 => $cuentaCobrar->cobros->map(fn($c) => [
+                    'id'              => $c->id,
+                    'fecha'           => $c->fecha?->toDateString(),
+                    'valor'           => (float) $c->valor,
+                    'forma_pago'      => $c->forma_pago,
+                    'observacion'     => $c->observacion,
+                    'usuario_nombre'  => $c->usuario?->nombre ?? null,
+                ]),
             ],
         ]);
     }
@@ -143,6 +151,16 @@ class CuentaCobrarController extends Controller
             $cuentaCobrar->update([
                 'saldo'  => max(0, $nuevoSaldo),
                 'estado' => $nuevoEstado,
+            ]);
+
+            CuentaCobrarCobro::create([
+                'cuenta_cobrar_id' => $cuentaCobrar->id,
+                'usuario_id'       => Auth::id(),
+                'fecha'            => now()->toDateString(),
+                'valor'            => $monto,
+                'forma_pago'       => $request->forma_pago,
+                'observacion'      => $request->observacion,
+                'created_at'       => now(),
             ]);
         });
 
