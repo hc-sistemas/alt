@@ -23,12 +23,18 @@ interface Props extends PageProps {
 }
 
 const COLORES_GRUPO: Record<string, string> = {
-    Ventas:     '#10b981',
-    Compras:    '#3b82f6',
-    Inventario: '#8b5cf6',
-    Bancos:     '#F59E0B',
-    'Nómina':   '#ec4899',
-    SRI:        '#ef4444',
+    Ventas:              '#10b981',
+    Compras:             '#3b82f6',
+    Inventario:          '#8b5cf6',
+    Bancos:              '#F59E0B',
+    'Nómina':            '#ec4899',
+    SRI:                 '#ef4444',
+    Contabilidad:        '#06b6d4',
+    'Gastos Operativos': '#f97316',
+}
+
+const NOTAS_GRUPO: Record<string, string> = {
+    'Gastos Operativos': '💡 Estas cuentas se usan cuando una línea de factura de compra no tiene un producto del inventario asignado. Si la compra es de productos físicos, el asiento usa la cuenta de Inventario automáticamente.',
 }
 
 export default function ParametrosIndex({ grupos, cuentas }: Props) {
@@ -208,6 +214,18 @@ export default function ParametrosIndex({ grupos, cuentas }: Props) {
                                 {params.filter(p => valores[p.codigo]).length}/{params.length}
                             </span>
                         </div>
+
+                        {NOTAS_GRUPO[nombreGrupo] && (
+                            <div className="px-4 py-2.5 text-xs"
+                                 style={{
+                                     background:   'rgba(249,115,22,0.06)',
+                                     borderBottom: '1px solid var(--border)',
+                                     color:        '#c2410c',
+                                     lineHeight:   1.5,
+                                 }}>
+                                {NOTAS_GRUPO[nombreGrupo]}
+                            </div>
+                        )}
 
                         {params.map((param, idx) => {
                             const tieneValor  = !!valores[param.codigo]

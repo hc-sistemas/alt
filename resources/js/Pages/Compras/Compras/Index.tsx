@@ -816,8 +816,16 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
                                     </label>
                                 </div>
 
-                                {/* Retenciones (solo documentos locales) */}
-                                {data.tipo_documento !== 'EXT' && (
+                                {/* CxP-03: nota visual cuando gasto no deducible */}
+                                {data.gasto_no_deducible && (
+                                    <div className="rounded-lg border px-3 py-2.5 text-xs"
+                                        style={{ borderColor: '#fbbf24', background: 'rgba(245,158,11,0.08)', color: '#92400e' }}>
+                                        <span className="font-bold">Gasto No Deducible activo:</span> El egreso se registrará al 100% en la cuenta 5.4.1.01 (Gastos No Deducibles Locales), sin crédito tributario de IVA y sin generación de retenciones.
+                                    </div>
+                                )}
+
+                                {/* Retenciones — ocultas si gasto no deducible (CxP-03) */}
+                                {data.tipo_documento !== 'EXT' && !data.gasto_no_deducible && (
                                     <div className="grid grid-cols-2 gap-3">
                                         <div className="space-y-1.5">
                                             <Label>Ret. IR ($)</Label>
@@ -2142,9 +2150,12 @@ export default function ComprasIndex() {
                                             </button>
                                         )}
                                         <button
-                                            onClick={() => iniciarAnulacion(c)}
-                                            title="Anular factura"
-                                            className="h-7 w-7 flex items-center justify-center rounded hover:bg-red-500/20 text-red-500 dark:text-red-400 transition-colors">
+                                            onClick={() => !c.tiene_pago && iniciarAnulacion(c)}
+                                            disabled={c.tiene_pago}
+                                            title={c.tiene_pago
+                                                ? 'Factura con pago registrado — anula el pago primero (candado CxP-02)'
+                                                : 'Anular factura'}
+                                            className="h-7 w-7 flex items-center justify-center rounded hover:bg-red-500/20 text-red-500 dark:text-red-400 transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent">
                                             <XCircle className="w-4 h-4" />
                                         </button>
                                     </>

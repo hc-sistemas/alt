@@ -254,7 +254,10 @@ class ConciliacionController extends Controller
             }
         });
 
+        $autoMatch = $this->autoMatchPartidas($conciliacion);
+
         $msg = "CSV importado: {$importadas} movimientos del banco cargados.";
+        if ($autoMatch > 0) $msg .= " Se cruzaron automáticamente {$autoMatch} partida(s) (±2 días, ±\$0.01).";
         if ($errores > 0) $msg .= " ({$errores} filas con errores omitidas)";
 
         return back()->with('success', $msg);
@@ -457,10 +460,56 @@ class ConciliacionController extends Controller
             }
         });
 
+        $autoMatch = $this->autoMatchPartidas($conciliacion);
+
         $msg = "Excel importado: {$importadas} movimientos del banco cargados.";
+        if ($autoMatch > 0) $msg .= " Se cruzaron automáticamente {$autoMatch} partida(s) (±2 días, ±\$0.01).";
         if ($errores > 0) $msg .= " ({$errores} filas omitidas)";
 
         return back()->with('success', $msg);
+    }
+
+    // ── Auto-match: cruza partidas banco vs sistema con tolerancia ±2d ±$0.01 ──
+    private function autoMatchPartidas(ConciliacionBancaria $conciliacion): int
+    {
+        $matched = 0;
+
+        $partidasBanco = PartidaTransito::where('conciliacion_id', $conciliacion->id)
+            ->where('tipo', 'banco')->where('conciliada', false)->get();
+
+        $partidasSistema = PartidaTransito::where('conciliacion_id', $conciliacion->id)
+            ->where('tipo', 'sistema')->where('conciliada', false)->get();
+
+        $usadosIds = [];
+
+        foreach ($partidasBanco as $pBanco) {
+            $montoB = (float) $pBanco->monto;
+            $fechaB = \Carbon\Carbon::parse($pBanco->fecha);
+
+            $candidatos = $partidasSistema->filter(function ($pS) use ($montoB, $fechaB, $usadosIds) {
+                if (in_array($pS->id, $usadosIds)) return false;
+                if (abs($montoB - (float) $pS->monto) > 0.01) return false;
+                return \Carbon\Carbon::parse($pS->fecha)->diffInDays($fechaB) <= 2;
+            });
+
+            if ($candidatos->count() === 1) {
+                $pSistema = $candidatos->first();
+                $usadosIds[] = $pSistema->id;
+
+                DB::transaction(function () use ($pBanco, $pSistema) {
+                    $pBanco->update(['conciliada' => true]);
+                    $pSistema->update(['conciliada' => true]);
+                    if ($pSistema->movimiento_id) {
+                        MovimientoBancario::where('id', $pSistema->movimiento_id)
+                            ->update(['conciliado' => true]);
+                    }
+                });
+
+                $matched++;
+            }
+        }
+
+        return $matched;
     }
 
     // ── Helper: detectar columna por palabras clave ───────────────────────────

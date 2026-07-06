@@ -175,10 +175,12 @@ class CompraController extends Controller
                 $totalIva    = 0;
                 $esExterior  = $request->tipo_documento === 'EXT';
 
-                $detalles = collect($request->detalles)->map(function ($d) use (&$subtotal0, &$subtotalIva, &$totalIva, $esExterior) {
+                $esGastoNoDeducible = $request->boolean('gasto_no_deducible');
+
+                $detalles = collect($request->detalles)->map(function ($d) use (&$subtotal0, &$subtotalIva, &$totalIva, $esExterior, $esGastoNoDeducible) {
                     $subtotal = round($d['cantidad'] * $d['precio_unitario'] - ($d['descuento'] ?? 0), 4);
-                    // Exterior siempre IVA 0%
-                    $porcIva  = $esExterior ? 0 : (float)($d['porcentaje_iva'] ?? 15);
+                    // Exterior y gasto no deducible siempre IVA 0% (CxP-03)
+                    $porcIva  = ($esExterior || $esGastoNoDeducible) ? 0 : (float)($d['porcentaje_iva'] ?? 15);
                     $iva      = $porcIva > 0 ? round($subtotal * $porcIva / 100, 4) : 0;
 
                     if ($porcIva > 0) $subtotalIva += $subtotal;
@@ -222,10 +224,10 @@ class CompraController extends Controller
                     'subtotal_iva'        => $subtotalIva,
                     'total_iva'           => $totalIva,
                     'total'               => $total,
-                    'retencion_ir'        => (float) ($request->retencion_ir ?? 0),
-                    'retencion_iva'       => (float) ($request->retencion_iva ?? 0),
+                    'retencion_ir'        => $esGastoNoDeducible ? 0.0 : (float) ($request->retencion_ir  ?? 0),
+                    'retencion_iva'       => $esGastoNoDeducible ? 0.0 : (float) ($request->retencion_iva ?? 0),
                     'iva_asumido'         => $request->boolean('iva_asumido'),
-                    'gasto_no_deducible'  => $request->boolean('gasto_no_deducible'),
+                    'gasto_no_deducible'  => $esGastoNoDeducible,
                     'sustento_tributario' => $sustento,
                     'concepto'            => $request->concepto,
                     'estado'              => 'pendiente',
@@ -334,10 +336,10 @@ class CompraController extends Controller
                 ]);
             }
 
-            // Crear retención si aplica
+            // Crear retención si aplica — CxP-03: jamás si es gasto no deducible
             $retIR  = (float) ($compra->retencion_ir  ?? 0);
             $retIVA = (float) ($compra->retencion_iva ?? 0);
-            if ($retIR > 0 || $retIVA > 0) {
+            if (!$compra->gasto_no_deducible && ($retIR > 0 || $retIVA > 0)) {
                 try {
                     $proveedor = $compra->proveedor;
                     $empresa   = \App\Models\Empresa::find($empresaId);
@@ -403,15 +405,22 @@ class CompraController extends Controller
             }
 
             try {
+                // CxP-03: gasto no deducible → cuenta 5.4.1.01, sin IVA ni retenciones
+                $tipoAsiento = match(true) {
+                    $compra->gasto_no_deducible            => 'no_deducible',
+                    $compra->tipo_documento === 'EXT'      => 'gasto',
+                    !$compra->detalles->contains(fn($d) => $d->producto_id !== null) => 'gasto',
+                    default                                => 'inventario',
+                };
                 $asiento = $this->asientoService->compraRegistrada(
                     empresaId:    $empresaId,
                     compraId:     $compra->id,
                     referencia:   $compra->num_documento,
                     subtotal:     $compra->subtotal_0 + $compra->subtotal_iva,
-                    iva:          $compra->total_iva,
-                    retencionIR:  $retIR,
-                    retencionIVA: $retIVA,
-                    tipo:         $compra->gasto_no_deducible ? 'gasto' : 'inventario',
+                    iva:          $compra->gasto_no_deducible ? 0.0 : $compra->total_iva,
+                    retencionIR:  $compra->gasto_no_deducible ? 0.0 : $retIR,
+                    retencionIVA: $compra->gasto_no_deducible ? 0.0 : $retIVA,
+                    tipo:         $tipoAsiento,
                 );
                 $compra->update(['asiento_id' => $asiento->id]);
             } catch (\Throwable $e) {

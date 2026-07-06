@@ -1,33 +1,24 @@
 import { useState } from 'react'
 import { Head, router, usePage } from '@inertiajs/react'
 import AppLayout from '@/Layouts/AppLayout'
-import PageHeader from '@/Components/shared/PageHeader'
-import type { Nomina, PageProps, PaginatedData } from '@/types'
 import { cn } from '@/lib/utils'
-import { Plus, FileText, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react'
+import type { Nomina, PageProps, PaginatedData } from '@/types'
+import { Plus, ChevronLeft, ChevronRight, Trash2, Eye, Archive, FileText } from 'lucide-react'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
 const MESES = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-               'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
 
-function badgeEstado(estado: Nomina['estado']) {
-    const map = {
-        borrador:  { label: 'Borrador',  cls: 'bg-gray-100 text-gray-600 border-gray-300' },
-        procesado: { label: 'Procesado', cls: 'bg-blue-50 text-blue-700 border-blue-200' },
-        pagado:    { label: 'Pagado',    cls: 'bg-green-50 text-green-700 border-green-200' },
-    } as const
-    const b = map[estado] ?? map.borrador
-    return (
-        <span className={cn(
-            'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border',
-            b.cls
-        )}>
-            {b.label}
-        </span>
-    )
+function getBadgeEstado(estado: string): React.CSSProperties {
+    switch (estado) {
+        case 'borrador':  return { background: 'rgba(107,114,128,0.12)', color: '#6B7280' }
+        case 'procesado': return { background: 'rgba(56,139,212,0.12)',  color: '#185FA5' }
+        case 'pagado':    return { background: 'rgba(22,163,74,0.12)',   color: '#15803d' }
+        default:          return { background: 'rgba(107,114,128,0.1)',  color: '#9CA3AF' }
+    }
 }
 
 function fmt(n: number) {
@@ -71,19 +62,17 @@ function GenerarModal({ onClose }: GenerarModalProps) {
                 </div>
                 <form onSubmit={submit}>
                     <div className="modal-body space-y-4">
-                        {/* Tipo */}
                         <div>
                             <label className="input-label">Tipo de nómina</label>
                             <div className="flex gap-4 mt-1">
                                 {(['mensual', 'quincenal'] as const).map(t => (
-                                    <label key={t} className="flex items-center gap-2 cursor-pointer text-sm" style={{ color: 'var(--text-main)' }}>
+                                    <label key={t} className="flex items-center gap-2 text-sm cursor-pointer" style={{ color: 'var(--text-main)' }}>
                                         <input
                                             type="radio"
                                             name="periodo_tipo"
                                             value={t}
                                             checked={form.periodo_tipo === t}
                                             onChange={() => set('periodo_tipo', t)}
-                                            className="accent-[var(--primary)]"
                                         />
                                         {t === 'mensual' ? 'Mensual' : 'Quincenal'}
                                     </label>
@@ -91,16 +80,11 @@ function GenerarModal({ onClose }: GenerarModalProps) {
                             </div>
                         </div>
 
-                        {/* Quincena */}
                         {form.periodo_tipo === 'quincenal' && (
                             <div>
                                 <label className="input-label">Quincena</label>
-                                <select
-                                    className="input-field"
-                                    value={form.quincena}
-                                    onChange={e => set('quincena', e.target.value)}
-                                    required
-                                >
+                                <select className="input-field" value={form.quincena}
+                                    onChange={e => set('quincena', e.target.value)} required>
                                     <option value="">Seleccionar…</option>
                                     <option value="1">1ª quincena (días 1–15)</option>
                                     <option value="2">2ª quincena (días 16–fin)</option>
@@ -108,14 +92,10 @@ function GenerarModal({ onClose }: GenerarModalProps) {
                             </div>
                         )}
 
-                        {/* Año */}
                         <div>
                             <label className="input-label">Año</label>
-                            <select
-                                className="input-field"
-                                value={form.anio}
-                                onChange={e => set('anio', parseInt(e.target.value))}
-                            >
+                            <select className="input-field" value={form.anio}
+                                onChange={e => set('anio', parseInt(e.target.value))}>
                                 {[0, 1, 2, 3].map(i => {
                                     const y = new Date().getFullYear() - i
                                     return <option key={y} value={y}>{y}</option>
@@ -123,14 +103,10 @@ function GenerarModal({ onClose }: GenerarModalProps) {
                             </select>
                         </div>
 
-                        {/* Mes */}
                         <div>
                             <label className="input-label">Mes</label>
-                            <select
-                                className="input-field"
-                                value={form.mes}
-                                onChange={e => set('mes', parseInt(e.target.value))}
-                            >
+                            <select className="input-field" value={form.mes}
+                                onChange={e => set('mes', parseInt(e.target.value))}>
                                 {MESES.slice(1).map((m, i) => (
                                     <option key={i + 1} value={i + 1}>{m}</option>
                                 ))}
@@ -138,9 +114,7 @@ function GenerarModal({ onClose }: GenerarModalProps) {
                         </div>
                     </div>
                     <div className="modal-footer">
-                        <button type="button" className="btn-secondary" onClick={onClose}>
-                            Cancelar
-                        </button>
+                        <button type="button" className="btn-secondary" onClick={onClose}>Cancelar</button>
                         <button type="submit" className="btn-primary" disabled={loading}>
                             {loading ? 'Generando…' : 'Generar Nómina'}
                         </button>
@@ -194,155 +168,227 @@ export default function NominaIndex() {
         return `${m} ${n.anio}`
     }
 
+    const selectStyle: React.CSSProperties = {
+        display: 'inline-block',
+        width: 'auto',
+        height: '36px',
+        padding: '0 2.5rem 0 0.75rem',
+        fontSize: '0.85rem',
+        borderRadius: '0.5rem',
+        border: '1px solid var(--border)',
+        background: 'var(--bg-card)',
+        color: 'var(--text-main)',
+        appearance: 'none',
+        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236B7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
+        backgroundRepeat: 'no-repeat',
+        backgroundPosition: 'right 0.75rem center',
+        backgroundSize: '16px',
+        cursor: 'pointer',
+    }
+
+    const hayFiltros = !!(filtro.anio || filtro.mes || filtro.tipo || filtro.estado)
+    const netoTotal  = nominas.data.reduce((s, n) => s + Number(n.total_neto), 0)
+
     return (
         <AppLayout>
             <Head title="Nómina — RRHH" />
-
             {showGenerar && <GenerarModal onClose={() => setShowGenerar(false)} />}
 
-            <PageHeader
-                title="Nómina"
-                breadcrumbs={[{ label: 'RRHH' }, { label: 'Nómina' }]}
-            />
+            <div className="px-6 py-5">
 
-            <div className="px-6 py-4">
                 {/* Flash */}
                 {flash?.success && (
-                    <div className="mb-4 px-4 py-2 rounded text-sm font-medium bg-green-50 text-green-700 border border-green-200">
+                    <div className="mb-4 px-4 py-2 border border-green-200 rounded text-sm font-medium bg-green-50 text-green-700">
                         {flash.success}
                     </div>
                 )}
                 {flash?.error && (
-                    <div className="mb-4 px-4 py-2 rounded text-sm font-medium bg-red-50 text-red-700 border border-red-200">
+                    <div className="mb-4 px-4 py-2 border border-red-200 rounded text-sm font-medium bg-red-50 text-red-700">
                         {flash.error}
                     </div>
                 )}
 
-                {/* Barra de filtros y acciones */}
-                <div className="flex flex-wrap items-end gap-3 mb-5">
-                    {/* Botón generar */}
-                    <button className="btn-primary flex items-center gap-1.5" onClick={() => setShowGenerar(true)}>
-                        <Plus className="w-4 h-4" />
-                        Generar Nómina
+                {/* Header */}
+                <div className="mb-4">
+                    <div className="text-xs mb-0.5" style={{ color: 'var(--text-muted)' }}>RRHH</div>
+                    <h1 className="text-xl font-semibold" style={{ color: 'var(--text-main)' }}>Nómina</h1>
+                </div>
+
+                {/* Toolbar — btn-primary izquierda + filtros */}
+                <div className="flex items-center gap-2 mb-5 flex-wrap">
+                    <button
+                        onClick={() => setShowGenerar(true)}
+                        className="btn-primary flex items-center gap-1.5 whitespace-nowrap"
+                    >
+                        <Plus size={15} /> Generar Nómina
                     </button>
 
-                    {/* Filtros */}
-                    <select
-                        className="input-field h-9 text-sm"
-                        value={filtro.anio}
-                        onChange={e => setFiltro(f => ({ ...f, anio: e.target.value }))}
-                    >
+                    <select value={filtro.anio} onChange={e => setFiltro(f => ({ ...f, anio: e.target.value }))}
+                        style={selectStyle}>
                         <option value="">Todos los años</option>
                         {anios.map(y => <option key={y} value={y}>{y}</option>)}
                     </select>
 
-                    <select
-                        className="input-field h-9 text-sm"
-                        value={filtro.mes}
-                        onChange={e => setFiltro(f => ({ ...f, mes: e.target.value }))}
-                    >
+                    <select value={filtro.mes} onChange={e => setFiltro(f => ({ ...f, mes: e.target.value }))}
+                        style={selectStyle}>
                         <option value="">Todos los meses</option>
                         {MESES.slice(1).map((m, i) => (
                             <option key={i + 1} value={i + 1}>{m}</option>
                         ))}
                     </select>
 
-                    <select
-                        className="input-field h-9 text-sm"
-                        value={filtro.tipo}
-                        onChange={e => setFiltro(f => ({ ...f, tipo: e.target.value }))}
-                    >
+                    <select value={filtro.tipo} onChange={e => setFiltro(f => ({ ...f, tipo: e.target.value }))}
+                        style={selectStyle}>
                         <option value="">Tipo</option>
                         <option value="mensual">Mensual</option>
                         <option value="quincenal">Quincenal</option>
                     </select>
 
-                    <select
-                        className="input-field h-9 text-sm"
-                        value={filtro.estado}
-                        onChange={e => setFiltro(f => ({ ...f, estado: e.target.value }))}
-                    >
+                    <select value={filtro.estado} onChange={e => setFiltro(f => ({ ...f, estado: e.target.value }))}
+                        style={selectStyle}>
                         <option value="">Estado</option>
                         <option value="borrador">Borrador</option>
                         <option value="procesado">Procesado</option>
                         <option value="pagado">Pagado</option>
                     </select>
 
-                    <button className="btn-secondary h-9 text-sm" onClick={aplicarFiltros}>
+                    <button className="btn-secondary whitespace-nowrap" onClick={aplicarFiltros}>
                         Filtrar
                     </button>
-                    {(filtro.anio || filtro.mes || filtro.tipo || filtro.estado) && (
-                        <button className="h-9 text-sm px-3 rounded" style={{ color: 'var(--text-muted)' }} onClick={limpiarFiltros}>
+                    {hayFiltros && (
+                        <button
+                            onClick={limpiarFiltros}
+                            className="text-sm underline"
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+                        >
                             Limpiar
                         </button>
                     )}
                 </div>
 
+                {/* Resumen */}
+                {nominas.data.length > 0 && (
+                    <div className="flex gap-6 text-sm mb-3" style={{ color: 'var(--text-muted)' }}>
+                        <span>{nominas.total} nómina{nominas.total !== 1 ? 's' : ''}</span>
+                        <span>
+                            Neto total:&nbsp;
+                            <strong style={{ color: 'var(--text-main)' }}>${fmt(netoTotal)}</strong>
+                        </span>
+                    </div>
+                )}
+
                 {/* Tabla */}
-                <div className="rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
-                    <table className="w-full text-sm">
+                <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '12px', overflow: 'hidden' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                         <thead>
-                            <tr style={{ background: 'var(--bg-main)', borderBottom: '1px solid var(--border)' }}>
+                            <tr style={{ borderBottom: '1px solid var(--border)' }}>
                                 {['Período', 'Tipo', 'Estado', 'Empleados', 'Total Ingresos', 'Total Egresos', 'Neto', 'Acciones'].map(h => (
-                                    <th key={h} className="px-4 py-3 text-left font-semibold text-xs uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
-                                        {h}
-                                    </th>
+                                    <th key={h} style={{
+                                        padding: '0.75rem 1rem',
+                                        textAlign: (h === 'Empleados' || h === 'Acciones') ? 'center' : 'left',
+                                        fontSize: '0.72rem', fontWeight: 600,
+                                        color: 'var(--text-muted)',
+                                        textTransform: 'uppercase', letterSpacing: '0.05em',
+                                        background: 'var(--bg-main)',
+                                    }}>{h}</th>
                                 ))}
                             </tr>
                         </thead>
                         <tbody>
                             {nominas.data.length === 0 ? (
                                 <tr>
-                                    <td colSpan={8} className="py-12 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
-                                        No hay nóminas registradas. Genere la primera.
+                                    <td colSpan={8} style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                                        <FileText size={36} style={{ opacity: 0.3, margin: '0 auto 0.75rem', display: 'block' }} />
+                                        <p style={{ fontSize: '0.9rem', margin: 0 }}>No hay nóminas para los filtros seleccionados</p>
                                     </td>
                                 </tr>
-                            ) : nominas.data.map((n, idx) => (
-                                <tr
-                                    key={n.id}
-                                    className="border-t transition-colors"
-                                    style={{
-                                        borderColor: 'var(--border)',
-                                        background: idx % 2 === 0 ? 'var(--bg-card)' : 'var(--bg-main)',
-                                    }}
-                                >
-                                    <td className="px-4 py-3 font-medium" style={{ color: 'var(--text-main)' }}>
-                                        {periodoLabel(n)}
+                            ) : nominas.data.map((n, i) => (
+                                <tr key={n.id} style={{
+                                    borderBottom: i < nominas.data.length - 1 ? '1px solid var(--border)' : 'none',
+                                    background: i % 2 === 0 ? 'var(--bg-card)' : 'var(--bg-main)',
+                                }}>
+                                    {/* Período */}
+                                    <td style={{ padding: '0.875rem 1rem' }}>
+                                        <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-main)' }}>
+                                            {periodoLabel(n)}
+                                        </div>
                                     </td>
-                                    <td className="px-4 py-3" style={{ color: 'var(--text-muted)' }}>
-                                        {n.periodo_tipo === 'mensual' ? 'Mensual' : 'Quincenal'}
+
+                                    {/* Tipo */}
+                                    <td style={{ padding: '0.875rem 1rem' }}>
+                                        <span style={{
+                                            fontSize: '0.78rem', fontWeight: 500,
+                                            padding: '3px 8px', borderRadius: '5px',
+                                            background: n.periodo_tipo === 'mensual' ? 'rgba(99,153,34,0.12)' : 'rgba(56,139,212,0.12)',
+                                            color:      n.periodo_tipo === 'mensual' ? '#3B6D11'             : '#185FA5',
+                                        }}>
+                                            {n.periodo_tipo === 'mensual' ? 'Mensual' : 'Quincenal'}
+                                        </span>
                                     </td>
-                                    <td className="px-4 py-3">{badgeEstado(n.estado)}</td>
-                                    <td className="px-4 py-3 text-center" style={{ color: 'var(--text-muted)' }}>
+
+                                    {/* Estado */}
+                                    <td style={{ padding: '0.875rem 1rem' }}>
+                                        <span style={{
+                                            fontSize: '0.78rem', fontWeight: 600,
+                                            padding: '3px 10px', borderRadius: '5px',
+                                            ...getBadgeEstado(n.estado),
+                                        }}>
+                                            {n.estado.charAt(0).toUpperCase() + n.estado.slice(1)}
+                                        </span>
+                                    </td>
+
+                                    {/* Empleados */}
+                                    <td style={{ padding: '0.875rem 1rem', textAlign: 'center', fontSize: '0.875rem', color: 'var(--text-main)' }}>
                                         {n.detalles_count ?? 0}
                                     </td>
-                                    <td className="px-4 py-3 text-right font-mono text-xs" style={{ color: 'var(--text-main)' }}>
-                                        $ {fmt(n.total_ingresos)}
+
+                                    {/* Total Ingresos */}
+                                    <td style={{ padding: '0.875rem 1rem', fontSize: '0.875rem', color: 'var(--text-main)', fontVariantNumeric: 'tabular-nums' }}>
+                                        ${fmt(n.total_ingresos)}
                                     </td>
-                                    <td className="px-4 py-3 text-right font-mono text-xs" style={{ color: 'var(--text-muted)' }}>
-                                        $ {fmt(n.total_egresos)}
+
+                                    {/* Total Egresos — en paréntesis */}
+                                    <td style={{ padding: '0.875rem 1rem', fontSize: '0.875rem', color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums' }}>
+                                        (${fmt(n.total_egresos)})
                                     </td>
-                                    <td className="px-4 py-3 text-right font-mono text-xs font-semibold" style={{ color: 'var(--text-main)' }}>
-                                        $ {fmt(n.total_neto)}
+
+                                    {/* Neto */}
+                                    <td style={{ padding: '0.875rem 1rem', fontWeight: 700, fontSize: '0.9rem', color: '#16a34a', fontVariantNumeric: 'tabular-nums' }}>
+                                        ${fmt(n.total_neto)}
                                     </td>
-                                    <td className="px-4 py-3">
-                                        <div className="flex items-center gap-1">
-                                            {/* Ver detalle */}
+
+                                    {/* Acciones */}
+                                    <td style={{ padding: '0.875rem 1rem', textAlign: 'center' }}>
+                                        <div className="flex items-center justify-center gap-1.5">
                                             <button
                                                 onClick={() => router.visit(route('rrhh.nomina.show', n.id))}
-                                                className="p-1.5 rounded hover:bg-blue-50 transition-colors"
+                                                className="btn-secondary flex items-center gap-1 whitespace-nowrap"
+                                                style={{ padding: '0.3rem 0.6rem', fontSize: '0.78rem' }}
                                                 title="Ver detalle"
                                             >
-                                                <FileText className="w-4 h-4 text-blue-600" />
+                                                <Eye size={13} /> Ver
                                             </button>
-                                            {/* Eliminar solo borrador */}
+
+                                            {(n.estado === 'procesado' || n.estado === 'pagado') && (
+                                                <a
+                                                    href={route('rrhh.nomina.pdf-masivo', n.id)}
+                                                    download
+                                                    className="btn-secondary flex items-center gap-1 whitespace-nowrap no-underline"
+                                                    style={{ padding: '0.3rem 0.6rem', fontSize: '0.78rem', color: 'inherit' }}
+                                                    title="Descargar ZIP con todos los roles"
+                                                >
+                                                    <Archive size={13} /> ZIP
+                                                </a>
+                                            )}
+
                                             {n.estado === 'borrador' && (
                                                 <button
                                                     onClick={() => eliminar(n)}
-                                                    className="p-1.5 rounded hover:bg-red-50 transition-colors"
+                                                    className="flex items-center transition-colors hover:bg-red-50"
+                                                    style={{ padding: '0.3rem 0.5rem', border: '1px solid var(--border)', borderRadius: '6px', background: 'none', cursor: 'pointer', color: '#dc2626' }}
                                                     title="Eliminar"
                                                 >
-                                                    <Trash2 className="w-4 h-4 text-red-500" />
+                                                    <Trash2 size={13} />
                                                 </button>
                                             )}
                                         </div>
@@ -355,7 +401,7 @@ export default function NominaIndex() {
 
                 {/* Paginación */}
                 {nominas.last_page > 1 && (
-                    <div className="flex items-center justify-between mt-4">
+                    <div className={cn('flex', 'justify-between', 'items-center', 'mt-4')}>
                         <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
                             {nominas.from}–{nominas.to} de {nominas.total} nóminas
                         </span>
@@ -363,7 +409,7 @@ export default function NominaIndex() {
                             <button
                                 disabled={nominas.current_page === 1}
                                 onClick={() => router.visit(nominas.prev_page_url ?? '')}
-                                className="p-1.5 rounded border disabled:opacity-40"
+                                className="disabled:opacity-40 p-1.5 border rounded"
                                 style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}
                             >
                                 <ChevronLeft className="w-4 h-4" />
@@ -371,7 +417,7 @@ export default function NominaIndex() {
                             <button
                                 disabled={nominas.current_page === nominas.last_page}
                                 onClick={() => router.visit(nominas.next_page_url ?? '')}
-                                className="p-1.5 rounded border disabled:opacity-40"
+                                className="disabled:opacity-40 p-1.5 border rounded"
                                 style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}
                             >
                                 <ChevronRight className="w-4 h-4" />
@@ -379,6 +425,7 @@ export default function NominaIndex() {
                         </div>
                     </div>
                 )}
+
             </div>
         </AppLayout>
     )

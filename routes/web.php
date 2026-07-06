@@ -48,7 +48,10 @@ use App\Http\Controllers\RRHH\ColaboradorController;
 use App\Http\Controllers\RRHH\AsistenciaController;
 use App\Http\Controllers\RRHH\HorasExtrasController;
 use App\Http\Controllers\RRHH\NominaController;
+use App\Http\Controllers\RRHH\PrestamosController;
+use App\Http\Controllers\RRHH\LiquidacionesController;
 use App\Http\Controllers\ManualesController;
+use App\Http\Controllers\Reportes\ReporteSriController;
 use Illuminate\Support\Facades\Route;
 
 // Auth
@@ -69,6 +72,13 @@ Route::middleware('auth')->group(function () {
 Route::middleware('auth')->group(function () {
     Route::get('/', fn() => redirect()->route('dashboard'));
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+
+    // Notificaciones in-app
+    Route::prefix('notificaciones')->name('notificaciones.')->group(function () {
+        Route::get('/',             [\App\Http\Controllers\NotificacionController::class, 'index'])->name('index');
+        Route::post('/{id}/leer',   [\App\Http\Controllers\NotificacionController::class, 'marcarLeida'])->name('leer');
+        Route::post('/leer-todas',  [\App\Http\Controllers\NotificacionController::class, 'marcarTodasLeidas'])->name('leer-todas');
+    });
 
     // Manuales de Uso
     Route::get('/manuales',             [ManualesController::class, 'index'])->name('manuales.index');
@@ -91,6 +101,22 @@ Route::middleware('auth')->group(function () {
         return $pdf->stream('manual-compras.pdf');
     })->name('manuales.compras-pdf');
 
+    Route::get('/manuales/rrhh/pdf-dinamico', function () {
+        $empresa = \App\Models\Empresa::find(session('empresa_activa_id'));
+        $usuario = auth()->user();
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.manual-rrhh', compact('empresa', 'usuario'))
+            ->setPaper('letter', 'portrait');
+        return $pdf->stream('manual-rrhh.pdf');
+    })->name('manuales.rrhh-pdf');
+
+    Route::get('/manuales/reportes-sri/pdf-dinamico', function () {
+        $empresa = \App\Models\Empresa::find(session('empresa_activa_id'));
+        $usuario = auth()->user();
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.manual-reportes-sri', compact('empresa', 'usuario'))
+            ->setPaper('letter', 'portrait');
+        return $pdf->stream('manual-reportes-sri.pdf');
+    })->name('manuales.reportes-sri-pdf');
+
     Route::get('/manuales/diagnostico/pdf-dinamico', function () {
         $empresa = \App\Models\Empresa::find(session('empresa_activa_id'));
         $usuario = auth()->user();
@@ -108,6 +134,7 @@ Route::middleware('auth')->group(function () {
             Route::get('/{usuario}/editar', [UsuarioController::class, 'edit'])->name('edit');
             Route::put('/{usuario}', [UsuarioController::class, 'update'])->name('update');
             Route::patch('/{usuario}/toggle-estado', [UsuarioController::class, 'toggleEstado'])->name('toggle-estado');
+            Route::patch('/{usuario}/colaborador', [UsuarioController::class, 'vincularColaborador'])->name('vincular-colaborador');
             Route::get('/{usuario}/accesos', [UsuarioController::class, 'show'])->name('show');
         });
 
@@ -157,6 +184,8 @@ Route::middleware('auth')->group(function () {
             Route::get('/balance-comprobacion',  [ReporteContableController::class, 'balanceComprobacion'])->name('balance-comprobacion');
             Route::get('/balance-general',       [ReporteContableController::class, 'balanceGeneral'])     ->name('balance-general');
             Route::get('/estado-resultados',     [ReporteContableController::class, 'estadoResultados'])   ->name('estado-resultados');
+            Route::get('/flujo-caja',            [ReporteContableController::class, 'flujoCaja'])           ->name('flujo-caja');
+            Route::get('/flujo-caja-excel',      [ReporteContableController::class, 'flujoCajaExcel'])      ->name('flujo-caja-excel');
         });
 
         Route::prefix('contabilidad/asientos')->name('contabilidad.asientos.')->group(function () {
@@ -446,6 +475,32 @@ Route::middleware('auth')->group(function () {
             Route::get('/{id}/pdf/{did}',          [NominaController::class, 'pdfIndividual']) ->name('pdf-individual');
             Route::get('/{id}/zip',                [NominaController::class, 'pdfMasivo'])     ->name('pdf-masivo');
         });
+
+        Route::prefix('prestamos')->name('prestamos.')->group(function () {
+            Route::get('/',                [PrestamosController::class, 'index'])   ->name('index');
+            Route::post('/',               [PrestamosController::class, 'store'])   ->name('store');
+            Route::patch('/{id}/pagar',    [PrestamosController::class, 'pagar'])   ->name('pagar');
+            Route::delete('/{id}',         [PrestamosController::class, 'destroy']) ->name('destroy');
+        });
+
+        Route::prefix('liquidaciones')->name('liquidaciones.')->group(function () {
+            Route::get('/',                  [LiquidacionesController::class, 'index'])   ->name('index');
+            Route::post('/calcular',         [LiquidacionesController::class, 'calcular'])->name('calcular');
+            Route::post('/',                 [LiquidacionesController::class, 'store'])   ->name('store');
+            Route::put('/{id}',              [LiquidacionesController::class, 'update'])  ->name('update');
+            Route::post('/{id}/aprobar',     [LiquidacionesController::class, 'aprobar']) ->name('aprobar');
+            Route::get('/{id}/pdf',          [LiquidacionesController::class, 'pdf'])     ->name('pdf');
+            Route::delete('/{id}',           [LiquidacionesController::class, 'destroy']) ->name('destroy');
+        });
+    });
+
+    // Reportes SRI
+    Route::prefix('reportes/sri')->name('reportes.sri.')->group(function () {
+        Route::get('/',     [ReporteSriController::class, 'index'])        ->name('index');
+        Route::get('/ats',  [ReporteSriController::class, 'ats'])          ->name('ats');
+        Route::get('/f103', [ReporteSriController::class, 'formulario103'])->name('f103');
+        Route::get('/f104',      [ReporteSriController::class, 'formulario104'])->name('f104');
+        Route::get('/anexo-ice', [ReporteSriController::class, 'anexoIce'])    ->name('anexo-ice');
     });
 
     // Ventas

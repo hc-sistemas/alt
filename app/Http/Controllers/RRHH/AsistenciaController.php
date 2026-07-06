@@ -6,17 +6,17 @@ use App\Http\Controllers\Controller;
 use App\Models\Asistencia;
 use App\Models\Colaborador;
 use App\Models\HorasExtrasAprobacion;
-use App\Models\Horario;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class AsistenciaController extends Controller
 {
-    public function index(Request $request): Response
+    public function index(): Response
     {
         $empresaId   = session('empresa_activa_id');
         $ahora       = now();
@@ -154,34 +154,38 @@ class AsistenciaController extends Controller
                 $tipoExtra = ($esFindeSemana || $esMadrugada)
                     ? 'extraordinaria'
                     : 'suplementaria';
-
-                // Crear solicitud de aprobación si hay horas extra
-                if ($horasExtra > 0) {
-                    $horaSalidaCarbon = Carbon::parse("{$hoy} {$horario->hora_salida}");
-                    $sueldo           = $colaborador->sueldo_base;
-                    $valorHora        = $sueldo / 240;
-                    $factor           = $tipoExtra === 'extraordinaria' ? 2.0 : 1.5;
-                    $valorCalculado   = round($horasExtra * $valorHora * $factor, 2);
-
-                    HorasExtrasAprobacion::create([
-                        'colaborador_id'   => $colaborador->id,
-                        'asistencia_id'    => $asistencia->id,
-                        'fecha'            => $hoy,
-                        'horas_solicitadas'=> $horasExtra,
-                        'tipo'             => $tipoExtra,
-                        'valor_calculado'  => $valorCalculado,
-                        'estado'           => 'pendiente',
-                    ]);
-                }
             }
         }
 
-        $asistencia->update([
-            'hora_salida' => $ahora,
-            'horas_extra' => $horasExtra,
-            'tipo_extra'  => $tipoExtra,
-            'ip_salida'   => $request->ip(),
-        ]);
+        DB::transaction(function () use ($asistencia, $ahora, $horasExtra, $tipoExtra, $colaborador, $hoy, $request) {
+            $asistencia->update([
+                'hora_salida' => $ahora,
+                'horas_extra' => $horasExtra,
+                'tipo_extra'  => $tipoExtra,
+                'ip_salida'   => $request->ip(),
+            ]);
+
+            if ($horasExtra > 0 && $tipoExtra) {
+                $sueldo         = $colaborador->sueldo_base;
+                $valorHora      = $sueldo / 240;
+                $factor         = $tipoExtra === 'extraordinaria' ? 2.0 : 1.5;
+                $valorCalculado = round($horasExtra * $valorHora * $factor, 2);
+
+                HorasExtrasAprobacion::firstOrCreate(
+                    [
+                        'colaborador_id' => $colaborador->id,
+                        'asistencia_id'  => $asistencia->id,
+                        'fecha'          => $hoy,
+                    ],
+                    [
+                        'horas_solicitadas' => $horasExtra,
+                        'tipo'              => $tipoExtra,
+                        'valor_calculado'   => $valorCalculado,
+                        'estado'            => 'pendiente',
+                    ]
+                );
+            }
+        });
 
         $msg = "Salida registrada a las " . $ahora->format('H:i:s');
         if ($horasExtra > 0) {

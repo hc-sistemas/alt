@@ -4,7 +4,7 @@ import AppLayout from '@/Layouts/AppLayout'
 import {
     Library, Landmark, ShoppingCart, BookOpen,
     Settings, Package, UserCircle, X, ExternalLink,
-    FileText, AlertCircle, ClipboardList,
+    FileText, AlertCircle, ClipboardList, Users, BarChart2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { PageProps } from '@/types'
@@ -37,7 +37,9 @@ const CONFIG: Record<string, {
     contabilidad:  { icon: BookOpen,     color: 'text-green-500',  bg: 'bg-green-500/10',  badge: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300' },
     configuracion: { icon: Settings,     color: 'text-slate-500',  bg: 'bg-slate-500/10',  badge: 'bg-slate-100 text-slate-800 dark:bg-slate-900/40 dark:text-slate-300' },
     inventario:    { icon: Package,      color: 'text-purple-500', bg: 'bg-purple-500/10', badge: 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300' },
-    personas:      { icon: UserCircle,   color: 'text-teal-500',   bg: 'bg-teal-500/10',   badge: 'bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-300' },
+    personas:        { icon: UserCircle,   color: 'text-teal-500',   bg: 'bg-teal-500/10',   badge: 'bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-300' },
+    rrhh:            { icon: Users,        color: 'text-rose-500',   bg: 'bg-rose-500/10',   badge: 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300' },
+    'reportes-sri':  { icon: BarChart2,    color: 'text-amber-500',  bg: 'bg-amber-500/10',  badge: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300' },
 }
 
 const fallback = { icon: FileText, color: 'text-gray-500', bg: 'bg-gray-500/10', badge: 'bg-gray-100 text-gray-800' }
@@ -64,14 +66,14 @@ function ManualCard({ manual, onAbrir }: { manual: Manual; onAbrir: () => void }
                     <Icon className={cn('w-6 h-6', cfg.color)} />
                 </div>
                 <span className={cn('text-[10px] font-semibold px-2 py-0.5 rounded-full', cfg.badge)}>
-                    {['bancos', 'compras', 'contabilidad', 'diagnostico'].includes(manual.clave) ? 'Dinámico' : 'PDF'}
+                    {['bancos', 'compras', 'contabilidad', 'diagnostico', 'rrhh', 'reportes-sri'].includes(manual.clave) ? 'Dinámico' : 'PDF'}
                 </span>
             </div>
 
             {/* Texto */}
             <div className="flex-1">
                 <h3 className="font-bold text-base mb-1" style={{ color: 'var(--text-main)' }}>
-                    {manual.clave === 'diagnostico' ? manual.titulo : `Manual de ${manual.titulo}`}
+                    {['diagnostico', 'reportes-sri'].includes(manual.clave) ? manual.titulo : `Manual de ${manual.titulo}`}
                 </h3>
                 <p className="text-sm leading-relaxed" style={{ color: 'var(--text-muted)' }}>
                     {manual.descripcion}

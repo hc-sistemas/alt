@@ -4,12 +4,14 @@ namespace App\Http\Controllers\Configuracion;
 
 use App\Http\Controllers\Controller;
 use App\Models\CentroCosto;
+use App\Models\Colaborador;
 use App\Models\Empresa;
 use App\Models\Perfil;
 use App\Models\Usuario;
 use App\Services\AuditoriaService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules\Password;
 use Inertia\Inertia;
@@ -31,8 +33,12 @@ class UsuarioController extends Controller
             ->when($request->estado !== null, fn($q) => $q->where('estado', $request->estado === 'activo'));
 
         return Inertia::render('Configuracion/Usuarios/Index', [
-            'usuarios' => $query->paginate(15)->withQueryString(),
-            'perfiles' => Perfil::orderBy('nombre')->get(['id', 'nombre']),
+            'usuarios'      => $query->paginate(15)->withQueryString(),
+            'perfiles'      => Perfil::orderBy('nombre')->get(['id', 'nombre']),
+            'colaboradores' => Colaborador::where('empresa_id', session('empresa_activa_id'))
+                ->where('estado', true)
+                ->orderBy('apellidos')
+                ->get(['id', 'apellidos', 'nombres', 'usuario_id']),
             'filters' => $request->only(['search', 'perfil_id', 'estado']),
         ]);
     }
@@ -146,5 +152,28 @@ class UsuarioController extends Controller
                 ->limit(30)
                 ->get(),
         ]);
+    }
+
+    public function vincularColaborador(Request $request, Usuario $usuario): RedirectResponse
+    {
+        $data = $request->validate([
+            'colaborador_id' => ['nullable', 'integer', 'exists:colaboradores,id'],
+        ]);
+
+        DB::transaction(function () use ($usuario, $data) {
+            // Quitar cualquier vínculo anterior de este usuario
+            Colaborador::where('usuario_id', $usuario->id)->update(['usuario_id' => null]);
+
+            if (!empty($data['colaborador_id'])) {
+                // Quitar cualquier usuario previo que tuviera este colaborador
+                Colaborador::where('id', $data['colaborador_id'])
+                    ->update(['usuario_id' => $usuario->id]);
+            }
+        });
+
+        $this->auditoria->documento('editar', 'configuracion', 'usuarios', $usuario->id,
+            "Colaborador vinculado al usuario {$usuario->username}");
+
+        return back()->with('success', 'Colaborador actualizado correctamente.');
     }
 }

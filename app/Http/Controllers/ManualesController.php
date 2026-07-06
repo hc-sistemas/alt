@@ -13,9 +13,21 @@ class ManualesController extends Controller
         return [
             'diagnostico' => [
                 'titulo'      => 'Diagnóstico Dev 2',
-                'descripcion' => 'Estado de avance Dev 2: Contabilidad 73%, Compras 92%, Bancos 95%. Ítems completados, parciales y pendientes críticos para Dev 3.',
+                'descripcion' => 'Estado Dev 2 (actualizado): Contabilidad/Compras/Bancos/Reportes 100%, RRHH Timbre Digital, Vinculación Usuario-Colaborador, Fixes timezone + bugs. Total 99%.',
                 'tipo'        => 'dinamico',
                 'route'       => 'manuales.diagnostico-pdf',
+            ],
+            'rrhh' => [
+                'titulo'      => 'RRHH',
+                'descripcion' => 'Colaboradores, asistencia diaria, horas extras y nómina mensual con PDFs individuales y ZIP masivo.',
+                'tipo'        => 'dinamico',
+                'route'       => 'manuales.rrhh-pdf',
+            ],
+            'reportes-sri' => [
+                'titulo'      => 'Reportes SRI',
+                'descripcion' => 'ATS (XML + PDF), Formulario 103 (Retenciones IR) y Formulario 104 (IVA). Declaraciones mensuales al SRI.',
+                'tipo'        => 'dinamico',
+                'route'       => 'manuales.reportes-sri-pdf',
             ],
             'bancos' => [
                 'titulo'      => 'Bancos',

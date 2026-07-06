@@ -87,13 +87,13 @@ export interface LimiteDescuento {
 export interface Notificacion {
     id: number
     usuario_id: number
+    tipo: string
     titulo: string
-    mensaje: string
-    tipo: 'info' | 'success' | 'warning' | 'danger'
-    icono?: string
-    url?: string
+    mensaje: string | null
+    icono?: string | null
+    url?: string | null
     leida: boolean
-    leida_at?: string
+    leida_at?: string | null
     created_at: string
 }
 
@@ -133,6 +133,7 @@ export interface PageProps {
     empresas_usuario: Partial<Empresa>[]
     flash: { success?: string; error?: string; warning?: string }
     ziggy?: Record<string, unknown>
+    notificaciones_no_leidas: number
     [key: string]: unknown
 }
 
@@ -967,4 +968,34 @@ export interface Nomina {
     generadoPor?: { id: number; nombre: string }
     procesadoPor?: { id: number; nombre: string }
     pagadoPor?: { id: number; nombre: string }
+}
+
+export interface Liquidacion {
+    id: number
+    colaborador_id: number
+    fecha_salida: string
+    motivo: 'renuncia' | 'despido' | 'fin_contrato'
+    decimos_acumulados: number
+    vacaciones: number
+    fondos_reserva: number
+    anticipos_descontar: number
+    total_liquidacion: number
+    estado: 'borrador' | 'aprobada'
+    modificado_manualmente?: boolean
+    created_by: number | null
+    created_at: string
+    updated_at: string
+    colaborador?: Colaborador
+    creadoPor?: { id: number; nombre: string }
+}
+
+export interface LiquidacionCalculo {
+    colaborador: Pick<Colaborador, 'id' | 'apellidos' | 'nombres' | 'cargo' | 'sueldo_base' | 'fecha_ingreso'>
+    meses_laborados: number
+    dias_laborados: number
+    decimos_acumulados: number
+    vacaciones: number
+    fondos_reserva: number
+    anticipos_descontar: number
+    total_liquidacion: number
 }

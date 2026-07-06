@@ -40,14 +40,20 @@ const notify = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+// BUG 2: forzar timezone Ecuador independientemente del TZ del navegador
 function formatHora(iso: string | null): string {
     if (!iso) return '—'
-    return new Date(iso).toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' })
+    return new Date(iso).toLocaleTimeString('es-EC', {
+        hour: '2-digit', minute: '2-digit', timeZone: 'America/Guayaquil',
+    })
 }
 
+// BUG 3: fecha viene como "YYYY-MM-DD" (sin cast Eloquent); se toma solo los primeros 10 chars
+// para ser robusto ante cualquier serialización de Eloquent
 function formatFecha(fecha: string): string {
-    return new Date(fecha + 'T00:00:00').toLocaleDateString('es-EC', {
-        weekday: 'short', day: '2-digit', month: 'short',
+    const d = fecha.substring(0, 10)
+    return new Date(d + 'T12:00:00Z').toLocaleDateString('es-EC', {
+        weekday: 'short', day: '2-digit', month: 'short', timeZone: 'America/Guayaquil',
     })
 }
 
@@ -119,8 +125,15 @@ export default function AsistenciaIndex() {
 
     const [procesando, setProcesando] = useState(false)
 
-    if (flash?.success) notify.ok(flash.success)
-    if (flash?.error)   notify.error(flash.error)
+    // BUG 1: mover fuera del render body para que se dispare solo cuando cambia flash,
+    // no en cada re-render (ej. setProcesando(false) causaba un segundo toast)
+    useEffect(() => {
+        if (flash?.success) notify.ok(flash.success)
+    }, [flash?.success])
+
+    useEffect(() => {
+        if (flash?.error) notify.error(flash.error)
+    }, [flash?.error])
 
     const tieneEntrada   = !!(asistenciaHoy?.hora_entrada)
     const tieneSalida    = !!(asistenciaHoy?.hora_salida)

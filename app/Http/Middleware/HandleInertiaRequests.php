@@ -20,6 +20,13 @@ class HandleInertiaRequests extends Middleware
         $user = $request->user();
         $empresaActivaId = $request->session()->get('empresa_activa_id');
 
+        $notificacionesNoLeidas = 0;
+        if ($user) {
+            $notificacionesNoLeidas = \App\Models\Notificacion::where('usuario_id', $user->id)
+                ->where('leida', false)
+                ->count();
+        }
+
         return [
             ...parent::share($request),
             'auth' => [
@@ -73,6 +80,7 @@ class HandleInertiaRequests extends Middleware
                 ...(new \Tighten\Ziggy\Ziggy)->toArray(),
                 'location' => $request->url(),
             ],
+            'notificaciones_no_leidas' => $notificacionesNoLeidas,
         ];
     }
 }
