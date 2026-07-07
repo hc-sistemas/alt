@@ -31,6 +31,7 @@ class IntegracionSeeder extends Seeder
             $this->seedChequeAnulado($empresaId, $adminId);
             $this->seedImportacionConAnticipo($empresaId, $adminId);
             $this->seedTallerOrdenes($empresaId, $adminId);
+            $this->seedRetenciones($empresaId, $adminId);
         });
     }
 
@@ -575,6 +576,95 @@ class IntegracionSeeder extends Seeder
                     'estado'        => 'reservado',
                 ]);
             }
+        }
+    }
+
+    // ── 11. RETENCIONES EN LA FUENTE (F103 / F104) ───────────────────────────
+
+    private function seedRetenciones(int $empresaId, int $adminId): void
+    {
+        if (DB::table('retenciones')->where('empresa_id', $empresaId)->exists()) return;
+
+        // Registrar secuencial RET si no existe
+        if (!DB::table('secuenciales')
+            ->where('empresa_id', $empresaId)
+            ->where('tipo_documento', 'RET')
+            ->exists()
+        ) {
+            DB::table('secuenciales')->insert([
+                'empresa_id'      => $empresaId,
+                'tipo_documento'  => 'RET',
+                'establecimiento' => '001',
+                'punto_emision'   => '001',
+                'siguiente'       => 4,          // los primeros 3 los usamos aquí
+            ]);
+        }
+
+        // Compras de proveedores locales (RUC/cédula) con IVA > 0 — junio 2026
+        $compras = DB::table('compras as c')
+            ->join('proveedores as p', 'p.id', '=', 'c.proveedor_id')
+            ->where('c.empresa_id', $empresaId)
+            ->where('c.estado', '!=', 'anulada')
+            ->where('c.subtotal_iva', '>', 0)
+            ->whereIn('p.tipo_identificacion', ['04', '05'])
+            ->orderBy('c.id')
+            ->limit(3)
+            ->get([
+                'c.id', 'c.num_documento', 'c.fecha_emision',
+                'c.subtotal_iva', 'c.total_iva',
+                'p.identificacion', 'p.razon_social',
+            ]);
+
+        // Tres combinaciones de códigos IR + IVA para diversificar el F103
+        $config = [
+            ['ir_cod' => '312', 'ir_pct' => 1.00, 'iva_cod' => '725', 'iva_pct' => 30.00],
+            ['ir_cod' => '307', 'ir_pct' => 2.00, 'iva_cod' => '721', 'iva_pct' => 70.00],
+            ['ir_cod' => '312', 'ir_pct' => 1.00, 'iva_cod' => '725', 'iva_pct' => 30.00],
+        ];
+
+        foreach ($compras as $i => $c) {
+            $cfg    = $config[$i] ?? $config[0];
+            $baseIr = round((float) $c->subtotal_iva, 4);
+            $baseIva = round((float) $c->total_iva, 4);
+            $retIr  = round($baseIr  * $cfg['ir_pct']  / 100, 2);
+            $retIva = round($baseIva * $cfg['iva_pct'] / 100, 2);
+            $seq    = str_pad($i + 1, 9, '0', STR_PAD_LEFT);
+
+            $retId = DB::table('retenciones')->insertGetId([
+                'empresa_id'        => $empresaId,
+                'compra_id'         => $c->id,
+                'usuario_id'        => $adminId,
+                'establecimiento'   => '001',
+                'punto_emision'     => '001',
+                'secuencial'        => $seq,
+                'numero_completo'   => "001-001-{$seq}",
+                'fecha_emision'     => $c->fecha_emision,
+                'identificacion'    => $c->identificacion,
+                'razon_social'      => $c->razon_social,
+                'num_comp_retenido' => $c->num_documento,
+                'total'             => $retIr + $retIva,
+                'estado_sri'        => 'autorizado',
+                'estado'            => 'activa',
+                'created_at'        => now(),
+            ]);
+
+            DB::table('retencion_detalles')->insert([
+                'retencion_id'   => $retId,
+                'tipo'           => 'IR',
+                'codigo'         => $cfg['ir_cod'],
+                'porcentaje'     => $cfg['ir_pct'],
+                'base_imponible' => $baseIr,
+                'valor_retenido' => $retIr,
+            ]);
+
+            DB::table('retencion_detalles')->insert([
+                'retencion_id'   => $retId,
+                'tipo'           => 'IVA',
+                'codigo'         => $cfg['iva_cod'],
+                'porcentaje'     => $cfg['iva_pct'],
+                'base_imponible' => $baseIva,
+                'valor_retenido' => $retIva,
+            ]);
         }
     }
 }
