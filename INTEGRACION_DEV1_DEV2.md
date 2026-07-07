@@ -87,6 +87,41 @@
 | B-02 | `taller_ingresos` no tiene columna `updated_at` — Eloquent timestamps causaría error en ORM | ✅ Corregido (2026-07-06): `TallerIngreso` ya tenía `const UPDATED_AT = null` — Laravel omite `updated_at` en CREATE/UPDATE/SAVE. Verificado con tests tinker: create/update/save/query-builder sin errores. |
 | B-03 | `taller_equipos` no tiene `empresa_id` — acceso cruzado entre empresas en `show()` methods | ✅ Corregido (2026-07-06): Ningún query filtra `empresa_id` directo en `taller_equipos` (los listados index ya filtran vía `taller_ingresos.empresa_id`). Agregado `abort_if(empresa_id mismatch, 403)` en todos los métodos con route model binding: `IngresoController::show`, `OrdenTrabajoController::show/cambiarEstado`, `DiagnosticoController::create/store/aprobar`, `LiquidacionController::show/liquidar/agregarRepuesto`. |
 | B-04 | `datafast_lotes` pre-existentes (id=1,2) sin registro en `datafast_liquidaciones` — inconsistencia de datos legacy | ⚠️ Data legacy — no bloquea nuevos flujos |
+| B-05 | **[CRÍTICO] Liquidaciones wizard completamente bloqueado** — 4 bugs encadenados que impedían avanzar de paso 1 a paso 2 | ✅ Corregido (2026-07-06): commits `1d22283`, `0b7790f`, `2469caf`, `91d1b61` |
+
+---
+
+## B-05 — Detalle: Liquidaciones wizard (bugs encadenados)
+
+### Causa raíz: CSRF 419 en `bootstrap.js`
+`resources/js/bootstrap.js` solo configuraba el header `X-Requested-With`. En Laravel 12 la cookie `XSRF-TOKEN` viaja encriptada; axios la enviaba como `X-XSRF-TOKEN` pero el servidor la rechazaba. El token plano del `<meta name="csrf-token">` no se leía.
+
+**Fix (commit `91d1b61`):**
+```js
+const csrfMeta = document.head.querySelector('meta[name="csrf-token"]');
+if (csrfMeta) {
+    window.axios.defaults.headers.common['X-CSRF-TOKEN'] = csrfMeta.getAttribute('content');
+}
+```
+
+**Alcance:** Solo Liquidaciones usa `window.axios.post()` directamente. Todos los demás módulos usan el `router.*` de Inertia (que maneja CSRF internamente) o `fetch()` con `X-CSRF-TOKEN` hardcoded en cada llamada — **ningún otro módulo fue afectado**.
+
+### Bugs secundarios destapados en el proceso de diagnóstico
+
+| Orden | Síntoma | Causa | Fix |
+|---|---|---|---|
+| 1 | `"All Inertia requests must receive a valid Inertia response"` | `calcular()` y `guardarBorrador()` usaban `router.post()` (espera respuesta Inertia) pero el backend devuelve `response()->json()` | Convertir ambas funciones a `window.axios.post()` (`1d22283`) |
+| 2 | Botón "Calculando..." atascado indefinidamente | Cadena `.then().catch().finally()` — si la llamada lanza síncronamente, `.finally()` no corre | Convertir a `async/await` con `try/catch/finally` — garantiza que `finally` corre siempre (`0b7790f`) |
+| 3 | Frontend mostraba "Error al calcular. Verifique los datos." sin mensaje específico | Respuesta HTML 419 → `err.response.data` es string; acceder `.message` sobre string = `undefined` | Backend: `try/catch` retorna JSON siempre. Frontend: verificar `typeof raw === 'object'` antes de leer propiedades (`2469caf`) |
+| 4 | 419 CSRF Mismatch (causa de todo lo anterior) | Ver arriba | Fix `bootstrap.js` (`91d1b61`) |
+
+### Cálculos verificados post-fix (tinker)
+
+| Colaborador | Motivo | Fecha salida | Total calculado |
+|---|---|---|---|
+| Cárdenas Vega Roberto Esteban (ID 6) | Renuncia | 07/07/2026 | **$788.61** (vacaciones $888.61 − anticipos $100) |
+| Ruiz Andrade Patricia Elizabet (ID 7) | Despido | 07/07/2026 | **$6,587.32** (décimos + vac + FR, sin anticipos) |
+| Maldonado Rivera Carlos Andrés (ID 1) | — | — | Anticipo activo: $200 — se descontaría correctamente |
 
 ---
 
@@ -98,6 +133,7 @@ npm run build:  0 errores    ✅
 php artisan:    OK           ✅
 Tests:          10/10        ✅
 Bugs B-02/B-03: ✅ Corregidos (2026-07-06)
+Bug  B-05:      ✅ Corregido (2026-07-06) — wizard Liquidaciones operativo
 ```
 
 **Rama lista para revisión final antes de push a `origin/feature/dev2-contabilidad-compras`.**
