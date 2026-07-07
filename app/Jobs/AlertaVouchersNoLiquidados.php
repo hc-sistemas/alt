@@ -42,7 +42,9 @@ class AlertaVouchersNoLiquidados implements ShouldQueue
             foreach ($usuariosAlerta as $usuario) {
                 foreach ($lotes as $lote) {
                     $banco  = $lote->bancoCaja?->nombre ?? "Banco #{$lote->banco_caja_id}";
-                    $horas  = (int) now()->diffInHours($lote->created_at);
+                    // abs(): diffInHours() en Carbon 3 es firmado (negativo porque el lote
+                    // siempre fue creado en el pasado respecto a now()).
+                    $horas  = (int) abs(now()->diffInHours($lote->created_at));
                     $fecha  = $lote->fecha?->format('d/m/Y') ?? '—';
 
                     $yaExiste = Notificacion::where('usuario_id', $usuario->id)
