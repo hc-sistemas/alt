@@ -155,7 +155,7 @@ export default function AsistenciaIndex() {
     }
 
     return (
-        <AppLayout title="Asistencia">
+        <AppLayout title="Asistencia" suppressFlash>
             <Head title="Asistencia — RRHH" />
             <ToastContainer position="top-right" />
 

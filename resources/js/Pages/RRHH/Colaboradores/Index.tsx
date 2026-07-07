@@ -346,17 +346,13 @@ function ColaboradorModal({ colaborador, puestos, horarios, usuarios, onClose }:
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function ColaboradoresIndex() {
-    const { colaboradores, puestos, horarios, usuarios, departamentos, filtros, flash } =
-        usePage<Props & { flash: { success?: string; error?: string } }>().props
+    const { colaboradores, puestos, horarios, usuarios, departamentos, filtros } =
+        usePage<Props>().props
 
     const [modal, setModal] = useState<{ type: 'nuevo' | 'editar'; colaborador?: Colaborador } | null>(null)
     const [buscar, setBuscar] = useState(filtros.buscar ?? '')
     const [departamento, setDepartamento] = useState(filtros.departamento ?? '')
     const [estado, setEstado] = useState(filtros.estado ?? '')
-
-    // Flash messages
-    if (flash?.success) notify.ok(flash.success)
-    if (flash?.error)   notify.error(flash.error)
 
     function filtrar() {
         router.get(route('rrhh.colaboradores.index'), {
@@ -386,7 +382,7 @@ export default function ColaboradoresIndex() {
     const valorHora = (sueldo: number) => (sueldo / 240).toFixed(4)
 
     return (
-        <AppLayout title="Colaboradores">
+        <AppLayout title="Colaboradores" suppressFlash>
             <Head title="Colaboradores — RRHH" />
             <ToastContainer position="top-right" />
 
