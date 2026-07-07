@@ -190,8 +190,10 @@ class AsientoContableController extends Controller
             return back()->with('error', 'El asiento ya está anulado. No es necesario eliminarlo.');
         }
 
-        $horasCreado = now()->diffInHours($asiento->created_at);
-        if ($horasCreado > 24) {
+        // Comparación directa (no diffInHours) para no depender del signo: en Carbon 3
+        // diffInHours() es firmado por defecto y now()->diffInHours($pasado) da negativo,
+        // lo que nunca superaba el umbral de 24 y dejaba el candado inoperante.
+        if ($asiento->created_at->lt(now()->subHours(24))) {
             return back()->with('error',
                 "No se puede eliminar: el asiento tiene más de 24 horas. Usa la opción Anular.");
         }
