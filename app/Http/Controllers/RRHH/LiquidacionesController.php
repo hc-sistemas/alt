@@ -64,61 +64,68 @@ class LiquidacionesController extends Controller
             'fecha_salida'   => 'required|date',
         ]);
 
-        $col = Colaborador::findOrFail($data['colaborador_id']);
+        try {
+            $col = Colaborador::findOrFail($data['colaborador_id']);
 
-        $fechaIngreso = \Carbon\Carbon::parse($col->fecha_ingreso);
-        $fechaSalida  = \Carbon\Carbon::parse($data['fecha_salida']);
+            if (empty($col->fecha_ingreso)) {
+                return response()->json(['error' => 'El colaborador no tiene fecha de ingreso registrada.'], 422);
+            }
+            if ((float)$col->sueldo_base <= 0) {
+                return response()->json(['error' => 'El colaborador no tiene sueldo base registrado.'], 422);
+            }
 
-        if ($fechaSalida->lt($fechaIngreso)) {
-            return response()->json(['error' => 'La fecha de salida no puede ser anterior a la de ingreso.'], 422);
+            $fechaIngreso = \Carbon\Carbon::parse($col->fecha_ingreso);
+            $fechaSalida  = \Carbon\Carbon::parse($data['fecha_salida']);
+
+            if ($fechaSalida->lt($fechaIngreso)) {
+                return response()->json(['error' => 'La fecha de salida no puede ser anterior a la fecha de ingreso ('.$fechaIngreso->format('d/m/Y').').'], 422);
+            }
+
+            $mesesLaborados = (float)$fechaIngreso->diffInMonths($fechaSalida);
+            $diasLaborados  = (int)$fechaIngreso->diffInDays($fechaSalida);
+
+            $decimoTercero = 0.0;
+            if ($col->decimo_tercero === 'acumula') {
+                $decimoTercero = round((float)$col->sueldo_base * $mesesLaborados / 12, 2);
+            }
+
+            $decimoCuarto = 0.0;
+            if ($col->decimo_cuarto === 'acumula') {
+                $decimoCuarto = round(self::SBU_2026 * $mesesLaborados / 12, 2);
+            }
+
+            $decimosAcumulados = round($decimoTercero + $decimoCuarto, 2);
+
+            $vacaciones = round((float)$col->sueldo_base * $diasLaborados / 720, 2);
+
+            $fondosReserva = 0.0;
+            if ($col->fondos_reserva === 'acumula' && $mesesLaborados >= 13) {
+                $fondosReserva = round((float)$col->sueldo_base * $mesesLaborados / 12 * 0.0833, 2);
+            }
+
+            $anticiposDescontar = round(
+                (float)PrestamoEmpleado::where('colaborador_id', $col->id)
+                    ->where('estado', 'activo')->sum('saldo'),
+                2
+            );
+
+            $totalLiquidacion = max(0, round($decimosAcumulados + $vacaciones + $fondosReserva - $anticiposDescontar, 2));
+
+            return response()->json([
+                'colaborador'        => $col->only(['id','apellidos','nombres','cargo','sueldo_base','fecha_ingreso']),
+                'meses_laborados'    => $mesesLaborados,
+                'dias_laborados'     => $diasLaborados,
+                'decimos_acumulados' => $decimosAcumulados,
+                'vacaciones'         => $vacaciones,
+                'fondos_reserva'     => $fondosReserva,
+                'anticipos_descontar'=> $anticiposDescontar,
+                'total_liquidacion'  => $totalLiquidacion,
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            return response()->json(['error' => 'Error al procesar el cálculo: '.$e->getMessage()], 500);
         }
-
-        $mesesLaborados = $fechaIngreso->diffInMonths($fechaSalida);
-        $diasLaborados  = $fechaIngreso->diffInDays($fechaSalida);
-
-        // Décimo Tercero acumulado proporcional (si acumula, no mensualiza)
-        $decimoTercero = 0.0;
-        if ($col->decimo_tercero === 'acumula') {
-            $decimoTercero = round((float)$col->sueldo_base * $mesesLaborados / 12, 2);
-        }
-
-        // Décimo Cuarto acumulado proporcional (SBU 2026 = $460)
-        $decimoCuarto = 0.0;
-        if ($col->decimo_cuarto === 'acumula') {
-            $decimoCuarto = round(self::SBU_2026 * $mesesLaborados / 12, 2);
-        }
-
-        $decimosAcumulados = round($decimoTercero + $decimoCuarto, 2);
-
-        // Vacaciones no gozadas proporcionales: sueldo * diasLaborados / 720
-        $vacaciones = round((float)$col->sueldo_base * $diasLaborados / 720, 2);
-
-        // Fondos de reserva proporcionales (solo desde mes 13)
-        $fondosReserva = 0.0;
-        if ($col->fondos_reserva === 'acumula' && $mesesLaborados >= 13) {
-            $fondosReserva = round((float)$col->sueldo_base * $mesesLaborados / 12 * 0.0833, 2);
-        }
-
-        // Anticipos/préstamos activos a descontar
-        $anticiposDescontar = round(
-            (float)PrestamoEmpleado::where('colaborador_id', $col->id)
-                ->where('estado', 'activo')->sum('saldo'),
-            2
-        );
-
-        $totalLiquidacion = round($decimosAcumulados + $vacaciones + $fondosReserva - $anticiposDescontar, 2);
-        $totalLiquidacion = max(0, $totalLiquidacion);
-
-        return response()->json([
-            'colaborador'        => $col->only(['id','apellidos','nombres','cargo','sueldo_base','fecha_ingreso']),
-            'meses_laborados'    => $mesesLaborados,
-            'dias_laborados'     => $diasLaborados,
-            'decimos_acumulados' => $decimosAcumulados,
-            'vacaciones'         => $vacaciones,
-            'fondos_reserva'     => $fondosReserva,
-            'anticipos_descontar'=> $anticiposDescontar,
-            'total_liquidacion'  => $totalLiquidacion,
-        ]);
     }
 
     // ── Guardar borrador (axios desde wizard — retorna JSON) ─────────────────

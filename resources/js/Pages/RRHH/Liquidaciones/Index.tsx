@@ -153,10 +153,17 @@ export default function LiquidacionesIndex({ liquidaciones, colaboradores, filtr
                 total_liquidacion:   String(calc.total_liquidacion),
             }))
         } catch (err: unknown) {
-            const d = (err as { response?: { data?: { errors?: Record<string, string[]>; error?: string; message?: string } } })?.response?.data
-            const errs = d?.errors ?? {}
-            const single = d?.error ?? d?.message
-            setErrCalc(Object.values(errs).flat().join(' · ') || single || 'Error al calcular. Verifique los datos.')
+            console.error('[calcular]', err)
+            const axErr = err as { response?: { status?: number; data?: unknown } }
+            const status = axErr.response?.status
+            const raw    = axErr.response?.data
+            let msg = ''
+            if (raw && typeof raw === 'object') {
+                const d = raw as { errors?: Record<string, string[]>; error?: string; message?: string }
+                msg = Object.values(d.errors ?? {}).flat().join(' · ') || d.error || d.message || ''
+            }
+            if (!msg && status) msg = `Error HTTP ${status} — revise la consola del navegador para detalles.`
+            setErrCalc(msg || 'Error al calcular. Verifique los datos e intente de nuevo.')
         } finally {
             setCalculando(false)
         }
@@ -192,10 +199,17 @@ export default function LiquidacionesIndex({ liquidaciones, colaboradores, filtr
             setWiz(w => ({ ...w, paso: 3, liquidacionId: res.data.liquidacion_id ?? null }))
             router.reload({ only: ['liquidaciones'] })
         } catch (err: unknown) {
-            const d = (err as { response?: { data?: { errors?: Record<string, string[]>; error?: string; message?: string } } })?.response?.data
-            const errs = d?.errors ?? {}
-            const single = d?.error ?? d?.message
-            setErrCalc(Object.values(errs).flat().join(' · ') || single || 'Error al guardar.')
+            console.error('[guardarBorrador]', err)
+            const axErr = err as { response?: { status?: number; data?: unknown } }
+            const status = axErr.response?.status
+            const raw    = axErr.response?.data
+            let msg = ''
+            if (raw && typeof raw === 'object') {
+                const d = raw as { errors?: Record<string, string[]>; error?: string; message?: string }
+                msg = Object.values(d.errors ?? {}).flat().join(' · ') || d.error || d.message || ''
+            }
+            if (!msg && status) msg = `Error HTTP ${status} al guardar.`
+            setErrCalc(msg || 'Error al guardar. Intente de nuevo.')
         } finally {
             setGuardando(false)
         }
