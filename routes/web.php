@@ -418,6 +418,7 @@ Route::middleware('auth')->group(function () {
             Route::post('/{conciliacion}/upload-csv',              [ConciliacionController::class, 'uploadEstadoCuenta'])  ->name('upload-csv');
             Route::post('/{conciliacion}/conciliar-partida',       [ConciliacionController::class, 'conciliarPartida'])    ->name('conciliar-partida');
             Route::post('/{conciliacion}/generar-asiento-ajuste',  [ConciliacionController::class, 'generarAsientoAjuste'])->name('generar-asiento-ajuste');
+            Route::post('/{conciliacion}/partidas/{partida}/generar-asiento', [ConciliacionController::class, 'generarAsientoPartida'])->name('generar-asiento-partida');
             Route::patch('/{conciliacion}/cerrar',                 [ConciliacionController::class, 'cerrar'])              ->name('cerrar');
             Route::patch('/{conciliacion}/conciliar',              [ConciliacionController::class, 'marcarConciliada'])    ->name('conciliar');
         });

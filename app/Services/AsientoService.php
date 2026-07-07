@@ -214,6 +214,7 @@ class AsientoService
         'cta_costo_ventas'            => '5.1.1.01',
         'cta_costo_ventas_importadas' => '5.1.1.02',
         'cta_ajuste_inventario'       => '5.1.1.04',
+        'cta_ajuste_conciliacion'     => '5.4.1.03',
         'cta_sueldos_salarios'        => '5.2.1.01',
         'cta_aporte_patronal'         => '5.2.1.03',
         'cta_comisiones_bancarias'    => '5.3.1.02',
@@ -828,7 +829,7 @@ class AsientoService
         // Si diferencia > 0 → falta dinero en sistema (ingreso no registrado)
         // Si diferencia < 0 → sobra en sistema (egreso no registrado)
         $ctaBancos = $this->cuentaId('cta_bancos_locales', $empresaId);
-        $ctaAjuste = $this->cuentaId('cta_ajuste_inventario', $empresaId);
+        $ctaAjuste = $this->cuentaId('cta_ajuste_conciliacion', $empresaId);
 
         $partidas = $diferencia > 0
             ? [
