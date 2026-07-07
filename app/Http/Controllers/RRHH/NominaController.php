@@ -249,6 +249,37 @@ class NominaController extends Controller
                 ]);
 
                 $nomina->detalles()->update(['estado' => 'procesado']);
+
+                // Descontar saldo de préstamos/anticipos activos AQUÍ, en el mismo momento
+                // en que se genera el asiento con el cruce HABER 1.1.3.4 (Regla NOM-02) —
+                // no al pagar. De lo contrario el asiento ya refleja la cuota descontada
+                // mientras prestamos_empleados.saldo sigue mostrando el valor viejo hasta
+                // que se registre el pago, una inconsistencia real entre el libro contable
+                // y la ficha del préstamo.
+                foreach ($nomina->detalles as $det) {
+                    if ((float)$det->descuento_prestamos > 0) {
+                        $prestamos = PrestamoEmpleado::where('colaborador_id', $det->colaborador_id)
+                            ->where('tipo', 'prestamo')->activos()->get();
+
+                        $pendiente = (float)$det->descuento_prestamos;
+                        foreach ($prestamos as $pr) {
+                            if ($pendiente <= 0) break;
+                            $descuento = min((float)$pr->cuota, $pendiente);
+                            $nuevoSaldo = max(0, (float)$pr->saldo - $descuento);
+                            $pr->update([
+                                'saldo'  => $nuevoSaldo,
+                                'estado' => $nuevoSaldo <= 0 ? 'pagado' : 'activo',
+                            ]);
+                            $pendiente -= $descuento;
+                        }
+                    }
+
+                    if ((float)$det->descuento_anticipos > 0) {
+                        PrestamoEmpleado::where('colaborador_id', $det->colaborador_id)
+                            ->where('tipo', 'anticipo')->where('estado', 'activo')
+                            ->update(['saldo' => 0, 'estado' => 'pagado']);
+                    }
+                }
             });
         } catch (\Throwable $e) {
             return back()->with('error', 'Error al procesar: ' . $e->getMessage());
@@ -283,31 +314,9 @@ class NominaController extends Controller
 
                 $nomina->detalles()->update(['estado' => 'pagado']);
 
-                // Descontar saldo de préstamos activos
-                foreach ($nomina->detalles as $det) {
-                    if ((float)$det->descuento_prestamos > 0) {
-                        $prestamos = PrestamoEmpleado::where('colaborador_id', $det->colaborador_id)
-                            ->where('tipo', 'prestamo')->activos()->get();
-
-                        $pendiente = (float)$det->descuento_prestamos;
-                        foreach ($prestamos as $pr) {
-                            if ($pendiente <= 0) break;
-                            $descuento = min((float)$pr->cuota, $pendiente);
-                            $nuevoSaldo = max(0, (float)$pr->saldo - $descuento);
-                            $pr->update([
-                                'saldo'  => $nuevoSaldo,
-                                'estado' => $nuevoSaldo <= 0 ? 'pagado' : 'activo',
-                            ]);
-                            $pendiente -= $descuento;
-                        }
-                    }
-
-                    if ((float)$det->descuento_anticipos > 0) {
-                        PrestamoEmpleado::where('colaborador_id', $det->colaborador_id)
-                            ->where('tipo', 'anticipo')->where('estado', 'activo')
-                            ->update(['saldo' => 0, 'estado' => 'pagado']);
-                    }
-                }
+                // El descuento de préstamos/anticipos ya se aplicó en procesar() — el saldo
+                // de prestamos_empleados debe quedar consistente con el asiento contable
+                // desde ese momento, no al registrar el pago.
             });
         } catch (\Throwable $e) {
             return back()->with('error', 'Error al registrar pago: ' . $e->getMessage());

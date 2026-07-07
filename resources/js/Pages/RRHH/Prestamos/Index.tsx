@@ -27,14 +27,14 @@ interface Props extends PageProps {
 
 const fmt = (n: number) => `$${Number(n).toFixed(2)}`
 
-function badgeEstado(estado: string) {
-    if (estado === 'pagado') return 'background:#DCFCE7;color:#166534;padding:1px 8px;border-radius:12px;font-size:11px;font-weight:600'
-    return 'background:#DBEAFE;color:#1E40AF;padding:1px 8px;border-radius:12px;font-size:11px;font-weight:600'
+function badgeEstado(estado: string): React.CSSProperties {
+    if (estado === 'pagado') return { background: '#DCFCE7', color: '#166534', padding: '1px 8px', borderRadius: 12, fontSize: 11, fontWeight: 600 }
+    return { background: '#DBEAFE', color: '#1E40AF', padding: '1px 8px', borderRadius: 12, fontSize: 11, fontWeight: 600 }
 }
 
-function badgeTipo(tipo: string) {
-    if (tipo === 'anticipo') return 'background:#FEF3C7;color:#78350F;padding:1px 8px;border-radius:12px;font-size:11px;font-weight:600'
-    return 'background:#F3E8FF;color:#6B21A8;padding:1px 8px;border-radius:12px;font-size:11px;font-weight:600'
+function badgeTipo(tipo: string): React.CSSProperties {
+    if (tipo === 'anticipo') return { background: '#FEF3C7', color: '#78350F', padding: '1px 8px', borderRadius: 12, fontSize: 11, fontWeight: 600 }
+    return { background: '#F3E8FF', color: '#6B21A8', padding: '1px 8px', borderRadius: 12, fontSize: 11, fontWeight: 600 }
 }
 
 // ── componente principal ───────────────────────────────────────────────────────
@@ -198,12 +198,12 @@ export default function PrestamosIndex({ prestamos, colaboradores, filtros, anio
                                             : `#${p.colaborador_id}`}
                                     </td>
                                     <td style={{ padding: '8px 12px' }}>
-                                        <span style={{ ...badgeTipo(p.tipo) as React.CSSProperties }}>
+                                        <span style={badgeTipo(p.tipo)}>
                                             {p.tipo === 'anticipo' ? 'Anticipo' : 'Préstamo'}
                                         </span>
                                     </td>
                                     <td style={{ padding: '8px 12px', color: 'var(--text-muted)' }}>
-                                        {new Date(p.fecha + 'T12:00:00Z').toLocaleDateString('es-EC', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                        {new Date(p.fecha).toLocaleDateString('es-EC', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' })}
                                     </td>
                                     <td style={{ padding: '8px 12px', fontWeight: 600 }}>{fmt(p.monto_total)}</td>
                                     <td style={{ padding: '8px 12px' }}>
@@ -213,7 +213,7 @@ export default function PrestamosIndex({ prestamos, colaboradores, filtros, anio
                                         {fmt(p.saldo)}
                                     </td>
                                     <td style={{ padding: '8px 12px' }}>
-                                        <span style={{ ...badgeEstado(p.estado) as React.CSSProperties }}>
+                                        <span style={badgeEstado(p.estado)}>
                                             {p.estado === 'pagado' ? 'Pagado' : 'Activo'}
                                         </span>
                                     </td>

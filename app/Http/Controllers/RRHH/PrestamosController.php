@@ -72,9 +72,7 @@ class PrestamosController extends Controller
         $col = Colaborador::where('id', $data['colaborador_id'])
             ->where('empresa_id', $empresaId)->firstOrFail();
 
-        if ($data['tipo'] === 'anticipo') {
-            $data['cuota'] = 0;
-        }
+        $data['cuota'] = $data['tipo'] === 'anticipo' ? 0 : ($data['cuota'] ?? 0);
 
         try {
             DB::transaction(function () use ($data, $empresaId) {
