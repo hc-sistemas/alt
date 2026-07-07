@@ -226,3 +226,166 @@ Conciliación con 9 partidas (3 auto-match + 1 cruce manual + 1 ajuste + reflejo
 **Nota:** esta corrección se validó directamente sobre la conciliación real que Steeven ya había empezado en su ejercicio de práctica (no se descartó su trabajo) — quedó completamente cerrada y balanceada como resultado.
 
 ---
+
+## PARTE 4 — Datafast (Lotes + Liquidación) — 2026-07-07, cuarta ronda
+
+**Motivo:** C-01 (bloque `retencion_ir` duplicado en la liquidación) se corrigió el 2026-07-05 pero nunca se re-validó con datos reales — la propia auditoría original lo admitía ("0 asientos Datafast descuadrados encontrados... ninguna liquidación tenía retencion_ir > 0"), es decir, el fix nunca se había ejercitado de verdad. Esta ronda lo hace con Playwright + verificación en BD, mismo rigor que Bancos/Conciliación.
+
+### 4.1 Paso A — Creación de Lote
+
+**❌ → 🆕 Bug nuevo encontrado y corregido:** el asiento del lote (`DatafastController::storeLote()`) creaba solo **2 líneas** — DEBE `1.1.1.05` Vouchers / HABER `4.1.1.01` Ventas por el **total bruto completo**, sin separar el IVA. El voucher de una tarjeta siempre incluye el IVA cobrado al cliente (igual que Facturas/Proformas, que sí lo separan al 15%) — dejar todo el monto en "Ventas" sobrestima el ingreso real y nunca registra el pasivo de IVA por pagar al SRI (`2.1.3.04`). Se confirmó que la cuenta `cta_iva_ventas` ya estaba configurada en `parametros_contables` para ambas empresas (id 640, código `2.1.3.04`) — solo faltaba usarla aquí.
+
+**Corrección:** `storeLote()` ahora separa `total_vouchers` en neto (÷1.15) + IVA (resto), y genera 3 partidas: DEBE Vouchers (bruto) / HABER Ventas (neto) / HABER IVA Ventas (iva).
+
+**Probado con datos reales** (lote $500,00, terminal "Datafast Terminal Matriz"):
+
+| Cuenta | Debe | Haber |
+|---|---|---|
+| 1.1.1.05 Cuentas Virtuales y Pasarelas de Pago | $500,00 | |
+| 4.1.1.01 Venta de Mercaderías | | $434,78 |
+| 2.1.3.04 IVA en Ventas por Liquidar al SRI | | $65,22 |
+
+✅ Balanceado ($500,00 = $500,00). Lote quedó en estado **Pendiente**.
+
+**Nota sobre LOT-433 (dato real, no tocado):** su asiento (`AS-2026-0057`, creado antes de este fix) todavía tiene el patrón viejo de 2 líneas — DEBE Vouchers $13,00 / HABER Ventas $13,00 completo, sin IVA separado. Se dejó exactamente así por instrucción explícita (es dato real de Steeven, no de prueba); queda documentado aquí para que él decida si amerita un asiento de corrección manual. Los lotes creados **desde ahora** ya usan el patrón corregido.
+
+### 4.2 Paso B — Liquidación CON retención IR + IVA (escenario C-01)
+
+**✅ Verificado con datos reales — C-01 NO reapareció.**
+
+Liquidación del lote de $500,00: comisión $10,00, retención IVA $3,00, retención IR $5,00, banco destino Banco Pichincha.
+
+| Cuenta | Debe | Haber |
+|---|---|---|
+| 1.1.1.03 Bancos Locales | $482,00 | |
+| 5.3.1.02 Comisiones Bancarias y Pasarelas de Pago | $10,00 | |
+| 1.1.5.02 Crédito Tributario por Retenciones de IVA | $3,00 | |
+| 1.1.5.03 Crédito Tributario por Retenciones de IR | $5,00 | |
+| 1.1.1.05 Cuentas Virtuales y Pasarelas de Pago | | $500,00 |
+
+- **5 líneas en `asiento_detalles`, ni una duplicada** (el bug original habría generado 6, con `retencion_ir` dos veces — confirmado que no ocurre).
+- Balanceado: $482+$10+$3+$5 = $500 = $500. ✅
+- Vouchers (1.1.1.05) liquidado al 100% del bruto del lote. ✅
+- Lote pasó a **Liquidado**; columna "Liquidación" del listado mostró correctamente `$482,00` / `Dep. 07/07/2026 · Com. $10,00`, tal como especifica la pantalla.
+
+### 4.3 Segundo lote SIN retención (solo comisión)
+
+**❌ → 🆕 Bug nuevo encontrado y corregido:** al liquidar dejando "Ret. IVA" y "Ret. IR" en blanco (el caso más común — la mayoría de lotes no tienen retención), el backend devolvía el error *"The retencion iva field must be a number. | The retencion ir field must be a number."* y **no liquidaba nada**. Causa: `'retencion_iva' => 'numeric|min:0'` y `'retencion_ir' => 'numeric|min:0'` en `liquidar()` no tenían `nullable`, y el frontend envía cadena vacía `''` cuando el campo no se toca — Laravel rechaza `''` contra la regla `numeric` sin `nullable`. Esto bloqueaba el flujo normal de "solo comisión, sin retención" para **cualquier** lote, no solo el de esta prueba.
+
+**Corrección:** agregado `nullable` a ambas reglas.
+
+**Re-probado tras el fix** (lote $230,00, solo comisión $4,60, sin retenciones, banco destino Banco del Pacífico):
+- ✅ Liquidación exitosa: *"Lote LOT-TEST-VALIDACION-2 liquidado. Valor neto: $225.40"*.
+- Asiento con exactamente **3 líneas** (Bancos $225,40 / Comisión $4,60 / Vouchers $230,00 haber) — sin líneas de retención en cero ni fantasmas. Balanceado.
+- Confirmado en BD: 1 sola `DatafastLiquidacion` para el lote (no se creó ningún duplicado pese a que el toast de éxito apareció dos veces en pantalla — verificado que es solo un artefacto visual de la prueba, no una petición duplicada real).
+
+### 4.4 LOT-433 (dato real pendiente)
+
+Revisado, no liquidado ni modificado (se dejó pendiente intencionalmente para que Steeven decida): id=5, terminal "Datafast Terminal Matriz", $13,00, fecha 2026-07-07, estado **Pendiente**, asiento Paso A ya existente (ver nota 4.1 sobre el patrón viejo sin IVA separado). **Actualización:** su asiento fue corregido en una ronda posterior — ver PARTE 5 más abajo.
+
+### 4.5 Filtros de la pantalla Datafast
+
+**✅ Todos verificados con datos reales:**
+
+| Filtro | Resultado |
+|---|---|
+| Terminal | ✅ único terminal del sistema ("Datafast Terminal Matriz"), filtra correctamente |
+| Estado = Pendiente | ✅ devolvió exactamente el único lote pendiente (LOT-433) |
+| Estado = Liquidado | ✅ devolvió los 5 lotes liquidados |
+| Rango de fechas (07/07/2026–07/07/2026) | ✅ devolvió exactamente los 3 lotes de esa fecha |
+| Búsqueda por N° de lote ("LOT-433") | ✅ resultado exacto |
+
+**Observación (no es bug de esta ronda, dato de seed preexistente):** 2 lotes marcados "Liquidado" (`LOT-20260528`, `LOT-20260525`) muestran "—" en la columna Liquidación por no tener un registro `DatafastLiquidacion` asociado — son datos de siembra (seeders) creados con `estado='liquidado'` directo, no a través del flujo real de `liquidar()` (que sí crea siempre el registro). No se tocó por ser dato preexistente fuera del alcance de esta validación.
+
+**Limpieza:** lotes de prueba `LOT-TEST-VALIDACION-1` y `LOT-TEST-VALIDACION-2`, sus liquidaciones y sus 4 asientos contables fueron eliminados; saldos de Banco Pichincha y Banco del Pacífico restaurados a sus valores previos ($33.998,00 y $7.576,89). `LOT-433` permanece exactamente igual que antes de esta sesión.
+
+**Archivos modificados — cuarta ronda (Datafast, 2026-07-07):**
+- `app/Http/Controllers/Bancos/DatafastController.php` — `storeLote()` separa IVA (15%) del total de vouchers; `liquidar()` con `nullable` en `retencion_iva`/`retencion_ir`.
+
+---
+
+## PARTE 5 — Corrección retroactiva de LOT-433 (2026-07-07, quinta ronda)
+
+**Contexto:** tras la cuarta ronda se pidió evaluar el impacto del bug de IVA sobre datos ya existentes antes de decidir si corregir. El análisis (reporte previo) encontró: de 4 lotes en BD, solo **LOT-433** tenía un asiento real generado por el código (los otros 3 "Liquidado" son seed sin `asiento_id`, nunca pasaron por el controller). Impacto: **$1.70 de IVA no registrado**, en un dato real (no de prueba), en estado **Pendiente** (nunca liquidado — sin riesgo de tocar pagos o reportes cerrados aguas abajo).
+
+**Criterio aplicado:** el ejercicio contable 2026-07 está **abierto** (`EjercicioContable id=1, estado=abierto`) y se confirmó que ningún otro registro referenciaba el asiento viejo (`movimientos_bancarios`, `partidas_transito`, `datafast_liquidaciones` — 0 en los tres). Por instrucción explícita, al tratarse de un asiento "borrador" de un lote nunca liquidado, en período abierto y sin dependencias, se optó por la **corrección directa** (eliminar y regenerar) en vez de una reversión con contraasiento — el patrón de reversión (usado para movimientos/cheques con impacto en saldo real) no aplicaba aquí porque este asiento nunca afectó un saldo bancario real (ese impacto solo ocurre al liquidar, y LOT-433 nunca se liquidó).
+
+**Ejecutado dentro de `DB::transaction()`:**
+1. Se desvinculó `datafast_lotes.asiento_id` (evita violación de FK al borrar).
+2. Se eliminó el asiento viejo `AS-2026-0057` (2 líneas: DEBE 1.1.1.05 $13,00 / HABER 4.1.1.01 $13,00 completo, sin IVA) y sus `asiento_detalles`.
+3. Se regeneró un asiento nuevo con la misma lógica ya corregida de `storeLote()` (neto = total ÷ 1.15, IVA = total − neto), preservando la fecha original (2026-07-06, cuando Steeven realmente registró el lote) para no alterar el momento contable del hecho.
+4. Se vinculó el lote al nuevo asiento.
+
+**Resultado verificado en BD:**
+
+| Cuenta | Debe | Haber |
+|---|---|---|
+| 1.1.1.05 Cuentas Virtuales y Pasarelas de Pago | $13,00 | |
+| 4.1.1.01 Venta de Mercaderías | | $11,30 |
+| 2.1.3.04 IVA en Ventas por Liquidar al SRI | | $1,70 |
+
+- Asiento nuevo: `AS-2026-0064` (id=87), fecha 2026-07-06, estado activo, **balanceado** ($13,00 = $13,00).
+- `LOT-433` sigue en estado **Pendiente** — no se liquidó, queda para que Steeven lo pruebe manualmente.
+- Asiento viejo (`id=66`) verificado como eliminado, sin referencias huérfanas.
+- **Balance de Comprobación general del sistema:** verificado tras el cambio — DEBE total $163.468,81 = HABER total $163.468,81 en todos los asientos activos; 0 asientos individualmente descuadrados.
+- Los otros 3 lotes (`LOT-20260525`, `LOT-20260528`, `LOT-20260601`) **no se tocaron** — son seed sin asiento real, confirmado en el análisis previo.
+
+**`npm run build`** — 0 errores (no hubo cambios de código en esta ronda, solo corrección de datos vía `tinker`).
+
+---
+
+## Resumen ejecutivo
+
+| # | Ítem | Estado |
+|---|---|---|
+| 1.1 | Creación de movimiento (asiento + saldo) | ✅ |
+| 1.2/1.3 | Patrón de reversión (Movimientos) | ❌→🆕 corregido |
+| 1.3 | Patrón de reversión (Cheques, mismo bug) | ❌→🆕 corregido |
+| 1.4 | Consulta Cobros/Pagos — filtros tipo/banco/fecha/beneficiario | ✅ |
+| 1.4 | Consulta Cobros/Pagos — filtros documento/centro de costo (LIMITACIÓN 1) | ❌→🆕 corregido 2026-07-07 |
+| 1.4 | Exportación PDF/Excel/XML | ✅ (repartida en 2 pantallas) |
+| 2.1 | C-04 auto-match | ✅ ya implementado, probado con datos reales en ambas rondas |
+| 2.2 | CSV real 3 match + 2 no-match | ✅ 0 falsos positivos (verificado en ambas rondas) |
+| 2.3 | Cruce manual | ✅ |
+| 2.3 | Generar asiento para partida específica (LIMITACIÓN 2) | ❌→🆕 corregido 2026-07-07 |
+| 2.4 | Diferencia se recalcula tras ajuste global | ❌→🆕 corregido |
+| 2.4 | Diferencia se recalcula tras generar asiento por partida | ✅ (mismo mecanismo, sin regresión) |
+| 2.5 | Cuadre final a $0,00 tras cierre | ✅ (confirmado en las 3 rondas) |
+| 3 | Cruce manual con montos distintos — advertencia + justificación contable (LIMITACIÓN 3) | ❌→🆕 corregido 2026-07-07 |
+| 3 | Candado de cierre con diferencia agregada sin justificar | ❌→🆕 corregido 2026-07-07 |
+| 3 | Cuenta incorrecta en `ajusteConciliacion()` (bug lateral) | ❌→🆕 corregido 2026-07-07 |
+| 4.1 | Datafast — Lote Paso A sin separar IVA (bug nuevo) | ❌→🆕 corregido 2026-07-07 |
+| 4.2 | Datafast — C-01 (retención IR duplicada) re-validado con datos reales | ✅ no reapareció |
+| 4.3 | Datafast — liquidar sin retenciones fallaba por falta de `nullable` (bug nuevo) | ❌→🆕 corregido 2026-07-07 |
+| 4.4 | LOT-433 (dato real) | ✅ revisado; corregido retroactivamente en PARTE 5 |
+| 4.5 | Filtros pantalla Datafast (terminal/estado/fecha/búsqueda) | ✅ |
+| 5 | LOT-433 — asiento regenerado con IVA separado ($1.70), balanceado | ❌→🆕 corregido 2026-07-07 |
+| 5 | Balance de Comprobación general tras la corrección | ✅ cuadrado ($163.468,81 = $163.468,81) |
+
+**Estado final: las 2 limitaciones de la segunda ronda, el bug de cruce manual de la tercera ronda, los 2 bugs nuevos de Datafast de la cuarta ronda, y la corrección retroactiva de LOT-433 (quinta ronda) quedaron ✅ Corregidos/Aplicados el 2026-07-07. C-01 se re-validó con datos reales y sigue corregido.**
+
+**Build:** `npm run build` — 0 errores. `npx tsc --noEmit` — sin errores nuevos en los archivos tocados. `php -l` sin errores de sintaxis en los archivos PHP tocados.
+
+**Limpieza:** todos los movimientos, cheques, conciliaciones, partidas, asientos, lotes/liquidaciones Datafast y pagos de CxP de prueba creados en las rondas 1, 2 y 4 fueron eliminados/revertidos; los saldos de Banco Pichincha, Banco Guayaquil y Banco del Pacífico fueron verificados de vuelta a sus valores originales ($33.998,00, $16.860,75 y $7.576,89 respectivamente — el de Pichincha refleja actividad legítima adicional de Steeven entre sesiones, no relacionada con esta validación), y la CxP #14 / Compra #33 usadas en la prueba de filtros fueron revertidas a su estado original (pendiente / sin pago). La **tercera ronda se validó directamente sobre la conciliación real de Steeven** (no era descartable como "dato de prueba") — quedó cerrada y balanceada como resultado legítimo de completar su ejercicio con el código corregido. En la **cuarta ronda, `LOT-433` (dato real) se dejó exactamente igual que al inicio**, pendiente, para que Steeven decida qué hacer con él.
+
+**Archivos modificados — primera ronda (patrón de reversión + cuadre):**
+- `app/Http/Controllers/Bancos/MovimientoBancarioController.php` — patrón de reversión correcto.
+- `app/Http/Controllers/Bancos/ChequesController.php` — mismo patrón de reversión correcto.
+- `app/Http/Controllers/Bancos/ConciliacionController.php` — recálculo de saldo/diferencia tras asiento de ajuste.
+
+**Archivos modificados — segunda ronda (LIMITACIÓN 1 y 2, 2026-07-07):**
+- `database/migrations/2026_07_07_080116_add_centro_costo_id_to_movimientos_bancarios_table.php` — nueva columna idempotente.
+- `app/Models/MovimientoBancario.php` — fillable + relación `centroCosto()`.
+- `app/Http/Controllers/Compras/CuentaPagarController.php` — hereda `centro_costo_id` de la compra al pagar.
+- `app/Http/Controllers/Compras/CompraController.php` — propaga `centro_costo_id` en la reversión de pago.
+- `app/Http/Controllers/Bancos/BancoReporteController.php` — filtros `num_documento`/`centro_costo_id` en consulta, Excel y PDF.
+- `resources/js/Pages/Bancos/Reportes/ConsultaCobrosPagos.tsx` — campos de filtro y columna nuevos.
+- `app/Http/Controllers/Bancos/ConciliacionController.php` — método `generarAsientoPartida()`.
+- `resources/js/Pages/Bancos/Conciliaciones/Show.tsx` — botón por fila + modal `GenerarAsientoPartidaModal`.
+- `routes/web.php` — ruta `bancos.conciliaciones.generar-asiento-partida`.
+- `resources/js/types/index.ts` — `centro_costo_id` en la interfaz `MovimientoBancario`.
+
+**Archivos modificados — tercera ronda (LIMITACIÓN 3, 2026-07-07):**
+- `app/Services/AsientoService.php` — cuenta `cta_ajuste_conciliacion` (5.4.1.03) nueva; `ajusteConciliacion()` corregido para usarla en vez de la cuenta de inventario.
+- `app/Http/Controllers/Bancos/ConciliacionController.php` — `conciliarPartida()` reescrito (detecta diferencia, `generar_ajuste` opcional, recalcula diferencia siempre); `cerrar()` con candado de diferencia agregada; fix del warning `toArray()` en `uploadEstadoCuentaExcel()`.
+- `resources/js/Pages/Bancos/Conciliaciones/Show.tsx` — modal de advertencia (SweetAlert2) al cruzar montos distintos.
