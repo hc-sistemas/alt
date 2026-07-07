@@ -135,7 +135,7 @@ export default function ParametrosIndex({ grupos, cuentas }: Props) {
     const totalPendientes   = Object.values(valores).filter(v => !v).length
 
     return (
-        <AppLayout>
+        <AppLayout suppressFlash>
             <div className="p-4 md:p-6 space-y-6"
                  style={{ background: 'var(--bg-main)', minHeight: '100vh' }}>
 
