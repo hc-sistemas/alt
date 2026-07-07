@@ -489,7 +489,10 @@ class ConciliacionController extends Controller
             $candidatos = $partidasSistema->filter(function ($pS) use ($montoB, $fechaB, $usadosIds) {
                 if (in_array($pS->id, $usadosIds)) return false;
                 if (abs($montoB - (float) $pS->monto) > 0.01) return false;
-                return \Carbon\Carbon::parse($pS->fecha)->diffInDays($fechaB) <= 2;
+                // abs(): diffInDays() en Carbon 3 es firmado (negativo cuando la fecha de
+                // sistema es posterior a $fechaB); sin abs() la tolerancia de ±2 días dejaba
+                // de ser simétrica y aceptaba cualquier partida de sistema posterior sin límite.
+                return abs(\Carbon\Carbon::parse($pS->fecha)->diffInDays($fechaB)) <= 2;
             });
 
             if ($candidatos->count() === 1) {
