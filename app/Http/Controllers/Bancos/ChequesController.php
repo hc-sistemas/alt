@@ -212,21 +212,46 @@ class ChequesController extends Controller
                 $movimiento = $cheque->movimiento()->with('asiento')->first();
 
                 if ($movimiento && !$movimiento->anulado) {
-                    // Revertir asiento contable si existe
-                    if ($movimiento->asiento_id && $movimiento->asiento) {
+                    $tipoReversa = $movimiento->tipo === 'ingreso' ? 'egreso' : 'ingreso';
+
+                    // Revertir asiento contable si existe (genera su propio asiento de reversa)
+                    $asientoReversaId = null;
+                    if ($movimiento->asiento_id && $movimiento->asiento && !$movimiento->asiento->estaAnulado()) {
                         try {
-                            $this->asientoService->anular(
+                            $asientoReversa = $this->asientoService->anular(
                                 $movimiento->asiento,
                                 "Cheque N° {$cheque->numero} {$request->estado}" .
                                 ($request->observacion ? " — {$request->observacion}" : '')
                             );
+                            $asientoReversaId = $asientoReversa->id;
                         } catch (\Throwable) {
                             // Si el período está cerrado no bloquear: el contador revisará manualmente
                         }
                     }
 
+                    // El movimiento original queda intacto como evidencia histórica, solo
+                    // marcado anulado. La reversión real es un movimiento NUEVO de signo
+                    // contrario, enlazado al cheque vía documento_tipo/documento_id.
                     $movimiento->update(['anulado' => true]);
-                    $cheque->bancoCaja->actualizarSaldo((float) $cheque->monto, 'ingreso');
+
+                    MovimientoBancario::create([
+                        'empresa_id'     => $movimiento->empresa_id,
+                        'banco_caja_id'  => $movimiento->banco_caja_id,
+                        'tipo'           => $tipoReversa,
+                        'sub_tipo'       => $movimiento->sub_tipo,
+                        'fecha'          => now()->toDateString(),
+                        'monto'          => $movimiento->monto,
+                        'beneficiario'   => $movimiento->beneficiario,
+                        'descripcion'    => "Reversión cheque N° {$cheque->numero} ({$request->estado})",
+                        'documento_tipo' => 'ANULACION_CHEQUE',
+                        'documento_id'   => $cheque->id,
+                        'asiento_id'     => $asientoReversaId,
+                        'anulado'        => false,
+                        'conciliado'     => false,
+                        'created_by'     => Auth::id(),
+                    ]);
+
+                    $cheque->bancoCaja->actualizarSaldo((float) $cheque->monto, $tipoReversa);
                 }
             }
 
