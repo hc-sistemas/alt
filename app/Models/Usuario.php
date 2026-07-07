@@ -16,7 +16,7 @@ class Usuario extends Authenticatable
     protected $table = 'usuarios';
 
     protected $fillable = [
-        'empresa_id', 'perfil_id', 'centro_costo_id',
+        'empresa_id', 'perfil_id', 'centro_costo_id', 'colaborador_id',
         'nombre', 'email', 'username', 'telefono',
         'password', 'codigo_aprobacion', 'avatar', 'estado',
     ];
@@ -47,6 +47,11 @@ class Usuario extends Authenticatable
     public function centroCosto(): BelongsTo
     {
         return $this->belongsTo(CentroCosto::class);
+    }
+
+    public function colaborador(): BelongsTo
+    {
+        return $this->belongsTo(Colaborador::class);
     }
 
     public function empresas(): BelongsToMany

@@ -837,6 +837,7 @@ export interface Colaborador {
     updated_at: string
     puesto?: PuestoTrabajo
     horario?: Horario
+    usuario?: { id: number; username: string; estado: boolean } | null
 }
 
 export interface Asistencia {
