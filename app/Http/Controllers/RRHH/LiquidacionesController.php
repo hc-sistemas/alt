@@ -121,9 +121,9 @@ class LiquidacionesController extends Controller
         ]);
     }
 
-    // ── Guardar borrador ─────────────────────────────────────────────────────
+    // ── Guardar borrador (axios desde wizard — retorna JSON) ─────────────────
 
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request): JsonResponse
     {
         $empresaId = session('empresa_activa_id');
 
@@ -141,20 +141,19 @@ class LiquidacionesController extends Controller
         Colaborador::where('id', $data['colaborador_id'])
             ->where('empresa_id', $empresaId)->firstOrFail();
 
-        // No permitir duplicado si ya existe borrador para este colaborador
         $existe = Liquidacion::where('colaborador_id', $data['colaborador_id'])
             ->where('estado', 'borrador')->exists();
 
         if ($existe) {
-            return back()->with('error', 'Ya existe una liquidación en borrador para este colaborador.');
+            return response()->json(['error' => 'Ya existe una liquidación en borrador para este colaborador.'], 422);
         }
 
-        Liquidacion::create(array_merge($data, [
+        $liq = Liquidacion::create(array_merge($data, [
             'estado'     => 'borrador',
             'created_by' => Auth::id(),
         ]));
 
-        return back()->with('success', 'Liquidación guardada en borrador. Revisar y aprobar cuando esté lista.');
+        return response()->json(['liquidacion_id' => $liq->id]);
     }
 
     // ── Actualizar borrador (edición manual — Contador/Super Admin) ───────────

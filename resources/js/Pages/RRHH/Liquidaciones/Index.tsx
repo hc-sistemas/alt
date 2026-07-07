@@ -133,36 +133,32 @@ export default function LiquidacionesIndex({ liquidaciones, colaboradores, filtr
     function abrirWizard() { setWiz(initWizard()); setErrCalc(null); setModalOpen(true) }
     function cerrarWizard() { setModalOpen(false); setWiz(initWizard()); setErrCalc(null) }
 
-    // PASO 1 → calcular
+    // PASO 1 → calcular (axios — el backend devuelve JSON puro, no Inertia)
     function calcular() {
         if (!wiz.colaborador_id || !wiz.motivo || !wiz.fecha_salida) return
         setCalculando(true); setErrCalc(null)
-        router.post(route('rrhh.liquidaciones.calcular'),
-            { colaborador_id: wiz.colaborador_id, motivo: wiz.motivo, fecha_salida: wiz.fecha_salida },
-            {
-                onSuccess: page => {
-                    const calc = (page.props as Record<string, unknown>).calculo as LiquidacionCalculo
-                    if (calc) {
-                        setWiz(w => ({
-                            ...w, paso: 2, calculo: calc,
-                            decimos_acumulados: String(calc.decimos_acumulados),
-                            vacaciones: String(calc.vacaciones),
-                            fondos_reserva: String(calc.fondos_reserva),
-                            anticipos_descontar: String(calc.anticipos_descontar),
-                            total_liquidacion: String(calc.total_liquidacion),
-                        }))
-                    } else {
-                        setErrCalc('Error al calcular. Verifique los datos.')
-                    }
-                    setCalculando(false)
-                },
-                onError: errs => {
-                    setErrCalc(Object.values(errs).join(' · '))
-                    setCalculando(false)
-                },
-                preserveState: true,
-            }
-        )
+        window.axios.post(route('rrhh.liquidaciones.calcular'), {
+            colaborador_id: wiz.colaborador_id,
+            motivo: wiz.motivo,
+            fecha_salida: wiz.fecha_salida,
+        })
+            .then(res => {
+                const calc = res.data as LiquidacionCalculo
+                setWiz(w => ({
+                    ...w, paso: 2, calculo: calc,
+                    decimos_acumulados:  String(calc.decimos_acumulados),
+                    vacaciones:          String(calc.vacaciones),
+                    fondos_reserva:      String(calc.fondos_reserva),
+                    anticipos_descontar: String(calc.anticipos_descontar),
+                    total_liquidacion:   String(calc.total_liquidacion),
+                }))
+            })
+            .catch(err => {
+                const errs   = err.response?.data?.errors ?? {}
+                const single = err.response?.data?.error ?? err.response?.data?.message
+                setErrCalc(Object.values(errs).flat().join(' · ') || single || 'Error al calcular.')
+            })
+            .finally(() => setCalculando(false))
     }
 
     // recalcular total en paso 2 cuando cambia algún campo
@@ -178,30 +174,29 @@ export default function LiquidacionesIndex({ liquidaciones, colaboradores, filtr
         setWiz(upd)
     }
 
-    // PASO 2 → guardar borrador
+    // PASO 2 → guardar borrador (axios — recibe liquidacion_id para paso 3)
     function guardarBorrador() {
-        setGuardando(true)
-        router.post(route('rrhh.liquidaciones.store'), {
-            colaborador_id: wiz.colaborador_id,
-            motivo: wiz.motivo,
-            fecha_salida: wiz.fecha_salida,
-            decimos_acumulados: wiz.decimos_acumulados,
-            vacaciones: wiz.vacaciones,
-            fondos_reserva: wiz.fondos_reserva,
+        setGuardando(true); setErrCalc(null)
+        window.axios.post(route('rrhh.liquidaciones.store'), {
+            colaborador_id:      wiz.colaborador_id,
+            motivo:              wiz.motivo,
+            fecha_salida:        wiz.fecha_salida,
+            decimos_acumulados:  wiz.decimos_acumulados,
+            vacaciones:          wiz.vacaciones,
+            fondos_reserva:      wiz.fondos_reserva,
             anticipos_descontar: wiz.anticipos_descontar,
-            total_liquidacion: wiz.total_liquidacion,
-        }, {
-            onSuccess: page => {
-                const liq = (page.props as Record<string, unknown>).liquidacionCreada as { id: number } | undefined
-                setWiz(w => ({ ...w, paso: 3, liquidacionId: liq?.id ?? null }))
-                setGuardando(false)
-            },
-            onError: errs => {
-                setErrCalc(Object.values(errs).join(' · '))
-                setGuardando(false)
-            },
-            preserveState: true,
+            total_liquidacion:   wiz.total_liquidacion,
         })
+            .then(res => {
+                setWiz(w => ({ ...w, paso: 3, liquidacionId: res.data.liquidacion_id ?? null }))
+                router.reload({ only: ['liquidaciones'] })
+            })
+            .catch(err => {
+                const errs   = err.response?.data?.errors ?? {}
+                const single = err.response?.data?.error ?? err.response?.data?.message
+                setErrCalc(Object.values(errs).flat().join(' · ') || single || 'Error al guardar.')
+            })
+            .finally(() => setGuardando(false))
     }
 
     // PASO 3 → aprobar
