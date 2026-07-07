@@ -523,7 +523,7 @@ export default function MovimientosIndex() {
                         <div key={m.id}
                             className={cn(
                                 'group grid grid-cols-12 gap-2 px-4 py-3 border-b items-center transition-colors text-sm',
-                                m.anulado && 'opacity-40 line-through'
+                                m.anulado && 'opacity-50'
                             )}
                             style={{ borderColor: 'var(--border)', background: 'transparent' }}
                             onMouseEnter={e => !m.anulado && (e.currentTarget.style.background = 'rgba(245,158,11,0.04)')}
