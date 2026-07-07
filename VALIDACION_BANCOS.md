@@ -82,3 +82,22 @@ Repetido exactamente igual para **Cheques** (protestar cheque N° 999888, $200):
 - **Exportar XML**: no existe en esta pantalla específica, pero **sí existe** en `bancos/movimientos/exportar-xml` (pantalla de Movimientos) — ✅ `200 OK`, `content-type: application/xml`, contenido válido. El documento del cliente pide "exportar en PDF o en XML" desde "la página principal para consultar los pagos" sin especificar una única pantalla; la capacidad existe, repartida en dos pantallas del mismo módulo.
 
 ---
+
+## LIMITACIÓN 1 — ❌ → 🆕 Corregido: filtros "Documento" y "Centro de Costo" (2026-07-07, segunda ronda)
+
+**Causa raíz:** `movimientos_bancarios.num_documento` **sí existía** en el schema pero nunca se usaba como filtro en `BancoReporteController::consultaCobrosPagos()`/`consultaQuery()`; `centro_costo_id` **no existía en absoluto** en la tabla.
+
+**Corrección aplicada:**
+1. Migración idempotente `2026_07_07_080116_add_centro_costo_id_to_movimientos_bancarios_table.php` — agrega `centro_costo_id` (FK nullable a `centros_costo`, `nullOnDelete`).
+2. `MovimientoBancario`: agregado `centro_costo_id` a `$fillable` + relación `centroCosto()`.
+3. **Poblado automático en el flujo real que genera movimientos**: `CuentaPagarController::pagar()` ahora hereda `centro_costo_id` de `$cuentaPagar->compra->centro_costo_id` (ya heredaba `num_documento`, que solo faltaba conectar como filtro). También propagado en la reversión `CompraController::anularPago()`.
+4. `BancoReporteController::consultaCobrosPagos()` / `consultaQuery()` (compartido por PDF/Excel): agregados filtros `num_documento` (`ilike` parcial) y `centro_costo_id` (exacto). Se pasa la lista de `centrosCosto` a la vista.
+5. Frontend `ConsultaCobrosPagos.tsx`: agregados campos "Nº Documento" (texto) y "Centro de Costo" (select), columna "Centro Costo" en la tabla, ambos conectados a `buscar()`/`exportar()`/`limpiar()`.
+
+**Verificado con datos reales:**
+- Se pagó una CxP real (compra #33, num_documento `0555-5666-56555`, centro de costo "Altamira Matriz") desde `Compras → Cuentas por Pagar`. El movimiento bancario generado (id=40) heredó **ambos** campos correctamente: `num_documento=0555-5666-56555`, `centro_costo_id=1`.
+- Filtro por Nº Documento exacto → **1 resultado** correcto.
+- Filtro por Centro de Costo "Altamira Matriz" → **1 resultado** correcto (el resto de movimientos históricos tiene `centro_costo_id=NULL` por ser anteriores a esta corrección, por lo que quedan correctamente excluidos).
+- Prueba revertida al finalizar (ver limpieza).
+
+---

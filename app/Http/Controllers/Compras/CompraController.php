@@ -997,6 +997,7 @@ class CompraController extends Controller
                     'persona_tipo'   => 'proveedor',
                     'persona_id'     => $compra->proveedor_id,
                     'num_documento'  => $compra->num_documento,
+                    'centro_costo_id' => $movPago->centro_costo_id,
                     'descripcion'    => "Reversión pago anulado — {$compra->num_documento}",
                     'documento_tipo' => 'ANULACION_PAGO',
                     'documento_id'   => $compra->id,

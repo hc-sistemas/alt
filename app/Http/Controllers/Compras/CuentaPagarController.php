@@ -138,6 +138,7 @@ class CuentaPagarController extends Controller
                 'persona_id'     => $cuentaPagar->proveedor_id,
                 'beneficiario'   => $cuentaPagar->proveedor?->razon_social,
                 'num_documento'  => $cuentaPagar->compra?->num_documento,
+                'centro_costo_id' => $cuentaPagar->compra?->centro_costo_id,
                 'descripcion'    => $request->referencia ?? 'Pago CxP',
                 'documento_tipo' => 'COMPRA',
                 'documento_id'   => $cuentaPagar->compra_id,

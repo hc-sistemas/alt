@@ -21,6 +21,7 @@ import type { PageProps } from '@/types'
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface BancoSimple { id: number; nombre: string; tipo: string }
+interface CentroCostoSimple { id: number; nombre: string; codigo: string }
 
 interface Movimiento {
     id: number
@@ -32,6 +33,7 @@ interface Movimiento {
     beneficiario: string | null
     descripcion: string | null
     num_documento: string | null
+    centro_costo: string | null
     conciliado: boolean
 }
 
@@ -43,6 +45,7 @@ interface Totales {
 
 interface Props extends PageProps {
     bancos: BancoSimple[]
+    centrosCosto: CentroCostoSimple[]
     movimientos: Movimiento[]
     totales: Totales
     filtros: Record<string, string>
@@ -76,15 +79,17 @@ function Campo({ label, children }: { label: string; children: React.ReactNode }
 // ─── Página ───────────────────────────────────────────────────────────────────
 
 export default function ConsultaCobrosPagos() {
-    const { bancos, movimientos, totales, filtros } = usePage<Props>().props
+    const { bancos, centrosCosto, movimientos, totales, filtros } = usePage<Props>().props
 
     // Filtros locales (inicializados desde server)
-    const [bancoCajaId,  setBancoCajaId]  = useState(filtros.banco_caja_id  ?? '')
-    const [tipo,         setTipo]         = useState(filtros.tipo            ?? '')
-    const [subTipo,      setSubTipo]      = useState(filtros.sub_tipo        ?? '')
-    const [fechaDesde,   setFechaDesde]   = useState(filtros.fecha_desde     ?? '')
-    const [fechaHasta,   setFechaHasta]   = useState(filtros.fecha_hasta     ?? '')
-    const [beneficiario, setBeneficiario] = useState(filtros.beneficiario    ?? '')
+    const [bancoCajaId,   setBancoCajaId]   = useState(filtros.banco_caja_id  ?? '')
+    const [tipo,          setTipo]          = useState(filtros.tipo            ?? '')
+    const [subTipo,       setSubTipo]       = useState(filtros.sub_tipo        ?? '')
+    const [fechaDesde,    setFechaDesde]    = useState(filtros.fecha_desde     ?? '')
+    const [fechaHasta,    setFechaHasta]    = useState(filtros.fecha_hasta     ?? '')
+    const [beneficiario,  setBeneficiario]  = useState(filtros.beneficiario    ?? '')
+    const [numDocumento,  setNumDocumento]  = useState(filtros.num_documento   ?? '')
+    const [centroCostoId, setCentroCostoId] = useState(filtros.centro_costo_id ?? '')
 
     const [sorting, setSorting]             = useState<SortingState>([])
     const [globalFilter, setGlobalFilter]   = useState('')
@@ -92,30 +97,35 @@ export default function ConsultaCobrosPagos() {
     // ── Buscar ─────────────────────────────────────────────────────────────────
     function buscar() {
         const params: Record<string, string> = {}
-        if (bancoCajaId)  params.banco_caja_id  = bancoCajaId
-        if (tipo)         params.tipo            = tipo
-        if (subTipo)      params.sub_tipo        = subTipo
-        if (fechaDesde)   params.fecha_desde     = fechaDesde
-        if (fechaHasta)   params.fecha_hasta     = fechaHasta
-        if (beneficiario) params.beneficiario    = beneficiario
+        if (bancoCajaId)   params.banco_caja_id   = bancoCajaId
+        if (tipo)          params.tipo             = tipo
+        if (subTipo)       params.sub_tipo         = subTipo
+        if (fechaDesde)    params.fecha_desde      = fechaDesde
+        if (fechaHasta)    params.fecha_hasta      = fechaHasta
+        if (beneficiario)  params.beneficiario     = beneficiario
+        if (numDocumento)  params.num_documento    = numDocumento
+        if (centroCostoId) params.centro_costo_id  = centroCostoId
         router.get(route('bancos.reportes.consulta'), params, { preserveState: true })
     }
 
     function limpiar() {
         setBancoCajaId(''); setTipo(''); setSubTipo('')
         setFechaDesde(''); setFechaHasta(''); setBeneficiario('')
+        setNumDocumento(''); setCentroCostoId('')
         router.get(route('bancos.reportes.consulta'))
     }
 
     // ── Exportar ───────────────────────────────────────────────────────────────
     function exportar(formato: 'excel' | 'pdf') {
         const p = new URLSearchParams()
-        if (bancoCajaId)  p.set('banco_caja_id',  bancoCajaId)
-        if (tipo)         p.set('tipo',            tipo)
-        if (subTipo)      p.set('sub_tipo',        subTipo)
-        if (fechaDesde)   p.set('fecha_desde',     fechaDesde)
-        if (fechaHasta)   p.set('fecha_hasta',     fechaHasta)
-        if (beneficiario) p.set('beneficiario',    beneficiario)
+        if (bancoCajaId)   p.set('banco_caja_id',   bancoCajaId)
+        if (tipo)          p.set('tipo',             tipo)
+        if (subTipo)       p.set('sub_tipo',         subTipo)
+        if (fechaDesde)    p.set('fecha_desde',      fechaDesde)
+        if (fechaHasta)    p.set('fecha_hasta',      fechaHasta)
+        if (beneficiario)  p.set('beneficiario',     beneficiario)
+        if (numDocumento)  p.set('num_documento',    numDocumento)
+        if (centroCostoId) p.set('centro_costo_id',  centroCostoId)
         const url = formato === 'excel'
             ? route('bancos.reportes.consulta-excel') + '?' + p
             : route('bancos.reportes.consulta-pdf')   + '?' + p
@@ -177,7 +187,7 @@ export default function ConsultaCobrosPagos() {
             header: 'Beneficiario',
             size: 170,
             cell: ({ getValue }) => (
-                <span className="text-xs truncate block max-w-[160px]" style={{ color: 'var(--text-main)' }}>
+                <span className="text-xs truncate block max-w-40" style={{ color: 'var(--text-main)' }}>
                     {getValue() as string ?? '—'}
                 </span>
             ),
@@ -187,7 +197,7 @@ export default function ConsultaCobrosPagos() {
             header: 'Descripción',
             size: 200,
             cell: ({ getValue }) => (
-                <span className="text-xs truncate block max-w-[190px]" style={{ color: 'var(--text-muted)' }}>
+                <span className="text-xs truncate block max-w-47.5" style={{ color: 'var(--text-muted)' }}>
                     {getValue() as string ?? '—'}
                 </span>
             ),
@@ -198,6 +208,16 @@ export default function ConsultaCobrosPagos() {
             size: 90,
             cell: ({ getValue }) => (
                 <span className="font-mono text-xs" style={{ color: 'var(--text-muted)' }}>
+                    {getValue() as string ?? '—'}
+                </span>
+            ),
+        },
+        {
+            accessorKey: 'centro_costo',
+            header: 'Centro Costo',
+            size: 130,
+            cell: ({ getValue }) => (
+                <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
                     {getValue() as string ?? '—'}
                 </span>
             ),
@@ -274,7 +294,7 @@ export default function ConsultaCobrosPagos() {
                 {/* ── Panel de filtros ──────────────────────────────── */}
                 <div className="rounded-2xl border p-5"
                     style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8 gap-3 mb-4">
                         <Campo label="Banco / Caja">
                             <select value={bancoCajaId} onChange={e => setBancoCajaId(e.target.value)}
                                 className="input-field select-field">
@@ -314,6 +334,20 @@ export default function ConsultaCobrosPagos() {
                             <input type="text" value={beneficiario} onChange={e => setBeneficiario(e.target.value)}
                                 placeholder="Buscar…" className="input-field"
                                 onKeyDown={e => e.key === 'Enter' && buscar()} />
+                        </Campo>
+                        <Campo label="Nº Documento">
+                            <input type="text" value={numDocumento} onChange={e => setNumDocumento(e.target.value)}
+                                placeholder="Buscar…" className="input-field"
+                                onKeyDown={e => e.key === 'Enter' && buscar()} />
+                        </Campo>
+                        <Campo label="Centro de Costo">
+                            <select value={centroCostoId} onChange={e => setCentroCostoId(e.target.value)}
+                                className="input-field select-field">
+                                <option value="">— Todos —</option>
+                                {centrosCosto.map(c => (
+                                    <option key={c.id} value={c.id}>{c.nombre}</option>
+                                ))}
+                            </select>
                         </Campo>
                     </div>
 

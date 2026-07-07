@@ -693,6 +693,7 @@ export interface MovimientoBancario {
     documento_tipo: string | null
     documento_id: number | null
     cuenta_contrapartida_id: number | null
+    centro_costo_id: number | null
     asiento_id: number | null
     conciliado: boolean
     es_postfechado: boolean

@@ -3,6 +3,7 @@ namespace App\Http\Controllers\Bancos;
 
 use App\Http\Controllers\Controller;
 use App\Models\BancoCaja;
+use App\Models\CentroCosto;
 use App\Models\CierreCaja;
 use App\Models\Empresa;
 use App\Models\MovimientoBancario;
@@ -169,19 +170,25 @@ class BancoReporteController extends Controller
             ->activos()->orderBy('tipo')->orderBy('nombre')
             ->get(['id', 'nombre', 'tipo']);
 
+        $centrosCosto = CentroCosto::where('empresa_id', $empresaId)
+            ->where('estado', true)->orderBy('nombre')
+            ->get(['id', 'nombre', 'codigo']);
+
         $movimientos = collect();
 
-        if ($request->hasAny(['banco_caja_id', 'tipo', 'sub_tipo', 'fecha_desde', 'fecha_hasta', 'beneficiario'])) {
-            $query = MovimientoBancario::with('bancoCaja')
+        if ($request->hasAny(['banco_caja_id', 'tipo', 'sub_tipo', 'fecha_desde', 'fecha_hasta', 'beneficiario', 'num_documento', 'centro_costo_id'])) {
+            $query = MovimientoBancario::with(['bancoCaja', 'centroCosto'])
                 ->where('empresa_id', $empresaId)
                 ->where('anulado', false);
 
-            if ($request->filled('banco_caja_id')) $query->where('banco_caja_id', $request->banco_caja_id);
-            if ($request->filled('tipo'))           $query->where('tipo',          $request->tipo);
-            if ($request->filled('sub_tipo'))       $query->where('sub_tipo',      $request->sub_tipo);
-            if ($request->filled('fecha_desde'))    $query->where('fecha', '>=',   $request->fecha_desde);
-            if ($request->filled('fecha_hasta'))    $query->where('fecha', '<=',   $request->fecha_hasta);
-            if ($request->filled('beneficiario'))   $query->where('beneficiario', 'ilike', '%' . $request->beneficiario . '%');
+            if ($request->filled('banco_caja_id'))   $query->where('banco_caja_id', $request->banco_caja_id);
+            if ($request->filled('tipo'))             $query->where('tipo',          $request->tipo);
+            if ($request->filled('sub_tipo'))         $query->where('sub_tipo',      $request->sub_tipo);
+            if ($request->filled('fecha_desde'))      $query->where('fecha', '>=',   $request->fecha_desde);
+            if ($request->filled('fecha_hasta'))      $query->where('fecha', '<=',   $request->fecha_hasta);
+            if ($request->filled('beneficiario'))     $query->where('beneficiario', 'ilike', '%' . $request->beneficiario . '%');
+            if ($request->filled('num_documento'))    $query->where('num_documento', 'ilike', '%' . $request->num_documento . '%');
+            if ($request->filled('centro_costo_id'))  $query->where('centro_costo_id', $request->centro_costo_id);
 
             $movimientos = $query->orderByDesc('fecha')->orderByDesc('id')
                 ->get()
@@ -195,14 +202,16 @@ class BancoReporteController extends Controller
                     'beneficiario'  => $m->beneficiario,
                     'descripcion'   => $m->descripcion,
                     'num_documento' => $m->num_documento,
+                    'centro_costo'  => $m->centroCosto?->nombre,
                     'conciliado'    => $m->conciliado,
                 ]);
         }
 
         return Inertia::render('Bancos/Reportes/ConsultaCobrosPagos', [
             'bancos'       => $bancos,
+            'centrosCosto' => $centrosCosto,
             'movimientos'  => $movimientos->values(),
-            'filtros'      => $request->only(['banco_caja_id', 'tipo', 'sub_tipo', 'fecha_desde', 'fecha_hasta', 'beneficiario']),
+            'filtros'      => $request->only(['banco_caja_id', 'tipo', 'sub_tipo', 'fecha_desde', 'fecha_hasta', 'beneficiario', 'num_documento', 'centro_costo_id']),
             'totales'      => [
                 'ingresos' => $movimientos->where('tipo', 'ingreso')->sum('monto'),
                 'egresos'  => $movimientos->where('tipo', 'egreso')->sum('monto'),
@@ -271,16 +280,18 @@ class BancoReporteController extends Controller
     // ── Consulta compartida ────────────────────────────────────────────────────
     private function consultaQuery(Request $request, int $empresaId)
     {
-        $query = MovimientoBancario::with('bancoCaja')
+        $query = MovimientoBancario::with(['bancoCaja', 'centroCosto'])
             ->where('empresa_id', $empresaId)
             ->where('anulado', false);
 
-        if ($request->filled('banco_caja_id')) $query->where('banco_caja_id', $request->banco_caja_id);
-        if ($request->filled('tipo'))           $query->where('tipo',          $request->tipo);
-        if ($request->filled('sub_tipo'))       $query->where('sub_tipo',      $request->sub_tipo);
-        if ($request->filled('fecha_desde'))    $query->where('fecha', '>=',   $request->fecha_desde);
-        if ($request->filled('fecha_hasta'))    $query->where('fecha', '<=',   $request->fecha_hasta);
-        if ($request->filled('beneficiario'))   $query->where('beneficiario', 'ilike', '%' . $request->beneficiario . '%');
+        if ($request->filled('banco_caja_id'))   $query->where('banco_caja_id', $request->banco_caja_id);
+        if ($request->filled('tipo'))             $query->where('tipo',          $request->tipo);
+        if ($request->filled('sub_tipo'))         $query->where('sub_tipo',      $request->sub_tipo);
+        if ($request->filled('fecha_desde'))      $query->where('fecha', '>=',   $request->fecha_desde);
+        if ($request->filled('fecha_hasta'))      $query->where('fecha', '<=',   $request->fecha_hasta);
+        if ($request->filled('beneficiario'))     $query->where('beneficiario', 'ilike', '%' . $request->beneficiario . '%');
+        if ($request->filled('num_documento'))    $query->where('num_documento', 'ilike', '%' . $request->num_documento . '%');
+        if ($request->filled('centro_costo_id'))  $query->where('centro_costo_id', $request->centro_costo_id);
 
         return $query->orderByDesc('fecha')->orderByDesc('id')->get();
     }
