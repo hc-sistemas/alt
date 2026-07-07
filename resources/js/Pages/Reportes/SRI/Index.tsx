@@ -85,7 +85,7 @@ export default function SriIndex() {
                     </div>
                 </div>
 
-                {/* GRID 2 COLUMNAS — ATS + F103 */}
+                {/* GRID 2 COLUMNAS — 4 tarjetas */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
                     {/* ── ATS ── */}
@@ -188,9 +188,7 @@ export default function SriIndex() {
                             </button>
                         </div>
                     </div>
-                </div>
-
-                {/* ── F104 — ANCHO COMPLETO ── */}
+                {/* ── F104 ── */}
                 <div className="rounded-2xl border overflow-hidden"
                      style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
 
@@ -281,6 +279,8 @@ export default function SriIndex() {
                         </p>
                     </div>
                 </div>
+
+                </div>{/* cierra grid 2-col */}
 
                 {/* INFO */}
                 <div className="rounded-2xl border p-5"
