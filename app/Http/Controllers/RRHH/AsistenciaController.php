@@ -98,7 +98,9 @@ class AsistenciaController extends Controller
             $limiteEntrada = $horaOficial->copy()->addMinutes($tolerancia);
 
             if ($ahora->greaterThan($limiteEntrada)) {
-                $minutosAtraso = (int) $ahora->diffInMinutes($horaOficial);
+                // diffInMinutes() en Carbon 3 es firmado (negativo si $ahora es posterior a $horaOficial);
+                // se necesita el valor absoluto de minutos de atraso.
+                $minutosAtraso = (int) abs($ahora->diffInMinutes($horaOficial));
             }
         }
 
@@ -145,7 +147,9 @@ class AsistenciaController extends Controller
             $horaSalida = Carbon::parse("{$hoy} {$horario->hora_salida}");
 
             if ($ahora->greaterThan($horaSalida)) {
-                $horasExtra = round($ahora->diffInMinutes($horaSalida) / 60, 2);
+                // diffInMinutes() en Carbon 3 es firmado (negativo si $ahora es posterior a $horaSalida);
+                // se necesita el valor absoluto de minutos extra.
+                $horasExtra = round(abs($ahora->diffInMinutes($horaSalida)) / 60, 2);
 
                 // Regla NOM-05 Ecuador: suplementarias = días laborables hasta 24:00
                 $esFindeSemana = $ahora->isWeekend();

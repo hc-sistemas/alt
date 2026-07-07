@@ -9,7 +9,7 @@ import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
 import {
     Plus, Pencil, ToggleLeft, ToggleRight, Search, X,
-    User, Briefcase, DollarSign, CreditCard, Phone,
+    User, Briefcase, DollarSign, CreditCard, Phone, Clock,
 } from 'lucide-react'
 import type { Colaborador, PuestoTrabajo, Horario, PageProps, PaginatedData } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
@@ -84,6 +84,13 @@ function ColaboradorModal({ colaborador, puestos, horarios, usuarios, onClose }:
     const isEditar = !!colaborador
     const [tab, setTab] = useState<TabKey>('identificacion')
 
+    // Alta rápida de horario "plantilla" (tabla horarios, reutilizable entre colaboradores)
+    const [nuevoHorario, setNuevoHorario] = useState(false)
+    const [horarioForm, setHorarioForm] = useState({
+        descripcion: '', hora_entrada: '08:00', hora_salida: '17:00', tolerancia_minutos: '10',
+    })
+    const [creandoHorario, setCreandoHorario] = useState(false)
+
     const { data, setData, post, put, processing, errors } = useForm({
         cedula_ruc:          colaborador?.cedula_ruc          ?? '',
         apellidos:           colaborador?.apellidos           ?? '',
@@ -112,6 +119,28 @@ function ColaboradorModal({ colaborador, puestos, horarios, usuarios, onClose }:
         numero_cuenta:       colaborador?.numero_cuenta       ?? '',
         usuario_id:          String(colaborador?.usuario_id   ?? ''),
     })
+
+    function crearHorario() {
+        if (!horarioForm.descripcion || !horarioForm.hora_entrada || !horarioForm.hora_salida) {
+            notify.error('Completa descripción, hora de entrada y hora de salida del horario.')
+            return
+        }
+        setCreandoHorario(true)
+        router.post(route('rrhh.horarios.store'), horarioForm, {
+            preserveScroll: true,
+            preserveState: true,
+            onSuccess: (page) => {
+                const lista = (page.props as unknown as { horarios: Horario[] }).horarios ?? []
+                const creado = [...lista].sort((a, b) => b.id - a.id)[0]
+                if (creado) setData('horario_id', String(creado.id))
+                setNuevoHorario(false)
+                setHorarioForm({ descripcion: '', hora_entrada: '08:00', hora_salida: '17:00', tolerancia_minutos: '10' })
+                notify.ok('Horario creado y asignado.')
+            },
+            onError: () => notify.error('Revisa los datos del horario.'),
+            onFinish: () => setCreandoHorario(false),
+        })
+    }
 
     function submit(e: React.FormEvent) {
         e.preventDefault()
@@ -249,16 +278,76 @@ function ColaboradorModal({ colaborador, puestos, horarios, usuarios, onClose }:
                                         {puestos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
                                     </select>
                                 </div>
-                                <div>
-                                    <Label className="input-label">Horario</Label>
+                                <div className="col-span-2">
+                                    <div className="flex items-center justify-between">
+                                        <Label className="input-label">Horario</Label>
+                                        <button
+                                            type="button"
+                                            onClick={() => setNuevoHorario(v => !v)}
+                                            className="text-xs font-medium flex items-center gap-1 text-amber-600 hover:text-amber-700"
+                                        >
+                                            <Clock className="w-3 h-3" /> {nuevoHorario ? 'Cancelar' : 'Nuevo horario'}
+                                        </button>
+                                    </div>
                                     <select className="input-field" value={data.horario_id} onChange={e => setData('horario_id', e.target.value)}>
                                         <option value="">— Sin horario —</option>
                                         {horarios.map(h => (
                                             <option key={h.id} value={h.id}>
-                                                {h.descripcion} ({h.hora_entrada}–{h.hora_salida})
+                                                {h.descripcion} ({h.hora_entrada}–{h.hora_salida}, tolerancia {h.tolerancia_minutos}min)
                                             </option>
                                         ))}
                                     </select>
+                                    <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
+                                        Los atrasos (NOM-05) y horas extras (NOM-06) se calculan comparando el timbre
+                                        real contra este horario oficial + su tolerancia.
+                                    </p>
+                                    {nuevoHorario && (
+                                        <div className="mt-3 p-3 rounded-lg grid grid-cols-2 gap-3" style={{ background: 'var(--bg-main)' }}>
+                                            <div className="col-span-2">
+                                                <Label className="input-label">Descripción</Label>
+                                                <Input
+                                                    className="input-field"
+                                                    placeholder="Ej. Horario Administrativo"
+                                                    value={horarioForm.descripcion}
+                                                    onChange={e => setHorarioForm(f => ({ ...f, descripcion: e.target.value }))}
+                                                />
+                                            </div>
+                                            <div>
+                                                <Label className="input-label">Hora Entrada</Label>
+                                                <Input
+                                                    className="input-field" type="time"
+                                                    value={horarioForm.hora_entrada}
+                                                    onChange={e => setHorarioForm(f => ({ ...f, hora_entrada: e.target.value }))}
+                                                />
+                                            </div>
+                                            <div>
+                                                <Label className="input-label">Hora Salida</Label>
+                                                <Input
+                                                    className="input-field" type="time"
+                                                    value={horarioForm.hora_salida}
+                                                    onChange={e => setHorarioForm(f => ({ ...f, hora_salida: e.target.value }))}
+                                                />
+                                            </div>
+                                            <div>
+                                                <Label className="input-label">Tolerancia (min)</Label>
+                                                <Input
+                                                    className="input-field" type="number" min={0} max={120}
+                                                    value={horarioForm.tolerancia_minutos}
+                                                    onChange={e => setHorarioForm(f => ({ ...f, tolerancia_minutos: e.target.value }))}
+                                                />
+                                            </div>
+                                            <div className="col-span-2 flex justify-end">
+                                                <button
+                                                    type="button"
+                                                    disabled={creandoHorario}
+                                                    onClick={crearHorario}
+                                                    className="btn-primary text-xs px-3 py-1.5"
+                                                >
+                                                    {creandoHorario ? 'Creando…' : 'Crear y asignar'}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                                 {field('Cargo', 'cargo')}
                                 {field('Departamento', 'departamento')}

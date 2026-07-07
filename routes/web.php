@@ -45,6 +45,7 @@ use App\Http\Controllers\Ventas\RetencionController;
 use App\Http\Controllers\Ventas\GuiaRemisionController;
 use App\Http\Controllers\Ventas\CuentaCobrarController;
 use App\Http\Controllers\RRHH\ColaboradorController;
+use App\Http\Controllers\RRHH\HorarioController;
 use App\Http\Controllers\RRHH\AsistenciaController;
 use App\Http\Controllers\RRHH\HorasExtrasController;
 use App\Http\Controllers\RRHH\NominaController;
@@ -455,6 +456,10 @@ Route::middleware('auth')->group(function () {
             Route::post('/',                         [ColaboradorController::class, 'store'])  ->name('store');
             Route::put('/{colaborador}',             [ColaboradorController::class, 'update']) ->name('update');
             Route::patch('/{colaborador}/toggle',    [ColaboradorController::class, 'toggle']) ->name('toggle');
+        });
+
+        Route::prefix('horarios')->name('horarios.')->group(function () {
+            Route::post('/', [HorarioController::class, 'store'])->name('store');
         });
 
         Route::prefix('asistencia')->name('asistencia.')->group(function () {
