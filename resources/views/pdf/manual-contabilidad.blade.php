@@ -124,6 +124,84 @@
     </div>
 </div>
 
+{{-- ══════════════════════════════ ÍNDICE ═══════════════════════════════════ --}}
+<div class="page pb">
+    <div class="header-page">
+        <div class="hp-left">
+            <div class="hp-empresa">{{ $empresa->nombre_comercial ?? 'Altamira Light &amp; Sound' }}</div>
+            <div class="hp-titulo">Manual de Uso · Módulo Contabilidad</div>
+        </div>
+        <div class="hp-right">
+            <div class="hp-pag">Índice &nbsp;·&nbsp; v2.0</div>
+        </div>
+    </div>
+
+    <div class="sec">
+        <div class="sec-num">Navegación</div>
+        <div class="sec-titulo">Tabla de Contenidos</div>
+        <div class="sec-desc">Altamira ERP — Módulo Contabilidad · 4 páginas de contenido. Use esta tabla para ubicar rápidamente cada sección.</div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th style="width:12%;text-align:center">Pág.</th>
+                    <th style="width:30%">Sección</th>
+                    <th>Contenido</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td style="text-align:center;font-weight:bold">1</td>
+                    <td>Introducción</td>
+                    <td>¿Para qué sirve el módulo? · Mapa del menú lateral</td>
+                </tr>
+                <tr>
+                    <td style="text-align:center;font-weight:bold">1</td>
+                    <td><span class="badge b-verde">§ 1</span> Plan de Cuentas</td>
+                    <td>Estructura de códigos (5 niveles) · Tipos · Crear / editar cuentas · Importar y exportar Excel</td>
+                </tr>
+                <tr>
+                    <td style="text-align:center;font-weight:bold">2</td>
+                    <td><span class="badge b-verde">§ 2</span> Asientos Contables</td>
+                    <td>Crear asiento manual · Partida doble (DEBE = HABER) · Estados · Ver PDF · Filtros y búsqueda</td>
+                </tr>
+                <tr>
+                    <td style="text-align:center;font-weight:bold">2</td>
+                    <td><span class="badge b-verde">§ 3</span> Asientos Automáticos</td>
+                    <td>Eventos que generan asientos: Ventas, Compras, Nómina, Bancos, Devoluciones</td>
+                </tr>
+                <tr>
+                    <td style="text-align:center;font-weight:bold">3</td>
+                    <td><span class="badge b-verde">§ 4</span> Ejercicios Contables</td>
+                    <td>Abrir / cerrar período mensual · Cierre Fiscal Anual (6 pasos) · Alertas de período cerrado</td>
+                </tr>
+                <tr>
+                    <td style="text-align:center;font-weight:bold">3</td>
+                    <td><span class="badge b-verde">§ 5</span> Parámetros Contables</td>
+                    <td>39 parámetros en 6 grupos · Asignar cuentas · Autoconfigurar · Fallback automático AsientoService</td>
+                </tr>
+                <tr>
+                    <td style="text-align:center;font-weight:bold">4</td>
+                    <td><span class="badge b-verde">§ 6</span> Reportes Contables</td>
+                    <td>Libro Diario · Mayor por Cuenta · Balance de Comprobación · Balance General · Estado de Resultados</td>
+                </tr>
+                <tr>
+                    <td style="text-align:center;font-weight:bold">4</td>
+                    <td>Referencia Rápida</td>
+                    <td>Flujo contable mensual recomendado: 9 pasos</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="nota"><p><strong>Ruta en el menú:</strong> Contabilidad → Plan de Cuentas / Asientos / Ejercicios / Parámetros / Reportes. El módulo bloquea automáticamente operaciones en períodos cerrados.</p></div>
+
+    <div class="footer">
+        <div class="f-l">Altamira ERP · Módulo Contabilidad · v2.0</div>
+        <div class="f-r">{{ now()->format('d/m/Y') }} · Índice de contenidos</div>
+    </div>
+</div>
+
 {{-- ═══════════════════════════════ PÁGINA 1 ══════════════════════════════ --}}
 <div class="page">
 
@@ -253,8 +331,8 @@
     </div>
 
     <div class="footer">
-        <div class="f-l">Altamira ERP · Módulo Contabilidad</div>
-        <div class="f-r">{{ now()->format('d/m/Y') }} · Pág. 1</div>
+        <div class="f-l">§ 1 Plan de Cuentas &nbsp;·&nbsp; Módulo Contabilidad</div>
+        <div class="f-r">Pág. 1 de 4 &nbsp;·&nbsp; {{ now()->format('d/m/Y') }}</div>
     </div>
 </div>
 
@@ -426,8 +504,8 @@
     </div>
 
     <div class="footer">
-        <div class="f-l">Altamira ERP · Módulo Contabilidad</div>
-        <div class="f-r">{{ now()->format('d/m/Y') }} · Pág. 2</div>
+        <div class="f-l">§ 2 Asientos Contables &nbsp;·&nbsp; § 3 Asientos Automáticos &nbsp;·&nbsp; Módulo Contabilidad</div>
+        <div class="f-r">Pág. 2 de 4 &nbsp;·&nbsp; {{ now()->format('d/m/Y') }}</div>
     </div>
 </div>
 
@@ -557,7 +635,7 @@
                         <tr><td>cta_iva_compras</td><td>Crédito tributario IVA</td></tr>
                         <tr><td>cta_retencion_ir</td><td>Ret. fuente IR por pagar</td></tr>
                         <tr><td>cta_retencion_iva</td><td>Ret. IVA por pagar</td></tr>
-                        <tr><td>cta_gasto_compras</td><td>Gastos no inventariables</td></tr>
+                        <tr><td>cta_gasto_compras_default</td><td>Gasto genérico (fallback compras sin producto)</td></tr>
                         <tr><td>cta_anticipos_proveedores</td><td>Anticipos a proveedores</td></tr>
                         <tr><td>cta_inventario_mercaderia</td><td>Inventario de mercadería</td></tr>
                         <tr><td>cta_ajuste_inventario</td><td>Ajustes / mermas</td></tr>
@@ -568,6 +646,20 @@
 
         <div class="col2">
             <div class="col2-l">
+                <h3>Grupo Gastos Operativos</h3>
+                <table>
+                    <thead><tr><th>Parámetro</th><th>Descripción</th></tr></thead>
+                    <tbody>
+                        <tr><td>cta_gasto_compras_default</td><td>Gasto genérico (fallback)</td></tr>
+                        <tr><td>cta_gasto_servicios</td><td>Honorarios profesionales</td></tr>
+                        <tr><td>cta_gasto_arrendamiento</td><td>Arrendamientos de locales</td></tr>
+                        <tr><td>cta_gasto_servicios_basicos</td><td>Agua, Luz, Internet</td></tr>
+                        <tr><td>cta_gasto_publicidad</td><td>Publicidad y marketing</td></tr>
+                    </tbody>
+                </table>
+                <div class="nota"><p><strong>Automático:</strong> En compras sin producto de inventario el sistema usa <strong>cta_gasto_compras_default</strong> como cuenta de gasto.</p></div>
+            </div>
+            <div class="col2-r">
                 <h3>Grupo Bancos</h3>
                 <table>
                     <thead><tr><th>Parámetro</th><th>Descripción</th></tr></thead>
@@ -577,8 +669,6 @@
                         <tr><td>cta_retencion_ir_cobrada</td><td>Crédito ret. IR</td></tr>
                     </tbody>
                 </table>
-            </div>
-            <div class="col2-r">
                 <h3>Grupo Nómina</h3>
                 <table>
                     <thead><tr><th>Parámetro</th><th>Descripción</th></tr></thead>
@@ -595,8 +685,8 @@
     </div>
 
     <div class="footer">
-        <div class="f-l">Altamira ERP · Módulo Contabilidad</div>
-        <div class="f-r">{{ now()->format('d/m/Y') }} · Pág. 3</div>
+        <div class="f-l">§ 4 Ejercicios Contables &nbsp;·&nbsp; § 5 Parámetros Contables &nbsp;·&nbsp; Módulo Contabilidad</div>
+        <div class="f-r">Pág. 3 de 4 &nbsp;·&nbsp; {{ now()->format('d/m/Y') }}</div>
     </div>
 </div>
 
@@ -738,8 +828,8 @@
     </div>
 
     <div class="footer">
-        <div class="f-l">Altamira ERP · Módulo Contabilidad · v2.0</div>
-        <div class="f-r">{{ now()->format('d/m/Y') }} · Pág. 4 — Fin del documento</div>
+        <div class="f-l">§ 6 Reportes &nbsp;·&nbsp; Referencia Rápida &nbsp;·&nbsp; Módulo Contabilidad · v2.0</div>
+        <div class="f-r">Pág. 4 de 4 &nbsp;·&nbsp; {{ now()->format('d/m/Y') }}</div>
     </div>
 </div>
 

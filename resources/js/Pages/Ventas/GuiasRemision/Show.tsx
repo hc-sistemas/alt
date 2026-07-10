@@ -1,9 +1,9 @@
-import { Head, usePage, Link } from '@inertiajs/react'
+import { Head, usePage, router } from '@inertiajs/react'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
 import { Badge } from '@/Components/ui/badge'
+import { Button } from '@/Components/ui/button'
 import { formatFecha } from '@/lib/utils'
-import { ArrowLeft } from 'lucide-react'
 import type { PageProps } from '@/types'
 
 interface GuiaItemFull {
@@ -15,19 +15,17 @@ interface GuiaItemFull {
 interface GuiaFull {
     id: number
     numero_completo: string
-    fecha: string
+    fecha_emision: string
     estado_sri: 'pendiente' | 'autorizada' | 'rechazada' | 'anulada'
-    fecha_inicio: string
-    fecha_fin: string | null
+    fecha_inicio_transporte: string
+    fecha_fin_transporte: string | null
     origen: string | null
     destino: string
     ruta: string | null
     motivo: string
-    transportista_nombre: string | null
-    transportista_identificacion: string | null
-    placa: string | null
-    factura_numero: string | null
-    items: GuiaItemFull[]
+    transportista: { razon_social: string; identificacion: string | null; placa: string | null } | null
+    factura: { numero_completo: string } | null
+    detalles: GuiaItemFull[]
 }
 
 interface Props extends PageProps {
@@ -70,12 +68,6 @@ export default function Show() {
 
                 <div className="flex items-center gap-3">
                     <Badge variant={cfg.variant}>{cfg.label}</Badge>
-                    <Link href={route('ventas.guias-remision.index')}>
-                        <button type="button" className="flex items-center gap-1 text-xs transition-colors hover:text-amber-500" style={{ color: 'var(--text-muted)' }}>
-                            <ArrowLeft className="w-3.5 h-3.5" />
-                            Volver a Guías de Remisión
-                        </button>
-                    </Link>
                 </div>
 
                 {/* Datos del transporte */}
@@ -86,13 +78,13 @@ export default function Show() {
                     <p className="text-xs font-semibold uppercase tracking-wider mb-4" style={{ color: 'var(--text-muted)' }}>Datos del Transporte</p>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                         <InfoRow label="Número" value={<span className="font-mono">{guia.numero_completo}</span>} />
-                        <InfoRow label="Fecha emisión" value={formatFecha(guia.fecha)} />
-                        <InfoRow label="Factura origen" value={guia.factura_numero ? <span className="font-mono">{guia.factura_numero}</span> : '—'} />
-                        <InfoRow label="Transportista" value={guia.transportista_nombre} />
-                        <InfoRow label="Identificación" value={guia.transportista_identificacion} />
-                        <InfoRow label="Placa" value={guia.placa} />
-                        <InfoRow label="Fecha inicio transporte" value={formatFecha(guia.fecha_inicio)} />
-                        <InfoRow label="Fecha fin transporte" value={guia.fecha_fin ? formatFecha(guia.fecha_fin) : '—'} />
+                        <InfoRow label="Fecha emisión" value={formatFecha(guia.fecha_emision)} />
+                        <InfoRow label="Factura origen" value={guia.factura?.numero_completo ? <span className="font-mono">{guia.factura.numero_completo}</span> : '—'} />
+                        <InfoRow label="Transportista" value={guia.transportista?.razon_social} />
+                        <InfoRow label="Identificación" value={guia.transportista?.identificacion} />
+                        <InfoRow label="Placa" value={guia.transportista?.placa ?? '—'} />
+                        <InfoRow label="Fecha inicio transporte" value={formatFecha(guia.fecha_inicio_transporte)} />
+                        <InfoRow label="Fecha fin transporte" value={guia.fecha_fin_transporte ? formatFecha(guia.fecha_fin_transporte) : '—'} />
                         <InfoRow label="Motivo" value={guia.motivo} />
                         <InfoRow label="Origen" value={guia.origen} />
                         <InfoRow label="Destino" value={guia.destino} />
@@ -117,7 +109,7 @@ export default function Show() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {guia.items.map(item => (
+                                {guia.detalles.map(item => (
                                     <tr key={item.id} style={{ borderBottom: '1px solid var(--border)' }}>
                                         <td className="px-4 py-3" style={{ color: 'var(--text-main)' }}>{item.descripcion}</td>
                                         <td className="px-4 py-3 text-right" style={{ color: 'var(--text-muted)' }}>{item.cantidad}</td>
@@ -126,6 +118,12 @@ export default function Show() {
                             </tbody>
                         </table>
                     </div>
+                </div>
+
+                <div className="flex gap-3 pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
+                    <Button variant="outline" onClick={() => router.visit(route('ventas.guias-remision.index'))}>
+                        Volver
+                    </Button>
                 </div>
             </div>
         </AppLayout>

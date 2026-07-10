@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -138,5 +138,9 @@
     ERP Altamira &middot; Mayor Contable &middot; {{ $cuenta->codigo }} &mdash; {{ $cuenta->nombre }}
 </div>
 
+
+<div style="margin-top:10px; border-top:1px solid #e5e7eb; padding-top:4px; font-size:7px; color:#9ca3af;">
+    Impreso por: {{ auth()->user()?->nombre ?? '—' }} &nbsp;|&nbsp; {{ now()->format('d/m/Y H:i') }}
+</div>
 </body>
 </html>

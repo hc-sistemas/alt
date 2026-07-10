@@ -53,6 +53,16 @@ class GuiaRemision extends Model
         return $this->belongsTo(Factura::class);
     }
 
+    public function transportista(): BelongsTo
+    {
+        return $this->belongsTo(Transportista::class);
+    }
+
+    public function usuario(): BelongsTo
+    {
+        return $this->belongsTo(Usuario::class);
+    }
+
     public function detalles(): HasMany
     {
         return $this->hasMany(GuiaRemisionDetalle::class, 'guia_id');

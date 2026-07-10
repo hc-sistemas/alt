@@ -124,6 +124,89 @@
     </div>
 </div>
 
+{{-- ══════════════════════════════ ÍNDICE ═══════════════════════════════════ --}}
+<div class="page pb">
+    <div class="header-page">
+        <div class="hp-left">
+            <div class="hp-empresa">{{ $empresa->nombre_comercial ?? 'Altamira Light &amp; Sound' }}</div>
+            <div class="hp-titulo">Manual de Uso · Módulo Compras</div>
+        </div>
+        <div class="hp-right">
+            <div class="hp-pag">Índice &nbsp;·&nbsp; v2.0</div>
+        </div>
+    </div>
+
+    <div class="sec">
+        <div class="sec-num">Navegación</div>
+        <div class="sec-titulo">Tabla de Contenidos</div>
+        <div class="sec-desc">Altamira ERP — Módulo Compras · 4 páginas de contenido. Use esta tabla para ubicar rápidamente cada sección.</div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th style="width:12%;text-align:center">Pág.</th>
+                    <th style="width:30%">Sección</th>
+                    <th>Contenido</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td style="text-align:center;font-weight:bold">1</td>
+                    <td>Introducción</td>
+                    <td>¿Para qué sirve el módulo? · Mapa del menú lateral</td>
+                </tr>
+                <tr>
+                    <td style="text-align:center;font-weight:bold">1</td>
+                    <td><span class="badge b-naranja">§ 1</span> Proveedores</td>
+                    <td>Crear / editar proveedores · RUC único · Estado activo / inactivo · Filtros y búsqueda</td>
+                </tr>
+                <tr>
+                    <td style="text-align:center;font-weight:bold">1–2</td>
+                    <td><span class="badge b-naranja">§ 2</span> Registro de Compras</td>
+                    <td>Tipos de documento (FAC, LIQ, TIK, CON, EXT) · Retenciones IR/IVA · Asiento automático al activar</td>
+                </tr>
+                <tr>
+                    <td style="text-align:center;font-weight:bold">2</td>
+                    <td><span class="badge b-naranja">§ 2</span> Cargar XML SRI</td>
+                    <td>Parsear XML del SRI · Auto-rellenar formulario · Buscar proveedor por RUC</td>
+                </tr>
+                <tr>
+                    <td style="text-align:center;font-weight:bold">2</td>
+                    <td><span class="badge b-naranja">§ 3</span> Cuentas por Pagar</td>
+                    <td>Registrar CxP · Filtros de vencimiento · Pagar · Detalle de movimientos</td>
+                </tr>
+                <tr>
+                    <td style="text-align:center;font-weight:bold">2</td>
+                    <td><span class="badge b-naranja">§ 4</span> Anticipos a Proveedores</td>
+                    <td>Registrar anticipo · Asiento automático · Filtros y estados</td>
+                </tr>
+                <tr>
+                    <td style="text-align:center;font-weight:bold">3</td>
+                    <td><span class="badge b-naranja">§ 5</span> Importaciones</td>
+                    <td>13 conceptos de costo (ISD, Advalorem, FODINFA…) · Liquidar · Prorrateo · Crear factura</td>
+                </tr>
+                <tr>
+                    <td style="text-align:center;font-weight:bold">4</td>
+                    <td><span class="badge b-naranja">§ 6</span> Devoluciones de Compra</td>
+                    <td>Crear devolución · Seleccionar ítems de compra original · Asiento automático · Anular</td>
+                </tr>
+                <tr>
+                    <td style="text-align:center;font-weight:bold">4</td>
+                    <td>Referencia Rápida</td>
+                    <td>Flujo típico de una compra: 6 pasos</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="nota"><p><strong>Ruta en el menú:</strong> Compras → Facturas / Proveedores / CxP / Anticipos / Importaciones / Devoluciones. Cada compra activada genera automáticamente asiento contable y actualiza CxP.</p></div>
+
+    <div class="footer">
+        <div class="f-l">Altamira ERP · Módulo Compras · v2.0</div>
+        <div class="f-r">{{ now()->format('d/m/Y') }} · Índice de contenidos</div>
+    </div>
+</div>
+
 {{-- ═══════════════════════════════ PÁGINA 1 ══════════════════════════════ --}}
 <div class="page">
 
@@ -279,8 +362,8 @@
     </div>
 
     <div class="footer">
-        <div class="f-l">Altamira ERP · Módulo Compras</div>
-        <div class="f-r">{{ now()->format('d/m/Y') }} · Pág. 1</div>
+        <div class="f-l">§ 1 Proveedores &nbsp;·&nbsp; § 2 Registro de Compras &nbsp;·&nbsp; Módulo Compras</div>
+        <div class="f-r">Pág. 1 de 4 &nbsp;·&nbsp; {{ now()->format('d/m/Y') }}</div>
     </div>
 </div>
 
@@ -417,8 +500,8 @@
     </div>
 
     <div class="footer">
-        <div class="f-l">Altamira ERP · Módulo Compras</div>
-        <div class="f-r">{{ now()->format('d/m/Y') }} · Pág. 2</div>
+        <div class="f-l">§ 2 XML SRI &nbsp;·&nbsp; § 3 CxP &nbsp;·&nbsp; § 4 Anticipos &nbsp;·&nbsp; Módulo Compras</div>
+        <div class="f-r">Pág. 2 de 4 &nbsp;·&nbsp; {{ now()->format('d/m/Y') }}</div>
     </div>
 </div>
 
@@ -515,8 +598,8 @@
     </div>
 
     <div class="footer">
-        <div class="f-l">Altamira ERP · Módulo Compras</div>
-        <div class="f-r">{{ now()->format('d/m/Y') }} · Pág. 3</div>
+        <div class="f-l">§ 5 Importaciones &nbsp;·&nbsp; Módulo Compras</div>
+        <div class="f-r">Pág. 3 de 4 &nbsp;·&nbsp; {{ now()->format('d/m/Y') }}</div>
     </div>
 </div>
 
@@ -626,8 +709,8 @@
     </div>
 
     <div class="footer">
-        <div class="f-l">Altamira ERP · Módulo Compras · v2.0</div>
-        <div class="f-r">{{ now()->format('d/m/Y') }} · Pág. 4 — Fin del documento</div>
+        <div class="f-l">§ 6 Devoluciones &nbsp;·&nbsp; Referencia Rápida &nbsp;·&nbsp; Módulo Compras · v2.0</div>
+        <div class="f-r">Pág. 4 de 4 &nbsp;·&nbsp; {{ now()->format('d/m/Y') }}</div>
     </div>
 </div>
 

@@ -20,11 +20,11 @@ class Asistencia extends Model
     protected function casts(): array
     {
         return [
-            'fecha'        => 'date',
-            'hora_entrada' => 'datetime',
-            'hora_salida'  => 'datetime',
+            // 'fecha' se deja sin cast: PostgreSQL DATE devuelve "YYYY-MM-DD" directamente
+            'hora_entrada'   => 'datetime',
+            'hora_salida'    => 'datetime',
             'minutos_atraso' => 'integer',
-            'horas_extra'  => 'float',
+            'horas_extra'    => 'float',
         ];
     }
 

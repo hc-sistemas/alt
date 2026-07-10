@@ -100,18 +100,28 @@ class DatafastController extends Controller
                 ]);
 
                 try {
-                    $ctaVouchers = ParametroContable::getCuentaId('cta_vouchers', $empresaId);
-                    $ctaVentas   = ParametroContable::getCuentaId('cta_ventas_locales', $empresaId);
+                    $ctaVouchers  = ParametroContable::getCuentaId('cta_vouchers', $empresaId);
+                    $ctaVentas    = ParametroContable::getCuentaId('cta_ventas_locales', $empresaId);
+                    $ctaIvaVentas = ParametroContable::getCuentaId('cta_iva_ventas', $empresaId);
 
-                    if ($ctaVouchers && $ctaVentas) {
+                    if ($ctaVouchers && $ctaVentas && $ctaIvaVentas) {
+                        // El total del voucher incluye IVA (es lo que se cobró en la tarjeta del
+                        // cliente) — se separa en neto (Ventas) + IVA (pasivo por liquidar al SRI),
+                        // igual que en Facturas/Proformas (tarifa 15%).
+                        $totalVouchers = (float) $request->total_vouchers;
+                        $neto = round($totalVouchers / 1.15, 2);
+                        $iva  = round($totalVouchers - $neto, 2);
+
                         $asiento = $this->asientoService->crear(
                             empresaId:    $empresaId,
                             concepto:     "Lote Datafast {$request->numero_lote}",
                             partidas: [
-                                ['cuenta_id' => $ctaVouchers, 'debe' => $request->total_vouchers, 'haber' => 0,
+                                ['cuenta_id' => $ctaVouchers,  'debe' => $totalVouchers, 'haber' => 0,
                                  'descripcion' => "Lote {$request->numero_lote}"],
-                                ['cuenta_id' => $ctaVentas,   'debe' => 0, 'haber' => $request->total_vouchers,
+                                ['cuenta_id' => $ctaVentas,    'debe' => 0, 'haber' => $neto,
                                  'descripcion' => "Ventas tarjeta lote {$request->numero_lote}"],
+                                ['cuenta_id' => $ctaIvaVentas, 'debe' => 0, 'haber' => $iva,
+                                 'descripcion' => "IVA ventas tarjeta lote {$request->numero_lote}"],
                             ],
                             documentoTipo:'BANCO',
                             documentoId:  $lote->id,
@@ -143,8 +153,8 @@ class DatafastController extends Controller
             'fecha_deposito'    => 'required|date',
             'valor_bruto'       => 'required|numeric|min:0',
             'comision_datafast' => 'required|numeric|min:0',
-            'retencion_iva'     => 'numeric|min:0',
-            'retencion_ir'      => 'numeric|min:0',
+            'retencion_iva'     => 'nullable|numeric|min:0',
+            'retencion_ir'      => 'nullable|numeric|min:0',
             'banco_destino_id'  => 'required|exists:bancos_cajas,id',
         ]);
 
@@ -200,19 +210,7 @@ class DatafastController extends Controller
                             }
                         }
 
-                        // Retención IR — necesaria para cuadrar el asiento (DEBE total = HABER total)
-                        if (($request->retencion_ir ?? 0) > 0) {
-                            $ctaRetIR = ParametroContable::getCuentaId('cta_retencion_ir', $empresaId);
-                            if ($ctaRetIR) {
-                                $partidas[] = [
-                                    'cuenta_id'   => $ctaRetIR,
-                                    'debe'        => $request->retencion_ir,
-                                    'haber'       => 0,
-                                    'descripcion' => "Ret. IR Datafast lote {$lote->numero_lote}",
-                                ];
-                            }
-                        }
-
+                        // Retención IR (Datafast retiene al comercio → crédito tributario 1.1.5.03)
                         if (($request->retencion_ir ?? 0) > 0) {
                             $ctaRetIR = ParametroContable::getCuentaId('cta_retencion_ir_cobrada', $empresaId);
                             if ($ctaRetIR) {
@@ -220,7 +218,7 @@ class DatafastController extends Controller
                                     'cuenta_id'   => $ctaRetIR,
                                     'debe'        => $request->retencion_ir,
                                     'haber'       => 0,
-                                    'descripcion' => "Ret. IR Datafast",
+                                    'descripcion' => "Ret. IR Datafast lote {$lote->numero_lote}",
                                 ];
                             }
                         }

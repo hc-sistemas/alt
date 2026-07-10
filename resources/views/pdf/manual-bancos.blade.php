@@ -137,6 +137,89 @@
     </div>
 </div>
 
+{{-- ══════════════════════════════ ÍNDICE ═══════════════════════════════════ --}}
+<div class="page pb">
+    <div class="header-page">
+        <div class="hp-left">
+            <div class="hp-empresa">{{ $empresa->nombre_comercial ?? 'Altamira Light &amp; Sound' }}</div>
+            <div class="hp-titulo">Manual de Uso · Módulo Bancos</div>
+        </div>
+        <div class="hp-right">
+            <div class="hp-pag">Índice &nbsp;·&nbsp; v1.0</div>
+        </div>
+    </div>
+
+    <div class="sec">
+        <div class="sec-num">Navegación</div>
+        <div class="sec-titulo">Tabla de Contenidos</div>
+        <div class="sec-desc">Altamira ERP — Módulo Bancos · 4 páginas de contenido. Use esta tabla para ubicar rápidamente cada sección.</div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th style="width:12%;text-align:center">Pág.</th>
+                    <th style="width:30%">Sección</th>
+                    <th>Contenido</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td style="text-align:center;font-weight:bold">1</td>
+                    <td><span class="badge b-azul">§ 1</span> ¿Para qué sirve?</td>
+                    <td>Descripción del módulo · Tipos de cuentas soportadas · Relaciones con otros módulos</td>
+                </tr>
+                <tr>
+                    <td style="text-align:center;font-weight:bold">1</td>
+                    <td><span class="badge b-azul">§ 2</span> Bancos y Cajas</td>
+                    <td>Crear banco / caja / caja chica / tarjeta · Cuenta contable automática · Saldo inicial</td>
+                </tr>
+                <tr>
+                    <td style="text-align:center;font-weight:bold">2</td>
+                    <td><span class="badge b-azul">§ 3</span> Movimientos Bancarios</td>
+                    <td>Ingreso / Egreso / Transferencia · Selector de persona (Cliente/Proveedor) · Asiento automático</td>
+                </tr>
+                <tr>
+                    <td style="text-align:center;font-weight:bold">2</td>
+                    <td><span class="badge b-azul">§ 4</span> Cajas (apertura y cierre)</td>
+                    <td>Abrir caja · Registrar cierre diario · Diferencias y asiento automático</td>
+                </tr>
+                <tr>
+                    <td style="text-align:center;font-weight:bold">3</td>
+                    <td><span class="badge b-azul">§ 5</span> Datafast</td>
+                    <td>Registrar lote · Liquidar (comisión + retenciones IVA/IR) · Filtros y estados</td>
+                </tr>
+                <tr>
+                    <td style="text-align:center;font-weight:bold">3</td>
+                    <td><span class="badge b-azul">§ 6</span> Conciliación Bancaria</td>
+                    <td>Crear conciliación · Partidas en tránsito · Asiento de ajuste automático</td>
+                </tr>
+                <tr>
+                    <td style="text-align:center;font-weight:bold">4</td>
+                    <td><span class="badge b-azul">§ 7</span> Cheques</td>
+                    <td>Emitir cheque · Cambiar estado (cobrado / protestado / anulado) · Reversión de saldo</td>
+                </tr>
+                <tr>
+                    <td style="text-align:center;font-weight:bold">4</td>
+                    <td><span class="badge b-azul">§ 8</span> Reportes</td>
+                    <td>Estado de Cuenta · Movimientos · Caja Chica · Consulta Cobros/Pagos (Excel + PDF)</td>
+                </tr>
+                <tr>
+                    <td style="text-align:center;font-weight:bold">4</td>
+                    <td><span class="badge b-azul">§ 9–10</span> Relaciones / Errores</td>
+                    <td>Integración con Contabilidad, Ventas y Compras · Errores frecuentes y soluciones</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="nota"><p><strong>Ruta en el menú:</strong> Bancos → Catálogo / Movimientos / Cajas / Datafast / Conciliaciones / Cheques / Reportes. Cada movimiento genera asiento contable automático si el banco tiene cuenta contable configurada.</p></div>
+
+    <div class="footer">
+        <div class="f-l">Altamira ERP · Módulo Bancos · v1.0</div>
+        <div class="f-r">{{ now()->format('d/m/Y') }} · Índice de contenidos</div>
+    </div>
+</div>
+
 {{-- ═══════════════════════════════ PÁGINA 1 ══════════════════════════════ --}}
 <div class="page">
 
@@ -255,8 +338,8 @@
     </div>
 
     <div class="footer">
-        <div class="f-l">Altamira Light &amp; Sound · Módulo Bancos · Manual de Uso</div>
-        <div class="f-r">{{ now()->format('d/m/Y') }}</div>
+        <div class="f-l">§ 1 Intro &nbsp;·&nbsp; § 2 Bancos y Cajas &nbsp;·&nbsp; Módulo Bancos</div>
+        <div class="f-r">Pág. 1 de 4 &nbsp;·&nbsp; {{ now()->format('d/m/Y') }}</div>
     </div>
 </div>
 
@@ -388,8 +471,8 @@
     </div>
 
     <div class="footer">
-        <div class="f-l">Altamira Light &amp; Sound · Módulo Bancos · Manual de Uso</div>
-        <div class="f-r">{{ now()->format('d/m/Y') }}</div>
+        <div class="f-l">§ 3 Movimientos &nbsp;·&nbsp; § 4 Cajas &nbsp;·&nbsp; Módulo Bancos</div>
+        <div class="f-r">Pág. 2 de 4 &nbsp;·&nbsp; {{ now()->format('d/m/Y') }}</div>
     </div>
 </div>
 
@@ -521,8 +604,8 @@
     </div>
 
     <div class="footer">
-        <div class="f-l">Altamira Light &amp; Sound · Módulo Bancos · Manual de Uso</div>
-        <div class="f-r">{{ now()->format('d/m/Y') }}</div>
+        <div class="f-l">§ 5 Datafast &nbsp;·&nbsp; § 6 Conciliación &nbsp;·&nbsp; Módulo Bancos</div>
+        <div class="f-r">Pág. 3 de 4 &nbsp;·&nbsp; {{ now()->format('d/m/Y') }}</div>
     </div>
 </div>
 
@@ -630,6 +713,31 @@
             o en <strong>PDF</strong> (para enviar por correo o imprimir). El PDF se abre directamente en la pantalla sin
             descargar ningún archivo.</p>
         </div>
+
+        <h3>Alertas automáticas de vencimiento CxP</h3>
+        <p style="font-size:8px;color:#444;line-height:1.6;margin-bottom:6px;">
+            El sistema envía notificaciones automáticas <strong>todos los días a las 08:00</strong> para:
+        </p>
+        <table>
+            <thead>
+                <tr><th style="width:35%">Tipo de alerta</th><th>Qué indica</th><th style="width:30%">Cuándo aparece</th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>⚠️ CxP por vencer en 48h</strong></td>
+                    <td>Una factura de proveedor vence dentro de 48 horas. Muestra número, proveedor y saldo</td>
+                    <td>Si la CxP vence entre hoy y pasado mañana y tiene saldo &gt; 0</td>
+                </tr>
+                <tr>
+                    <td><strong>🔴 CxP vencidas</strong></td>
+                    <td>Resumen de todas las facturas de proveedor cuya fecha de vencimiento ya pasó</td>
+                    <td>Si hay al menos 1 CxP vencida con saldo pendiente</td>
+                </tr>
+            </tbody>
+        </table>
+        <div class="nota">
+            <p><strong>¿Dónde ver las alertas?</strong> En la barra superior haz clic en el ícono de campana 🔔. Si hay notificaciones no leídas aparece un <span style="background:#EF4444;color:#fff;padding:1px 5px;border-radius:8px;font-size:7px;font-weight:bold">número</span> rojo. En el menú desplegable puedes marcar como leídas individualmente o con el botón <strong>"Todo leído"</strong>. Las alertas las reciben los usuarios con perfil <strong>Admin</strong> o <strong>Super Admin</strong>.</p>
+        </div>
     </div>
 
     <hr class="sep">
@@ -704,8 +812,8 @@ Liquidación    ──────────► 1.1.1.3 banco real     ──�
     </div>
 
     <div class="footer">
-        <div class="f-l">Altamira Light &amp; Sound · Módulo Bancos · Manual de Uso &nbsp;·&nbsp; Versión 1.0</div>
-        <div class="f-r">Generado: {{ now()->format('d/m/Y H:i') }}</div>
+        <div class="f-l">§ 7 Cheques &nbsp;·&nbsp; § 8 Reportes &nbsp;·&nbsp; § 9–10 Relaciones/Errores &nbsp;·&nbsp; Bancos · v1.0</div>
+        <div class="f-r">Pág. 4 de 4 &nbsp;·&nbsp; {{ now()->format('d/m/Y') }}</div>
     </div>
 </div>
 

@@ -11,15 +11,16 @@ import {
     AlertTriangle, User, X, FileText, Zap, Download,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { AsientoContable, EjercicioContable, PlanCuenta, PageProps } from '@/types'
+import type { AsientoContable, CentroCosto, EjercicioContable, PlanCuenta, PageProps } from '@/types'
 import { notify, formatMoney, formatFecha, swalBase, injectSwalStyles } from '@/utils/contabilidad'
 import 'react-toastify/dist/ReactToastify.css'
 
 interface Partida {
-    cuenta_id: string
-    descripcion: string
-    debe: string
-    haber: string
+    cuenta_id:       string
+    centro_costo_id: string
+    descripcion:     string
+    debe:            string
+    haber:           string
 }
 
 // El paginador de Laravel pone current_page, last_page, total, etc. en el nivel raíz (no bajo meta)
@@ -35,14 +36,15 @@ interface PaginatedAsiento {
 }
 
 interface Props extends PageProps {
-    asientos: PaginatedAsiento
-    ejercicios: EjercicioContable[]
-    cuentas: PlanCuenta[]
+    asientos:      PaginatedAsiento
+    ejercicios:    EjercicioContable[]
+    cuentas:       PlanCuenta[]
+    centros:       CentroCosto[]
     periodoActivo: EjercicioContable | null
-    filtros: Record<string, string>
+    filtros:       Record<string, string>
 }
 
-const PARTIDA_VACIA: Partida = { cuenta_id: '', descripcion: '', debe: '', haber: '' }
+const PARTIDA_VACIA: Partida = { cuenta_id: '', centro_costo_id: '', descripcion: '', debe: '', haber: '' }
 
 const TIPO_BADGE = {
     activo: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300',
@@ -50,7 +52,7 @@ const TIPO_BADGE = {
 }
 
 export default function AsientosIndex() {
-    const { asientos, ejercicios, cuentas, periodoActivo, filtros, flash, auth }
+    const { asientos, ejercicios, cuentas, centros, periodoActivo, filtros, flash, auth }
         = usePage<Props>().props
     const perfil = auth.user?.perfil ?? ''
     const puedeCrear = ['super_admin', 'admin', 'contador'].includes(perfil)
@@ -143,10 +145,11 @@ export default function AsientosIndex() {
             concepto,
             fecha,
             partidas: limpias.map(p => ({
-                cuenta_id: parseInt(p.cuenta_id),
-                descripcion: p.descripcion || null,
-                debe: parseFloat(p.debe) || 0,
-                haber: parseFloat(p.haber) || 0,
+                cuenta_id:       parseInt(p.cuenta_id),
+                centro_costo_id: p.centro_costo_id ? parseInt(p.centro_costo_id) : null,
+                descripcion:     p.descripcion || null,
+                debe:            parseFloat(p.debe) || 0,
+                haber:           parseFloat(p.haber) || 0,
             })),
         }, {
             onSuccess: () => cerrarModal(),
@@ -600,9 +603,11 @@ export default function AsientosIndex() {
 
                                 {/* Cabecera partidas */}
                                 <div className={cn('gap-2', 'grid', 'grid-cols-12', 'mb-1', 'px-1')}>
-                                    <span className={cn('col-span-4', 'font-semibold', 'text-xs', 'uppercase', 'tracking-wider')}
-                                        style={{ color: 'var(--text-muted)' }}>Cuenta</span>
                                     <span className={cn('col-span-3', 'font-semibold', 'text-xs', 'uppercase', 'tracking-wider')}
+                                        style={{ color: 'var(--text-muted)' }}>Cuenta</span>
+                                    <span className={cn('col-span-2', 'font-semibold', 'text-xs', 'uppercase', 'tracking-wider')}
+                                        style={{ color: 'var(--text-muted)' }}>Centro Costo</span>
+                                    <span className={cn('col-span-2', 'font-semibold', 'text-xs', 'uppercase', 'tracking-wider')}
                                         style={{ color: 'var(--text-muted)' }}>Descripción</span>
                                     <span className={cn('col-span-2', 'font-semibold', 'text-xs', 'text-right', 'uppercase', 'tracking-wider')}
                                         style={{ color: 'var(--text-muted)' }}>Debe</span>
@@ -615,7 +620,7 @@ export default function AsientosIndex() {
                                     {partidas.map((p, idx) => (
                                         <div key={idx} className={cn('items-center', 'gap-2', 'grid', 'grid-cols-12')}>
                                             {/* Selector de cuenta con búsqueda */}
-                                            <div className={cn('relative', 'col-span-4')}>
+                                            <div className={cn('relative', 'col-span-3')}>
                                                 <input
                                                     type="text"
                                                     value={buscarCuenta[idx] ?? ''}
@@ -665,13 +670,27 @@ export default function AsientosIndex() {
                                                 )}
                                             </div>
 
+                                            {/* Centro de costo */}
+                                            <select
+                                                value={p.centro_costo_id}
+                                                onChange={e => actualizarPartida(idx, 'centro_costo_id', e.target.value)}
+                                                className="input-field col-span-2 text-xs"
+                                            >
+                                                <option value="">— Sin centro —</option>
+                                                {centros.map(c => (
+                                                    <option key={c.id} value={String(c.id)}>
+                                                        {c.nombre}
+                                                    </option>
+                                                ))}
+                                            </select>
+
                                             {/* Descripción */}
                                             <input
                                                 type="text"
                                                 value={p.descripcion}
                                                 onChange={e => actualizarPartida(idx, 'descripcion', e.target.value)}
                                                 placeholder="Detalle..."
-                                                className="input-field col-span-3 text-xs"
+                                                className="input-field col-span-2 text-xs"
                                             />
 
                                             {/* Debe */}

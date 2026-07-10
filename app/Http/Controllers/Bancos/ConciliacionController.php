@@ -7,6 +7,7 @@ use App\Models\BancoCaja;
 use App\Models\ConciliacionBancaria;
 use App\Models\MovimientoBancario;
 use App\Models\PartidaTransito;
+use App\Models\PlanCuenta;
 use App\Services\AsientoService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -152,6 +153,8 @@ class ConciliacionController extends Controller
         $partidasConciliadas = $partidas->where('conciliada', true)->count();
         $partidasPendientes  = $partidas->where('conciliada', false)->count();
 
+        $cuentaComision = PlanCuenta::where('codigo', '5.3.1.02')->first();
+
         return Inertia::render('Bancos/Conciliaciones/Show', [
             'conciliacion'        => [
                 'id'            => $conciliacion->id,
@@ -174,6 +177,9 @@ class ConciliacionController extends Controller
                 'conciliadas'     => $partidasConciliadas,
                 'pendientes'      => $partidasPendientes,
             ],
+            'cuentas' => PlanCuenta::where('permite_asientos', true)->where('estado', true)
+                ->orderBy('codigo')->get(['id', 'codigo', 'nombre']),
+            'cuenta_comision_sugerida_id' => $cuentaComision?->id,
         ]);
     }
 
@@ -254,7 +260,10 @@ class ConciliacionController extends Controller
             }
         });
 
+        $autoMatch = $this->autoMatchPartidas($conciliacion);
+
         $msg = "CSV importado: {$importadas} movimientos del banco cargados.";
+        if ($autoMatch > 0) $msg .= " Se cruzaron automáticamente {$autoMatch} partida(s) (±2 días, ±\$0.01).";
         if ($errores > 0) $msg .= " ({$errores} filas con errores omitidas)";
 
         return back()->with('success', $msg);
@@ -266,13 +275,16 @@ class ConciliacionController extends Controller
         $request->validate([
             'partida_sistema_id' => 'required|exists:partidas_transito,id',
             'partida_banco_id'   => 'required|exists:partidas_transito,id',
+            'generar_ajuste'     => 'sometimes|boolean',
         ]);
 
         if ($conciliacion->estaConciliada()) {
             return back()->with('error', 'La conciliación ya está cerrada.');
         }
 
-        DB::transaction(function () use ($request, $conciliacion) {
+        $mensaje = 'Partidas cruzadas correctamente.';
+
+        DB::transaction(function () use ($request, $conciliacion, &$mensaje) {
             $pSistema = PartidaTransito::findOrFail($request->partida_sistema_id);
             $pBanco   = PartidaTransito::findOrFail($request->partida_banco_id);
 
@@ -284,16 +296,77 @@ class ConciliacionController extends Controller
                 abort(422, 'Las partidas deben ser una de sistema y otra de banco.');
             }
 
+            // Diferencia real entre lo que dice el banco y lo que dice el sistema para
+            // este cruce puntual. Positiva → el banco registra más (falta un ingreso);
+            // negativa → el banco registra menos (falta un egreso).
+            $diferenciaMonto = round((float) $pBanco->monto - (float) $pSistema->monto, 2);
+            $hayDiferencia   = abs($diferenciaMonto) > 0.01;
+
             $pSistema->update(['conciliada' => true]);
             $pBanco->update(['conciliada' => true]);
 
-            // Marcar el movimiento como conciliado si la diferencia es ≤ $0.01
-            if ($pSistema->movimiento_id && abs((float)$pSistema->monto - (float)$pBanco->monto) <= 0.01) {
-                MovimientoBancario::where('id', $pSistema->movimiento_id)->update(['conciliado' => true]);
+            if (!$hayDiferencia) {
+                if ($pSistema->movimiento_id) {
+                    MovimientoBancario::where('id', $pSistema->movimiento_id)->update(['conciliado' => true]);
+                }
+            } elseif ($request->boolean('generar_ajuste')) {
+                // El contador decidió justificar contablemente la diferencia del cruce:
+                // se genera un movimiento + asiento de ajuste (misma cuenta/mecanismo que
+                // el ajuste global de diferencia), y el movimiento original queda conciliado.
+                $empresaId   = $conciliacion->empresa_id;
+                $banco       = $conciliacion->bancoCaja;
+                $montoAjuste = abs($diferenciaMonto);
+                $tipoAjuste  = $diferenciaMonto > 0 ? 'ingreso' : 'egreso';
+                $desc        = "Ajuste cruce manual — {$pSistema->descripcion} (sistema \${$pSistema->monto}) vs {$pBanco->descripcion} (banco \${$pBanco->monto})";
+
+                $movimiento = MovimientoBancario::create([
+                    'empresa_id'     => $empresaId,
+                    'banco_caja_id'  => $banco->id,
+                    'tipo'           => $tipoAjuste,
+                    'sub_tipo'       => 'transferencia',
+                    'fecha'          => $pBanco->fecha,
+                    'monto'          => $montoAjuste,
+                    'descripcion'    => $desc,
+                    'documento_tipo' => 'AJUSTE_CRUCE',
+                    'documento_id'   => $conciliacion->id,
+                    'conciliado'     => true,
+                    'anulado'        => false,
+                    'created_by'     => Auth::id(),
+                ]);
+
+                $banco->actualizarSaldo($montoAjuste, $tipoAjuste);
+
+                $asiento = $this->asientoService->ajusteConciliacion(
+                    $empresaId,
+                    $conciliacion->id,
+                    $diferenciaMonto,
+                    $desc,
+                );
+                $movimiento->update(['asiento_id' => $asiento->id]);
+
+                if ($pSistema->movimiento_id) {
+                    MovimientoBancario::where('id', $pSistema->movimiento_id)->update(['conciliado' => true]);
+                }
+
+                $mensaje = 'Partidas cruzadas. Se generó un asiento de ajuste de $' . number_format($montoAjuste, 2) . ' por la diferencia.';
+            } else {
+                // Cruce confirmado sin ajuste: el movimiento original queda SIN marcar
+                // conciliado (hay una diferencia real sin justificar) y esa diferencia
+                // se refleja abajo en saldo_sistema/diferencia de la conciliación.
+                $mensaje = 'Partidas cruzadas SIN ajuste — quedó una diferencia de $' . number_format(abs($diferenciaMonto), 2) . ' reflejada en el saldo de la conciliación.';
             }
+
+            // Recalcular saldo_sistema/diferencia SIEMPRE tras esta acción (mismo mecanismo
+            // que generarAsientoAjuste()/generarAsientoPartida()/cerrar()), para que
+            // "Diferencia" nunca quede desactualizada, haya o no ajuste de por medio.
+            $bancoFresco = $conciliacion->bancoCaja->fresh();
+            $conciliacion->update([
+                'saldo_sistema' => $bancoFresco->saldo_actual,
+                'diferencia'    => (float) $conciliacion->saldo_banco - (float) $bancoFresco->saldo_actual,
+            ]);
         });
 
-        return back()->with('success', 'Partidas cruzadas correctamente.');
+        return back()->with('success', $mensaje);
     }
 
     // ── Generar asiento de ajuste para la diferencia ──────────────────────────
@@ -314,10 +387,12 @@ class ConciliacionController extends Controller
         $desc      = $request->descripcion ?: "Ajuste conciliación bancaria #{$conciliacion->id}";
 
         DB::transaction(function () use ($conciliacion, $empresaId, $desc) {
+            $diferencia = (float) $conciliacion->diferencia;
+
             $asiento = $this->asientoService->ajusteConciliacion(
                 $empresaId,
                 $conciliacion->id,
-                (float) $conciliacion->diferencia,
+                $diferencia,
                 $desc,
             );
 
@@ -327,13 +402,116 @@ class ConciliacionController extends Controller
                 'tipo'               => 'banco',
                 'fecha'              => now()->format('Y-m-d'),
                 'descripcion'        => $desc,
-                'monto'              => abs((float) $conciliacion->diferencia),
+                'monto'              => abs($diferencia),
                 'conciliada'         => true,
                 'asiento_generado_id' => $asiento->id,
+            ]);
+
+            // Sincronizar el saldo cacheado del banco con el ajuste contable recién
+            // registrado (ajusteConciliacion solo afecta el mayor contable) y reflejar
+            // en la conciliación que la diferencia quedó resuelta. Sin esto, "Diferencia"
+            // mostraría el valor original para siempre, incluso ya cerrada la conciliación.
+            $conciliacion->bancoCaja->actualizarSaldo(abs($diferencia), $diferencia > 0 ? 'ingreso' : 'egreso');
+            $conciliacion->update([
+                'saldo_sistema' => $conciliacion->saldo_banco,
+                'diferencia'    => 0,
             ]);
         });
 
         return back()->with('success', 'Asiento de ajuste generado correctamente.');
+    }
+
+    // ── Generar movimiento + asiento para UNA partida puntual sin contraparte ──
+    // (ej. una comisión bancaria que aparece en el extracto pero nunca se registró
+    // en el sistema). A diferencia de generarAsientoAjuste() (que resuelve la
+    // diferencia GLOBAL declarada), esto resuelve la partida específica.
+    public function generarAsientoPartida(Request $request, ConciliacionBancaria $conciliacion, PartidaTransito $partida): RedirectResponse
+    {
+        $request->validate([
+            'tipo'                    => 'required|in:ingreso,egreso',
+            'cuenta_contrapartida_id' => 'required|exists:plan_cuentas,id',
+            'descripcion'             => 'nullable|string|max:300',
+        ]);
+
+        if ($conciliacion->estaConciliada()) {
+            return back()->with('error', 'La conciliación ya está cerrada.');
+        }
+        if ($partida->conciliacion_id !== $conciliacion->id) {
+            abort(422, 'La partida no pertenece a esta conciliación.');
+        }
+        if ($partida->tipo !== 'banco') {
+            return back()->with('error', 'Solo se puede generar un movimiento para partidas del extracto bancario.');
+        }
+        if ($partida->conciliada) {
+            return back()->with('error', 'Esta partida ya está conciliada.');
+        }
+
+        $banco = $conciliacion->bancoCaja;
+        if (!$banco->cuenta_id) {
+            return back()->with('error', "El banco {$banco->nombre} no tiene una cuenta contable vinculada en el plan de cuentas.");
+        }
+
+        $empresaId = session('empresa_activa_id');
+        $desc      = $request->descripcion ?: $partida->descripcion;
+        $monto     = (float) $partida->monto;
+
+        DB::transaction(function () use ($conciliacion, $partida, $request, $empresaId, $desc, $monto, $banco) {
+            $movimiento = MovimientoBancario::create([
+                'empresa_id'              => $empresaId,
+                'banco_caja_id'           => $conciliacion->banco_caja_id,
+                'tipo'                    => $request->tipo,
+                'sub_tipo'                => 'transferencia',
+                'fecha'                   => $partida->fecha,
+                'monto'                   => $monto,
+                'descripcion'             => $desc,
+                'cuenta_contrapartida_id' => $request->cuenta_contrapartida_id,
+                'documento_tipo'          => 'CONCILIACION',
+                'documento_id'            => $conciliacion->id,
+                'conciliado'              => true,
+                'anulado'                 => false,
+                'created_by'              => Auth::id(),
+            ]);
+
+            $banco->actualizarSaldo($monto, $request->tipo);
+
+            $partidasAsiento = $request->tipo === 'ingreso'
+                ? [
+                    ['cuenta_id' => $banco->cuenta_id,             'debe' => $monto, 'haber' => 0,     'descripcion' => $desc],
+                    ['cuenta_id' => $request->cuenta_contrapartida_id, 'debe' => 0,     'haber' => $monto, 'descripcion' => $desc],
+                  ]
+                : [
+                    ['cuenta_id' => $request->cuenta_contrapartida_id, 'debe' => $monto, 'haber' => 0,     'descripcion' => $desc],
+                    ['cuenta_id' => $banco->cuenta_id,             'debe' => 0,     'haber' => $monto, 'descripcion' => $desc],
+                  ];
+
+            $asiento = $this->asientoService->crear(
+                empresaId:     $empresaId,
+                concepto:      $desc,
+                partidas:      $partidasAsiento,
+                documentoTipo: 'BANCO',
+                documentoId:   $movimiento->id,
+                esAutomatico:  true,
+                fecha:         $partida->fecha->format('Y-m-d'),
+            );
+            $movimiento->update(['asiento_id' => $asiento->id]);
+
+            $partida->update([
+                'movimiento_id'       => $movimiento->id,
+                'asiento_generado_id' => $asiento->id,
+                'conciliada'          => true,
+            ]);
+
+            // Igual que en generarAsientoAjuste(): sincronizar el saldo del banco y
+            // reflejar el efecto en la conciliación, para que "Diferencia" no quede
+            // desactualizada tras esta acción.
+            $banco->refresh();
+            $conciliacion->update([
+                'saldo_sistema' => $banco->saldo_actual,
+                'diferencia'    => (float) $conciliacion->saldo_banco - (float) $banco->saldo_actual,
+            ]);
+        });
+
+        return back()->with('success', 'Movimiento y asiento generados. Partida conciliada.');
     }
 
     // ── Cerrar conciliación ───────────────────────────────────────────────────
@@ -348,14 +526,35 @@ class ConciliacionController extends Controller
             return back()->with('error', "No se puede cerrar: hay {$pendientes} partida(s) sin conciliar. Crúcelas o genere un asiento de ajuste primero.");
         }
 
-        DB::transaction(function () use ($conciliacion) {
+        // Candado: aunque todas las partidas estén marcadas como cruzadas, si algún
+        // cruce manual se confirmó SIN generar su asiento de ajuste (ver
+        // conciliarPartida()), el saldo real del banco no coincide con saldo_banco
+        // declarado. No se debe poder cerrar "en $0,00" con una diferencia real sin
+        // justificar contablemente.
+        $saldoActual      = (float) $conciliacion->bancoCaja->saldo_actual;
+        $diferenciaActual = (float) $conciliacion->saldo_banco - $saldoActual;
+
+        if (abs($diferenciaActual) > 0.01) {
+            return back()->with('error',
+                'No se puede cerrar: existe una diferencia de $' . number_format(abs($diferenciaActual), 2) .
+                ' entre el saldo del banco y el del sistema sin justificar contablemente. ' .
+                'Genere un asiento de ajuste (global o desde el cruce manual) antes de cerrar.'
+            );
+        }
+
+        DB::transaction(function () use ($conciliacion, $saldoActual, $diferenciaActual) {
             $movIds = $conciliacion->partidas()
                 ->where('tipo', 'sistema')
                 ->whereNotNull('movimiento_id')
                 ->pluck('movimiento_id');
 
             MovimientoBancario::whereIn('id', $movIds)->update(['conciliado' => true]);
-            $conciliacion->update(['estado' => 'conciliada']);
+
+            $conciliacion->update([
+                'estado'        => 'conciliada',
+                'saldo_sistema' => $saldoActual,
+                'diferencia'    => $diferenciaActual,
+            ]);
         });
 
         return back()->with('success', 'Conciliación cerrada correctamente.');
@@ -397,7 +596,7 @@ class ConciliacionController extends Controller
     private function uploadEstadoCuentaExcel(Request $request, ConciliacionBancaria $conciliacion): RedirectResponse
     {
         try {
-            $rows = \Maatwebsite\Excel\Facades\Excel::toArray([], $request->file('archivo'))[0] ?? [];
+            $rows = \Maatwebsite\Excel\Facades\Excel::toArray(new class {}, $request->file('archivo'))[0] ?? [];
         } catch (\Exception $e) {
             return back()->with('error', 'Error leyendo el archivo Excel: ' . $e->getMessage());
         }
@@ -457,10 +656,59 @@ class ConciliacionController extends Controller
             }
         });
 
+        $autoMatch = $this->autoMatchPartidas($conciliacion);
+
         $msg = "Excel importado: {$importadas} movimientos del banco cargados.";
+        if ($autoMatch > 0) $msg .= " Se cruzaron automáticamente {$autoMatch} partida(s) (±2 días, ±\$0.01).";
         if ($errores > 0) $msg .= " ({$errores} filas omitidas)";
 
         return back()->with('success', $msg);
+    }
+
+    // ── Auto-match: cruza partidas banco vs sistema con tolerancia ±2d ±$0.01 ──
+    private function autoMatchPartidas(ConciliacionBancaria $conciliacion): int
+    {
+        $matched = 0;
+
+        $partidasBanco = PartidaTransito::where('conciliacion_id', $conciliacion->id)
+            ->where('tipo', 'banco')->where('conciliada', false)->get();
+
+        $partidasSistema = PartidaTransito::where('conciliacion_id', $conciliacion->id)
+            ->where('tipo', 'sistema')->where('conciliada', false)->get();
+
+        $usadosIds = [];
+
+        foreach ($partidasBanco as $pBanco) {
+            $montoB = (float) $pBanco->monto;
+            $fechaB = \Carbon\Carbon::parse($pBanco->fecha);
+
+            $candidatos = $partidasSistema->filter(function ($pS) use ($montoB, $fechaB, $usadosIds) {
+                if (in_array($pS->id, $usadosIds)) return false;
+                if (abs($montoB - (float) $pS->monto) > 0.01) return false;
+                // abs(): diffInDays() en Carbon 3 es firmado (negativo cuando la fecha de
+                // sistema es posterior a $fechaB); sin abs() la tolerancia de ±2 días dejaba
+                // de ser simétrica y aceptaba cualquier partida de sistema posterior sin límite.
+                return abs(\Carbon\Carbon::parse($pS->fecha)->diffInDays($fechaB)) <= 2;
+            });
+
+            if ($candidatos->count() === 1) {
+                $pSistema = $candidatos->first();
+                $usadosIds[] = $pSistema->id;
+
+                DB::transaction(function () use ($pBanco, $pSistema) {
+                    $pBanco->update(['conciliada' => true]);
+                    $pSistema->update(['conciliada' => true]);
+                    if ($pSistema->movimiento_id) {
+                        MovimientoBancario::where('id', $pSistema->movimiento_id)
+                            ->update(['conciliado' => true]);
+                    }
+                });
+
+                $matched++;
+            }
+        }
+
+        return $matched;
     }
 
     // ── Helper: detectar columna por palabras clave ───────────────────────────

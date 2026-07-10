@@ -242,7 +242,6 @@ class FacturaController extends Controller
                 'observaciones'           => $request->observaciones,
                 'tipo'                    => 1,
                 'estado'                  => 'activa',
-                'tiene_descuento_especial'=> $tieneDescuentoEspecial,
                 'email_enviado'           => false,
             ]);
 
@@ -256,18 +255,18 @@ class FacturaController extends Controller
                 $iva         = $grabaIva ? $subtotalDet * 0.15 : 0;
 
                 FacturaDetalle::create([
-                    'factura_id'    => $factura->id,
-                    'producto_id'   => $det['producto_id'],
-                    'codigo'        => $det['codigo']      ?? null,
-                    'descripcion'   => $det['descripcion'] ?? null,
-                    'cantidad'      => $cantidad,
-                    'precio'        => $precio,
-                    'descuento_pct' => $descPct,
-                    'descuento'     => $descuento,
-                    'subtotal'      => $subtotalDet,
-                    'iva_pct'       => $grabaIva ? 15 : 0,
-                    'iva'           => $iva,
-                    'total'         => $subtotalDet + $iva,
+                    'factura_id'      => $factura->id,
+                    'producto_id'     => $det['producto_id'],
+                    'codigo_producto' => $det['codigo']      ?? null,
+                    'descripcion'     => $det['descripcion'] ?? null,
+                    'cantidad'        => $cantidad,
+                    'precio_unitario' => $precio,
+                    'descuento_pct'   => $descPct,
+                    'descuento_valor' => $descuento,
+                    'subtotal'        => $subtotalDet,
+                    'porcentaje_iva'  => $grabaIva ? 15 : 0,
+                    'valor_iva'       => $iva,
+                    'total'           => $subtotalDet + $iva,
                 ]);
             }
 
@@ -278,7 +277,7 @@ class FacturaController extends Controller
                 FacturaPago::create([
                     'factura_id' => $factura->id,
                     'forma_pago' => $pago['forma'],
-                    'monto'      => $pago['monto'],
+                    'valor'      => $pago['monto'],
                     'plazo'      => $pago['plazo'] ?? null,
                     'unidad'     => $pago['unidad'] ?? null,
                 ]);

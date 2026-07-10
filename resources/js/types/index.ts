@@ -87,13 +87,13 @@ export interface LimiteDescuento {
 export interface Notificacion {
     id: number
     usuario_id: number
+    tipo: string
     titulo: string
-    mensaje: string
-    tipo: 'info' | 'success' | 'warning' | 'danger'
-    icono?: string
-    url?: string
+    mensaje: string | null
+    icono?: string | null
+    url?: string | null
     leida: boolean
-    leida_at?: string
+    leida_at?: string | null
     created_at: string
 }
 
@@ -133,6 +133,7 @@ export interface PageProps {
     empresas_usuario: Partial<Empresa>[]
     flash: { success?: string; error?: string; warning?: string }
     ziggy?: Record<string, unknown>
+    notificaciones_no_leidas: number
     [key: string]: unknown
 }
 
@@ -692,6 +693,7 @@ export interface MovimientoBancario {
     documento_tipo: string | null
     documento_id: number | null
     cuenta_contrapartida_id: number | null
+    centro_costo_id: number | null
     asiento_id: number | null
     conciliado: boolean
     es_postfechado: boolean
@@ -835,6 +837,7 @@ export interface Colaborador {
     updated_at: string
     puesto?: PuestoTrabajo
     horario?: Horario
+    usuario?: { id: number; username: string; estado: boolean } | null
 }
 
 export interface Asistencia {
@@ -967,4 +970,129 @@ export interface Nomina {
     generadoPor?: { id: number; nombre: string }
     procesadoPor?: { id: number; nombre: string }
     pagadoPor?: { id: number; nombre: string }
+}
+
+export interface Liquidacion {
+    id: number
+    colaborador_id: number
+    fecha_salida: string
+    motivo: 'renuncia' | 'despido' | 'fin_contrato'
+    decimos_acumulados: number
+    vacaciones: number
+    fondos_reserva: number
+    anticipos_descontar: number
+    total_liquidacion: number
+    estado: 'borrador' | 'aprobada'
+    modificado_manualmente?: boolean
+    created_by: number | null
+    created_at: string
+    updated_at: string
+    colaborador?: Colaborador
+    creadoPor?: { id: number; nombre: string }
+}
+
+export interface LiquidacionCalculo {
+    colaborador: Pick<Colaborador, 'id' | 'apellidos' | 'nombres' | 'cargo' | 'sueldo_base' | 'fecha_ingreso'>
+    meses_laborados: number
+    dias_laborados: number
+    decimos_acumulados: number
+    vacaciones: number
+    fondos_reserva: number
+    anticipos_descontar: number
+    total_liquidacion: number
+}
+
+// ── Taller ───────────────────────────────────────────────────────────────────
+
+export interface TallerTipoEquipo {
+    id: number
+    descripcion: string
+    estado: boolean
+}
+
+export interface TallerEquipo {
+    id: number
+    tipo_id: number | null
+    marca: string | null
+    modelo: string | null
+    numero_serie: string | null
+    color: string | null
+    medida: string | null
+    adicional: string | null
+    observaciones: string | null
+    estado: number
+    tipo?: TallerTipoEquipo
+}
+
+export interface TallerDiagnostico {
+    id: number
+    orden_id: number
+    tecnico_id: number | null
+    fecha: string
+    hora: string | null
+    diagnostico: string
+    tiempo_estimado: number | null
+    tipo_tiempo: 'horas' | 'dias' | null
+    cliente_aprueba: boolean | null
+    fecha_aprobacion: string | null
+    observacion_aprobacion: string | null
+    usuario_aprobacion_id: number | null
+    estado: 'pendiente' | 'aprobado' | 'rechazado'
+    tecnico?: { id: number; nombre: string } | null
+}
+
+export interface TallerOtRepuesto {
+    id: number
+    orden_id: number
+    producto_id: number
+    numero_serie: string | null
+    cantidad: number
+    costo_unitario: number
+    precio_venta: number
+    estado: string
+    producto?: Producto
+}
+
+export interface TallerOrdenTrabajo {
+    id: number
+    empresa_id: number
+    ingreso_id: number
+    tecnico_id: number | null
+    numero: string | null
+    fecha_inicio: string
+    fecha_fin_estimada: string | null
+    fecha_fin_real: string | null
+    tipo_orden: number
+    descripcion_trabajo: string | null
+    costo_mano_obra: number
+    costo_repuestos: number
+    costo_total: number
+    es_garantia: boolean
+    factura_id: number | null
+    estado: string
+    observaciones: string | null
+    ingreso?: TallerIngreso
+    tecnico?: { id: number; nombre: string } | null
+    diagnosticos?: TallerDiagnostico[]
+    repuestos?: TallerOtRepuesto[]
+}
+
+export interface TallerIngreso {
+    id: number
+    empresa_id: number
+    cliente_id: number
+    equipo_id: number
+    usuario_id: number | null
+    fecha: string
+    hora: string | null
+    diagnostico_inicial: string | null
+    imagen: string | null
+    video: string | null
+    observaciones: string | null
+    estado: number
+    created_at: string
+    cliente?: Cliente
+    equipo?: TallerEquipo
+    usuario?: { id: number; nombre: string }
+    ordenes_trabajo?: TallerOrdenTrabajo[]
 }

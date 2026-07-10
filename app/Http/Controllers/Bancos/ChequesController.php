@@ -5,6 +5,8 @@ use App\Http\Controllers\Controller;
 use App\Models\BancoCaja;
 use App\Models\Cheque;
 use App\Models\MovimientoBancario;
+use App\Models\ParametroContable;
+use App\Services\AsientoService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -14,6 +16,7 @@ use Inertia\Response;
 
 class ChequesController extends Controller
 {
+    public function __construct(private AsientoService $asientoService) {}
     public function index(Request $request): Response
     {
         $empresaId = session('empresa_activa_id');
@@ -142,6 +145,38 @@ class ChequesController extends Controller
                     'observacion'   => $request->observacion,
                     'created_at'    => now(),
                 ]);
+
+                // Asiento contable: DEBE cta_proveedores_locales / HABER banco.cuenta_id
+                try {
+                    $ctaBanco = $banco->cuenta_id
+                        ?? ParametroContable::getCuentaId('cta_bancos_locales', $empresaId);
+                    $ctaCxP   = ParametroContable::getCuentaId('cta_proveedores_locales', $empresaId);
+
+                    if ($ctaBanco && $ctaCxP) {
+                        $asiento = $this->asientoService->crear(
+                            empresaId:    $empresaId,
+                            concepto:     "Cheque N° {$request->numero} — {$request->beneficiario}",
+                            partidas: [
+                                ['cuenta_id'   => $ctaCxP,
+                                 'debe'        => (float) $request->monto,
+                                 'haber'       => 0,
+                                 'descripcion' => "Pago cheque {$request->numero} a {$request->beneficiario}"],
+                                ['cuenta_id'   => $ctaBanco,
+                                 'debe'        => 0,
+                                 'haber'       => (float) $request->monto,
+                                 'descripcion' => "Cheque {$request->numero} emitido"],
+                            ],
+                            documentoTipo: 'BANCO',
+                            documentoId:   $movimiento->id,
+                            documentoRef:  "CHQ-{$request->numero}",
+                            esAutomatico:  true,
+                            fecha:         $request->fecha_emision,
+                        );
+                        $movimiento->update(['asiento_id' => $asiento->id]);
+                    }
+                } catch (\Throwable) {
+                    // No bloquear si período cerrado o cuenta sin configurar
+                }
             });
 
             return back()->with('success',
@@ -172,16 +207,55 @@ class ChequesController extends Controller
                 'observacion' => $request->observacion,
             ]);
 
-            // Si el cheque es protestado o anulado → revertir el egreso del saldo bancario
+            // Si el cheque es protestado o anulado → revertir saldo bancario y asiento contable
             if (in_array($request->estado, ['protestado', 'anulado']) && $cheque->movimiento_id) {
-                $movimiento = $cheque->movimiento;
+                $movimiento = $cheque->movimiento()->with('asiento')->first();
+
                 if ($movimiento && !$movimiento->anulado) {
+                    $tipoReversa = $movimiento->tipo === 'ingreso' ? 'egreso' : 'ingreso';
+
+                    // Revertir asiento contable si existe (genera su propio asiento de reversa)
+                    $asientoReversaId = null;
+                    if ($movimiento->asiento_id && $movimiento->asiento && !$movimiento->asiento->estaAnulado()) {
+                        try {
+                            $asientoReversa = $this->asientoService->anular(
+                                $movimiento->asiento,
+                                "Cheque N° {$cheque->numero} {$request->estado}" .
+                                ($request->observacion ? " — {$request->observacion}" : '')
+                            );
+                            $asientoReversaId = $asientoReversa->id;
+                        } catch (\Throwable) {
+                            // Si el período está cerrado no bloquear: el contador revisará manualmente
+                        }
+                    }
+
+                    // El movimiento original queda intacto como evidencia histórica, solo
+                    // marcado anulado. La reversión real es un movimiento NUEVO de signo
+                    // contrario, enlazado al cheque vía documento_tipo/documento_id.
                     $movimiento->update(['anulado' => true]);
-                    $cheque->bancoCaja->actualizarSaldo($cheque->monto, 'ingreso');
+
+                    MovimientoBancario::create([
+                        'empresa_id'     => $movimiento->empresa_id,
+                        'banco_caja_id'  => $movimiento->banco_caja_id,
+                        'tipo'           => $tipoReversa,
+                        'sub_tipo'       => $movimiento->sub_tipo,
+                        'fecha'          => now()->toDateString(),
+                        'monto'          => $movimiento->monto,
+                        'beneficiario'   => $movimiento->beneficiario,
+                        'descripcion'    => "Reversión cheque N° {$cheque->numero} ({$request->estado})",
+                        'documento_tipo' => 'ANULACION_CHEQUE',
+                        'documento_id'   => $cheque->id,
+                        'asiento_id'     => $asientoReversaId,
+                        'anulado'        => false,
+                        'conciliado'     => false,
+                        'created_by'     => Auth::id(),
+                    ]);
+
+                    $cheque->bancoCaja->actualizarSaldo((float) $cheque->monto, $tipoReversa);
                 }
             }
 
-            if ($request->estado === 'protestado') {
+            if (in_array($request->estado, ['protestado', 'anulado'])) {
                 DB::table('log_cambios_criticos')->insert([
                     'usuario_id'     => Auth::id(),
                     'empresa_id'     => $cheque->empresa_id,
@@ -189,7 +263,7 @@ class ChequesController extends Controller
                     'registro_id'    => $cheque->id,
                     'campo'          => 'estado',
                     'valor_anterior' => 'emitido',
-                    'valor_nuevo'    => 'protestado — ' . ($request->observacion ?? 'Cheque protestado'),
+                    'valor_nuevo'    => "{$request->estado} — " . ($request->observacion ?? "Cheque {$request->estado}"),
                     'ip_address'     => $request->ip(),
                 ]);
             }

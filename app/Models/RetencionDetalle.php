@@ -16,6 +16,7 @@ class RetencionDetalle extends Model
         'impuesto_id',
         'tipo',
         'codigo',
+        'descripcion',
         'porcentaje',
         'base_imponible',
         'valor_retenido',

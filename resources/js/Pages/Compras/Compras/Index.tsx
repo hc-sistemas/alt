@@ -335,6 +335,8 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
         dias_credito: number | string
         iva_asumido: boolean
         gasto_no_deducible: boolean
+        retencion_ir: string | number
+        retencion_iva: string | number
         sustento_tributario: string
         concepto: string
         centro_costo_id: string | number
@@ -357,6 +359,8 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
         dias_credito:        initialValues?.dias_credito ?? 0,
         iva_asumido:         false,
         gasto_no_deducible:  false,
+        retencion_ir:        0,
+        retencion_iva:       0,
         sustento_tributario: initialValues?.sustento_tributario ?? '01',
         concepto:            initialValues?.concepto ?? '',
         centro_costo_id:     centroMatrizId ? String(centroMatrizId) : '',
@@ -811,6 +815,34 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
                                         </div>
                                     </label>
                                 </div>
+
+                                {/* CxP-03: nota visual cuando gasto no deducible */}
+                                {data.gasto_no_deducible && (
+                                    <div className="rounded-lg border px-3 py-2.5 text-xs"
+                                        style={{ borderColor: '#fbbf24', background: 'rgba(245,158,11,0.08)', color: '#92400e' }}>
+                                        <span className="font-bold">Gasto No Deducible activo:</span> El egreso se registrará al 100% en la cuenta 5.4.1.01 (Gastos No Deducibles Locales), sin crédito tributario de IVA y sin generación de retenciones.
+                                    </div>
+                                )}
+
+                                {/* Retenciones — ocultas si gasto no deducible (CxP-03) */}
+                                {data.tipo_documento !== 'EXT' && !data.gasto_no_deducible && (
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div className="space-y-1.5">
+                                            <Label>Ret. IR ($)</Label>
+                                            <Input type="number" min={0} step="0.01"
+                                                value={data.retencion_ir}
+                                                onChange={e => setData('retencion_ir', e.target.value)}
+                                                placeholder="0.00" />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <Label>Ret. IVA ($)</Label>
+                                            <Input type="number" min={0} step="0.01"
+                                                value={data.retencion_iva}
+                                                onChange={e => setData('retencion_iva', e.target.value)}
+                                                placeholder="0.00" />
+                                        </div>
+                                    </div>
+                                )}
 
                                 {/* Concepto */}
                                 <div className="space-y-1.5">
@@ -2118,9 +2150,12 @@ export default function ComprasIndex() {
                                             </button>
                                         )}
                                         <button
-                                            onClick={() => iniciarAnulacion(c)}
-                                            title="Anular factura"
-                                            className="h-7 w-7 flex items-center justify-center rounded hover:bg-red-500/20 text-red-500 dark:text-red-400 transition-colors">
+                                            onClick={() => !c.tiene_pago && iniciarAnulacion(c)}
+                                            disabled={c.tiene_pago}
+                                            title={c.tiene_pago
+                                                ? 'Factura con pago registrado — anula el pago primero (candado CxP-02)'
+                                                : 'Anular factura'}
+                                            className="h-7 w-7 flex items-center justify-center rounded hover:bg-red-500/20 text-red-500 dark:text-red-400 transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent">
                                             <XCircle className="w-4 h-4" />
                                         </button>
                                     </>

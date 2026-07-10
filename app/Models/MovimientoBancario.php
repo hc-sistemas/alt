@@ -13,7 +13,7 @@ class MovimientoBancario extends Model
         'empresa_id', 'banco_caja_id', 'tipo', 'sub_tipo', 'fecha', 'monto',
         'persona_tipo', 'persona_id', 'beneficiario', 'num_documento',
         'num_cheque', 'fecha_cheque', 'descripcion', 'documento_tipo',
-        'documento_id', 'cuenta_contrapartida_id', 'asiento_id',
+        'documento_id', 'cuenta_contrapartida_id', 'centro_costo_id', 'asiento_id',
         'conciliado', 'es_postfechado', 'anulado', 'created_by',
     ];
 
@@ -42,6 +42,11 @@ class MovimientoBancario extends Model
     public function cuentaContrapartida(): BelongsTo
     {
         return $this->belongsTo(PlanCuenta::class, 'cuenta_contrapartida_id');
+    }
+
+    public function centroCosto(): BelongsTo
+    {
+        return $this->belongsTo(CentroCosto::class, 'centro_costo_id');
     }
 
     public function asiento(): BelongsTo

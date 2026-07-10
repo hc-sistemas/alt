@@ -28,7 +28,6 @@ interface Props extends PageProps {
     extras: PaginatedData<HoraExtra>
     colaboradores: ColaboradorItem[]
     filtros: { estado?: string; colaborador_id?: string; fecha_desde?: string; fecha_hasta?: string }
-    flash: { success?: string; error?: string }
 }
 
 // ─── Notify ───────────────────────────────────────────────────────────────────
@@ -232,16 +231,13 @@ function ModalRechazar({ extra, onClose }: { extra: HoraExtra; onClose: () => vo
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function HorasExtrasIndex() {
-    const { extras, colaboradores, filtros, flash } = usePage<Props>().props
+    const { extras, colaboradores, filtros } = usePage<Props>().props
 
     const [modal, setModal] = useState<{ tipo: 'aprobar' | 'rechazar'; extra: HoraExtra } | null>(null)
     const [estado, setEstado]         = useState(filtros.estado ?? '')
     const [colabId, setColabId]       = useState(filtros.colaborador_id ?? '')
     const [fechaDesde, setFechaDesde] = useState(filtros.fecha_desde ?? '')
     const [fechaHasta, setFechaHasta] = useState(filtros.fecha_hasta ?? '')
-
-    if (flash?.success) notify.ok(flash.success)
-    if (flash?.error)   notify.error(flash.error)
 
     function filtrar() {
         router.get(route('rrhh.horas-extras.index'), {
@@ -258,7 +254,7 @@ export default function HorasExtrasIndex() {
     }
 
     return (
-        <AppLayout title="Horas Extras">
+        <AppLayout title="Horas Extras" suppressFlash>
             <Head title="Horas Extras — RRHH" />
             <ToastContainer position="top-right" />
 

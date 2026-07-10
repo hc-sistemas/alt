@@ -9,7 +9,7 @@ import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
 import {
     Plus, Pencil, ToggleLeft, ToggleRight, Search, X,
-    User, Briefcase, DollarSign, CreditCard, Phone,
+    User, Briefcase, DollarSign, CreditCard, Phone, Lock, Clock,
 } from 'lucide-react'
 import type { Colaborador, PuestoTrabajo, Horario, PageProps, PaginatedData } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
@@ -17,12 +17,21 @@ import 'react-toastify/dist/ReactToastify.css'
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface UsuarioItem { id: number; nombre: string; email: string }
+interface PerfilItem { id: number; nombre: string }
+
+const PERFIL_LABEL: Record<string, string> = {
+    admin: 'Administrador',
+    vendedor: 'Vendedor',
+    tecnico: 'Técnico',
+    bodeguero: 'Bodeguero',
+}
 
 interface Props extends PageProps {
     colaboradores: PaginatedData<Colaborador>
     puestos: PuestoTrabajo[]
     horarios: Horario[]
     usuarios: UsuarioItem[]
+    perfiles: PerfilItem[]
     departamentos: string[]
     filtros: { buscar?: string; departamento?: string; estado?: string }
 }
@@ -66,6 +75,7 @@ const TABS = [
     { key: 'cargo',          label: 'Cargo',          icon: Briefcase },
     { key: 'remuneracion',   label: 'Remuneración',   icon: DollarSign },
     { key: 'bancarios',      label: 'Datos Bancarios',icon: CreditCard },
+    { key: 'seguridad',      label: 'Seguridad y Sistema', icon: Lock },
 ] as const
 
 type TabKey = typeof TABS[number]['key']
@@ -77,14 +87,22 @@ interface ModalProps {
     puestos: PuestoTrabajo[]
     horarios: Horario[]
     usuarios: UsuarioItem[]
+    perfiles: PerfilItem[]
     onClose: () => void
 }
 
-function ColaboradorModal({ colaborador, puestos, horarios, usuarios, onClose }: ModalProps) {
+function ColaboradorModal({ colaborador, puestos, horarios, usuarios, perfiles, onClose }: ModalProps) {
     const isEditar = !!colaborador
     const [tab, setTab] = useState<TabKey>('identificacion')
 
-    const { data, setData, post, put, processing, errors } = useForm({
+    // Alta rápida de horario "plantilla" (tabla horarios, reutilizable entre colaboradores)
+    const [nuevoHorario, setNuevoHorario] = useState(false)
+    const [horarioForm, setHorarioForm] = useState({
+        descripcion: '', hora_entrada: '08:00', hora_salida: '17:00', tolerancia_minutos: '10',
+    })
+    const [creandoHorario, setCreandoHorario] = useState(false)
+
+    const { data, setData, post, put, transform, processing, errors } = useForm({
         cedula_ruc:          colaborador?.cedula_ruc          ?? '',
         apellidos:           colaborador?.apellidos           ?? '',
         nombres:             colaborador?.nombres             ?? '',
@@ -111,7 +129,46 @@ function ColaboradorModal({ colaborador, puestos, horarios, usuarios, onClose }:
         tipo_cuenta:         colaborador?.tipo_cuenta         ?? '',
         numero_cuenta:       colaborador?.numero_cuenta       ?? '',
         usuario_id:          String(colaborador?.usuario_id   ?? ''),
+        // Sección 5. Seguridad y Sistema
+        username:            '',
+        password:            '',
+        password_confirmation: '',
+        perfil_id:           '',
+        estado_usuario:      colaborador?.usuario?.estado ?? true,
     })
+
+    const tieneUsuarioVinculado = isEditar && !!colaborador?.usuario
+
+    // Campos de creación de acceso vacíos → se envían como null (nullable en backend);
+    // si ya existe un usuario vinculado, no se intenta crear uno nuevo.
+    transform(d => ({
+        ...d,
+        username: tieneUsuarioVinculado ? null : (d.username || null),
+        password: tieneUsuarioVinculado ? null : (d.password || null),
+        perfil_id: tieneUsuarioVinculado ? null : (d.perfil_id || null),
+    }))
+
+    function crearHorario() {
+        if (!horarioForm.descripcion || !horarioForm.hora_entrada || !horarioForm.hora_salida) {
+            notify.error('Completa descripción, hora de entrada y hora de salida del horario.')
+            return
+        }
+        setCreandoHorario(true)
+        router.post(route('rrhh.horarios.store'), horarioForm, {
+            preserveScroll: true,
+            preserveState: true,
+            onSuccess: (page) => {
+                const lista = (page.props as unknown as { horarios: Horario[] }).horarios ?? []
+                const creado = [...lista].sort((a, b) => b.id - a.id)[0]
+                if (creado) setData('horario_id', String(creado.id))
+                setNuevoHorario(false)
+                setHorarioForm({ descripcion: '', hora_entrada: '08:00', hora_salida: '17:00', tolerancia_minutos: '10' })
+                notify.ok('Horario creado y asignado.')
+            },
+            onError: () => notify.error('Revisa los datos del horario.'),
+            onFinish: () => setCreandoHorario(false),
+        })
+    }
 
     function submit(e: React.FormEvent) {
         e.preventDefault()
@@ -249,16 +306,76 @@ function ColaboradorModal({ colaborador, puestos, horarios, usuarios, onClose }:
                                         {puestos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
                                     </select>
                                 </div>
-                                <div>
-                                    <Label className="input-label">Horario</Label>
+                                <div className="col-span-2">
+                                    <div className="flex items-center justify-between">
+                                        <Label className="input-label">Horario</Label>
+                                        <button
+                                            type="button"
+                                            onClick={() => setNuevoHorario(v => !v)}
+                                            className="text-xs font-medium flex items-center gap-1 text-amber-600 hover:text-amber-700"
+                                        >
+                                            <Clock className="w-3 h-3" /> {nuevoHorario ? 'Cancelar' : 'Nuevo horario'}
+                                        </button>
+                                    </div>
                                     <select className="input-field" value={data.horario_id} onChange={e => setData('horario_id', e.target.value)}>
                                         <option value="">— Sin horario —</option>
                                         {horarios.map(h => (
                                             <option key={h.id} value={h.id}>
-                                                {h.descripcion} ({h.hora_entrada}–{h.hora_salida})
+                                                {h.descripcion} ({h.hora_entrada}–{h.hora_salida}, tolerancia {h.tolerancia_minutos}min)
                                             </option>
                                         ))}
                                     </select>
+                                    <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
+                                        Los atrasos (NOM-05) y horas extras (NOM-06) se calculan comparando el timbre
+                                        real contra este horario oficial + su tolerancia.
+                                    </p>
+                                    {nuevoHorario && (
+                                        <div className="mt-3 p-3 rounded-lg grid grid-cols-2 gap-3" style={{ background: 'var(--bg-main)' }}>
+                                            <div className="col-span-2">
+                                                <Label className="input-label">Descripción</Label>
+                                                <Input
+                                                    className="input-field"
+                                                    placeholder="Ej. Horario Administrativo"
+                                                    value={horarioForm.descripcion}
+                                                    onChange={e => setHorarioForm(f => ({ ...f, descripcion: e.target.value }))}
+                                                />
+                                            </div>
+                                            <div>
+                                                <Label className="input-label">Hora Entrada</Label>
+                                                <Input
+                                                    className="input-field" type="time"
+                                                    value={horarioForm.hora_entrada}
+                                                    onChange={e => setHorarioForm(f => ({ ...f, hora_entrada: e.target.value }))}
+                                                />
+                                            </div>
+                                            <div>
+                                                <Label className="input-label">Hora Salida</Label>
+                                                <Input
+                                                    className="input-field" type="time"
+                                                    value={horarioForm.hora_salida}
+                                                    onChange={e => setHorarioForm(f => ({ ...f, hora_salida: e.target.value }))}
+                                                />
+                                            </div>
+                                            <div>
+                                                <Label className="input-label">Tolerancia (min)</Label>
+                                                <Input
+                                                    className="input-field" type="number" min={0} max={120}
+                                                    value={horarioForm.tolerancia_minutos}
+                                                    onChange={e => setHorarioForm(f => ({ ...f, tolerancia_minutos: e.target.value }))}
+                                                />
+                                            </div>
+                                            <div className="col-span-2 flex justify-end">
+                                                <button
+                                                    type="button"
+                                                    disabled={creandoHorario}
+                                                    onClick={crearHorario}
+                                                    className="btn-primary text-xs px-3 py-1.5"
+                                                >
+                                                    {creandoHorario ? 'Creando…' : 'Crear y asignar'}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                                 {field('Cargo', 'cargo')}
                                 {field('Departamento', 'departamento')}
@@ -314,6 +431,75 @@ function ColaboradorModal({ colaborador, puestos, horarios, usuarios, onClose }:
                                 {field('Número de Cuenta', 'numero_cuenta', { maxLength: 30 })}
                             </div>
                         )}
+
+                        {/* Tab: Seguridad y Sistema */}
+                        {tab === 'seguridad' && (
+                            <div className="space-y-4">
+                                {tieneUsuarioVinculado ? (
+                                    <>
+                                        <div className="rounded-lg p-3 text-sm flex items-center justify-between"
+                                            style={{ background: 'var(--bg-main)', color: 'var(--text-main)' }}>
+                                            <span>
+                                                Usuario vinculado: <strong>{colaborador!.usuario!.username}</strong>
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <input
+                                                id="estado_usuario"
+                                                type="checkbox"
+                                                checked={data.estado_usuario}
+                                                onChange={e => setData('estado_usuario', e.target.checked)}
+                                            />
+                                            <Label htmlFor="estado_usuario" className="input-label mb-0">
+                                                Estado del Usuario: {data.estado_usuario ? 'Activo' : 'Inactivo (bloqueado)'}
+                                            </Label>
+                                        </div>
+                                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                            Candado de bloqueo inmediato: si lo pasas a Inactivo, el colaborador no podrá
+                                            iniciar sesión en el ERP a partir de este momento.
+                                        </p>
+                                    </>
+                                ) : (
+                                    <>
+                                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                            Opcional. Si el colaborador necesita acceso al ERP, completa estos campos
+                                            para crear su usuario automáticamente junto con la ficha.
+                                        </p>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            {field('Usuario (Username)', 'username', { autoComplete: 'off' })}
+                                            <div>
+                                                <Label className="input-label">Rol de Acceso</Label>
+                                                <select className="input-field" value={data.perfil_id} onChange={e => setData('perfil_id', e.target.value)}>
+                                                    <option value="">— Seleccionar —</option>
+                                                    {perfiles.map(p => (
+                                                        <option key={p.id} value={p.id}>{PERFIL_LABEL[p.nombre] ?? p.nombre}</option>
+                                                    ))}
+                                                </select>
+                                                {errors.perfil_id && <p className="mt-1 text-xs text-red-500">{errors.perfil_id}</p>}
+                                            </div>
+                                            {field('Contraseña', 'password', { type: 'password', autoComplete: 'new-password' })}
+                                            {field('Confirmar Contraseña', 'password_confirmation', { type: 'password', autoComplete: 'new-password' })}
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <input
+                                                id="estado_usuario_nuevo"
+                                                type="checkbox"
+                                                checked={data.estado_usuario}
+                                                onChange={e => setData('estado_usuario', e.target.checked)}
+                                            />
+                                            <Label htmlFor="estado_usuario_nuevo" className="input-label mb-0">
+                                                Estado del Usuario: {data.estado_usuario ? 'Activo' : 'Inactivo'}
+                                            </Label>
+                                        </div>
+                                        {!data.username && (
+                                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                                Si dejas el usuario en blanco, el colaborador se creará sin acceso al sistema.
+                                            </p>
+                                        )}
+                                    </>
+                                )}
+                            </div>
+                        )}
                     </div>
 
                     {/* Footer */}
@@ -346,17 +532,13 @@ function ColaboradorModal({ colaborador, puestos, horarios, usuarios, onClose }:
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function ColaboradoresIndex() {
-    const { colaboradores, puestos, horarios, usuarios, departamentos, filtros, flash } =
-        usePage<Props & { flash: { success?: string; error?: string } }>().props
+    const { colaboradores, puestos, horarios, usuarios, perfiles, departamentos, filtros } =
+        usePage<Props>().props
 
     const [modal, setModal] = useState<{ type: 'nuevo' | 'editar'; colaborador?: Colaborador } | null>(null)
     const [buscar, setBuscar] = useState(filtros.buscar ?? '')
     const [departamento, setDepartamento] = useState(filtros.departamento ?? '')
     const [estado, setEstado] = useState(filtros.estado ?? '')
-
-    // Flash messages
-    if (flash?.success) notify.ok(flash.success)
-    if (flash?.error)   notify.error(flash.error)
 
     function filtrar() {
         router.get(route('rrhh.colaboradores.index'), {
@@ -386,7 +568,7 @@ export default function ColaboradoresIndex() {
     const valorHora = (sueldo: number) => (sueldo / 240).toFixed(4)
 
     return (
-        <AppLayout title="Colaboradores">
+        <AppLayout title="Colaboradores" suppressFlash>
             <Head title="Colaboradores — RRHH" />
             <ToastContainer position="top-right" />
 
@@ -562,6 +744,7 @@ export default function ColaboradoresIndex() {
                     puestos={puestos}
                     horarios={horarios}
                     usuarios={usuarios}
+                    perfiles={perfiles}
                     onClose={() => setModal(null)}
                 />
             )}

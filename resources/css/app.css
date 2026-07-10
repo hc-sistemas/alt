@@ -157,6 +157,12 @@ select.input-field,
     cursor: pointer;
 }
 
+/* Select compacto para toolbars (anula width:100% y display:block) */
+.input-field.select-compact {
+    display: inline-block !important;
+    width: auto !important;
+}
+
 /* Textarea */
 textarea.input-field,
 .input-field.textarea-field {

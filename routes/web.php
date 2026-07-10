@@ -45,10 +45,19 @@ use App\Http\Controllers\Ventas\RetencionController;
 use App\Http\Controllers\Ventas\GuiaRemisionController;
 use App\Http\Controllers\Ventas\CuentaCobrarController;
 use App\Http\Controllers\RRHH\ColaboradorController;
+use App\Http\Controllers\RRHH\HorarioController;
 use App\Http\Controllers\RRHH\AsistenciaController;
 use App\Http\Controllers\RRHH\HorasExtrasController;
 use App\Http\Controllers\RRHH\NominaController;
+use App\Http\Controllers\RRHH\PrestamosController;
+use App\Http\Controllers\RRHH\LiquidacionesController;
 use App\Http\Controllers\ManualesController;
+use App\Http\Controllers\Reportes\ReporteSriController;
+use App\Http\Controllers\Taller\TipoEquipoController;
+use App\Http\Controllers\Taller\IngresoController;
+use App\Http\Controllers\Taller\OrdenTrabajoController;
+use App\Http\Controllers\Taller\DiagnosticoController;
+use App\Http\Controllers\Taller\LiquidacionController;
 use Illuminate\Support\Facades\Route;
 
 // Auth
@@ -69,6 +78,13 @@ Route::middleware('auth')->group(function () {
 Route::middleware('auth')->group(function () {
     Route::get('/', fn() => redirect()->route('dashboard'));
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+
+    // Notificaciones in-app
+    Route::prefix('notificaciones')->name('notificaciones.')->group(function () {
+        Route::get('/',             [\App\Http\Controllers\NotificacionController::class, 'index'])->name('index');
+        Route::post('/{id}/leer',   [\App\Http\Controllers\NotificacionController::class, 'marcarLeida'])->name('leer');
+        Route::post('/leer-todas',  [\App\Http\Controllers\NotificacionController::class, 'marcarTodasLeidas'])->name('leer-todas');
+    });
 
     // Manuales de Uso
     Route::get('/manuales',             [ManualesController::class, 'index'])->name('manuales.index');
@@ -91,6 +107,22 @@ Route::middleware('auth')->group(function () {
         return $pdf->stream('manual-compras.pdf');
     })->name('manuales.compras-pdf');
 
+    Route::get('/manuales/rrhh/pdf-dinamico', function () {
+        $empresa = \App\Models\Empresa::find(session('empresa_activa_id'));
+        $usuario = auth()->user();
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.manual-rrhh', compact('empresa', 'usuario'))
+            ->setPaper('letter', 'portrait');
+        return $pdf->stream('manual-rrhh.pdf');
+    })->name('manuales.rrhh-pdf');
+
+    Route::get('/manuales/reportes-sri/pdf-dinamico', function () {
+        $empresa = \App\Models\Empresa::find(session('empresa_activa_id'));
+        $usuario = auth()->user();
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.manual-reportes-sri', compact('empresa', 'usuario'))
+            ->setPaper('letter', 'portrait');
+        return $pdf->stream('manual-reportes-sri.pdf');
+    })->name('manuales.reportes-sri-pdf');
+
     Route::get('/manuales/diagnostico/pdf-dinamico', function () {
         $empresa = \App\Models\Empresa::find(session('empresa_activa_id'));
         $usuario = auth()->user();
@@ -108,6 +140,7 @@ Route::middleware('auth')->group(function () {
             Route::get('/{usuario}/editar', [UsuarioController::class, 'edit'])->name('edit');
             Route::put('/{usuario}', [UsuarioController::class, 'update'])->name('update');
             Route::patch('/{usuario}/toggle-estado', [UsuarioController::class, 'toggleEstado'])->name('toggle-estado');
+            Route::patch('/{usuario}/colaborador', [UsuarioController::class, 'vincularColaborador'])->name('vincular-colaborador');
             Route::get('/{usuario}/accesos', [UsuarioController::class, 'show'])->name('show');
         });
 
@@ -157,6 +190,8 @@ Route::middleware('auth')->group(function () {
             Route::get('/balance-comprobacion',  [ReporteContableController::class, 'balanceComprobacion'])->name('balance-comprobacion');
             Route::get('/balance-general',       [ReporteContableController::class, 'balanceGeneral'])     ->name('balance-general');
             Route::get('/estado-resultados',     [ReporteContableController::class, 'estadoResultados'])   ->name('estado-resultados');
+            Route::get('/flujo-caja',            [ReporteContableController::class, 'flujoCaja'])           ->name('flujo-caja');
+            Route::get('/flujo-caja-excel',      [ReporteContableController::class, 'flujoCajaExcel'])      ->name('flujo-caja-excel');
         });
 
         Route::prefix('contabilidad/asientos')->name('contabilidad.asientos.')->group(function () {
@@ -194,6 +229,7 @@ Route::middleware('auth')->group(function () {
             Route::get('/{compra}/pdf',               [CompraController::class, 'pdfIndividual'])    ->name('pdf-individual');
             Route::patch('/{compra}/anular',          [CompraController::class, 'anular'])            ->name('anular');
             Route::post('/{compra}/activar',          [CompraController::class, 'activar'])           ->name('activar');
+            Route::get('/{compra}/detalles',                        [CompraController::class, 'detallesCompra'])          ->name('detalles');
             Route::get('/{compra}/etiquetas-data',                  [CompraController::class, 'etiquetasData'])           ->name('etiquetas-data');
             Route::post('/{compra}/etiquetas-pdf',                  [CompraController::class, 'generarEtiquetasPdf'])     ->name('etiquetas-pdf');
             Route::get('/{compra}/etiquetas-reimprimir',            [CompraController::class, 'reimprimirEtiquetasPdf'])  ->name('etiquetas-reimprimir');
@@ -382,6 +418,7 @@ Route::middleware('auth')->group(function () {
             Route::post('/{conciliacion}/upload-csv',              [ConciliacionController::class, 'uploadEstadoCuenta'])  ->name('upload-csv');
             Route::post('/{conciliacion}/conciliar-partida',       [ConciliacionController::class, 'conciliarPartida'])    ->name('conciliar-partida');
             Route::post('/{conciliacion}/generar-asiento-ajuste',  [ConciliacionController::class, 'generarAsientoAjuste'])->name('generar-asiento-ajuste');
+            Route::post('/{conciliacion}/partidas/{partida}/generar-asiento', [ConciliacionController::class, 'generarAsientoPartida'])->name('generar-asiento-partida');
             Route::patch('/{conciliacion}/cerrar',                 [ConciliacionController::class, 'cerrar'])              ->name('cerrar');
             Route::patch('/{conciliacion}/conciliar',              [ConciliacionController::class, 'marcarConciliada'])    ->name('conciliar');
         });
@@ -422,6 +459,10 @@ Route::middleware('auth')->group(function () {
             Route::patch('/{colaborador}/toggle',    [ColaboradorController::class, 'toggle']) ->name('toggle');
         });
 
+        Route::prefix('horarios')->name('horarios.')->group(function () {
+            Route::post('/', [HorarioController::class, 'store'])->name('store');
+        });
+
         Route::prefix('asistencia')->name('asistencia.')->group(function () {
             Route::get('/',        [AsistenciaController::class, 'index'])           ->name('index');
             Route::post('/entrada',[AsistenciaController::class, 'registrarEntrada'])->name('entrada');
@@ -445,6 +486,32 @@ Route::middleware('auth')->group(function () {
             Route::get('/{id}/pdf/{did}',          [NominaController::class, 'pdfIndividual']) ->name('pdf-individual');
             Route::get('/{id}/zip',                [NominaController::class, 'pdfMasivo'])     ->name('pdf-masivo');
         });
+
+        Route::prefix('prestamos')->name('prestamos.')->group(function () {
+            Route::get('/',                [PrestamosController::class, 'index'])   ->name('index');
+            Route::post('/',               [PrestamosController::class, 'store'])   ->name('store');
+            Route::patch('/{id}/pagar',    [PrestamosController::class, 'pagar'])   ->name('pagar');
+            Route::delete('/{id}',         [PrestamosController::class, 'destroy']) ->name('destroy');
+        });
+
+        Route::prefix('liquidaciones')->name('liquidaciones.')->group(function () {
+            Route::get('/',                  [LiquidacionesController::class, 'index'])   ->name('index');
+            Route::post('/calcular',         [LiquidacionesController::class, 'calcular'])->name('calcular');
+            Route::post('/',                 [LiquidacionesController::class, 'store'])   ->name('store');
+            Route::put('/{id}',              [LiquidacionesController::class, 'update'])  ->name('update');
+            Route::post('/{id}/aprobar',     [LiquidacionesController::class, 'aprobar']) ->name('aprobar');
+            Route::get('/{id}/pdf',          [LiquidacionesController::class, 'pdf'])     ->name('pdf');
+            Route::delete('/{id}',           [LiquidacionesController::class, 'destroy']) ->name('destroy');
+        });
+    });
+
+    // Reportes SRI
+    Route::prefix('reportes/sri')->name('reportes.sri.')->group(function () {
+        Route::get('/',     [ReporteSriController::class, 'index'])        ->name('index');
+        Route::get('/ats',  [ReporteSriController::class, 'ats'])          ->name('ats');
+        Route::get('/f103', [ReporteSriController::class, 'formulario103'])->name('f103');
+        Route::get('/f104',      [ReporteSriController::class, 'formulario104'])->name('f104');
+        Route::get('/anexo-ice', [ReporteSriController::class, 'anexoIce'])    ->name('anexo-ice');
     });
 
     // Ventas
@@ -509,5 +576,36 @@ Route::middleware('auth')->group(function () {
             Route::get('/{guiaRemision}',              [GuiaRemisionController::class, 'show'])      ->name('show');
             Route::post('/{guiaRemision}/enviar-sri',  [GuiaRemisionController::class, 'enviarSri']) ->name('enviar-sri');
         });
+    });
+
+    // Taller
+    Route::prefix('taller')->name('taller.')->group(function () {
+        // Tipos de equipo
+        Route::get('/tipos-equipo', [TipoEquipoController::class, 'index'])->name('tipos-equipo.index');
+        Route::post('/tipos-equipo', [TipoEquipoController::class, 'store'])->name('tipos-equipo.store');
+        Route::patch('/tipos-equipo/{tipoEquipo}', [TipoEquipoController::class, 'update'])->name('tipos-equipo.update');
+        Route::delete('/tipos-equipo/{tipoEquipo}', [TipoEquipoController::class, 'destroy'])->name('tipos-equipo.destroy');
+
+        // Ingresos
+        Route::get('/ingresos', [IngresoController::class, 'index'])->name('ingresos.index');
+        Route::get('/ingresos/crear', [IngresoController::class, 'create'])->name('ingresos.create');
+        Route::post('/ingresos', [IngresoController::class, 'store'])->name('ingresos.store');
+        Route::get('/ingresos/{ingreso}', [IngresoController::class, 'show'])->name('ingresos.show');
+        Route::get('/equipos/buscar', [IngresoController::class, 'buscarEquipo'])->name('equipos.buscar');
+
+        // Órdenes de trabajo
+        Route::get('/ordenes', [OrdenTrabajoController::class, 'index'])->name('ordenes.index');
+        Route::get('/ordenes/{orden}', [OrdenTrabajoController::class, 'show'])->name('ordenes.show');
+        Route::patch('/ordenes/{orden}/estado', [OrdenTrabajoController::class, 'cambiarEstado'])->name('ordenes.cambiar-estado');
+        Route::post('/ordenes/{orden}/repuestos', [LiquidacionController::class, 'agregarRepuesto'])->name('ordenes.repuestos.store');
+
+        // Diagnósticos
+        Route::get('/ordenes/{orden}/diagnostico', [DiagnosticoController::class, 'create'])->name('diagnosticos.create');
+        Route::post('/ordenes/{orden}/diagnostico', [DiagnosticoController::class, 'store'])->name('diagnosticos.store');
+        Route::patch('/diagnosticos/{diagnostico}/aprobar', [DiagnosticoController::class, 'aprobar'])->name('diagnosticos.aprobar');
+
+        // Liquidación
+        Route::get('/ordenes/{orden}/liquidar', [LiquidacionController::class, 'show'])->name('liquidacion.show');
+        Route::post('/ordenes/{orden}/liquidar', [LiquidacionController::class, 'liquidar'])->name('liquidacion.liquidar');
     });
 });

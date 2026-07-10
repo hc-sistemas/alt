@@ -299,7 +299,7 @@ export default function Index() {
                                                     {formatFecha(c.fecha_emision)}
                                                 </td>
                                                 <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-muted)' }}>
-                                                    {formatFecha(c.fecha_vencimiento)}
+                                                    {c.fecha_vencimiento ? formatFecha(c.fecha_vencimiento) : '—'}
                                                 </td>
                                                 <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-muted)' }}>
                                                     {formatMoneda(c.monto)}
