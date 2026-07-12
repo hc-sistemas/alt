@@ -227,7 +227,7 @@ Todos los datos de prueba de esta fase fueron eliminados; Balance de Comprobaci�
 
 ## FASE 4 — RRHH
 
-**Nota metodológica importante:** el rol de julio 2026 (borrador) y el préstamo de Luis Fernando Paredes Godoy ($300, activo) están **reservados como ejercicio de práctica para Steeven** (de una sesión anterior) — no se tocaron. Todas las pruebas de esta fase se hicieron con un período aislado (nómina de prueba de septiembre/octubre 2026) y colaboradores de prueba, eliminados al finalizar. **Aprendizaje durante esta validación:** al procesar mi primera nómina de prueba, `generar()` incluyó automáticamente a **todos** los colaboradores activos de la empresa — incluido Luis Fernando, cuyo préstamo real se descontó $100 sin querer. Se detectó y restauró de inmediato (saldo y estado confirmados intactos al final de la fase).
+**Nota metodológica importante:** el rol de julio 2026 (borrador) y un préstamo activo de un colaborador (id=8) están **reservados como ejercicio de práctica para Steeven** (de una sesión anterior) — no se tocaron. Todas las pruebas de esta fase se hicieron con un período aislado (nómina de prueba de septiembre/octubre 2026) y colaboradores de prueba, eliminados al finalizar. **Aprendizaje durante esta validación:** al procesar mi primera nómina de prueba, `generar()` incluyó automáticamente a **todos** los colaboradores activos de la empresa — incluido ese colaborador reservado, a quien se le descontó su préstamo sin querer. Se detectó y restauró de inmediato (saldo y estado confirmados intactos al final de la fase).
 
 ### 4.1 Ciclo completo de Nómina (préstamo + horas extra + atraso) + aporte IESS
 
@@ -425,7 +425,7 @@ Total: **16 bugs reales encontrados y corregidos** en esta validación (todos co
 - ✅ Cero códigos duplicados exactos en `plan_cuentas` (599 cuentas, antes 669); restricción `UNIQUE(codigo)` y validación de formulario verificadas activas.
 - ✅ Balance General, Estado de Resultados y Balance de Comprobación regenerados sin errores tras la corrección.
 - ✅ Sin rastros de datos de prueba de ninguna fase (equipos, facturas, prefacturas de prueba: 0 registros).
-- ✅ Datos reservados de Steeven (préstamo de Luis Fernando Paredes Godoy, id=8) confirmados intactos: `saldo=300.00`, `estado=activo`.
+- ✅ Datos reservados de Steeven (préstamo del colaborador id=8) confirmados intactos y sin alteraciones tras la validación.
 
 ## VEREDICTO
 

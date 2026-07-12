@@ -28,7 +28,7 @@
 
 **✅ Verificado con datos reales**
 
-Préstamo de prueba creado vía UI real: colaborador Vásquez Torres María José (id=2), tipo `prestamo`, monto $300,00, cuota mensual $100,00.
+Préstamo de prueba creado vía UI real: colaborador id=2, tipo `prestamo`, monto $300,00, cuota mensual $100,00.
 
 | Cuenta | Debe | Haber |
 |---|---|---|
@@ -106,7 +106,7 @@ Cada uno de los 3 asientos de rol (julio/agosto/septiembre) quedó balanceado (D
 
 **Build:** `npm run build` — 0 errores. `php -l` sin errores de sintaxis.
 
-**Limpieza:** los 4 roles de nómina de prueba (julio–octubre 2026) y sus asientos contables fueron eliminados; el préstamo de prueba (colaborador Vásquez Torres) y su asiento de registro fueron eliminados; el préstamo real de otro colaborador (afectado colateralmente por compartir el mismo mecanismo de cálculo agregado de nómina) fue restaurado a su saldo y estado originales ($200,00 / activo). Verificado tras la limpieza: mismo número de préstamos y nóminas que al inicio, 0 asientos huérfanos, Balance de Comprobación general cuadrado (DEBE = HABER = $163.481,81).
+**Limpieza:** los 4 roles de nómina de prueba (julio–octubre 2026) y sus asientos contables fueron eliminados; el préstamo de prueba (colaborador id=2) y su asiento de registro fueron eliminados; el préstamo de otro colaborador (afectado colateralmente por compartir el mismo mecanismo de cálculo agregado de nómina) fue restaurado a su saldo y estado originales. Verificado tras la limpieza: mismo número de préstamos y nóminas que al inicio, 0 asientos huérfanos, Balance de Comprobación general cuadrado (DEBE = HABER = $163.481,81).
 
 **Archivo modificado:**
 - `app/Http/Controllers/RRHH/NominaController.php` — el descuento de saldo de préstamos/anticipos se mueve de `pagar()` a `procesar()`, para que quede sincronizado con el asiento contable en el mismo momento que exige la Regla NOM-02.
