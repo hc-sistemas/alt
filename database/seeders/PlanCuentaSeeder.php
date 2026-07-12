@@ -7,16 +7,33 @@ use Illuminate\Database\Seeder;
 
 class PlanCuentaSeeder extends Seeder
 {
+    // Normaliza un código quitando ceros de relleno por segmento, para detectar la
+    // misma cuenta ya creada bajo otra convención de padding (p.ej. por
+    // ImportarPlanCuentasV2) antes de crear un duplicado.
+    private function normalizarCodigo(string $codigo): string
+    {
+        return implode('.', array_map(fn($seg) => ltrim($seg, '0') ?: '0', explode('.', $codigo)));
+    }
+
     public function run(): void
     {
         $cuentas = $this->getCuentas();
 
+        $indiceNormalizado = [];
+        foreach (PlanCuenta::all(['id', 'codigo']) as $c) {
+            $indiceNormalizado[$this->normalizarCodigo($c->codigo)] = $c->id;
+        }
+
         // Primer paso: crear todas las cuentas sin padre_id
         $creadas = [];
         foreach ($cuentas as $data) {
-            $cuenta = PlanCuenta::firstOrCreate(
-                ['codigo' => $data['codigo']],
-                [
+            $idExistente = $indiceNormalizado[$this->normalizarCodigo($data['codigo'])] ?? null;
+
+            if ($idExistente) {
+                $cuenta = PlanCuenta::find($idExistente);
+            } else {
+                $cuenta = PlanCuenta::create([
+                    'codigo'           => $data['codigo'],
                     'nombre'           => $data['nombre'],
                     'tipo'             => $data['tipo'],
                     'nivel'            => $data['nivel'],
@@ -24,8 +41,9 @@ class PlanCuentaSeeder extends Seeder
                     'permite_asientos' => $data['asientos'],
                     'estado'           => true,
                     'total_asientos'   => 0,
-                ]
-            );
+                ]);
+                $indiceNormalizado[$this->normalizarCodigo($data['codigo'])] = $cuenta->id;
+            }
             $creadas[$data['codigo']] = $cuenta->id;
         }
 

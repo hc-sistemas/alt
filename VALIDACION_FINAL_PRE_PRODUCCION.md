@@ -92,21 +92,42 @@
 
 ---
 
-## 🔴 HALLAZGO CRÍTICO TRANSVERSAL — Plan de Cuentas duplicado
+## ✅ HALLAZGO CRÍTICO TRANSVERSAL — Plan de Cuentas duplicado — CORREGIDO (2026-07-11, sesión de seguimiento)
 
-**No es un bug de código — es un problema de datos heredado de la migración del sistema legacy, anterior a esta sesión.**
+**Diagnóstico previo revisado:** el hallazgo original decía "104 grupos duplicados, no se puede fusionar sin decisión de negocio". Con un diagnóstico más profundo (solicitado explícitamente por el usuario antes de autorizar el push) se determinó que el problema real tenía **dos causas distintas, ambas corregibles con seguridad**:
 
-El plan de cuentas (`plan_cuentas`) tiene **104 grupos de códigos duplicados** para el mismo concepto (ej. `1.1.1.3` y `1.1.1.03`, ambos "Bancos Locales" — restos de al menos 2-3 pasadas de siembra distintas: una con códigos SRI en mayúsculas, otra con el formato con cero a la izquierda del propio sistema, y otra sin cero). **101 de esos 104 son inofensivos** (solo una de las variantes tiene movimientos reales). Pero **3 grupos tienen dinero real repartido entre ambas variantes**:
+### Causa raíz A: 70 cuentas duplicadas por un bug real en un comando de importación
 
-| Cuenta | Variante A | Variante B | Saldo combinado |
-|---|---|---|---|
-| Caja General | `1.1.1.01`: DEBE $8,855 | `1.1.1.1`: HABER $800 | +$8,055 (razonable) |
-| Bancos Locales | `1.1.1.03`: DEBE $9,089 / HABER $46,562 | `1.1.1.3`: DEBE $6.50 / HABER $14,654 | **-$52,121 (imposible)** |
-| Proveedores Locales | `2.1.1.01`: DEBE $53,388 / HABER $9,911 | `2.1.1.1`: DEBE $30 / HABER $0 | +$43,507 saldo deudor en un pasivo (anómalo) |
+`app/Console/Commands/ImportarPlanCuentasV2.php` busca cuentas existentes con coincidencia **exacta** de string (`where('codigo', $codigo)`). El seeder original (`PlanCuentaSeeder`, aún registrado en `DatabaseSeeder`) había creado las cuentas sin relleno de ceros (`1.1.1.1`). Al correr `ImportarPlanCuentasV2` para alinear el sistema con la convención de 2 dígitos que usa `AsientoService::FALLBACK_PLAN` (`1.1.1.01`), la búsqueda exacta nunca encontró las cuentas viejas, así que insertó **70 cuentas duplicadas** en paralelo.
 
-Esto explica por qué el cálculo de "Total Activos" del Balance General dio negativo (-$35,448.78) al sumar todas las cuentas tipo activo — no es un bug de la fórmula del reporte (que es correcta), sino que las cuentas de origen tienen saldos imposibles por estar fragmentadas. Combinar las 2 variantes de Bancos Locales sigue dando un saldo negativo, lo que sugiere que además de la duplicación **faltan asientos de apertura/capital** que nunca se registraron al migrar del sistema legacy.
+**Bug activo descubierto (no solo residuo histórico):** `bancos_cajas` (Caja General Matriz/Taller, 3 cuentas bancarias, Caja Chica, Datafast Terminal) y `movimientos_bancarios.cuenta_contrapartida_id` apuntaban a las cuentas huérfanas sin padding, mientras Compras/Ventas/RRHH posteaban a las cuentas con padding — exactamente por qué Caja General, Bancos Locales y Proveedores Locales (los 3 casos con dinero real repartido) son los únicos vinculados desde el módulo Bancos. También se encontró que `parametros_contables` (2 empresas) configuraba `cta_anticipos_proveedores` apuntando a la cuenta con padding vacía, mientras el historial real ($15,450) estaba en la variante sin padding.
 
-**No se intentó fusionar cuentas ni inventar asientos de apertura** — requiere que el contador real confirme cuál código es el canónico para cada caso y cuáles deberían ser los saldos de apertura correctos. **Impacto en esta validación:** Balance General, Estado de Resultados y Mayor de Cuentas son estructuralmente correctos en su lógica de cálculo, pero **no son confiables cifra a cifra** para estas 3 cuentas específicas hasta que se resuelva. El resto del sistema (Debe=Haber global, candados, asientos automáticos) no se ve afectado por esto.
+**Corrección aplicada:** se repuntaron las 7 filas de `bancos_cajas` y las 6 de `movimientos_bancarios` hacia las cuentas canónicas, se migraron los `asiento_detalles` de las 4 cuentas con dinero real (Caja General, Bancos Locales, Proveedores Locales, Anticipos a Proveedores) hacia su cuenta canónica, y se eliminaron las 70 cuentas huérfanas. **Balance de Comprobación verificado idéntico antes y después: $173,545.61 → $173,545.61.**
+
+### Causa raíz B: datos de demostración falsos mezclados con datos reales
+
+Una investigación más profunda de las cuentas "legacy" (un tercer plan de cuentas paralelo, en MAYÚSCULAS, que convive como hermano del plan actual) reveló que sus "movimientos reales" eran en realidad **14 asientos de demostración fabricados por el comando dev `SeedearContabilidad.php`** — los 14 (`AS-2026-0001` a `AS-2026-0036`) fueron creados en el mismo segundo exacto (`2026-06-01 00:13:25`), con `documento_id = null` y descripciones que no correspondían a las cuentas afectadas (ej. "Venta de servicio técnico" acreditando una cuenta de Edificios). Representaban **$62,804.58** del Balance de Comprobación reportado en la validación original.
+
+Un asiento adicional (id=48, $30) **sí era real** — una devolución de compra genuina (con `documento_id` real) que había quedado posteada a la cuenta legacy "Repuestos" por el mismo bug de códigos de respaldo ya corregido en la FASE 2 de esta validación.
+
+**Corrección aplicada (con autorización explícita del usuario tras mostrarle el detalle exacto):** se eliminaron los 14 asientos falsos (con sus 28 líneas) y se reapuntó el asiento real (48) hacia la cuenta correcta (`1.1.4.01` Inventario de Mercaderías). **Balance de Comprobación recalculado: $173,545.61 → $110,741.03** — la cifra ahora refleja únicamente transacciones reales. Se verificó que el resto de la cadena legacy (393 cuentas) quedó en cero movimientos.
+
+**Lo que NO se tocó:** el plan de cuentas legacy en sí (393 cuentas cabecera/detalle) sigue existiendo estructuralmente — no se eliminó porque 16 `compra_detalles` (de 6 compras ya **anuladas**, sin impacto financiero real) y 4 `movimientos_bancarios` (aparentemente residuos de prueba de la sesión de "Validación Bancos 2026-07-07") aún lo referencian. Limpiar esos residuos es una tarea distinta (higiene de datos de prueba de otra sesión), no parte de esta corrección de duplicados — queda documentada como pendiente menor, sin impacto en producción.
+
+### Prevención — cambios de código para que no vuelva a pasar
+
+- `ImportarPlanCuentasV2.php`: ahora busca cuentas existentes también por **código normalizado** (sin padding) antes de crear una nueva, y si encuentra una coincidencia con distinto padding, actualiza su código al formato canónico en vez de duplicar.
+- `PlanCuentaSeeder.php`: mismo chequeo normalizado antes de `create()`, para ser seguro si se re-ejecuta después de `ImportarPlanCuentasV2` (o viceversa).
+- `SeedearContabilidad.php`: se agregó `ConfirmableTrait` — ahora pide confirmación explícita antes de generar asientos ficticios, con una advertencia de que no es idempotente.
+- **Restricción de unicidad:** ya existía `UNIQUE(codigo)` a nivel de base de datos (migración `2026_05_30_300000_create_plan_cuentas_table.php`) y validación `unique:plan_cuentas,codigo` con mensaje claro en `PlanCuentaController::store()` — verificado que ambas siguen funcionando (se probó crear una cuenta con código `1.1.1.01` ya existente: rechazada con "Ya existe una cuenta con ese código.", ninguna fila nueva creada).
+
+### Validación final de esta corrección
+
+- ✅ Cero códigos duplicados exactos en `plan_cuentas` (599 cuentas totales, antes 669).
+- ✅ Balance de Comprobación cuadrado: DEBE = HABER = $110,741.03 (cifra corregida, sin datos de demo).
+- ✅ Balance General, Estado de Resultados y Balance de Comprobación regenerados (200, PDF válido) sin errores.
+- ✅ Intento de crear cuenta con código duplicado rechazado correctamente vía validación existente.
+- ✅ `npm run build` sin errores.
 
 ---
 
@@ -381,22 +402,26 @@ Total: **16 bugs reales encontrados y corregidos** en esta validación (todos co
 | 15 | 6 | Ventas | `PrefacturaController::abonar()` y `NotaCreditoController::store()` — mismo patrón, asiento generado sin vincular | Alta |
 | 16 | 6 | Taller | `LiquidacionController::liquidar()` **nunca generaba asiento contable** — todas las ventas de Taller (módulo ya en producción) quedaban invisibles para Contabilidad desde su implementación | **Crítica** |
 
-**Hallazgo de integridad de datos (documentado, no corregido por decisión del usuario):** `plan_cuentas` tiene 104 grupos de códigos duplicados por convenciones de padding distintas entre migraciones legacy (ej. `1.1.1.3` vs `1.1.1.03`), con saldos reales repartidos entre variantes en al menos 2 grupos (Bancos Locales, Proveedores Locales). Requiere una decisión de negocio (fusión de cuentas + migración de saldos) fuera del alcance de esta validación — el usuario eligió "documentar y seguir validando" en lugar de fusionar unilateralmente.
+**Hallazgo de integridad de datos — CORREGIDO en sesión de seguimiento (2026-07-11):** el hallazgo de cuentas duplicadas en `plan_cuentas` fue investigado a fondo, causa raíz identificada y corregido — ver la sección "✅ HALLAZGO CRÍTICO TRANSVERSAL" arriba para el detalle completo. **Nota importante sobre el Balance de Comprobación:** durante esa corrección se descubrió que $62,804.58 del total de $173,545.61 reportado en esta validación eran asientos de demostración fabricados (comando dev `SeedearContabilidad`, sin documento real detrás), no transacciones genuinas. Al eliminarlos, **el Balance de Comprobación correcto y actual es DEBE = HABER = $110,741.03** — las referencias a $173,545.61 en las secciones de FASE 1-6 arriba documentan correctamente el estado *en el momento de cada prueba* (con la contaminación de datos demo aún sin descubrir), y siguen siendo válidas como evidencia de que cada limpieza de datos de prueba no dejó residuos frente a la línea base *de ese momento*.
 
 **Gap de funcionalidad identificado (no es un bug, es una funcionalidad no implementada):** no existe generación automática de fila de nómina al crear un colaborador nuevo — aparece recién en la siguiente nómina que se genere.
 
+**Pendiente menor identificado durante la corrección de plan_cuentas (no bloqueante):** 16 `compra_detalles` (de 6 compras ya anuladas) y 4 `movimientos_bancarios` (aparentemente residuos de la sesión "Validación Bancos 2026-07-07") aún referencian el plan de cuentas legacy en MAYÚSCULAS. Sin impacto financiero (compras anuladas, sin efecto en reportes), pero impide eliminar por completo esas 393 cuentas legacy — limpieza de higiene de datos de prueba, no relacionada con esta corrección.
+
 ## Verificaciones finales
 
-- ✅ `npm run build` — compiló sin errores (24.66s, 3279 módulos).
+- ✅ `npm run build` — compiló sin errores.
 - ✅ `php artisan migrate:status` — todas las migraciones en estado `Ran`, incluyendo la nueva `2026_07_11_000001_add_asiento_id_to_liquidaciones`. Ninguna pendiente.
-- ✅ Balance de Comprobación general: **DEBE = HABER = $173,545.61** (idéntico al valor base de toda la sesión, confirmando que ninguna prueba dejó residuos).
+- ✅ Balance de Comprobación general (cifra final, tras corrección de plan_cuentas): **DEBE = HABER = $110,741.03**.
+- ✅ Cero códigos duplicados exactos en `plan_cuentas` (599 cuentas, antes 669); restricción `UNIQUE(codigo)` y validación de formulario verificadas activas.
+- ✅ Balance General, Estado de Resultados y Balance de Comprobación regenerados sin errores tras la corrección.
 - ✅ Sin rastros de datos de prueba de ninguna fase (equipos, facturas, prefacturas de prueba: 0 registros).
 - ✅ Datos reservados de Steeven (préstamo de Luis Fernando Paredes Godoy, id=8) confirmados intactos: `saldo=300.00`, `estado=activo`.
 
 ## VEREDICTO
 
-**Sistema listo para producción**, con una salvedad: el hallazgo de cuentas duplicadas en `plan_cuentas` (documentado arriba) debería resolverse con una decisión de negocio antes o poco después del arranque — no bloquea la operación (los asientos siguen cuadrando y las cuentas duplicadas con saldo real ya se identificaron), pero sí afecta la limpieza y legibilidad de los reportes contables a mediano plazo.
+**Sistema listo para producción.** El hallazgo de cuentas duplicadas en `plan_cuentas` que originalmente se documentó como "pendiente de decisión de negocio" fue completamente diagnosticado y corregido en esta sesión de seguimiento: causa raíz reparada en el código (2 archivos), 70 cuentas duplicadas fusionadas sin pérdida de datos, y $62,804.58 en datos de demostración fabricados identificados y removidos del Balance de Comprobación. Queda un pendiente menor no bloqueante (residuos de prueba de otra sesión referenciando el plan legacy) documentado arriba.
 
-Los 16 bugs encontrados en esta pasada eran reales y, en 4 casos (#2, #8, #13, #16), de severidad crítica — es decir, **el sistema en su estado previo a esta sesión habría llegado a producción con anticipos a proveedores invisibles para contabilidad, inventario que nunca se actualizaba, declaraciones ATS incorrectas ante el SRI, y ventas de Taller completamente fuera del balance general.** Todos fueron corregidos y re-validados con datos reales end-to-end, con limpieza completa verificada tras cada prueba.
+Los 16 bugs encontrados en la pasada original eran reales y, en 4 casos (#2, #8, #13, #16), de severidad crítica — es decir, **el sistema en su estado previo a esta sesión habría llegado a producción con anticipos a proveedores invisibles para contabilidad, inventario que nunca se actualizaba, declaraciones ATS incorrectas ante el SRI, y ventas de Taller completamente fuera del balance general.** Todos fueron corregidos y re-validados con datos reales end-to-end, con limpieza completa verificada tras cada prueba. Sumado a la corrección de plan_cuentas de esta sesión de seguimiento, **no quedan pendientes críticos conocidos para producción.**
 
 ---
