@@ -182,9 +182,9 @@ Qué hace (dentro de una transacción):
 ## Credenciales de prueba
 
 ```
-Admin: admin@altamira.com / Altamira2026*
-Vendedor: vendedor@altamira.com / Vendedor2026*
-PIN aprobación: 1234
+Admin: admin@altamira.com / ver credenciales compartidas por canal seguro con el equipo
+Vendedor: vendedor@altamira.com / ver credenciales compartidas por canal seguro con el equipo
+PIN aprobación: ver credenciales compartidas por canal seguro con el equipo
 ```
 
 ---
