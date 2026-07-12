@@ -320,7 +320,7 @@ class FacturaController extends Controller
 
         try {
             $formaPrincipal = collect($request->formas_pago)->sortByDesc('monto')->first()['forma'] ?? 'efectivo';
-            $this->asiento->facturaAutorizada(
+            $asientoFactura = $this->asiento->facturaAutorizada(
                 empresaId:      $empresaId,
                 facturaId:      $factura->id,
                 numeroFactura:  $factura->numero_completo,
@@ -329,6 +329,7 @@ class FacturaController extends Controller
                 total:          $total,
                 formaPago:      $formaPrincipal,
             );
+            $factura->update(['asiento_id' => $asientoFactura->id]);
         } catch (\Throwable) {
             // Asiento contable falla de forma silenciosa para no romper la factura
         }
