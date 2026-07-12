@@ -406,7 +406,16 @@ Total: **16 bugs reales encontrados y corregidos** en esta validación (todos co
 
 **Gap de funcionalidad identificado (no es un bug, es una funcionalidad no implementada):** no existe generación automática de fila de nómina al crear un colaborador nuevo — aparece recién en la siguiente nómina que se genere.
 
-**Pendiente menor identificado durante la corrección de plan_cuentas (no bloqueante):** 16 `compra_detalles` (de 6 compras ya anuladas) y 4 `movimientos_bancarios` (aparentemente residuos de la sesión "Validación Bancos 2026-07-07") aún referencian el plan de cuentas legacy en MAYÚSCULAS. Sin impacto financiero (compras anuladas, sin efecto en reportes), pero impide eliminar por completo esas 393 cuentas legacy — limpieza de higiene de datos de prueba, no relacionada con esta corrección.
+**✅ Pendiente menor — RESUELTO (2026-07-12, segunda sesión de seguimiento):** los 16 `compra_detalles` y 4 `movimientos_bancarios` que referenciaban el plan legacy fueron investigados a fondo antes de tocar nada:
+
+- Las 16 líneas pertenecían a **6 compras de prueba, todas ya `anuladas`**, creadas en un único lote (`2026-06-02 02:47:39`) junto con proveedores de prueba (uno con razón social literalmente `"SD_compsny"`). Confirmado 100% dato huérfano de siembra — **eliminadas por completo** (compras + detalles, 0 tablas hijas afectadas).
+- De los 4 movimientos bancarios, **1 era basura huérfana** (`id=9`, sin conciliar, sin asiento, sin ninguna otra referencia — eliminado) pero **los otros 3 (`id=47,48,49`) resultaron ser parte de un ejercicio de práctica real y ya completado de Steeven** (`conciliaciones_bancarias id=6`, descripción literal `"Ejercicio de practica"`, cuadrado exacto $17,105.50 = $17,105.50). Se detectó esto **antes de borrar nada** y se confirmó con el usuario: en vez de eliminarlos, se **reapuntaron** sus cuentas de contrapartida a las cuentas correctas del plan nuevo (`4.1.1.01` Venta de Mercaderías, `5.2.2.06` Suministros y Materiales de Oficina), preservando intacto el ejercicio de Steeven.
+- Verificado que, tras esta limpieza, **las 393 cuentas del plan de cuentas legacy en MAYÚSCULAS quedaron sin ninguna referencia** en `asiento_detalles`, `compra_detalles`, `bancos_cajas`, `movimientos_bancarios` ni `parametros_contables` — **se eliminaron las 393 cuentas por completo** (respetando el orden de dependencia padre/hijo).
+- **Balance de Comprobación verificado idéntico antes y después de toda esta limpieza: $110,741.03 → $110,741.03.**
+- Plan de Cuentas (206 cuentas finales, antes 599) verificado sin ninguna cuenta en MAYÚSCULAS ni huérfana.
+- `npm run build` sin errores tras la limpieza final.
+
+**El plan de cuentas del sistema ahora tiene una sola fuente de verdad, sin duplicados de ningún tipo y sin cuentas legacy sin uso.**
 
 ## Verificaciones finales
 
@@ -420,7 +429,7 @@ Total: **16 bugs reales encontrados y corregidos** en esta validación (todos co
 
 ## VEREDICTO
 
-**Sistema listo para producción.** El hallazgo de cuentas duplicadas en `plan_cuentas` que originalmente se documentó como "pendiente de decisión de negocio" fue completamente diagnosticado y corregido en esta sesión de seguimiento: causa raíz reparada en el código (2 archivos), 70 cuentas duplicadas fusionadas sin pérdida de datos, y $62,804.58 en datos de demostración fabricados identificados y removidos del Balance de Comprobación. Queda un pendiente menor no bloqueante (residuos de prueba de otra sesión referenciando el plan legacy) documentado arriba.
+**Sistema listo para producción — sin pendientes críticos ni menores conocidos.** El hallazgo de cuentas duplicadas en `plan_cuentas` que originalmente se documentó como "pendiente de decisión de negocio" fue completamente diagnosticado y corregido en dos sesiones de seguimiento: causa raíz reparada en el código (2 generadores de plan de cuentas), 70 cuentas duplicadas fusionadas sin pérdida de datos, $62,804.58 en datos de demostración fabricados identificados y removidos del Balance de Comprobación, y finalmente las 393 cuentas legacy huérfanas eliminadas por completo tras confirmar (y preservar) el único ejercicio de práctica real de Steeven que las referenciaba. El plan de cuentas quedó en 206 cuentas, una sola fuente de verdad, Balance de Comprobación cuadrado en $110,741.03.
 
 Los 16 bugs encontrados en la pasada original eran reales y, en 4 casos (#2, #8, #13, #16), de severidad crítica — es decir, **el sistema en su estado previo a esta sesión habría llegado a producción con anticipos a proveedores invisibles para contabilidad, inventario que nunca se actualizaba, declaraciones ATS incorrectas ante el SRI, y ventas de Taller completamente fuera del balance general.** Todos fueron corregidos y re-validados con datos reales end-to-end, con limpieza completa verificada tras cada prueba. Sumado a la corrección de plan_cuentas de esta sesión de seguimiento, **no quedan pendientes críticos conocidos para producción.**
 
