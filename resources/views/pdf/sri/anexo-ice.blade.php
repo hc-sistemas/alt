@@ -40,7 +40,7 @@
 
 <div class="header">
     <div class="h-left">
-        <div class="empresa">{{ $empresa->nombre }}</div>
+        <div class="empresa">{{ $empresa->nombre_comercial ?? $empresa->razon_social ?? 'Altamira' }}</div>
         <div class="titulo">ANEXO ICE — Impuesto a los Consumos Especiales</div>
         <div class="sub">Período: {{ $nombreMes }} {{ $anio }} · RUC: {{ $empresa->ruc }}</div>
     </div>

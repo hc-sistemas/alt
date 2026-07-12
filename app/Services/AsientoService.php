@@ -28,6 +28,25 @@ class AsientoService
     ): AsientoContable {
 
         // 1. Verificar período contable abierto
+        //
+        // El candado debe ser sensible a la FECHA del asiento, no solo a si existe
+        // *algún* período abierto para la empresa: sin esto, un asiento (manual o
+        // automático) con fecha dentro de un mes ya cerrado se colaba igual,
+        // quedando vinculado al período abierto actual pero con una fecha que
+        // pertenece a un mes que ya no debería aceptar movimientos nuevos.
+        $fechaAsiento    = $fecha ? \Carbon\Carbon::parse($fecha) : now();
+        $ejercicioDelMes = EjercicioContable::where('empresa_id', $empresaId)
+            ->where('anio', $fechaAsiento->year)
+            ->where('mes', $fechaAsiento->month)
+            ->first();
+
+        if ($ejercicioDelMes && $ejercicioDelMes->estaCerrado()) {
+            throw new \Exception(
+                "El período {$ejercicioDelMes->periodo_label} está cerrado. " .
+                "No se pueden crear ni modificar asientos con fecha en un período cerrado."
+            );
+        }
+
         $ejercicio = EjercicioContable::where('empresa_id', $empresaId)
             ->where('estado', 'abierto')
             ->orderByDesc('anio')
@@ -689,7 +708,7 @@ class AsientoService
         string $fecha,
     ): AsientoContable {
         $banco = \App\Models\BancoCaja::findOrFail($bancoCajaId);
-        $cuentaBancoId = $banco->cuenta_contable_id;
+        $cuentaBancoId = $banco->cuenta_id;
 
         if (!$cuentaBancoId) {
             throw new \Exception(

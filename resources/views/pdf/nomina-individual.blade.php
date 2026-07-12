@@ -111,7 +111,7 @@
 {{-- ── Header ─────────────────────────────────────────────────────────── --}}
 <div class="header">
     <div class="h-left">
-        <div class="empresa-nombre">{{ strtoupper($empresa->nombre ?? 'ALTAMIRA LIGHT & SOUND') }}</div>
+        <div class="empresa-nombre">{{ strtoupper($empresa->nombre_comercial ?? $empresa->razon_social ?? 'ALTAMIRA LIGHT & SOUND') }}</div>
         <div class="empresa-sub">RUC: {{ $empresa->ruc ?? '' }} &nbsp;|&nbsp; {{ $empresa->direccion ?? 'Ecuador' }}</div>
     </div>
     <div class="h-right">
@@ -249,7 +249,7 @@
     <div class="firma-cel">
         <div class="firma-linea">
             Firma del Empleador
-            <div class="firma-sub">{{ $empresa->nombre ?? 'Altamira Light & Sound' }}</div>
+            <div class="firma-sub">{{ $empresa->nombre_comercial ?? $empresa->razon_social ?? 'Altamira Light & Sound' }}</div>
         </div>
     </div>
     <div class="firma-cel">
@@ -263,7 +263,7 @@
 {{-- ── Footer ──────────────────────────────────────────────────────────── --}}
 <div class="footer">
     Documento generado el {{ now()->format('d/m/Y H:i') }} &nbsp;|&nbsp;
-    {{ $empresa->nombre ?? 'Altamira' }} &nbsp;|&nbsp;
+    {{ $empresa->nombre_comercial ?? $empresa->razon_social ?? 'Altamira' }} &nbsp;|&nbsp;
     Este documento es de carácter confidencial.
 </div>
 
