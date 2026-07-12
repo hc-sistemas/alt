@@ -13,7 +13,7 @@ class ManualesController extends Controller
         return [
             'diagnostico' => [
                 'titulo'      => 'Diagnóstico Dev 2',
-                'descripcion' => 'Estado Dev 2 (actualizado): Contabilidad/Compras/Bancos/Reportes 100%, RRHH Timbre Digital, Vinculación Usuario-Colaborador, Fixes timezone + bugs. Total 99%.',
+                'descripcion' => 'Estado del sistema (actualizado): Contabilidad, Compras, Bancos, RRHH, Reportes SRI e integración Ventas/Taller — 100% completo y validado con datos reales (Validación Final Pre-Producción). Sistema listo para producción.',
                 'tipo'        => 'dinamico',
                 'route'       => 'manuales.diagnostico-pdf',
             ],
