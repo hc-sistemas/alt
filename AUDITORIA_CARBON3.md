@@ -58,3 +58,14 @@ Se invocó `AsientoContableController::destroy()` real (no reimplementado), aute
 **Build:** `npm run build` — 0 errores. `php -l` sin errores de sintaxis en los 4 archivos modificados.
 
 **Estado del commit:** ⚠️ Sin commitear, junto con el resto de cambios pendientes de la sesión (toasts RRHH, fix de logout 419, alta de horarios NOM-05/06) — a revisar y commitear todo junto al final, según lo pedido.
+
+---
+
+## Actualización (2026-07-11) — un octavo caso encontrado durante VALIDACION_FINAL_PRE_PRODUCCION.md
+
+La auditoría original solo buscó `diffInMinutes`/`diffInHours`/`diffInDays`. Durante la validación de Fase 4 (RRHH → Nómina) se encontró que **`diffInMonths` tiene el mismo problema** y no había sido incluido en el grep original:
+
+- `app/Http/Controllers/RRHH/NominaController.php:447` — `$mesesContrato = (int) now()->diffInMonths($col->fecha_ingreso)`, usado para decidir si aplican Fondos de Reserva mensualizados (regla: desde el mes 13 de contrato). Firmado en Carbon 3, siempre negativo (la fecha de ingreso siempre es anterior a `now()`), por lo que `$mesesContrato >= 13` **nunca se cumplía para ningún colaborador, sin importar su antigüedad real** — Fondos de Reserva mensualizados nunca se pagaban. Corregido con `abs()`.
+- `app/Http/Controllers/RRHH/LiquidacionesController.php:84` (`$fechaIngreso->diffInMonths($fechaSalida)`) — revisado de nuevo, sigue **sin necesitar cambio**: hay un guard previo (`fechaSalida->lt(fechaIngreso)` → error) que garantiza que `fechaSalida` sea posterior, por lo que el resultado siempre es positivo.
+
+Búsqueda ampliada confirmó que no existen usos de `diffInYears`, `diffInWeeks` ni `diffInSeconds` en `app/` — el patrón queda cerrado en 8 casos afectados (7 de la auditoría original + este), todos corregidos.

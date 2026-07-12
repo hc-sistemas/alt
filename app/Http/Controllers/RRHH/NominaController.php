@@ -143,7 +143,7 @@ class NominaController extends Controller
 
         $nomina = Nomina::where('empresa_id', $empresaId)
             ->with([
-                'detalles.colaborador:id,apellidos,nombres,cedula_ruc,cargo,banco,tipo_cuenta,numero_cuenta',
+                'detalles.colaborador:id,apellidos,nombres,cedula_ruc,cargo,banco,tipo_cuenta,numero_cuenta,sueldo_base',
                 'generadoPor:id,nombre',
                 'procesadoPor:id,nombre',
                 'pagadoPor:id,nombre',
@@ -443,8 +443,11 @@ class NominaController extends Controller
                 $otrosIngresos += round($SBU / 12, 2);
             }
             if ($col->fondos_reserva === 'mensualiza') {
-                // Fondos de reserva: aplica desde mes 13 de contrato
-                $mesesContrato = (int)now()->diffInMonths($col->fecha_ingreso);
+                // Fondos de reserva: aplica desde mes 13 de contrato.
+                // abs(): diffInMonths() en Carbon 3 es firmado (negativo porque
+                // fecha_ingreso siempre es anterior a now()); sin abs() esta condición
+                // nunca se cumplía para ningún colaborador, sin importar su antigüedad.
+                $mesesContrato = (int) abs(now()->diffInMonths($col->fecha_ingreso));
                 if ($mesesContrato >= 13) {
                     $otrosIngresos += round((float)$col->sueldo_base * 0.0833, 2);
                 }
