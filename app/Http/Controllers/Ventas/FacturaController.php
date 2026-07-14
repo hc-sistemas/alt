@@ -222,15 +222,42 @@ class FacturaController extends Controller
         $limiteDescuento = LimiteDescuento::whereHas('perfil', fn($q) => $q->where('nombre', $perfilNombre))
             ->first();
 
-        $limiteMax = $limiteDescuento?->porcentaje_maximo ?? 0;
+        $limiteMax = (float) ($limiteDescuento?->porcentaje_maximo ?? 0);
+
+        // Se resuelve una sola vez (la aprobación es global para toda la
+        // factura, no por línea) y se reutiliza para cada detalle que la
+        // necesite.
+        $aprobacionValida = null;
 
         foreach ($request->detalles as $detalle) {
             $descPct = (float)($detalle['descuento_pct'] ?? 0);
 
             if ($descPct > $limiteMax) {
-                if (!$request->filled('aprobacion_especial')) {
-                    return back()->withErrors(['aprobacion_especial' => 'Se requiere aprobación especial para el descuento aplicado.']);
+                if (!$request->filled('aprobacion_especial_id')) {
+                    return back()->withErrors(['aprobacion_especial' => 'Se requiere aprobación especial para el descuento aplicado.'])->withInput();
                 }
+
+                if ($aprobacionValida === null) {
+                    $aprobacionValida = DB::table('aprobaciones_especiales')
+                        ->join('tipos_aprobacion', 'tipos_aprobacion.id', '=', 'aprobaciones_especiales.tipo_aprobacion_id')
+                        ->where('aprobaciones_especiales.id', $request->input('aprobacion_especial_id'))
+                        ->where('aprobaciones_especiales.solicitado_por', $usuario->id)
+                        ->where('tipos_aprobacion.clave', 'descuento_excedido')
+                        ->whereNull('aprobaciones_especiales.registro_id')
+                        ->select('aprobaciones_especiales.id', 'aprobaciones_especiales.valor_aprobado')
+                        ->first();
+
+                    if (!$aprobacionValida) {
+                        return back()->withErrors(['aprobacion_especial' => 'La aprobación especial no es válida o ya fue utilizada.'])->withInput();
+                    }
+                }
+
+                if ($descPct > (float) $aprobacionValida->valor_aprobado) {
+                    return back()->withErrors([
+                        'aprobacion_especial' => "La aprobación otorgada cubre hasta {$aprobacionValida->valor_aprobado}%, pero se solicita {$descPct}%.",
+                    ])->withInput();
+                }
+
                 $tieneDescuentoEspecial = true;
             }
 
@@ -263,7 +290,7 @@ class FacturaController extends Controller
         try {
             $factura = DB::transaction(function () use (
                 $request, $empresaId, $usuario, $subtotal0, $subtotal15,
-                $descTotal, $totalIva, $total, $tieneDescuentoEspecial
+                $descTotal, $totalIva, $total, $tieneDescuentoEspecial, $aprobacionValida
             ) {
                 $empresa = Empresa::findOrFail($empresaId);
                 $numero  = $this->secuencial->siguiente($empresaId, 'FAC');
@@ -384,16 +411,16 @@ class FacturaController extends Controller
                     ]);
                 }
 
-                if ($tieneDescuentoEspecial) {
-                    DB::table('aprobaciones_especiales')->insert([
-                        'empresa_id'   => $empresaId,
-                        'usuario_id'   => Auth::id(),
-                        'tipo'         => 'descuento_especial',
-                        'documento_id' => $factura->id,
-                        'referencia'   => $factura->numero_completo,
-                        'codigo'       => $request->aprobacion_especial,
-                        'created_at'   => now(),
-                    ]);
+                if ($tieneDescuentoEspecial && $aprobacionValida) {
+                    // Marca la aprobación como consumida — evita que se
+                    // reutilice el mismo aprobacion_especial_id en otra factura.
+                    DB::table('aprobaciones_especiales')
+                        ->where('id', $aprobacionValida->id)
+                        ->update([
+                            'tabla_referencia' => 'facturas',
+                            'registro_id'      => $factura->id,
+                            'updated_at'       => now(),
+                        ]);
                 }
 
                 return $factura;
@@ -480,14 +507,18 @@ class FacturaController extends Controller
                 'estado_sri' => 'anulada',
             ]);
 
+            $tipoAnulacion = DB::table('tipos_aprobacion')->where('clave', 'anulacion_factura')->first();
+
             DB::table('aprobaciones_especiales')->insert([
-                'empresa_id'   => $factura->empresa_id,
-                'usuario_id'   => Auth::id(),
-                'tipo'         => 'anular_factura',
-                'documento_id' => $factura->id,
-                'referencia'   => $factura->numero_completo,
-                'codigo'       => $request->codigo_aprobacion,
-                'created_at'   => now(),
+                'tipo_aprobacion_id' => $tipoAnulacion->id ?? null,
+                'aprobado_por'       => Auth::id(),
+                'solicitado_por'     => Auth::id(),
+                'empresa_id'         => $factura->empresa_id,
+                'tabla_referencia'   => 'facturas',
+                'registro_id'        => $factura->id,
+                'descripcion'        => "Anulación de factura {$factura->numero_completo}",
+                'created_at'         => now(),
+                'updated_at'         => now(),
             ]);
         });
 

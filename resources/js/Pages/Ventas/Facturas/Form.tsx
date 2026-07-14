@@ -11,7 +11,7 @@ import DescuentoEspecialModal from '@/Components/Ventas/DescuentoEspecialModal'
 import { cn, formatMoneda } from '@/lib/utils'
 import { toastError } from '@/lib/toast'
 import { Plus, Save, X, Send, Search } from 'lucide-react'
-import type { PageProps, Empresa, Usuario, Cliente, LimiteDescuento } from '@/types'
+import type { PageProps, Empresa, Usuario, Cliente } from '@/types'
 
 // Bodega fija de la que siempre sale el stock (decisión de negocio: ya no se
 // selecciona bodega por línea). El backend resuelve el id real por este nombre.
@@ -68,7 +68,7 @@ interface Props extends PageProps {
     formas_pago: string[]
     empresa_activa: Empresa
     siguiente_numero: string
-    limite_descuento: LimiteDescuento | null
+    limites_descuento: { descuento_maximo_pct: number; puede_aprobar: boolean }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -158,7 +158,7 @@ export default function Form() {
         vendedores,
         formas_pago,
         siguiente_numero,
-        limite_descuento,
+        limites_descuento,
         auth,
     } = usePage<Props>().props
 
@@ -384,7 +384,9 @@ export default function Form() {
 
     const handleDescuentoChange = (idx: number, valor: number) => {
         const linea = detalles[idx]
-        if (!descuentoEspecialActivo && valor > linea.descuento_max_producto && linea.descuento_max_producto < 100) {
+        // El tope de producto es un techo absoluto — ni siquiera con
+        // descuento especial activo (PIN de supervisor) se puede superar.
+        if (valor > linea.descuento_max_producto && linea.descuento_max_producto < 100) {
             updateDetalle(idx, {
                 descuento_pct: linea.descuento_max_producto,
                 _desc_error: `Descuento máximo para este producto: ${linea.descuento_max_producto}%`,
@@ -493,7 +495,7 @@ export default function Form() {
             vendedor_id: vendedorId,
             observaciones,
             tiene_descuento_especial: descuentoEspecialActivo,
-            aprobacion_especial: aprobacionGlobalId,
+            aprobacion_especial_id: aprobacionGlobalId,
             detalles: detalles.map(d => ({
                 producto_id: d.producto_id,
                 codigo: d.codigo,
@@ -530,8 +532,6 @@ export default function Form() {
     // texto, para que Bodega/Cantidad/Precio/Desc% queden a la misma altura
     // entre sí y entre líneas de producto distintas.
     const hintSlotCls = "h-4 mt-0.5 text-[11px] font-medium leading-4 whitespace-nowrap overflow-hidden"
-
-    void limite_descuento
 
     // ── Render ────────────────────────────────────────────────────────────────
 
@@ -1153,7 +1153,7 @@ export default function Form() {
                     setModalDescuentoGlobal(false)
                 }}
                 productoNombre=""
-                descuentoMaximo={0}
+                descuentoMaximo={limites_descuento.descuento_maximo_pct}
                 descuentoSolicitado={0}
             />
 

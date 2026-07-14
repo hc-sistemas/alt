@@ -12,7 +12,7 @@ import DescuentoEspecialModal from '@/Components/Ventas/DescuentoEspecialModal'
 import { cn, formatMoneda } from '@/lib/utils'
 import { toastError } from '@/lib/toast'
 import { Plus, Trash2, Search, Save, X, AlertTriangle } from 'lucide-react'
-import type { PageProps, Empresa, Usuario, Cliente, LimiteDescuento } from '@/types'
+import type { PageProps, Empresa, Usuario, Cliente } from '@/types'
 
 interface ProductoVenta {
     id: number
@@ -61,7 +61,7 @@ interface Props extends PageProps {
     vendedores: Pick<Usuario, 'id' | 'nombre' | 'email'>[]
     empresa_activa: Empresa
     siguiente_numero: string
-    limite_descuento: LimiteDescuento | null
+    limites_descuento: { descuento_maximo_pct: number; puede_aprobar: boolean }
 }
 
 function calcularLinea(linea: DetalleLinea): DetalleLinea {
@@ -120,7 +120,7 @@ function ClienteField({ label, value, onChange, type = 'text', onKeyDown }: {
 }
 
 export default function Form() {
-    const { clientes, productos, vendedores, siguiente_numero } = usePage<Props>().props
+    const { clientes, productos, vendedores, siguiente_numero, limites_descuento } = usePage<Props>().props
 
     // — Cliente
     const [clienteSeleccionado, setClienteSeleccionado] = useState<Cliente | null>(null)
@@ -236,15 +236,31 @@ export default function Form() {
 
     const handleDescuentoChange = (idx: number, valor: number) => {
         const linea = detalles[idx]
+
+        // Tope de producto/lista de precios — capa dura, sin excepción, ni
+        // siquiera con aprobación especial se puede superar.
         if (valor > linea.descuento_max_producto && linea.descuento_max_producto < 100) {
+            updateDetalle(idx, {
+                descuento_pct: linea.descuento_max_producto,
+                descuento_especial: false, aprobacion_id: null,
+                _desc_error: `Descuento máximo para este producto: ${linea.descuento_max_producto}%`,
+            })
+            return
+        }
+
+        // Tope del perfil del vendedor — sí se puede superar con PIN de un
+        // supervisor, mientras no exceda el tope de producto verificado arriba.
+        const limitePerfil = limites_descuento.descuento_maximo_pct
+        if (valor > limitePerfil) {
             if (linea.aprobacion_id) {
-                updateDetalle(idx, { descuento_pct: valor })
+                updateDetalle(idx, { descuento_pct: valor, _desc_error: '' })
                 return
             }
-            setModal({ indice: idx, descuentoSolicitado: valor, maxPermitido: linea.descuento_max_producto })
-        } else {
-            updateDetalle(idx, { descuento_pct: valor, descuento_especial: false, aprobacion_id: null })
+            setModal({ indice: idx, descuentoSolicitado: valor, maxPermitido: limitePerfil })
+            return
         }
+
+        updateDetalle(idx, { descuento_pct: valor, descuento_especial: false, aprobacion_id: null, _desc_error: '' })
     }
 
     const seleccionarProductoLocal = (idx: number, p: ProductoVenta) => {
@@ -308,14 +324,12 @@ export default function Form() {
         if (errs.length > 0) { setErrores(errs); return }
         setErrores([])
 
-        const primeraAprobacion = detalles.find(d => d.aprobacion_id)?.aprobacion_id ?? null
         setGuardando(true)
         router.post(route('ventas.proformas.store'), {
             cliente_id: clienteSeleccionado!.id,
             vendedor_id: vendedorId,
             fecha_vencimiento: fechaVencimiento,
             observaciones,
-            aprobacion_especial: primeraAprobacion,
             detalles: detalles.map(d => ({
                 producto_id: d.producto_id,
                 codigo: d.codigo,

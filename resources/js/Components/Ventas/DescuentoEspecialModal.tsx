@@ -40,14 +40,23 @@ export default function DescuentoEspecialModal({
         setCargando(true)
         setError('')
         try {
-            const res = await fetch(route('ventas.validar-aprobacion'), {
+            const res = await fetch(route('ventas.aprobacion.validar'), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'X-CSRF-TOKEN': getCsrf(),
                     Accept: 'application/json',
                 },
-                body: JSON.stringify({ tipo: 'descuento_excedido', codigo, motivo }),
+                body: JSON.stringify({
+                    tipo: 'descuento_excedido',
+                    codigo,
+                    motivo,
+                    // Solo se conoce el % exacto cuando el modal se abre por
+                    // una línea puntual (Proforma). El modal global de
+                    // Facturas se abre antes de saber el % — en ese caso no
+                    // se envía y el backend aprueba hasta el tope del aprobador.
+                    ...(descuentoSolicitado > 0 ? { porcentaje: descuentoSolicitado } : {}),
+                }),
             })
             const data = await res.json() as { valido: boolean; aprobacion_id?: number; mensaje?: string }
             if (data.valido && data.aprobacion_id) {
