@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Ventas;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Ventas\Concerns\ResuelveBodegasFijas;
 use App\Models\Cliente;
 use App\Models\Empresa;
 use App\Models\Factura;
@@ -14,6 +15,7 @@ use App\Models\Proforma;
 use App\Models\ProformaDetalle;
 use App\Models\Usuario;
 use App\Services\AuditoriaService;
+use App\Services\DescuentoService;
 use App\Services\SecuencialService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -22,9 +24,12 @@ use Inertia\Inertia;
 
 class ProformaController extends Controller
 {
+    use ResuelveBodegasFijas;
+
     public function __construct(
         private AuditoriaService  $auditoria,
         private SecuencialService $secuencial,
+        private DescuentoService  $descuento,
     ) {}
 
     public function index(Request $request)
@@ -72,9 +77,36 @@ class ProformaController extends Controller
 
         $productos = Producto::where('empresa_id', $empresaId)
             ->where('estado', true)
-            ->select('id', 'codigo', 'nombre', 'pvp', 'pvd', 'costo', 'descuento_maximo as descuento_max', 'porcentaje_iva')
+            ->select('id', 'codigo', 'nombre', 'pvp', 'pvd', 'costo', 'porcentaje_iva')
             ->orderBy('nombre')
             ->get();
+
+        $descuentosMaximos = $this->descuento->mapaMaximosPermitidos($productos->pluck('id')->all(), $empresaId);
+        $productos->each(function ($p) use ($descuentosMaximos) {
+            $p->descuento_max = $descuentosMaximos[$p->id] ?? 0.0;
+        });
+
+        // Solo informativo — Proforma no reserva ni descuenta stock, es una
+        // cotización. Si la Bodega Principal no está configurada, se muestra
+        // 0 en vez de romper la página (no es un dato crítico aquí).
+        try {
+            $bodegaPrincipalId = $this->bodegaPrincipalId();
+            $saldos = DB::table('inventario_saldos')
+                ->where('bodega_id', $bodegaPrincipalId)
+                ->whereIn('producto_id', $productos->pluck('id'))
+                ->select('producto_id', 'stock_actual', 'cantidad_reservada')
+                ->get()
+                ->keyBy('producto_id');
+        } catch (\RuntimeException) {
+            $saldos = collect();
+        }
+
+        $productos->each(function ($p) use ($saldos) {
+            $saldo = $saldos->get($p->id);
+            $p->stock_disponible = $saldo
+                ? max(0, (float) $saldo->stock_actual - (float) ($saldo->cantidad_reservada ?? 0))
+                : 0.0;
+        });
 
         $perfilNombre = DB::table('perfiles')
             ->join('usuarios', 'usuarios.perfil_id', '=', 'perfiles.id')
@@ -127,12 +159,83 @@ class ProformaController extends Controller
         $empresaId = session('empresa_activa_id');
 
         $request->validate([
-            'cliente_id'             => 'required|integer|exists:clientes,id',
-            'detalles'               => 'required|array|min:1',
-            'detalles.*.producto_id' => 'required|integer',
-            'detalles.*.cantidad'    => 'required|integer|min:1',
-            'detalles.*.precio'      => 'required|numeric|min:0.01',
+            'cliente_id'              => 'required|integer|exists:clientes,id',
+            'detalles'                => 'required|array|min:1',
+            'detalles.*.producto_id'  => 'required|integer',
+            'detalles.*.cantidad'     => 'required|integer|min:1',
+            'detalles.*.precio'       => 'required|numeric|min:0.01',
+            'detalles.*.aprobacion_id'=> 'nullable|integer',
         ]);
+
+        $usuario = Auth::user();
+
+        $productoIds = collect($request->detalles)->pluck('producto_id')->unique()->all();
+        $maximosPermitidos = $this->descuento->mapaMaximosPermitidos($productoIds, $empresaId);
+
+        $perfilNombre = DB::table('perfiles')
+            ->join('usuarios', 'usuarios.perfil_id', '=', 'perfiles.id')
+            ->where('usuarios.id', $usuario->id)
+            ->value('perfiles.nombre');
+
+        $limiteDescuento = LimiteDescuento::whereHas('perfil', fn($q) => $q->where('nombre', $perfilNombre))
+            ->first();
+
+        $limiteMax = (float) ($limiteDescuento?->porcentaje_maximo ?? 0);
+
+        // Aprobaciones usadas por línea — se marcan consumidas (una sola vez
+        // por fila, aunque se repita en varias líneas) después de crear la
+        // proforma.
+        $aprobacionesUsadas = [];
+
+        foreach ($request->detalles as $det) {
+            $descPct = (float) ($det['descuento_pct'] ?? 0);
+            $maximo  = $maximosPermitidos[$det['producto_id']] ?? 0.0;
+
+            // Tope de producto/lista de precios — capa dura, sin excepción,
+            // no se puede superar ni con aprobación especial.
+            if ($descPct > $maximo) {
+                return back()->withErrors([
+                    'detalles' => "El descuento de {$det['codigo']} ({$descPct}%) supera el máximo permitido ({$maximo}%).",
+                ])->withInput();
+            }
+
+            // Tope del perfil del vendedor — sí se puede superar con
+            // aprobación especial de un supervisor, mientras no exceda el
+            // tope de producto verificado arriba.
+            if ($descPct > $limiteMax) {
+                $aprobacionId = $det['aprobacion_id'] ?? null;
+                if (!$aprobacionId) {
+                    return back()->withErrors([
+                        'detalles' => "El descuento de {$det['codigo']} ({$descPct}%) requiere aprobación especial.",
+                    ])->withInput();
+                }
+
+                if (!isset($aprobacionesUsadas[$aprobacionId])) {
+                    $aprobacion = DB::table('aprobaciones_especiales')
+                        ->join('tipos_aprobacion', 'tipos_aprobacion.id', '=', 'aprobaciones_especiales.tipo_aprobacion_id')
+                        ->where('aprobaciones_especiales.id', $aprobacionId)
+                        ->where('aprobaciones_especiales.solicitado_por', $usuario->id)
+                        ->where('tipos_aprobacion.clave', 'descuento_excedido')
+                        ->whereNull('aprobaciones_especiales.registro_id')
+                        ->select('aprobaciones_especiales.id', 'aprobaciones_especiales.valor_aprobado')
+                        ->first();
+
+                    if (!$aprobacion) {
+                        return back()->withErrors([
+                            'detalles' => 'La aprobación especial no es válida o ya fue utilizada.',
+                        ])->withInput();
+                    }
+
+                    $aprobacionesUsadas[$aprobacionId] = $aprobacion;
+                }
+
+                if ($descPct > (float) $aprobacionesUsadas[$aprobacionId]->valor_aprobado) {
+                    return back()->withErrors([
+                        'detalles' => "La aprobación otorgada cubre hasta {$aprobacionesUsadas[$aprobacionId]->valor_aprobado}%, pero se solicita {$descPct}% en {$det['codigo']}.",
+                    ])->withInput();
+                }
+            }
+        }
 
         $subtotal  = 0;
         $descTotal = 0;
@@ -153,7 +256,7 @@ class ProformaController extends Controller
 
         $total = $subtotal + $totalIva;
 
-        $proforma = DB::transaction(function () use ($request, $empresaId, $subtotal, $descTotal, $totalIva, $total) {
+        $proforma = DB::transaction(function () use ($request, $empresaId, $subtotal, $descTotal, $totalIva, $total, $aprobacionesUsadas) {
             $numero = $this->secuencial->siguiente($empresaId, 'PRF');
 
             $proforma = Proforma::create([
@@ -191,6 +294,16 @@ class ProformaController extends Controller
                     'subtotal'       => $neto,
                     'total'          => $neto + $iva,
                 ]);
+            }
+
+            if (!empty($aprobacionesUsadas)) {
+                DB::table('aprobaciones_especiales')
+                    ->whereIn('id', array_keys($aprobacionesUsadas))
+                    ->update([
+                        'tabla_referencia' => 'proformas',
+                        'registro_id'      => $proforma->id,
+                        'updated_at'       => now(),
+                    ]);
             }
 
             return $proforma;

@@ -1,10 +1,12 @@
+import { useState } from 'react'
 import { Head, Link, router, usePage } from '@inertiajs/react'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
 import { Button } from '@/Components/ui/button'
 import { Badge } from '@/Components/ui/badge'
+import PdfPreviewModal from '@/Components/shared/PdfPreviewModal'
 import { formatFecha } from '@/lib/utils'
-import { ArrowRight } from 'lucide-react'
+import { ArrowRight, FileText } from 'lucide-react'
 import type { PageProps, TallerIngreso } from '@/types'
 
 interface Props extends PageProps {
@@ -31,6 +33,7 @@ const ESTADO_OT: Record<string, { label: string; variant: 'info' | 'warning' | '
 export default function IngresoShow() {
     const { ingreso } = usePage<Props>().props
     const cfgIngreso = ESTADO_INGRESO[ingreso.estado] ?? ESTADO_INGRESO[0]
+    const [pdfAbierto, setPdfAbierto] = useState(false)
 
     return (
         <AppLayout title={`Ingreso #${ingreso.id}`}>
@@ -194,13 +197,25 @@ export default function IngresoShow() {
                     )}
                 </div>
 
-                {/* Botón de regreso */}
-                <div className="flex gap-3 pt-2">
+                {/* Botones de acción */}
+                <div className="flex gap-3 pt-2 justify-between">
                     <Button variant="outline" onClick={() => router.visit(route('taller.ingresos.index'))}>
                         Volver a Ingresos
                     </Button>
+                    <Button variant="outline" onClick={() => setPdfAbierto(true)}>
+                        <FileText className="w-4 h-4" />
+                        Ver PDF
+                    </Button>
                 </div>
             </div>
+
+            <PdfPreviewModal
+                abierto={pdfAbierto}
+                onCerrar={() => setPdfAbierto(false)}
+                url={pdfAbierto ? route('taller.ingresos.pdf', ingreso.id) : ''}
+                titulo={`Orden de Trabajo — Ingreso #${ingreso.id}`}
+                nombreDescarga={`orden-trabajo-ingreso-${ingreso.id}.pdf`}
+            />
         </AppLayout>
     )
 }

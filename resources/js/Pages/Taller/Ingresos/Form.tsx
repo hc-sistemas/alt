@@ -132,6 +132,7 @@ export default function IngresoForm() {
             if (!equipoForm.marca.trim()) errs.push('La marca del equipo es obligatoria.')
             if (!equipoForm.modelo.trim()) errs.push('El modelo del equipo es obligatorio.')
         }
+        if (!diagnosticoInicial.trim()) errs.push('El diagnóstico inicial es obligatorio.')
         if (errs.length > 0) { errs.forEach(toastError); return }
         setGuardando(true)
 
@@ -359,7 +360,7 @@ export default function IngresoForm() {
                         Datos del Ingreso
                     </p>
                     <div>
-                        <Label style={{ color: 'var(--text-main)' }}>Diagnóstico inicial</Label>
+                        <Label style={{ color: 'var(--text-main)' }}>Diagnóstico inicial *</Label>
                         <textarea
                             rows={3}
                             className="mt-1 w-full rounded-md border px-3 py-2 text-sm resize-none focus:outline-none"

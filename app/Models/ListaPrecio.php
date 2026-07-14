@@ -14,16 +14,17 @@ class ListaPrecio extends Model
 
     protected $fillable = [
         'empresa_id', 'producto_id', 'tipo',
-        'precio', 'descuento_max', 'vigencia_desde', 'vigencia_hasta',
+        'precio', 'descuento_max', 'descuento_max_promo', 'vigencia_desde', 'vigencia_hasta',
     ];
 
     protected function casts(): array
     {
         return [
-            'precio'         => 'decimal:4',
-            'descuento_max'  => 'decimal:2',
-            'vigencia_desde' => 'date',
-            'vigencia_hasta' => 'date',
+            'precio'              => 'decimal:4',
+            'descuento_max'       => 'decimal:2',
+            'descuento_max_promo' => 'decimal:2',
+            'vigencia_desde'      => 'date',
+            'vigencia_hasta'      => 'date',
         ];
     }
 

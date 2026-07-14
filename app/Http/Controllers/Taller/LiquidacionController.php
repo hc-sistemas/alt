@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Taller;
 
 use App\Http\Controllers\Controller;
-use App\Models\Bodega;
+use App\Http\Controllers\Taller\Concerns\ResuelveBodegaTaller;
 use App\Models\Factura;
 use App\Models\FacturaDetalle;
 use App\Models\FacturaPago;
@@ -14,6 +14,7 @@ use App\Services\AsientoService;
 use App\Services\AuditoriaService;
 use App\Services\Contracts\InventarioServiceInterface;
 use App\Services\SecuencialService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -23,6 +24,8 @@ use Inertia\Response;
 
 class LiquidacionController extends Controller
 {
+    use ResuelveBodegaTaller;
+
     public function __construct(
         private AuditoriaService $auditoria,
         private InventarioServiceInterface $inventario,
@@ -63,15 +66,17 @@ class LiquidacionController extends Controller
 
         $empresaId = session('empresa_activa_id');
 
-        $bodega = Bodega::where('empresa_id', $empresaId)->where('tipo', 'general')->first()
-            ?? Bodega::where('empresa_id', $empresaId)->where('estado', true)->first();
-
-        if (!$bodega && $orden->repuestos->isNotEmpty()) {
-            return back()->withErrors(['error' => 'No hay bodega activa configurada para la empresa.']);
+        $bodegaId = null;
+        if ($orden->repuestos->isNotEmpty()) {
+            try {
+                $bodegaId = $this->bodegaTallerId();
+            } catch (\RuntimeException $e) {
+                return back()->withErrors(['error' => $e->getMessage()]);
+            }
         }
 
         try {
-            $factura = DB::transaction(function () use ($orden, $data, $empresaId, $bodega) {
+            $factura = DB::transaction(function () use ($orden, $data, $empresaId, $bodegaId) {
                 $subtotal0 = 0;
                 $subtotal15 = 0;
                 $totalIva = 0;
@@ -167,7 +172,7 @@ class LiquidacionController extends Controller
                 foreach ($orden->repuestos as $rep) {
                     $this->inventario->confirmarSalida(
                         $rep->producto_id,
-                        $bodega->id,
+                        $bodegaId,
                         'taller_ot',
                         $rep->id
                     );
@@ -228,16 +233,14 @@ class LiquidacionController extends Controller
 
         $producto = Producto::findOrFail($data['producto_id']);
 
-        $empresaId = session('empresa_activa_id');
-        $bodega = Bodega::where('empresa_id', $empresaId)->where('estado', true)->where('tipo', 'general')->first()
-            ?? Bodega::where('empresa_id', $empresaId)->where('estado', true)->first();
-
-        if (!$bodega) {
-            return back()->with('flash', ['tipo' => 'error', 'mensaje' => 'No hay bodega activa configurada para la empresa.']);
+        try {
+            $bodegaId = $this->bodegaTallerId();
+        } catch (\RuntimeException $e) {
+            return back()->with('flash', ['tipo' => 'error', 'mensaje' => $e->getMessage()]);
         }
 
         try {
-            DB::transaction(function () use ($orden, $data, $producto, $bodega) {
+            DB::transaction(function () use ($orden, $data, $producto, $bodegaId) {
                 $repuesto = TallerOtRepuesto::create([
                     'orden_id'       => $orden->id,
                     'producto_id'    => $data['producto_id'],
@@ -248,7 +251,7 @@ class LiquidacionController extends Controller
                     'estado'         => 'reservado',
                 ]);
 
-                $this->inventario->reservarStock($data['producto_id'], $bodega->id, $data['cantidad'], 'taller_ot', $repuesto->id);
+                $this->inventario->reservarStock($data['producto_id'], $bodegaId, $data['cantidad'], 'taller_ot', $repuesto->id);
 
                 $orden->costo_repuestos += $data['precio_venta'] * $data['cantidad'];
                 $orden->costo_total = $orden->costo_mano_obra + $orden->costo_repuestos;
@@ -262,5 +265,25 @@ class LiquidacionController extends Controller
             "Repuesto {$producto->nombre} agregado a la orden " . ($orden->numero ?? $orden->id));
 
         return back()->with('flash', ['tipo' => 'exito', 'mensaje' => 'Repuesto agregado correctamente.']);
+    }
+
+    public function saldoDisponible(Request $request): JsonResponse
+    {
+        $request->validate([
+            'producto_id' => 'required|integer',
+        ]);
+
+        try {
+            $bodegaId = $this->bodegaTallerId();
+        } catch (\RuntimeException $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+
+        $disponible = $this->inventario->getSaldoDisponible(
+            (int) $request->input('producto_id'),
+            $bodegaId
+        );
+
+        return response()->json(['disponible' => $disponible]);
     }
 }
