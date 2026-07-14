@@ -224,6 +224,9 @@ class FacturaController extends Controller
 
         $limiteMax = (float) ($limiteDescuento?->porcentaje_maximo ?? 0);
 
+        $productoIds = collect($request->detalles)->pluck('producto_id')->unique()->all();
+        $maximosPermitidos = $this->descuento->mapaMaximosPermitidos($productoIds, $empresaId);
+
         // Se resuelve una sola vez (la aprobación es global para toda la
         // factura, no por línea) y se reutiliza para cada detalle que la
         // necesite.
@@ -231,8 +234,13 @@ class FacturaController extends Controller
 
         foreach ($request->detalles as $detalle) {
             $descPct = (float)($detalle['descuento_pct'] ?? 0);
+            $maximoProducto = $maximosPermitidos[$detalle['producto_id']] ?? 0.0;
 
-            if ($descPct > $limiteMax) {
+            // El descuento requiere aprobación especial si supera el límite
+            // de perfil del vendedor o el techo del producto/promo — la
+            // aprobación válida cubre ambos límites a la vez, igual que en
+            // el frontend (Form.tsx: descuentoEspecialActivo).
+            if ($descPct > $limiteMax || $descPct > $maximoProducto) {
                 if (!$request->filled('aprobacion_especial_id')) {
                     return back()->withErrors(['aprobacion_especial' => 'Se requiere aprobación especial para el descuento aplicado.'])->withInput();
                 }
