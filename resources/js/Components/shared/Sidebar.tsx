@@ -3,12 +3,12 @@ import { useState, useEffect, useMemo } from 'react'
 import {
     LayoutDashboard, FileText, ShoppingCart, Package, BookOpen,
     Landmark, Users, Wrench, BarChart2, Settings, Settings2, ClipboardList, ArrowLeftRight, ChevronDown,
-    ChevronLeft, ChevronRight, X, UserCircle
+    ChevronLeft, ChevronRight, X, UserCircle, Library,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { PageProps } from '@/types'
 
-const MODULOS_SIN_PERMISO = new Set(['dashboard', 'personas'])
+const MODULOS_SIN_PERMISO = new Set(['dashboard', 'personas', 'manuales', 'reportes'])
 
 interface NavSubgrupo {
     nombre: string
@@ -47,7 +47,8 @@ const navItems: NavItem[] = [
             { nombre: 'Proveedores', href: '/compras/proveedores' },
             { nombre: 'Cuentas por Pagar', href: '/compras/cuentas-pagar' },
             { nombre: 'Anticipos Proveedores', href: '/compras/anticipos' },
-            { nombre: 'Importaciones', href: '/compras/importaciones' },
+            { nombre: 'Devoluciones',          href: '/compras/devoluciones' },
+            { nombre: 'Importaciones',         href: '/compras/importaciones' },
         ]
     },
     {
@@ -97,10 +98,12 @@ const navItems: NavItem[] = [
     {
         nombre: 'RRHH', clave: 'rrhh', icon: Users,
         hijos: [
-            { nombre: 'Colaboradores', href: '/rrhh/colaboradores' },
-            { nombre: 'Asistencia', href: '/rrhh/asistencia' },
-            { nombre: 'Horas Extras', href: '/rrhh/horas-extras' },
-            { nombre: 'Nómina', href: '/rrhh/nomina' },
+            { nombre: 'Colaboradores',       href: '/rrhh/colaboradores'  },
+            { nombre: 'Asistencia',          href: '/rrhh/asistencia'     },
+            { nombre: 'Horas Extras',        href: '/rrhh/horas-extras'   },
+            { nombre: 'Nómina',              href: '/rrhh/nomina'         },
+            { nombre: 'Préstamos/Anticipos', href: '/rrhh/prestamos'      },
+            { nombre: 'Liquidaciones',       href: '/rrhh/liquidaciones'  },
         ]
     },
     {
@@ -119,7 +122,13 @@ const navItems: NavItem[] = [
             { nombre: 'Transportistas', href: '/personas/transportistas' },
         ]
     },
-    { nombre: 'Reportes', clave: 'reportes', icon: BarChart2, href: '/reportes' },
+    {
+        nombre: 'Reportes', clave: 'reportes', icon: BarChart2,
+        hijos: [
+            { nombre: 'Reportes SRI', href: '/reportes/sri' },
+        ]
+    },
+    { nombre: 'Manuales', clave: 'manuales', icon: Library, href: '/manuales' },
     {
         nombre: 'Configuración', clave: 'configuracion', icon: Settings,
         hijos: [

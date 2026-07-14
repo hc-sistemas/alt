@@ -13,18 +13,17 @@ class Notificacion extends Model
 
     protected $table = 'notificaciones';
 
-    // Schema real: id, usuario_id, tipo, titulo, mensaje, referencia_tabla, referencia_id, leida, enviado_email, created_at
+    // Schema real: id, usuario_id, titulo, mensaje, tipo, icono, url, leida, leida_at, created_at
     protected $fillable = [
         'usuario_id', 'tipo', 'titulo', 'mensaje',
-        'referencia_tabla', 'referencia_id', 'leida', 'enviado_email',
-        'icono', 'url',
+        'icono', 'url', 'leida',
     ];
 
     protected function casts(): array
     {
         return [
-            'leida' => 'boolean',
-            'enviado_email' => 'boolean',
+            'leida'      => 'boolean',
+            'leida_at'   => 'datetime',
             'created_at' => 'datetime',
         ];
     }

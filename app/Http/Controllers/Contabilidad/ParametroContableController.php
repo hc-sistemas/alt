@@ -7,42 +7,65 @@ use App\Models\ParametroContable;
 use App\Models\PlanCuenta;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class ParametroContableController extends Controller
 {
     private array $parametrosDefinidos = [
-        // Ventas
-        ['codigo' => 'cta_caja_general',         'descripcion' => 'Caja General (cobros en efectivo)',            'grupo' => 'Ventas'],
-        ['codigo' => 'cta_bancos_locales',        'descripcion' => 'Bancos Locales (cobros por transferencia)',    'grupo' => 'Ventas'],
-        ['codigo' => 'cta_vouchers',              'descripcion' => 'Dinero Electrónico / Vouchers Datafast',       'grupo' => 'Ventas'],
-        ['codigo' => 'cta_clientes_locales',      'descripcion' => 'Clientes Locales (ventas a crédito)',          'grupo' => 'Ventas'],
-        ['codigo' => 'cta_ventas_locales',        'descripcion' => 'Venta de Mercaderías Locales',                 'grupo' => 'Ventas'],
-        ['codigo' => 'cta_iva_ventas',            'descripcion' => 'IVA en Ventas por Pagar',                      'grupo' => 'Ventas'],
-        ['codigo' => 'cta_anticipos_clientes',    'descripcion' => 'Anticipos de Clientes (reservas)',             'grupo' => 'Ventas'],
-        ['codigo' => 'cta_costo_ventas',          'descripcion' => 'Costo de Ventas de Mercaderías',               'grupo' => 'Ventas'],
-        // Compras
-        ['codigo' => 'cta_proveedores_locales',   'descripcion' => 'Proveedores Locales (CxP)',                    'grupo' => 'Compras'],
-        ['codigo' => 'cta_iva_compras',           'descripcion' => 'Crédito Tributario por IVA en Compras',        'grupo' => 'Compras'],
-        ['codigo' => 'cta_retencion_ir',          'descripcion' => 'Retenciones en la Fuente de IR por Pagar',     'grupo' => 'Compras'],
-        ['codigo' => 'cta_retencion_iva',         'descripcion' => 'Retenciones de IVA por Pagar',                 'grupo' => 'Compras'],
-        ['codigo' => 'cta_gasto_compras',         'descripcion' => 'Gastos Generales (compras no inventariables)', 'grupo' => 'Compras'],
-        // Inventario
-        ['codigo' => 'cta_inventario_mercaderia', 'descripcion' => 'Inventario de Mercadería',                     'grupo' => 'Inventario'],
-        ['codigo' => 'cta_ajuste_inventario',     'descripcion' => 'Ajustes por Faltantes o Mermas de Inventario', 'grupo' => 'Inventario'],
-        // Bancos
-        ['codigo' => 'cta_comisiones_bancarias',  'descripcion' => 'Comisiones Bancarias y Pasarelas (Datafast)',  'grupo' => 'Bancos'],
-        ['codigo' => 'cta_retencion_iva_cobrada', 'descripcion' => 'Crédito Tributario por Retenciones de IVA',   'grupo' => 'Bancos'],
-        ['codigo' => 'cta_retencion_ir_cobrada',  'descripcion' => 'Crédito Tributario por Retenciones de IR',    'grupo' => 'Bancos'],
-        // Nómina
-        ['codigo' => 'cta_sueldos_salarios',      'descripcion' => 'Sueldos y Salarios',                           'grupo' => 'Nómina'],
-        ['codigo' => 'cta_aporte_patronal',       'descripcion' => 'Aporte Patronal IESS 11.15%',                  'grupo' => 'Nómina'],
-        ['codigo' => 'cta_iess_por_pagar',        'descripcion' => 'Obligaciones con el IESS',                     'grupo' => 'Nómina'],
-        ['codigo' => 'cta_nomina_por_pagar',      'descripcion' => 'Nómina por Pagar',                             'grupo' => 'Nómina'],
-        ['codigo' => 'cta_anticipos_empleados',   'descripcion' => 'Préstamos y Anticipos a Empleados',            'grupo' => 'Nómina'],
-        // SRI
-        ['codigo' => 'cta_gastos_no_deducibles',  'descripcion' => 'Gastos No Deducibles Locales',                 'grupo' => 'SRI'],
+        // ── Ventas ────────────────────────────────────────────────────────────
+        ['codigo' => 'cta_caja_general',             'descripcion' => 'Caja General (cobros en efectivo)',               'grupo' => 'Ventas'],
+        ['codigo' => 'cta_bancos_locales',            'descripcion' => 'Bancos Locales (cobros por transferencia)',       'grupo' => 'Ventas'],
+        ['codigo' => 'cta_vouchers',                  'descripcion' => 'Dinero Electrónico / Vouchers Datafast',          'grupo' => 'Ventas'],
+        ['codigo' => 'cta_clientes_locales',          'descripcion' => 'Clientes Locales (ventas a crédito)',             'grupo' => 'Ventas'],
+        ['codigo' => 'cta_clientes_exterior',         'descripcion' => 'Clientes del Exterior',                          'grupo' => 'Ventas'],
+        ['codigo' => 'cta_ventas_locales',            'descripcion' => 'Venta de Mercaderías Locales',                   'grupo' => 'Ventas'],
+        ['codigo' => 'cta_devoluciones_ventas',       'descripcion' => '(-) Devoluciones en Ventas',                     'grupo' => 'Ventas'],
+        ['codigo' => 'cta_iva_ventas',                'descripcion' => 'IVA en Ventas por Pagar',                        'grupo' => 'Ventas'],
+        ['codigo' => 'cta_anticipos_clientes',        'descripcion' => 'Anticipos de Clientes (reservas)',                'grupo' => 'Ventas'],
+        ['codigo' => 'cta_costo_ventas',              'descripcion' => 'Costo de Ventas de Mercaderías Locales',          'grupo' => 'Ventas'],
+        // ── Compras ───────────────────────────────────────────────────────────
+        ['codigo' => 'cta_proveedores_locales',       'descripcion' => 'Proveedores Locales (CxP)',                      'grupo' => 'Compras'],
+        ['codigo' => 'cta_proveedores_exterior',      'descripcion' => 'Proveedores del Exterior (importaciones)',        'grupo' => 'Compras'],
+        ['codigo' => 'cta_iva_compras',               'descripcion' => 'Crédito Tributario por IVA en Compras',          'grupo' => 'Compras'],
+        ['codigo' => 'cta_retencion_ir',              'descripcion' => 'Retenciones en la Fuente de IR por Pagar',       'grupo' => 'Compras'],
+        ['codigo' => 'cta_retencion_iva',             'descripcion' => 'Retenciones de IVA por Pagar',                   'grupo' => 'Compras'],
+        ['codigo' => 'cta_gasto_compras',             'descripcion' => 'Gastos Generales (compras no inventariables)',   'grupo' => 'Compras'],
+        ['codigo' => 'cta_anticipos_proveedores',     'descripcion' => 'Anticipos a Proveedores (locales/internacionales)', 'grupo' => 'Compras'],
+        // ── Inventario ────────────────────────────────────────────────────────
+        ['codigo' => 'cta_inventario_mercaderia',     'descripcion' => 'Inventario de Mercaderías',                      'grupo' => 'Inventario'],
+        ['codigo' => 'cta_inventario_transito',       'descripcion' => 'Inventario en Tránsito — Importaciones en Curso','grupo' => 'Inventario'],
+        ['codigo' => 'cta_costo_ventas_importadas',   'descripcion' => 'Costo de Ventas de Mercaderías Importadas',      'grupo' => 'Inventario'],
+        ['codigo' => 'cta_ajuste_inventario',         'descripcion' => 'Ajustes por Faltantes o Mermas de Inventario',   'grupo' => 'Inventario'],
+        // ── Bancos ────────────────────────────────────────────────────────────
+        ['codigo' => 'cta_bancos_exterior',           'descripcion' => 'Bancos del Exterior',                            'grupo' => 'Bancos'],
+        ['codigo' => 'cta_comisiones_bancarias',      'descripcion' => 'Comisiones Bancarias y Pasarelas (Datafast)',    'grupo' => 'Bancos'],
+        ['codigo' => 'cta_retencion_iva_cobrada',     'descripcion' => 'Crédito Tributario por Retenciones de IVA',     'grupo' => 'Bancos'],
+        ['codigo' => 'cta_retencion_ir_cobrada',      'descripcion' => 'Crédito Tributario por Retenciones de IR',      'grupo' => 'Bancos'],
+        // ── Nómina ────────────────────────────────────────────────────────────
+        ['codigo' => 'cta_sueldos_salarios',          'descripcion' => 'Sueldos, Salarios y Horas Extras',               'grupo' => 'Nómina'],
+        ['codigo' => 'cta_aporte_patronal',           'descripcion' => 'Aporte Patronal IESS 11.15%',                   'grupo' => 'Nómina'],
+        ['codigo' => 'cta_iess_por_pagar',            'descripcion' => 'Obligaciones con el IESS — Aporte Patronal',    'grupo' => 'Nómina'],
+        ['codigo' => 'cta_nomina_por_pagar',          'descripcion' => 'Nómina por Pagar',                              'grupo' => 'Nómina'],
+        ['codigo' => 'cta_anticipos_empleados',       'descripcion' => 'Préstamos y Anticipos a Empleados',             'grupo' => 'Nómina'],
+        ['codigo' => 'cta_decimo_tercero',            'descripcion' => 'Décimo Tercer Sueldo',                          'grupo' => 'Nómina'],
+        ['codigo' => 'cta_decimo_cuarto',             'descripcion' => 'Décimo Cuarto Sueldo',                          'grupo' => 'Nómina'],
+        ['codigo' => 'cta_vacaciones',                'descripcion' => 'Vacaciones',                                    'grupo' => 'Nómina'],
+        ['codigo' => 'cta_fondos_reserva',            'descripcion' => 'Fondos de Reserva',                             'grupo' => 'Nómina'],
+        // ── SRI ───────────────────────────────────────────────────────────────
+        ['codigo' => 'cta_gastos_no_deducibles',      'descripcion' => 'Gastos No Deducibles Locales',                  'grupo' => 'SRI'],
+        // ── Contabilidad ──────────────────────────────────────────────────────
+        ['codigo' => 'cta_ganancias_acumuladas',      'descripcion' => 'Ganancias Acumuladas (ejercicios anteriores)',   'grupo' => 'Contabilidad'],
+        ['codigo' => 'cta_perdidas_acumuladas',       'descripcion' => '(-) Pérdidas Acumuladas (ejercicios anteriores)','grupo' => 'Contabilidad'],
+        ['codigo' => 'cta_utilidad_periodo',          'descripcion' => 'Utilidad del Periodo',                          'grupo' => 'Contabilidad'],
+        ['codigo' => 'cta_perdida_periodo',           'descripcion' => '(-) Pérdida del Periodo',                       'grupo' => 'Contabilidad'],
+        // ── Gastos Operativos ─────────────────────────────────────────────────
+        ['codigo' => 'cta_gasto_compras_default',     'descripcion' => 'Gasto Genérico (Suministros — fallback compras sin cuenta)','grupo' => 'Gastos Operativos'],
+        ['codigo' => 'cta_gasto_servicios',           'descripcion' => 'Honorarios y Servicios Profesionales',           'grupo' => 'Gastos Operativos'],
+        ['codigo' => 'cta_gasto_arrendamiento',       'descripcion' => 'Arrendamientos de Locales',                     'grupo' => 'Gastos Operativos'],
+        ['codigo' => 'cta_gasto_servicios_basicos',   'descripcion' => 'Servicios Básicos (Agua, Luz, Internet)',        'grupo' => 'Gastos Operativos'],
+        ['codigo' => 'cta_gasto_publicidad',          'descripcion' => 'Publicidad y Marketing',                        'grupo' => 'Gastos Operativos'],
     ];
 
     public function index(): Response
@@ -113,53 +136,79 @@ class ParametroContableController extends Controller
     {
         $empresaId = session('empresa_activa_id');
 
-        // Códigos verificados contra la BD real de Altamira (formato 1.1.01.01)
-        $mapeo = [
-            'cta_caja_general'         => '1.1.01.01.08',
-            'cta_bancos_locales'       => '1.1.01.02.01',
-            'cta_clientes_locales'     => '1.1.02.01.01',
-            'cta_ventas_locales'       => '4.1.01.01',
-            'cta_iva_ventas'           => '2.1.04.01.03',
-            'cta_anticipos_clientes'   => '2.2.03.01',
-            'cta_proveedores_locales'  => '2.1.01.01.01',
-            'cta_iva_compras'          => '1.1.05.01.01',
-            'cta_retencion_ir'         => '2.1.04.01.05',
-            'cta_retencion_iva'        => '2.1.04.01.02',
-            'cta_inventario_mercaderia'=> '1.1.03.01.01',
-            'cta_comisiones_bancarias' => '6.01.21.02.03',
-            'cta_retencion_iva_cobrada'=> '1.1.05.01.02',
-            'cta_retencion_ir_cobrada' => '1.1.05.02.01',
-            'cta_sueldos_salarios'     => '6.01.01.01',
-            'cta_aporte_patronal'      => '6.01.02.01',
-            'cta_iess_por_pagar'       => '2.1.04.03.01',
-            'cta_nomina_por_pagar'     => '2.1.04.04.01',
-            'cta_anticipos_empleados'  => '1.1.04.04.03',
-            'cta_gastos_no_deducibles' => '6.01.19.04',
-            // cta_vouchers, cta_costo_ventas, cta_gasto_compras, cta_ajuste_inventario
-            // requieren configuración manual — no hay cuenta específica en el PGC legacy
+        // Códigos verificados contra plan_cuentas real (formato 1.x.x.xx del cliente)
+        // plan_cuentas.empresa_id = NULL para todas las cuentas — NO filtrar por empresa_id
+        $mapa = [
+            'cta_caja_general'            => '1.1.1.01',
+            'cta_cajas_chicas'            => '1.1.1.02',
+            'cta_bancos_locales'          => '1.1.1.03',
+            'cta_bancos_exterior'         => '1.1.1.04',
+            'cta_vouchers'                => '1.1.1.05',
+            'cta_clientes_locales'        => '1.1.3.01',
+            'cta_clientes_exterior'       => '1.1.3.02',
+            'cta_anticipos_proveedores'   => '1.1.3.03',
+            'cta_anticipos_empleados'     => '1.1.3.04',
+            'cta_inventario_mercaderia'   => '1.1.4.01',
+            'cta_inventario_transito'     => '1.1.4.03',
+            'cta_iva_compras'             => '1.1.5.01',
+            'cta_retencion_iva_cobrada'   => '1.1.5.02',
+            'cta_retencion_ir_cobrada'    => '1.1.5.03',
+            'cta_proveedores_locales'     => '2.1.1.01',
+            'cta_proveedores_exterior'    => '2.1.1.02',
+            'cta_retencion_ir'            => '2.1.3.01',
+            'cta_retencion_iva'           => '2.1.3.02',
+            'cta_iva_ventas'              => '2.1.3.04',
+            'cta_nomina_por_pagar'        => '2.1.4.01',
+            'cta_iess_por_pagar'          => '2.1.4.02',
+            'cta_anticipos_clientes'      => '2.1.6.01',
+            'cta_ganancias_acumuladas'    => '3.1.3.01',
+            'cta_perdidas_acumuladas'     => '3.1.3.02',
+            'cta_utilidad_periodo'        => '3.1.4.01',
+            'cta_perdida_periodo'         => '3.1.4.02',
+            'cta_ventas_locales'          => '4.1.1.01',
+            'cta_devoluciones_ventas'     => '4.1.3.01',
+            'cta_costo_ventas'            => '5.1.1.01',
+            'cta_costo_ventas_importadas' => '5.1.1.02',
+            'cta_ajuste_inventario'       => '5.1.1.04',
+            'cta_sueldos_salarios'        => '5.2.1.01',
+            'cta_aporte_patronal'         => '5.2.1.03',
+            'cta_decimo_tercero'          => '5.2.1.04',
+            'cta_decimo_cuarto'           => '5.2.1.05',
+            'cta_vacaciones'              => '5.2.1.06',
+            'cta_fondos_reserva'          => '5.2.1.07',
+            'cta_comisiones_bancarias'    => '5.3.1.02',
+            'cta_gastos_no_deducibles'    => '5.4.1.01',
+            // ── Gastos Operativos — fallback para facturas de compra sin producto asignado ──
+            'cta_gasto_compras_default'   => '5.2.2.06',
+            'cta_gasto_servicios'         => '5.2.2.01',
+            'cta_gasto_arrendamiento'     => '5.2.2.02',
+            'cta_gasto_servicios_basicos' => '5.2.2.03',
+            'cta_gasto_publicidad'        => '5.2.2.11',
         ];
 
         $configurados  = 0;
         $noEncontrados = [];
 
-        foreach ($mapeo as $codigo => $codigoCuenta) {
-            $cuenta = PlanCuenta::where('codigo', $codigoCuenta)->first();
-            if (!$cuenta) {
-                $noEncontrados[] = $codigoCuenta;
-                continue;
+        DB::transaction(function () use ($empresaId, $mapa, &$configurados, &$noEncontrados) {
+            foreach ($mapa as $codigo => $codigoCuenta) {
+                $cuenta = PlanCuenta::where('codigo', $codigoCuenta)->first();
+                if (!$cuenta) {
+                    $noEncontrados[] = $codigoCuenta;
+                    continue;
+                }
+
+                $def = collect($this->parametrosDefinidos)->firstWhere('codigo', $codigo);
+
+                ParametroContable::updateOrCreate(
+                    ['empresa_id' => $empresaId, 'codigo' => $codigo],
+                    [
+                        'cuenta_id'   => $cuenta->id,
+                        'descripcion' => $def['descripcion'] ?? $cuenta->nombre,
+                    ]
+                );
+                $configurados++;
             }
-
-            $def = collect($this->parametrosDefinidos)->firstWhere('codigo', $codigo);
-
-            ParametroContable::updateOrCreate(
-                ['empresa_id' => $empresaId, 'codigo' => $codigo],
-                [
-                    'cuenta_id'   => $cuenta->id,
-                    'descripcion' => $def['descripcion'] ?? $codigo,
-                ]
-            );
-            $configurados++;
-        }
+        });
 
         $msg = "{$configurados} parámetros configurados automáticamente.";
         if (!empty($noEncontrados)) {

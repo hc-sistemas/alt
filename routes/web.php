@@ -16,6 +16,7 @@ use App\Http\Controllers\Compras\CompraController;
 use App\Http\Controllers\Compras\CuentaPagarController;
 use App\Http\Controllers\Compras\AnticipoProveedorController;
 use App\Http\Controllers\Compras\ImportacionController;
+use App\Http\Controllers\Compras\DevolucionCompraController;
 use App\Http\Controllers\Inventario\MarcaController;
 use App\Http\Controllers\Inventario\CategoriaProductoController;
 use App\Http\Controllers\Inventario\BodegaController;
@@ -44,9 +45,14 @@ use App\Http\Controllers\Ventas\RetencionController;
 use App\Http\Controllers\Ventas\GuiaRemisionController;
 use App\Http\Controllers\Ventas\CuentaCobrarController;
 use App\Http\Controllers\RRHH\ColaboradorController;
+use App\Http\Controllers\RRHH\HorarioController;
 use App\Http\Controllers\RRHH\AsistenciaController;
 use App\Http\Controllers\RRHH\HorasExtrasController;
 use App\Http\Controllers\RRHH\NominaController;
+use App\Http\Controllers\RRHH\PrestamosController;
+use App\Http\Controllers\RRHH\LiquidacionesController;
+use App\Http\Controllers\ManualesController;
+use App\Http\Controllers\Reportes\ReporteSriController;
 use App\Http\Controllers\Taller\TipoEquipoController;
 use App\Http\Controllers\Taller\IngresoController;
 use App\Http\Controllers\Taller\OrdenTrabajoController;
@@ -73,6 +79,58 @@ Route::middleware('auth')->group(function () {
     Route::get('/', fn() => redirect()->route('dashboard'));
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
+    // Notificaciones in-app
+    Route::prefix('notificaciones')->name('notificaciones.')->group(function () {
+        Route::get('/',             [\App\Http\Controllers\NotificacionController::class, 'index'])->name('index');
+        Route::post('/{id}/leer',   [\App\Http\Controllers\NotificacionController::class, 'marcarLeida'])->name('leer');
+        Route::post('/leer-todas',  [\App\Http\Controllers\NotificacionController::class, 'marcarTodasLeidas'])->name('leer-todas');
+    });
+
+    // Manuales de Uso
+    Route::get('/manuales',             [ManualesController::class, 'index'])->name('manuales.index');
+    Route::get('/manuales/{clave}/pdf', [ManualesController::class, 'pdf'])->name('manuales.pdf');
+
+    // Manuales dinámicos (DomPDF) — Contabilidad y Compras
+    Route::get('/manuales/contabilidad/pdf-dinamico', function () {
+        $empresa = \App\Models\Empresa::find(session('empresa_activa_id'));
+        $usuario = auth()->user();
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.manual-contabilidad', compact('empresa', 'usuario'))
+            ->setPaper('letter', 'portrait');
+        return $pdf->stream('manual-contabilidad.pdf');
+    })->name('manuales.contabilidad-pdf');
+
+    Route::get('/manuales/compras/pdf-dinamico', function () {
+        $empresa = \App\Models\Empresa::find(session('empresa_activa_id'));
+        $usuario = auth()->user();
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.manual-compras', compact('empresa', 'usuario'))
+            ->setPaper('letter', 'portrait');
+        return $pdf->stream('manual-compras.pdf');
+    })->name('manuales.compras-pdf');
+
+    Route::get('/manuales/rrhh/pdf-dinamico', function () {
+        $empresa = \App\Models\Empresa::find(session('empresa_activa_id'));
+        $usuario = auth()->user();
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.manual-rrhh', compact('empresa', 'usuario'))
+            ->setPaper('letter', 'portrait');
+        return $pdf->stream('manual-rrhh.pdf');
+    })->name('manuales.rrhh-pdf');
+
+    Route::get('/manuales/reportes-sri/pdf-dinamico', function () {
+        $empresa = \App\Models\Empresa::find(session('empresa_activa_id'));
+        $usuario = auth()->user();
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.manual-reportes-sri', compact('empresa', 'usuario'))
+            ->setPaper('letter', 'portrait');
+        return $pdf->stream('manual-reportes-sri.pdf');
+    })->name('manuales.reportes-sri-pdf');
+
+    Route::get('/manuales/diagnostico/pdf-dinamico', function () {
+        $empresa = \App\Models\Empresa::find(session('empresa_activa_id'));
+        $usuario = auth()->user();
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.diagnostico-dev2', compact('empresa', 'usuario'))
+            ->setPaper('letter', 'portrait');
+        return $pdf->stream('diagnostico-dev2.pdf');
+    })->name('manuales.diagnostico-pdf');
+
     // Configuración
     Route::middleware('permiso:configuracion,ver')->group(function () {
         Route::prefix('configuracion/usuarios')->name('configuracion.usuarios.')->group(function () {
@@ -82,6 +140,7 @@ Route::middleware('auth')->group(function () {
             Route::get('/{usuario}/editar', [UsuarioController::class, 'edit'])->name('edit');
             Route::put('/{usuario}', [UsuarioController::class, 'update'])->name('update');
             Route::patch('/{usuario}/toggle-estado', [UsuarioController::class, 'toggleEstado'])->name('toggle-estado');
+            Route::patch('/{usuario}/colaborador', [UsuarioController::class, 'vincularColaborador'])->name('vincular-colaborador');
             Route::get('/{usuario}/accesos', [UsuarioController::class, 'show'])->name('show');
         });
 
@@ -109,6 +168,7 @@ Route::middleware('auth')->group(function () {
         Route::prefix('contabilidad/plan-cuentas')->name('contabilidad.plan-cuentas.')->group(function () {
             Route::get('/', [PlanCuentaController::class, 'index'])->name('index');
             Route::get('/exportar', [PlanCuentaController::class, 'exportar'])->name('exportar');
+            Route::post('/importar', [PlanCuentaController::class, 'importarExcel'])->name('importar');
             Route::post('/', [PlanCuentaController::class, 'store'])->name('store');
             Route::put('/{cuenta}', [PlanCuentaController::class, 'update'])->name('update');
             Route::patch('/{cuenta}/toggle-estado', [PlanCuentaController::class, 'toggleEstado'])->name('toggle-estado');
@@ -120,12 +180,18 @@ Route::middleware('auth')->group(function () {
             Route::post('/',                     [EjercicioContableController::class, 'store']) ->name('store');
             Route::patch('/{ejercicio}/cerrar',  [EjercicioContableController::class, 'cerrar'])->name('cerrar');
             Route::patch('/{ejercicio}/reabrir', [EjercicioContableController::class, 'reabrir'])->name('reabrir');
+            Route::post('/cierre-fiscal-anual',  [EjercicioContableController::class, 'cierreFiscalAnual'])->name('cierre-fiscal-anual');
         });
 
         Route::prefix('contabilidad/reportes')->name('contabilidad.reportes.')->group(function () {
-            Route::get('/',             [ReporteContableController::class, 'index'])      ->name('index');
-            Route::get('/libro-diario', [ReporteContableController::class, 'libroDiario'])->name('libro-diario');
-            Route::get('/mayor',        [ReporteContableController::class, 'mayor'])      ->name('mayor');
+            Route::get('/',                      [ReporteContableController::class, 'index'])              ->name('index');
+            Route::get('/libro-diario',          [ReporteContableController::class, 'libroDiario'])        ->name('libro-diario');
+            Route::get('/mayor',                 [ReporteContableController::class, 'mayor'])              ->name('mayor');
+            Route::get('/balance-comprobacion',  [ReporteContableController::class, 'balanceComprobacion'])->name('balance-comprobacion');
+            Route::get('/balance-general',       [ReporteContableController::class, 'balanceGeneral'])     ->name('balance-general');
+            Route::get('/estado-resultados',     [ReporteContableController::class, 'estadoResultados'])   ->name('estado-resultados');
+            Route::get('/flujo-caja',            [ReporteContableController::class, 'flujoCaja'])           ->name('flujo-caja');
+            Route::get('/flujo-caja-excel',      [ReporteContableController::class, 'flujoCajaExcel'])      ->name('flujo-caja-excel');
         });
 
         Route::prefix('contabilidad/asientos')->name('contabilidad.asientos.')->group(function () {
@@ -156,12 +222,14 @@ Route::middleware('auth')->group(function () {
         Route::prefix('compras/facturas')->name('compras.facturas.')->group(function () {
             Route::get('/',                  [CompraController::class, 'index']) ->name('index');
             Route::post('/',                 [CompraController::class, 'store']) ->name('store');
+            Route::post('/parsear-xml',      [CompraController::class, 'parsearXml'])->name('parsear-xml');
             Route::get('/pdf',               [CompraController::class, 'pdf'])   ->name('pdf');
             Route::get('/excel',             [CompraController::class, 'excel']) ->name('excel');
             Route::get('/{compra}',                    [CompraController::class, 'show'])              ->name('show');
             Route::get('/{compra}/pdf',               [CompraController::class, 'pdfIndividual'])    ->name('pdf-individual');
             Route::patch('/{compra}/anular',          [CompraController::class, 'anular'])            ->name('anular');
             Route::post('/{compra}/activar',          [CompraController::class, 'activar'])           ->name('activar');
+            Route::get('/{compra}/detalles',                        [CompraController::class, 'detallesCompra'])          ->name('detalles');
             Route::get('/{compra}/etiquetas-data',                  [CompraController::class, 'etiquetasData'])           ->name('etiquetas-data');
             Route::post('/{compra}/etiquetas-pdf',                  [CompraController::class, 'generarEtiquetasPdf'])     ->name('etiquetas-pdf');
             Route::get('/{compra}/etiquetas-reimprimir',            [CompraController::class, 'reimprimirEtiquetasPdf'])  ->name('etiquetas-reimprimir');
@@ -178,10 +246,11 @@ Route::middleware('auth')->group(function () {
         });
 
         Route::prefix('compras/anticipos')->name('compras.anticipos.')->group(function () {
-            Route::get('/',                    [AnticipoProveedorController::class, 'index'])->name('index');
-            Route::post('/',                   [AnticipoProveedorController::class, 'store'])->name('store');
-            Route::patch('/{anticipo}/cruzar', [AnticipoProveedorController::class, 'cruzar'])->name('cruzar');
-            Route::patch('/{anticipo}/anular', [AnticipoProveedorController::class, 'anular'])->name('anular');
+            Route::get('/',                      [AnticipoProveedorController::class, 'index'])      ->name('index');
+            Route::post('/',                     [AnticipoProveedorController::class, 'store'])      ->name('store');
+            Route::get('/cxp-pendientes',        [AnticipoProveedorController::class, 'cxpPendientes'])->name('cxp-pendientes');
+            Route::patch('/{anticipo}/cruzar',   [AnticipoProveedorController::class, 'cruzar'])    ->name('cruzar');
+            Route::patch('/{anticipo}/anular',   [AnticipoProveedorController::class, 'anular'])    ->name('anular');
         });
 
         Route::prefix('compras/importaciones')->name('compras.importaciones.')->group(function () {
@@ -266,10 +335,18 @@ Route::middleware('auth')->group(function () {
 
     // Compras - Anticipos Proveedores
     Route::prefix('compras/anticipos')->name('compras.anticipos.')->group(function () {
-        Route::get('/',                    [AnticipoProveedorController::class, 'index'])->name('index');
-        Route::post('/',                   [AnticipoProveedorController::class, 'store'])->name('store');
-        Route::patch('/{anticipo}/cruzar', [AnticipoProveedorController::class, 'cruzar'])->name('cruzar');
-        Route::patch('/{anticipo}/anular', [AnticipoProveedorController::class, 'anular'])->name('anular');
+        Route::get('/',                      [AnticipoProveedorController::class, 'index'])        ->name('index');
+        Route::post('/',                     [AnticipoProveedorController::class, 'store'])        ->name('store');
+        Route::get('/cxp-pendientes',        [AnticipoProveedorController::class, 'cxpPendientes'])->name('cxp-pendientes');
+        Route::patch('/{anticipo}/cruzar',   [AnticipoProveedorController::class, 'cruzar'])      ->name('cruzar');
+        Route::patch('/{anticipo}/anular',   [AnticipoProveedorController::class, 'anular'])      ->name('anular');
+    });
+
+    // Compras - Devoluciones
+    Route::prefix('compras/devoluciones')->name('compras.devoluciones.')->group(function () {
+        Route::get('/',                        [DevolucionCompraController::class, 'index'])->name('index');
+        Route::post('/',                       [DevolucionCompraController::class, 'store'])->name('store');
+        Route::patch('/{devolucion}/anular',   [DevolucionCompraController::class, 'anular'])->name('anular');
     });
 
     // Compras - Importaciones
@@ -314,10 +391,11 @@ Route::middleware('auth')->group(function () {
         });
 
         Route::prefix('bancos/movimientos')->name('bancos.movimientos.')->group(function () {
-            Route::get('/',                      [MovimientoBancarioController::class, 'index'])      ->name('index');
-            Route::post('/',                     [MovimientoBancarioController::class, 'store'])      ->name('store');
-            Route::patch('/{movimiento}/anular', [MovimientoBancarioController::class, 'anular'])     ->name('anular');
-            Route::get('/exportar-xml',          [MovimientoBancarioController::class, 'exportarXml'])->name('exportar-xml');
+            Route::get('/',                      [MovimientoBancarioController::class, 'index'])       ->name('index');
+            Route::post('/',                     [MovimientoBancarioController::class, 'store'])       ->name('store');
+            Route::patch('/{movimiento}/anular', [MovimientoBancarioController::class, 'anular'])      ->name('anular');
+            Route::get('/export-excel',          [MovimientoBancarioController::class, 'exportExcel']) ->name('export-excel');
+            Route::get('/exportar-xml',          [MovimientoBancarioController::class, 'exportarXml']) ->name('exportar-xml');
         });
 
         Route::prefix('bancos/cajas')->name('bancos.cajas.')->group(function () {
@@ -333,10 +411,16 @@ Route::middleware('auth')->group(function () {
         });
 
         Route::prefix('bancos/conciliaciones')->name('bancos.conciliaciones.')->group(function () {
-            Route::get('/',                             [ConciliacionController::class, 'index'])           ->name('index');
-            Route::post('/',                            [ConciliacionController::class, 'store'])           ->name('store');
-            Route::get('/{conciliacion}',               [ConciliacionController::class, 'show'])            ->name('show');
-            Route::patch('/{conciliacion}/conciliar',   [ConciliacionController::class, 'marcarConciliada'])->name('conciliar');
+            Route::get('/',                                        [ConciliacionController::class, 'index'])               ->name('index');
+            Route::post('/',                                       [ConciliacionController::class, 'store'])               ->name('store');
+            Route::get('/{conciliacion}',                          [ConciliacionController::class, 'show'])                ->name('show');
+            Route::delete('/{conciliacion}',                       [ConciliacionController::class, 'destroy'])             ->name('destroy');
+            Route::post('/{conciliacion}/upload-csv',              [ConciliacionController::class, 'uploadEstadoCuenta'])  ->name('upload-csv');
+            Route::post('/{conciliacion}/conciliar-partida',       [ConciliacionController::class, 'conciliarPartida'])    ->name('conciliar-partida');
+            Route::post('/{conciliacion}/generar-asiento-ajuste',  [ConciliacionController::class, 'generarAsientoAjuste'])->name('generar-asiento-ajuste');
+            Route::post('/{conciliacion}/partidas/{partida}/generar-asiento', [ConciliacionController::class, 'generarAsientoPartida'])->name('generar-asiento-partida');
+            Route::patch('/{conciliacion}/cerrar',                 [ConciliacionController::class, 'cerrar'])              ->name('cerrar');
+            Route::patch('/{conciliacion}/conciliar',              [ConciliacionController::class, 'marcarConciliada'])    ->name('conciliar');
         });
 
         Route::prefix('bancos/cheques')->name('bancos.cheques.')->group(function () {
@@ -346,12 +430,24 @@ Route::middleware('auth')->group(function () {
         });
 
         Route::prefix('bancos/reportes')->name('bancos.reportes.')->group(function () {
-            Route::get('/',                [BancoReporteController::class, 'index'])             ->name('index');
-            Route::get('/estado-cuenta',   [BancoReporteController::class, 'estadoCuenta'])      ->name('estado-cuenta');
-            Route::get('/movimientos',     [BancoReporteController::class, 'reporteMovimientos']) ->name('movimientos');
-            Route::get('/caja-chica',      [BancoReporteController::class, 'reporteCajaChica'])  ->name('caja-chica');
+            Route::get('/',                [BancoReporteController::class, 'index'])               ->name('index');
+            Route::get('/estado-cuenta',   [BancoReporteController::class, 'estadoCuenta'])        ->name('estado-cuenta');
+            Route::get('/movimientos',     [BancoReporteController::class, 'reporteMovimientos'])   ->name('movimientos');
+            Route::get('/caja-chica',      [BancoReporteController::class, 'reporteCajaChica'])    ->name('caja-chica');
+            Route::get('/consulta',        [BancoReporteController::class, 'consultaCobrosPagos']) ->name('consulta');
+            Route::get('/consulta-excel',  [BancoReporteController::class, 'consultaExcel'])       ->name('consulta-excel');
+            Route::get('/consulta-pdf',    [BancoReporteController::class, 'consultaPdf'])         ->name('consulta-pdf');
         });
     }); // cierra permiso:bancos,ver
+
+    // Bancos - Manual PDF (fuera del grupo de permisos para que la ruta sea directamente accesible)
+    Route::get('/bancos/manual-pdf', function () {
+        $empresa = \App\Models\Empresa::find(session('empresa_activa_id'));
+        $usuario = auth()->user();
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.manual-bancos', compact('empresa', 'usuario'))
+            ->setPaper('letter', 'portrait');
+        return $pdf->stream('manual-bancos.pdf');
+    })->name('bancos.manual-pdf');
 
     // RRHH
     Route::middleware('permiso:rrhh,ver')->prefix('rrhh')->name('rrhh.')->group(function () {
@@ -361,6 +457,10 @@ Route::middleware('auth')->group(function () {
             Route::post('/',                         [ColaboradorController::class, 'store'])  ->name('store');
             Route::put('/{colaborador}',             [ColaboradorController::class, 'update']) ->name('update');
             Route::patch('/{colaborador}/toggle',    [ColaboradorController::class, 'toggle']) ->name('toggle');
+        });
+
+        Route::prefix('horarios')->name('horarios.')->group(function () {
+            Route::post('/', [HorarioController::class, 'store'])->name('store');
         });
 
         Route::prefix('asistencia')->name('asistencia.')->group(function () {
@@ -386,6 +486,32 @@ Route::middleware('auth')->group(function () {
             Route::get('/{id}/pdf/{did}',          [NominaController::class, 'pdfIndividual']) ->name('pdf-individual');
             Route::get('/{id}/zip',                [NominaController::class, 'pdfMasivo'])     ->name('pdf-masivo');
         });
+
+        Route::prefix('prestamos')->name('prestamos.')->group(function () {
+            Route::get('/',                [PrestamosController::class, 'index'])   ->name('index');
+            Route::post('/',               [PrestamosController::class, 'store'])   ->name('store');
+            Route::patch('/{id}/pagar',    [PrestamosController::class, 'pagar'])   ->name('pagar');
+            Route::delete('/{id}',         [PrestamosController::class, 'destroy']) ->name('destroy');
+        });
+
+        Route::prefix('liquidaciones')->name('liquidaciones.')->group(function () {
+            Route::get('/',                  [LiquidacionesController::class, 'index'])   ->name('index');
+            Route::post('/calcular',         [LiquidacionesController::class, 'calcular'])->name('calcular');
+            Route::post('/',                 [LiquidacionesController::class, 'store'])   ->name('store');
+            Route::put('/{id}',              [LiquidacionesController::class, 'update'])  ->name('update');
+            Route::post('/{id}/aprobar',     [LiquidacionesController::class, 'aprobar']) ->name('aprobar');
+            Route::get('/{id}/pdf',          [LiquidacionesController::class, 'pdf'])     ->name('pdf');
+            Route::delete('/{id}',           [LiquidacionesController::class, 'destroy']) ->name('destroy');
+        });
+    });
+
+    // Reportes SRI
+    Route::prefix('reportes/sri')->name('reportes.sri.')->group(function () {
+        Route::get('/',     [ReporteSriController::class, 'index'])        ->name('index');
+        Route::get('/ats',  [ReporteSriController::class, 'ats'])          ->name('ats');
+        Route::get('/f103', [ReporteSriController::class, 'formulario103'])->name('f103');
+        Route::get('/f104',      [ReporteSriController::class, 'formulario104'])->name('f104');
+        Route::get('/anexo-ice', [ReporteSriController::class, 'anexoIce'])    ->name('anexo-ice');
     });
 
     // Ventas

@@ -16,6 +16,8 @@ use App\Models\RecepcionBodega;
 use App\Models\CentroCosto;
 use App\Models\Importacion;
 use App\Models\Producto;
+use App\Models\Retencion;
+use App\Models\RetencionDetalle;
 use App\Services\AsientoService;
 use App\Services\Contracts\InventarioServiceInterface;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -147,6 +149,8 @@ class CompraController extends Controller
             'num_contrato'               => 'nullable|string|max:50',
             'vigencia_desde'             => 'nullable|date',
             'vigencia_hasta'             => 'nullable|date',
+            'retencion_ir'               => 'nullable|numeric|min:0',
+            'retencion_iva'              => 'nullable|numeric|min:0',
             'detalles'                   => 'required|array|min:1',
             'detalles.*.descripcion'     => 'required|string|max:500',
             'detalles.*.cantidad'        => 'required|numeric|min:0.0001',
@@ -171,10 +175,12 @@ class CompraController extends Controller
                 $totalIva    = 0;
                 $esExterior  = $request->tipo_documento === 'EXT';
 
-                $detalles = collect($request->detalles)->map(function ($d) use (&$subtotal0, &$subtotalIva, &$totalIva, $esExterior) {
+                $esGastoNoDeducible = $request->boolean('gasto_no_deducible');
+
+                $detalles = collect($request->detalles)->map(function ($d) use (&$subtotal0, &$subtotalIva, &$totalIva, $esExterior, $esGastoNoDeducible) {
                     $subtotal = round($d['cantidad'] * $d['precio_unitario'] - ($d['descuento'] ?? 0), 4);
-                    // Exterior siempre IVA 0%
-                    $porcIva  = $esExterior ? 0 : (float)($d['porcentaje_iva'] ?? 15);
+                    // Exterior y gasto no deducible siempre IVA 0% (CxP-03)
+                    $porcIva  = ($esExterior || $esGastoNoDeducible) ? 0 : (float)($d['porcentaje_iva'] ?? 15);
                     $iva      = $porcIva > 0 ? round($subtotal * $porcIva / 100, 4) : 0;
 
                     if ($porcIva > 0) $subtotalIva += $subtotal;
@@ -218,8 +224,10 @@ class CompraController extends Controller
                     'subtotal_iva'        => $subtotalIva,
                     'total_iva'           => $totalIva,
                     'total'               => $total,
+                    'retencion_ir'        => $esGastoNoDeducible ? 0.0 : (float) ($request->retencion_ir  ?? 0),
+                    'retencion_iva'       => $esGastoNoDeducible ? 0.0 : (float) ($request->retencion_iva ?? 0),
                     'iva_asumido'         => $request->boolean('iva_asumido'),
-                    'gasto_no_deducible'  => $request->boolean('gasto_no_deducible'),
+                    'gasto_no_deducible'  => $esGastoNoDeducible,
                     'sustento_tributario' => $sustento,
                     'concepto'            => $request->concepto,
                     'estado'              => 'pendiente',
@@ -244,36 +252,6 @@ class CompraController extends Controller
                     ));
                 }
 
-                // Crear recepción pendiente automáticamente si hay productos y bodega seleccionada
-                $detallesProducto = collect($request->detalles)->filter(
-                    fn($d) => !empty($d['producto_id'])
-                );
-                $yaExisteRecepcion = \App\Models\RecepcionBodega::where('compra_id', $compra->id)->exists();
-                if (!$yaExisteRecepcion && $detallesProducto->isNotEmpty() && !empty($request->bodega_id)) {
-                    $recepcion = \App\Models\RecepcionBodega::create([
-                        'empresa_id' => $empresaId,
-                        'compra_id'  => $compra->id,
-                        'bodega_id'  => $request->bodega_id,
-                        'estado'     => 'pendiente',
-                    ]);
-
-                    foreach ($detallesProducto as $d) {
-                        $detalle = CompraDetalle::where('compra_id', $compra->id)
-                            ->where('producto_id', $d['producto_id'])
-                            ->first();
-
-                        if ($detalle) {
-                            \App\Models\RecepcionDetalle::create([
-                                'recepcion_id'      => $recepcion->id,
-                                'compra_detalle_id' => $detalle->id,
-                                'producto_id'       => $d['producto_id'],
-                                'cantidad_esperada' => $d['cantidad'],
-                                'cantidad_recibida' => 0,
-                                'estado'            => 'pendiente',
-                            ]);
-                        }
-                    }
-                }
             });
 
             return back()->with('success',
@@ -358,14 +336,92 @@ class CompraController extends Controller
                 ]);
             }
 
+            // Crear retención si aplica — CxP-03: jamás si es gasto no deducible
+            $retIR  = (float) ($compra->retencion_ir  ?? 0);
+            $retIVA = (float) ($compra->retencion_iva ?? 0);
+            if (!$compra->gasto_no_deducible && ($retIR > 0 || $retIVA > 0)) {
+                try {
+                    $proveedor = $compra->proveedor;
+                    $empresa   = \App\Models\Empresa::find($empresaId);
+                    $secuencial = \DB::table('secuenciales')
+                        ->where('tipo_documento', 'retencion')
+                        ->first();
+                    $numSec = $secuencial
+                        ? str_pad($secuencial->siguiente, 9, '0', STR_PAD_LEFT)
+                        : str_pad(1, 9, '0', STR_PAD_LEFT);
+                    $establecimiento = $empresa->cod_establecimiento ?? '001';
+                    $puntoEmision    = $empresa->cod_punto_emision    ?? '001';
+                    $numeroCompleto  = "{$establecimiento}-{$puntoEmision}-{$numSec}";
+
+                    $retencion = Retencion::create([
+                        'empresa_id'       => $empresaId,
+                        'compra_id'        => $compra->id,
+                        'usuario_id'       => Auth::id(),
+                        'establecimiento'  => $establecimiento,
+                        'punto_emision'    => $puntoEmision,
+                        'secuencial'       => $numSec,
+                        'numero_completo'  => $numeroCompleto,
+                        'fecha_emision'    => now()->toDateString(),
+                        'identificacion'   => $proveedor?->identificacion,
+                        'razon_social'     => $proveedor?->razon_social,
+                        'num_comp_retenido'=> $compra->num_documento,
+                        'total'            => round($retIR + $retIVA, 4),
+                        'estado'           => 'activa',
+                    ]);
+
+                    if ($retIR > 0) {
+                        RetencionDetalle::create([
+                            'retencion_id'  => $retencion->id,
+                            'tipo'          => 'IR',
+                            'codigo'        => '304',
+                            'porcentaje'    => $compra->subtotal_0 + $compra->subtotal_iva > 0
+                                ? round($retIR / ($compra->subtotal_0 + $compra->subtotal_iva) * 100, 2)
+                                : 1,
+                            'base_imponible'=> $compra->subtotal_0 + $compra->subtotal_iva,
+                            'valor_retenido'=> $retIR,
+                        ]);
+                    }
+                    if ($retIVA > 0) {
+                        RetencionDetalle::create([
+                            'retencion_id'  => $retencion->id,
+                            'tipo'          => 'IVA',
+                            'codigo'        => '9',
+                            'porcentaje'    => $compra->total_iva > 0
+                                ? round($retIVA / $compra->total_iva * 100, 2)
+                                : 30,
+                            'base_imponible'=> $compra->total_iva,
+                            'valor_retenido'=> $retIVA,
+                        ]);
+                    }
+
+                    if ($secuencial) {
+                        \DB::table('secuenciales')
+                            ->where('tipo_documento', 'retencion')
+                            ->increment('siguiente');
+                    }
+                } catch (\Throwable $e) {
+                    \Log::warning("Retención compra {$compra->num_documento}: {$e->getMessage()}");
+                }
+            }
+
             try {
+                // CxP-03: gasto no deducible → cuenta 5.4.1.01, sin IVA ni retenciones
+                $tipoAsiento = match(true) {
+                    $compra->gasto_no_deducible            => 'no_deducible',
+                    $compra->tipo_documento === 'EXT'      => 'gasto',
+                    !$compra->detalles->contains(fn($d) => $d->producto_id !== null) => 'gasto',
+                    default                                => 'inventario',
+                };
                 $asiento = $this->asientoService->compraRegistrada(
-                    empresaId:  $empresaId,
-                    compraId:   $compra->id,
-                    referencia: $compra->num_documento,
-                    subtotal:   $compra->subtotal_0 + $compra->subtotal_iva,
-                    iva:        $compra->total_iva,
-                    tipo:       $compra->gasto_no_deducible ? 'gasto' : 'inventario',
+                    empresaId:     $empresaId,
+                    compraId:      $compra->id,
+                    referencia:    $compra->num_documento,
+                    subtotal:      $compra->subtotal_0 + $compra->subtotal_iva,
+                    iva:           $compra->gasto_no_deducible ? 0.0 : $compra->total_iva,
+                    retencionIR:   $compra->gasto_no_deducible ? 0.0 : $retIR,
+                    retencionIVA:  $compra->gasto_no_deducible ? 0.0 : $retIVA,
+                    tipo:          $tipoAsiento,
+                    centroCostoId: $compra->centro_costo_id,
                 );
                 $compra->update(['asiento_id' => $asiento->id]);
             } catch (\Throwable $e) {
@@ -375,6 +431,24 @@ class CompraController extends Controller
 
         return back()->with('success',
             "Factura {$compra->num_documento} confirmada. Inventario y CxP actualizados.");
+    }
+
+    // ── Detalles de una compra para el modal de devoluciones ────────────────────
+
+    public function detallesCompra(Compra $compra): JsonResponse
+    {
+        $compra->load('detalles:id,compra_id,producto_id,descripcion,cantidad,precio_unitario,porcentaje_iva');
+        return response()->json([
+            'bodega_id' => $compra->bodega_id,
+            'detalles'  => $compra->detalles->map(fn($d) => [
+                'id'              => $d->id,
+                'producto_id'     => $d->producto_id,
+                'descripcion'     => $d->descripcion,
+                'cantidad'        => (float) $d->cantidad,
+                'precio_unitario' => (float) $d->precio_unitario,
+                'porcentaje_iva'  => (float) $d->porcentaje_iva,
+            ])->values(),
+        ]);
     }
 
     // ── Etiquetas — datos para el modal ─────────────────────────────────────────
@@ -924,6 +998,7 @@ class CompraController extends Controller
                     'persona_tipo'   => 'proveedor',
                     'persona_id'     => $compra->proveedor_id,
                     'num_documento'  => $compra->num_documento,
+                    'centro_costo_id' => $movPago->centro_costo_id,
                     'descripcion'    => "Reversión pago anulado — {$compra->num_documento}",
                     'documento_tipo' => 'ANULACION_PAGO',
                     'documento_id'   => $compra->id,
@@ -982,5 +1057,94 @@ class CompraController extends Controller
             'facturas-compra-' . now()->format('Y-m-d') . '.xlsx',
             \Maatwebsite\Excel\Excel::XLSX
         );
+    }
+
+    public function parsearXml(Request $request): JsonResponse
+    {
+        $request->validate([
+            'archivo' => 'required|file|mimes:xml|max:2048',
+        ]);
+
+        try {
+            $contenido = file_get_contents($request->file('archivo')->getRealPath());
+            $xml = new \SimpleXMLElement($contenido);
+
+            // Extraer información tributaria del proveedor
+            $info    = $xml->infoTributaria ?? $xml->InfoTributaria ?? null;
+            $factura = $xml->infoFactura    ?? $xml->InfoFactura    ?? null;
+
+            $ruc          = (string) ($info->ruc            ?? $info->rucProveedor       ?? '');
+            $razonSocial  = (string) ($info->razonSocial    ?? $info->nombreComercial     ?? '');
+            $estab        = (string) ($info->estab          ?? '001');
+            $ptoEmi       = (string) ($info->ptoEmi         ?? '001');
+            $secuencial   = (string) ($info->secuencial     ?? '');
+            $claveAcceso  = (string) ($info->claveAcceso    ?? '');
+
+            $fechaEmision     = (string) ($factura->fechaEmision        ?? '');
+            $totalSinIva      = (float)  ($factura->totalSinImpuestos   ?? 0);
+            $descuento        = (float)  ($factura->totalDescuento       ?? 0);
+            $importeTotal     = (float)  ($factura->importeTotal         ?? 0);
+
+            // Calcular IVA desde totalConImpuestos
+            $totalIva = 0.0;
+            foreach ($factura->totalConImpuestos->totalImpuesto ?? [] as $imp) {
+                if ((int)($imp->codigo ?? 0) === 2) {  // código 2 = IVA
+                    $totalIva += (float) ($imp->valor ?? 0);
+                }
+            }
+
+            // Num documento: estab-ptoEmi-secuencial
+            $numDocumento = trim("{$estab}-{$ptoEmi}-{$secuencial}", '-');
+
+            // Buscar proveedor por RUC
+            $empresaId = session('empresa_activa_id');
+            $proveedor = null;
+            if ($ruc) {
+                $proveedor = Proveedor::where('empresa_id', $empresaId)
+                    ->where('identificacion', $ruc)
+                    ->first(['id', 'razon_social', 'identificacion']);
+            }
+
+            // Detalles de la factura
+            $detalles = [];
+            foreach ($xml->detalles->detalle ?? [] as $d) {
+                $detalles[] = [
+                    'codigo'       => (string) ($d->codigoPrincipal  ?? $d->codigoAuxiliar ?? ''),
+                    'descripcion'  => (string) ($d->descripcion ?? ''),
+                    'cantidad'     => (float)  ($d->cantidad       ?? 1),
+                    'precio'       => (float)  ($d->precioUnitario ?? 0),
+                    'subtotal'     => (float)  ($d->precioTotalSinImpuesto ?? $d->subtotal ?? 0),
+                ];
+            }
+
+            // Convertir fecha dd/mm/yyyy → yyyy-mm-dd
+            $fechaFormateada = null;
+            if ($fechaEmision) {
+                $partes = explode('/', $fechaEmision);
+                if (count($partes) === 3) {
+                    $fechaFormateada = "{$partes[2]}-{$partes[1]}-{$partes[0]}";
+                }
+            }
+
+            return response()->json([
+                'ok'           => true,
+                'ruc'          => $ruc,
+                'razon_social' => $razonSocial,
+                'proveedor_id' => $proveedor?->id,
+                'num_documento'=> $numDocumento,
+                'clave_acceso' => $claveAcceso,
+                'fecha_emision'=> $fechaFormateada,
+                'subtotal'     => round($totalSinIva - $descuento, 4),
+                'descuento'    => round($descuento, 4),
+                'iva'          => round($totalIva, 4),
+                'total'        => round($importeTotal, 4),
+                'detalles'     => $detalles,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'ok'      => false,
+                'message' => 'No se pudo leer el archivo XML: ' . $e->getMessage(),
+            ], 422);
+        }
     }
 }

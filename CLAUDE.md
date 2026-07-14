@@ -306,13 +306,13 @@ APP_URL=http://127.0.0.1:8000  # ajustar según entorno
 ```
 Super Admin:
   email: admin@altamira.com
-  password: Altamira2026*
-  PIN aprobación: 1234
+  password: ver credenciales compartidas por canal seguro con el equipo
+  PIN aprobación: ver credenciales compartidas por canal seguro con el equipo
   empresas: Altamira Matriz + Altamira Import
 
 Vendedor:
   email: vendedor@altamira.com
-  password: Vendedor2026*
+  password: ver credenciales compartidas por canal seguro con el equipo
   empresas: solo Altamira Matriz
 ```
 

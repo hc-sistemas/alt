@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -111,7 +111,7 @@
 {{-- ── Header ─────────────────────────────────────────────────────────── --}}
 <div class="header">
     <div class="h-left">
-        <div class="empresa-nombre">{{ strtoupper($empresa->nombre ?? 'ALTAMIRA LIGHT & SOUND') }}</div>
+        <div class="empresa-nombre">{{ strtoupper($empresa->nombre_comercial ?? $empresa->razon_social ?? 'ALTAMIRA LIGHT & SOUND') }}</div>
         <div class="empresa-sub">RUC: {{ $empresa->ruc ?? '' }} &nbsp;|&nbsp; {{ $empresa->direccion ?? 'Ecuador' }}</div>
     </div>
     <div class="h-right">
@@ -249,7 +249,7 @@
     <div class="firma-cel">
         <div class="firma-linea">
             Firma del Empleador
-            <div class="firma-sub">{{ $empresa->nombre ?? 'Altamira Light & Sound' }}</div>
+            <div class="firma-sub">{{ $empresa->nombre_comercial ?? $empresa->razon_social ?? 'Altamira Light & Sound' }}</div>
         </div>
     </div>
     <div class="firma-cel">
@@ -263,9 +263,13 @@
 {{-- ── Footer ──────────────────────────────────────────────────────────── --}}
 <div class="footer">
     Documento generado el {{ now()->format('d/m/Y H:i') }} &nbsp;|&nbsp;
-    {{ $empresa->nombre ?? 'Altamira' }} &nbsp;|&nbsp;
+    {{ $empresa->nombre_comercial ?? $empresa->razon_social ?? 'Altamira' }} &nbsp;|&nbsp;
     Este documento es de carácter confidencial.
 </div>
 
+
+<div style="margin-top:10px; border-top:1px solid #e5e7eb; padding-top:4px; font-size:7px; color:#9ca3af;">
+    Impreso por: {{ auth()->user()?->nombre ?? '—' }} &nbsp;|&nbsp; {{ now()->format('d/m/Y H:i') }}
+</div>
 </body>
 </html>

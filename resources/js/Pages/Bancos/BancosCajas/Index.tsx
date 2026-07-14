@@ -420,6 +420,7 @@ export default function BancosCajasIndex() {
     const { bancos, cuentas, stats, flash } = usePage<Props>().props
     const [modal, setModal] = useState<{ open: boolean; banco?: Props['bancos'][0] }>({ open: false })
 
+
     useEffect(() => {
         if (flash?.success) notify.ok(flash.success)
         if (flash?.error)   notify.error(flash.error)
@@ -515,6 +516,7 @@ export default function BancosCajasIndex() {
                         style={{ background: 'var(--primary)' }}>
                         <Plus size={15} /> Nuevo Banco/Caja
                     </button>
+
                 </div>
             </div>
 
@@ -566,6 +568,7 @@ export default function BancosCajasIndex() {
             {modal.open && (
                 <BancoModal banco={modal.banco} cuentas={cuentas} onClose={() => setModal({ open: false })} />
             )}
+
 
             <ToastContainer position="top-right" autoClose={3500} hideProgressBar={false}
                 newestOnTop closeOnClick pauseOnHover draggable theme="colored"

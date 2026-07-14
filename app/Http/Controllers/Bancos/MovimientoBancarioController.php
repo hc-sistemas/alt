@@ -2,10 +2,14 @@
 
 namespace App\Http\Controllers\Bancos;
 
+use App\Exports\MovimientosExport;
 use App\Http\Controllers\Controller;
+use App\Models\AsientoContable;
 use App\Models\BancoCaja;
+use App\Models\Cliente;
 use App\Models\MovimientoBancario;
 use App\Models\PlanCuenta;
+use App\Models\Proveedor;
 use App\Services\AsientoService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -13,6 +17,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
+use Maatwebsite\Excel\Facades\Excel;
 
 class MovimientoBancarioController extends Controller
 {
@@ -58,10 +63,19 @@ class MovimientoBancarioController extends Controller
                     ->where('estado', true)->orderBy('codigo')
                     ->get(['id', 'codigo', 'nombre']);
 
+        $proveedores = Proveedor::where('empresa_id', $empresaId)
+            ->activos()->orderBy('razon_social')
+            ->get(['id', 'razon_social as nombre', 'identificacion']);
+        $clientes = Cliente::where('empresa_id', $empresaId)
+            ->activos()->orderBy('razon_social')
+            ->get(['id', 'razon_social as nombre', 'identificacion']);
+
         return Inertia::render('Bancos/Movimientos/Index', [
             'movimientos' => $movimientos,
             'bancos'      => $bancos,
             'cuentas'     => $cuentas,
+            'proveedores' => $proveedores,
+            'clientes'    => $clientes,
             'filtros'     => $request->only([
                 'banco_caja_id', 'tipo', 'fecha_desde', 'fecha_hasta', 'buscar',
             ]),
@@ -159,6 +173,22 @@ class MovimientoBancarioController extends Controller
         }
     }
 
+    public function exportExcel(Request $request): \Symfony\Component\HttpFoundation\BinaryFileResponse
+    {
+        $empresaId = session('empresa_activa_id');
+
+        $filtros = $request->only([
+            'banco_caja_id', 'tipo', 'fecha_desde', 'fecha_hasta', 'buscar',
+        ]);
+
+        $fecha = now()->format('Y-m-d');
+
+        return Excel::download(
+            new MovimientosExport($empresaId, $filtros),
+            "movimientos-bancarios-{$fecha}.xlsx"
+        );
+    }
+
     public function exportarXml(Request $request): \Illuminate\Http\Response
     {
         $empresaId   = session('empresa_activa_id');
@@ -212,12 +242,49 @@ class MovimientoBancarioController extends Controller
         }
 
         DB::transaction(function () use ($movimiento, $request) {
+            $tipoReversa = $movimiento->tipo === 'ingreso' ? 'egreso' : 'ingreso';
+
+            // Anular el asiento contable original (genera su propio asiento de reversa)
+            // ANTES de crear el movimiento de reversión, para poder enlazarlo.
+            $asientoReversaId = null;
+            if ($movimiento->asiento_id) {
+                $asiento = AsientoContable::find($movimiento->asiento_id);
+                if ($asiento && !$asiento->estaAnulado()) {
+                    try {
+                        $asientoReversa   = $this->asientoService->anular($asiento, $request->motivo);
+                        $asientoReversaId = $asientoReversa->id;
+                    } catch (\Exception) {
+                        // No bloquear si el asiento no puede anularse (período cerrado, etc.)
+                    }
+                }
+            }
+
+            // El movimiento original NUNCA se borra ni se modifica: queda como evidencia
+            // histórica, solo marcado como anulado. La reversión real del saldo se hace
+            // con un movimiento NUEVO, de signo contrario, enlazado al original.
             $movimiento->update(['anulado' => true]);
 
-            $movimiento->bancoCaja->actualizarSaldo(
-                $movimiento->monto,
-                $movimiento->tipo === 'ingreso' ? 'egreso' : 'ingreso'
-            );
+            $reversion = MovimientoBancario::create([
+                'empresa_id'              => $movimiento->empresa_id,
+                'banco_caja_id'           => $movimiento->banco_caja_id,
+                'tipo'                    => $tipoReversa,
+                'sub_tipo'                => $movimiento->sub_tipo,
+                'fecha'                   => now()->toDateString(),
+                'monto'                   => $movimiento->monto,
+                'persona_tipo'            => $movimiento->persona_tipo,
+                'persona_id'              => $movimiento->persona_id,
+                'beneficiario'            => $movimiento->beneficiario,
+                'descripcion'             => "Reversión de movimiento #{$movimiento->id} — {$request->motivo}",
+                'documento_tipo'          => 'ANULACION_MOV',
+                'documento_id'            => $movimiento->id,
+                'cuenta_contrapartida_id' => $movimiento->cuenta_contrapartida_id,
+                'asiento_id'              => $asientoReversaId,
+                'anulado'                 => false,
+                'conciliado'              => false,
+                'created_by'              => Auth::id(),
+            ]);
+
+            $movimiento->bancoCaja->actualizarSaldo((float) $movimiento->monto, $tipoReversa);
 
             DB::table('log_cambios_criticos')->insert([
                 'usuario_id'     => Auth::id(),
@@ -226,11 +293,11 @@ class MovimientoBancarioController extends Controller
                 'registro_id'    => $movimiento->id,
                 'campo'          => 'anulado',
                 'valor_anterior' => 'false',
-                'valor_nuevo'    => "true — {$request->motivo}",
+                'valor_nuevo'    => "true — {$request->motivo} (reversión: movimiento #{$reversion->id})",
                 'ip_address'     => $request->ip(),
             ]);
         });
 
-        return back()->with('success', 'Movimiento anulado correctamente.');
+        return back()->with('success', 'Movimiento anulado. Se generó un movimiento de reversión y su asiento contable.');
     }
 }

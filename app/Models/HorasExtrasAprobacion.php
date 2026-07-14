@@ -40,7 +40,10 @@ class HorasExtrasAprobacion extends Model
         return $this->belongsTo(Asistencia::class);
     }
 
-    public function aprobadoPor(): BelongsTo
+    // Nombrada distinto a la columna aprobado_por (FK cruda): si el método se
+    // llamara aprobadoPor(), Eloquent serializaría la relación bajo la misma
+    // clave "aprobado_por" y sobrescribiría el id crudo con el objeto Usuario.
+    public function aprobadoPorUsuario(): BelongsTo
     {
         return $this->belongsTo(Usuario::class, 'aprobado_por');
     }

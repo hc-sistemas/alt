@@ -246,14 +246,13 @@ class PrefacturaController extends Controller
             return response()->json(['error' => 'El abono no puede superar el saldo pendiente.'], 422);
         }
 
-        DB::transaction(function () use ($request, $prefactura, $valor) {
-            PrefacturaAbono::create([
+        $abono = DB::transaction(function () use ($request, $prefactura, $valor) {
+            $abono = PrefacturaAbono::create([
                 'prefactura_id' => $prefactura->id,
                 'valor'         => $valor,
                 'forma_pago'    => $request->forma_pago,
                 'fecha'         => now()->toDateString(),
                 'usuario_id'    => Auth::id(),
-                'observaciones' => $request->observaciones,
             ]);
 
             $nuevoAbonado  = $prefactura->total_abonado + $valor;
@@ -265,16 +264,19 @@ class PrefacturaController extends Controller
                 'saldo_pendiente' => max(0, $nuevoSaldo),
                 'estado'          => $nuevoEstado,
             ]);
+
+            return $abono;
         });
 
         try {
-            $this->asiento->anticipoCliente(
+            $asientoAbono = $this->asiento->anticipoCliente(
                 empresaId:   $prefactura->empresa_id,
                 documentoId: $prefactura->id,
                 referencia:  $prefactura->numero,
                 monto:       $valor,
                 formaPago:   $request->forma_pago,
             );
+            $abono->update(['asiento_id' => $asientoAbono->id]);
         } catch (\Throwable) {
             // Asiento falla de forma silenciosa
         }

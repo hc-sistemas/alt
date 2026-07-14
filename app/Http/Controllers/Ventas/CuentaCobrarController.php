@@ -48,7 +48,9 @@ class CuentaCobrarController extends Controller
         $cuentas->getCollection()->transform(function (CuentaCobrar $c) use ($hoy) {
             $fv          = $c->fecha_vencimiento?->toDateString();
             $diasVencido = ($fv && $fv < $hoy)
-                ? (int) now()->startOfDay()->diffInDays($c->fecha_vencimiento->startOfDay())
+                // abs(): diffInDays() en Carbon 3 es firmado (negativo si la fecha de
+                // vencimiento, ya pasada, es anterior a hoy) y se necesita el conteo positivo.
+                ? (int) abs(now()->startOfDay()->diffInDays($c->fecha_vencimiento->startOfDay()))
                 : 0;
 
             return [
@@ -102,7 +104,8 @@ class CuentaCobrarController extends Controller
         $hoy         = now()->toDateString();
         $fv          = $cuentaCobrar->fecha_vencimiento?->toDateString();
         $diasVencido = ($fv && $fv < $hoy)
-            ? (int) now()->startOfDay()->diffInDays($cuentaCobrar->fecha_vencimiento->startOfDay())
+            // abs(): ver nota en index() sobre diffInDays() firmado en Carbon 3
+            ? (int) abs(now()->startOfDay()->diffInDays($cuentaCobrar->fecha_vencimiento->startOfDay()))
             : 0;
 
         return Inertia::render('Ventas/CxC/Show', [

@@ -19,28 +19,45 @@ class DatafastController extends Controller
 {
     public function __construct(private AsientoService $asientoService) {}
 
-    public function index(): Response
+    public function index(Request $request): Response
     {
         $empresaId = session('empresa_activa_id');
 
-        $lotes = DatafastLote::where('empresa_id', $empresaId)
+        $query = DatafastLote::where('empresa_id', $empresaId)
             ->with(['bancoCaja', 'liquidacion'])
-            ->orderByDesc('fecha')
-            ->get()
-            ->map(fn($l) => [
-                'id'             => $l->id,
-                'numero_lote'    => $l->numero_lote,
-                'fecha'          => $l->fecha?->format('d/m/Y'),
-                'banco'          => $l->bancoCaja?->nombre,
-                'total_vouchers' => $l->total_vouchers,
-                'estado'         => $l->estado,
-                'liquidacion'    => $l->liquidacion ? [
-                    'fecha_deposito'    => $l->liquidacion->fecha_deposito?->format('d/m/Y'),
-                    'valor_bruto'       => $l->liquidacion->valor_bruto,
-                    'comision_datafast' => $l->liquidacion->comision_datafast,
-                    'valor_neto'        => $l->liquidacion->valor_neto,
-                ] : null,
-            ]);
+            ->orderByDesc('fecha');
+
+        if ($request->filled('banco_caja_id')) {
+            $query->where('banco_caja_id', $request->banco_caja_id);
+        }
+        if ($request->filled('estado')) {
+            $query->where('estado', $request->estado);
+        }
+        if ($request->filled('fecha_desde')) {
+            $query->where('fecha', '>=', $request->fecha_desde);
+        }
+        if ($request->filled('fecha_hasta')) {
+            $query->where('fecha', '<=', $request->fecha_hasta);
+        }
+        if ($request->filled('buscar')) {
+            $query->where('numero_lote', 'ilike', '%' . $request->buscar . '%');
+        }
+
+        $lotes = $query->get()->map(fn($l) => [
+            'id'             => $l->id,
+            'numero_lote'    => $l->numero_lote,
+            'fecha'          => $l->fecha?->format('d/m/Y'),
+            'banco'          => $l->bancoCaja?->nombre,
+            'banco_caja_id'  => $l->banco_caja_id,
+            'total_vouchers' => $l->total_vouchers,
+            'estado'         => $l->estado,
+            'liquidacion'    => $l->liquidacion ? [
+                'fecha_deposito'    => $l->liquidacion->fecha_deposito?->format('d/m/Y'),
+                'valor_bruto'       => $l->liquidacion->valor_bruto,
+                'comision_datafast' => $l->liquidacion->comision_datafast,
+                'valor_neto'        => $l->liquidacion->valor_neto,
+            ] : null,
+        ]);
 
         $bancos = BancoCaja::where('empresa_id', $empresaId)
             ->activos()->orderBy('nombre')
@@ -49,11 +66,7 @@ class DatafastController extends Controller
         return Inertia::render('Bancos/Datafast/Index', [
             'lotes'  => $lotes,
             'bancos' => $bancos,
-            'stats'  => [
-                'pendientes'     => $lotes->where('estado', 'pendiente')->count(),
-                'liquidados'     => $lotes->where('estado', 'liquidado')->count(),
-                'total_vouchers' => $lotes->sum('total_vouchers'),
-            ],
+            'filtros'=> $request->only(['banco_caja_id', 'estado', 'fecha_desde', 'fecha_hasta', 'buscar']),
         ]);
     }
 
@@ -87,18 +100,28 @@ class DatafastController extends Controller
                 ]);
 
                 try {
-                    $ctaVouchers = ParametroContable::getCuentaId('cta_vouchers', $empresaId);
-                    $ctaVentas   = ParametroContable::getCuentaId('cta_ventas_locales', $empresaId);
+                    $ctaVouchers  = ParametroContable::getCuentaId('cta_vouchers', $empresaId);
+                    $ctaVentas    = ParametroContable::getCuentaId('cta_ventas_locales', $empresaId);
+                    $ctaIvaVentas = ParametroContable::getCuentaId('cta_iva_ventas', $empresaId);
 
-                    if ($ctaVouchers && $ctaVentas) {
+                    if ($ctaVouchers && $ctaVentas && $ctaIvaVentas) {
+                        // El total del voucher incluye IVA (es lo que se cobró en la tarjeta del
+                        // cliente) — se separa en neto (Ventas) + IVA (pasivo por liquidar al SRI),
+                        // igual que en Facturas/Proformas (tarifa 15%).
+                        $totalVouchers = (float) $request->total_vouchers;
+                        $neto = round($totalVouchers / 1.15, 2);
+                        $iva  = round($totalVouchers - $neto, 2);
+
                         $asiento = $this->asientoService->crear(
                             empresaId:    $empresaId,
                             concepto:     "Lote Datafast {$request->numero_lote}",
                             partidas: [
-                                ['cuenta_id' => $ctaVouchers, 'debe' => $request->total_vouchers, 'haber' => 0,
+                                ['cuenta_id' => $ctaVouchers,  'debe' => $totalVouchers, 'haber' => 0,
                                  'descripcion' => "Lote {$request->numero_lote}"],
-                                ['cuenta_id' => $ctaVentas,   'debe' => 0, 'haber' => $request->total_vouchers,
+                                ['cuenta_id' => $ctaVentas,    'debe' => 0, 'haber' => $neto,
                                  'descripcion' => "Ventas tarjeta lote {$request->numero_lote}"],
+                                ['cuenta_id' => $ctaIvaVentas, 'debe' => 0, 'haber' => $iva,
+                                 'descripcion' => "IVA ventas tarjeta lote {$request->numero_lote}"],
                             ],
                             documentoTipo:'BANCO',
                             documentoId:  $lote->id,
@@ -130,8 +153,8 @@ class DatafastController extends Controller
             'fecha_deposito'    => 'required|date',
             'valor_bruto'       => 'required|numeric|min:0',
             'comision_datafast' => 'required|numeric|min:0',
-            'retencion_iva'     => 'numeric|min:0',
-            'retencion_ir'      => 'numeric|min:0',
+            'retencion_iva'     => 'nullable|numeric|min:0',
+            'retencion_ir'      => 'nullable|numeric|min:0',
             'banco_destino_id'  => 'required|exists:bancos_cajas,id',
         ]);
 
@@ -182,7 +205,20 @@ class DatafastController extends Controller
                                     'cuenta_id'   => $ctaRetIVA,
                                     'debe'        => $request->retencion_iva,
                                     'haber'       => 0,
-                                    'descripcion' => "Ret. IVA Datafast",
+                                    'descripcion' => "Ret. IVA Datafast lote {$lote->numero_lote}",
+                                ];
+                            }
+                        }
+
+                        // Retención IR (Datafast retiene al comercio → crédito tributario 1.1.5.03)
+                        if (($request->retencion_ir ?? 0) > 0) {
+                            $ctaRetIR = ParametroContable::getCuentaId('cta_retencion_ir_cobrada', $empresaId);
+                            if ($ctaRetIR) {
+                                $partidas[] = [
+                                    'cuenta_id'   => $ctaRetIR,
+                                    'debe'        => $request->retencion_ir,
+                                    'haber'       => 0,
+                                    'descripcion' => "Ret. IR Datafast lote {$lote->numero_lote}",
                                 ];
                             }
                         }

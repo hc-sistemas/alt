@@ -6,14 +6,17 @@ use App\Http\Controllers\Controller;
 use App\Models\BancoCaja;
 use App\Models\CentroCosto;
 use App\Models\CierreCaja;
+use App\Services\AsientoService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class CierreCajaController extends Controller
 {
+    public function __construct(private AsientoService $asientoService) {}
     public function index(): Response
     {
         $empresaId = session('empresa_activa_id');
@@ -111,10 +114,17 @@ class CierreCajaController extends Controller
             + ($request->total_cheque        ?? 0)
             + ($request->total_transferencia ?? 0);
 
-        $diferencia = $totalCobrado - $cierre->total_facturado;
+        // Simular total_facturado con lo cobrado si ventas no está conectado (= 0)
+        // Cuando Dev 1 conecte ventas, total_facturado vendrá pre-cargado desde facturas
+        $totalFacturado = ((float) $cierre->total_facturado > 0.01)
+            ? (float) $cierre->total_facturado
+            : $totalCobrado;
+
+        $diferencia = $totalCobrado - $totalFacturado;
 
         $cierre->update([
             'usuario_cierre_id'   => Auth::id(),
+            'total_facturado'     => $totalFacturado,
             'total_cobrado'       => $totalCobrado,
             'total_efectivo'      => $request->total_efectivo,
             'total_tarjeta'       => $request->total_tarjeta ?? 0,
@@ -125,6 +135,24 @@ class CierreCajaController extends Controller
             'estado'              => 'cerrado',
             'hora_cierre'         => now(),
         ]);
+
+        // Asiento contable por diferencia (sobrante/faltante)
+        $cuentaCajaId = $cierre->bancoCaja?->cuenta_id;
+        if ($cuentaCajaId) {
+            try {
+                $this->asientoService->cierreCaja(
+                    empresaId:      (int) session('empresa_activa_id'),
+                    cierreId:       $cierre->id,
+                    codigo:         "CAJA-{$cierre->id}",
+                    fecha:          $cierre->fecha->format('Y-m-d'),
+                    montoDeclarado: $totalCobrado,
+                    montoEsperado:  $totalFacturado,
+                    cuentaCajaId:   $cuentaCajaId,
+                );
+            } catch (\Exception $e) {
+                Log::warning("Asiento cierre caja fallido: " . $e->getMessage());
+            }
+        }
 
         $msg = 'Caja cerrada correctamente.';
         if (abs($diferencia) > 0.01) {

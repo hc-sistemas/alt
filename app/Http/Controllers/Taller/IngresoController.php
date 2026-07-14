@@ -158,6 +158,8 @@ class IngresoController extends Controller
 
     public function show(TallerIngreso $ingreso): Response
     {
+        abort_if((int) $ingreso->empresa_id !== (int) session('empresa_activa_id'), 403);
+
         $ingreso->load(['cliente', 'equipo.tipo', 'usuario', 'ordenesTrabajo']);
 
         return Inertia::render('Taller/Ingresos/Show', [

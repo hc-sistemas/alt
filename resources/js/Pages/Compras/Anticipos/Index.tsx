@@ -9,7 +9,7 @@ import { Button } from '@/Components/ui/button'
 import { cn } from '@/lib/utils'
 import {
     CreditCard, Plus, Search, CheckCircle,
-    Clock, AlertTriangle, DollarSign, X, ArrowLeftRight
+    Clock, AlertTriangle, X, ArrowLeftRight
 } from 'lucide-react'
 import type { PageProps, Proveedor, BancoCaja } from '@/types'
 import { notify, formatMoney, swalBase, injectSwalStyles } from '@/utils/contabilidad'
@@ -27,6 +27,7 @@ interface Anticipo {
     monto: number
     saldo: number
     num_transferencia: string | null
+    banco: string | null
     estado: 'pendiente' | 'cruzado'
     asiento_id: number | null
 }
@@ -38,36 +39,22 @@ interface ImportacionRow {
     costo_fob: number
 }
 
+interface CxpRow {
+    compra_id:         number
+    num_documento:     string
+    fecha_emision:     string | null
+    fecha_vencimiento: string | null
+    monto:             number
+    saldo:             number
+    estado:            string
+}
+
 interface Props extends PageProps {
     anticipos:     Anticipo[]
     proveedores:   Pick<Proveedor, 'id' | 'razon_social' | 'tipo'>[]
     importaciones: ImportacionRow[]
     bancos:        Pick<BancoCaja, 'id' | 'nombre' | 'tipo' | 'saldo_actual'>[]
     filtros:       Record<string, string>
-    stats: {
-        total:       number
-        pendientes:  number
-        cruzados:    number
-        monto_total: number
-    }
-}
-
-// ─── StatCard ─────────────────────────────────────────────────────────────────
-
-function StatCard({ label, value, color, icon: Icon }: {
-    label: string; value: string | number; color: string; icon: React.ElementType
-}) {
-    return (
-        <div className="rounded-2xl p-4 border"
-            style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
-            <div className="flex items-center gap-2 mb-2">
-                <Icon className="w-4 h-4" style={{ color }} />
-                <p className="text-xs font-semibold uppercase tracking-wider"
-                    style={{ color: 'var(--text-muted)' }}>{label}</p>
-            </div>
-            <p className="text-2xl font-bold" style={{ color }}>{value}</p>
-        </div>
-    )
 }
 
 // ─── Modal Nuevo Anticipo ─────────────────────────────────────────────────────
@@ -211,6 +198,38 @@ function ModalCruzar({ anticipo, onClose }: {
         monto:     Number(anticipo.saldo).toFixed(2),
     })
     const [processing, setProcessing] = useState(false)
+    const [cxpList, setCxpList]       = useState<CxpRow[]>([])
+    const [loadingCxp, setLoadingCxp] = useState(true)
+
+    useEffect(() => {
+        setLoadingCxp(true)
+        fetch(`${route('compras.anticipos.cxp-pendientes')}?proveedor_id=${anticipo.proveedor_id}`)
+            .then(r => r.json())
+            .then((data: CxpRow[]) => {
+                setCxpList(data)
+                if (data.length === 1) {
+                    setForm(f => ({
+                        ...f,
+                        compra_id: String(data[0].compra_id),
+                        monto: Number(Math.min(Number(anticipo.saldo), data[0].saldo)).toFixed(2),
+                    }))
+                }
+            })
+            .catch(() => setCxpList([]))
+            .finally(() => setLoadingCxp(false))
+    }, [anticipo.proveedor_id])
+
+    function handleCxpChange(e: React.ChangeEvent<HTMLSelectElement>) {
+        const id = e.target.value
+        const selected = cxpList.find(c => String(c.compra_id) === id)
+        setForm(f => ({
+            ...f,
+            compra_id: id,
+            monto: selected
+                ? Number(Math.min(Number(anticipo.saldo), selected.saldo)).toFixed(2)
+                : f.monto,
+        }))
+    }
 
     function submit(e: React.FormEvent) {
         e.preventDefault()
@@ -259,15 +278,27 @@ function ModalCruzar({ anticipo, onClose }: {
                 <form onSubmit={submit}>
                 <div className="modal-body">
                     <div className="space-y-1.5">
-                        <Label>ID Factura de Compra <span className="text-red-400">*</span></Label>
-                        <Input
-                            type="number" min={1} placeholder="ID de la factura..."
-                            value={form.compra_id}
-                            onChange={e => setForm(f => ({ ...f, compra_id: e.target.value }))}
-                        />
-                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                            Ingrese el ID interno de la factura de compra a cruzar.
-                        </p>
+                        <Label>Factura de Compra <span className="text-red-400">*</span></Label>
+                        {loadingCxp ? (
+                            <p className="text-xs py-2" style={{ color: 'var(--text-muted)' }}>
+                                Cargando facturas pendientes…
+                            </p>
+                        ) : cxpList.length === 0 ? (
+                            <p className="text-xs py-2" style={{ color: '#ef4444' }}>
+                                No hay facturas pendientes para este proveedor.
+                            </p>
+                        ) : (
+                            <select value={form.compra_id} onChange={handleCxpChange}
+                                className="input-field select-field">
+                                <option value="">— Seleccionar factura —</option>
+                                {cxpList.map(c => (
+                                    <option key={c.compra_id} value={c.compra_id}>
+                                        {c.num_documento} — Saldo: ${Number(c.saldo).toFixed(2)}
+                                        {c.fecha_vencimiento ? ` — Vence: ${c.fecha_vencimiento}` : ''}
+                                    </option>
+                                ))}
+                            </select>
+                        )}
                     </div>
 
                     <div className="space-y-1.5">
@@ -296,7 +327,7 @@ function ModalCruzar({ anticipo, onClose }: {
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function AnticiposIndex() {
-    const { anticipos, proveedores, importaciones, bancos, filtros, stats, flash } = usePage<Props>().props
+    const { anticipos, proveedores, importaciones, bancos, filtros, flash } = usePage<Props>().props
 
     const [buscar,      setBuscar]      = useState(filtros.buscar       ?? '')
     const [estado,      setEstado]      = useState(filtros.estado       ?? '')
@@ -378,8 +409,6 @@ export default function AnticiposIndex() {
         }
     }
 
-    const inputStyle = { background: 'var(--bg-card)', color: 'var(--text-main)', borderColor: 'var(--border)' }
-
     return (
         <AppLayout title="Anticipos Proveedores" suppressFlash>
             <Head title="Anticipos Proveedores" />
@@ -442,14 +471,6 @@ export default function AnticiposIndex() {
                 </div>
             </div>
 
-            {/* Stats */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 px-6 pb-4">
-                <StatCard label="Total" value={stats.total} color="#3b82f6" icon={CreditCard} />
-                <StatCard label="Pendientes" value={stats.pendientes} color="#f59e0b" icon={Clock} />
-                <StatCard label="Cruzados" value={stats.cruzados} color="#10b981" icon={CheckCircle} />
-                <StatCard label="Saldo Pendiente" value={formatMoney(stats.monto_total)} color="#ef4444" icon={DollarSign} />
-            </div>
-
             {/* Tabla */}
             <div className="px-6 pb-8">
                 <div className="border rounded-xl overflow-hidden"
@@ -459,9 +480,10 @@ export default function AnticiposIndex() {
                     <div className="grid grid-cols-12 gap-3 px-4 py-2.5 border-b text-[11px] font-semibold uppercase tracking-wider"
                         style={{ borderColor: 'var(--border)', background: 'rgba(245,158,11,0.05)', color: 'var(--text-muted)' }}>
                         <span className="col-span-1">Fecha</span>
-                        <span className="col-span-3">Proveedor</span>
-                        <span className="col-span-2">Importación</span>
+                        <span className="col-span-2">Proveedor</span>
+                        <span className="col-span-1">Importación</span>
                         <span className="col-span-2">N° Transferencia</span>
+                        <span className="col-span-2">Banco</span>
                         <span className="col-span-1 text-right">Monto</span>
                         <span className="col-span-1 text-right">Saldo</span>
                         <span className="col-span-1 text-center">Estado</span>
@@ -491,12 +513,12 @@ export default function AnticiposIndex() {
                             <div className="col-span-1">
                                 <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{a.fecha}</p>
                             </div>
-                            <div className="col-span-3 min-w-0">
+                            <div className="col-span-2 min-w-0">
                                 <p className="font-semibold truncate" style={{ color: 'var(--text-main)' }}>
                                     {a.proveedor ?? '—'}
                                 </p>
                             </div>
-                            <div className="col-span-2 min-w-0">
+                            <div className="col-span-1 min-w-0">
                                 <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
                                     {a.importacion ?? '—'}
                                 </p>
@@ -504,6 +526,11 @@ export default function AnticiposIndex() {
                             <div className="col-span-2">
                                 <p className="font-mono text-xs" style={{ color: 'var(--primary)' }}>
                                     {a.num_transferencia ?? '—'}
+                                </p>
+                            </div>
+                            <div className="col-span-2 min-w-0">
+                                <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
+                                    {a.banco ?? '—'}
                                 </p>
                             </div>
                             <div className="col-span-1 text-right">

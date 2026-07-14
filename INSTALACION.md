@@ -221,7 +221,7 @@ Abrir en el navegador: **http://127.0.0.1:8000/login**
 | Campo | Super Admin | Vendedor |
 |---|---|---|
 | Email | admin@altamira.com | vendedor@altamira.com |
-| Password | Altamira2026* | Vendedor2026* |
+| Password | ver credenciales compartidas por canal seguro con el equipo | ver credenciales compartidas por canal seguro con el equipo |
 | Perfil | super_admin | vendedor |
 | Empresas | Ambas | Solo Matriz |
 

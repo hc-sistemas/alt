@@ -9,6 +9,7 @@ use App\Models\Importacion;
 use App\Models\MovimientoBancario;
 use App\Models\Proveedor;
 use App\Services\AsientoService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -24,7 +25,7 @@ class AnticipoProveedorController extends Controller
     {
         $empresaId = session('empresa_activa_id');
 
-        $query = AnticipoProveedor::with(['proveedor', 'importacion'])
+        $query = AnticipoProveedor::with(['proveedor', 'importacion', 'bancoCaja'])
             ->where('empresa_id', $empresaId);
 
         if ($request->filled('estado')) {
@@ -55,6 +56,7 @@ class AnticipoProveedorController extends Controller
                 'monto'            => $a->monto,
                 'saldo'            => $a->saldo,
                 'num_transferencia'=> $a->num_transferencia,
+                'banco'            => $a->bancoCaja?->nombre,
                 'estado'           => $a->estado,
                 'asiento_id'       => $a->asiento_id,
             ]);
@@ -80,13 +82,36 @@ class AnticipoProveedorController extends Controller
             'importaciones' => $importaciones,
             'bancos'        => $bancos,
             'filtros'       => $request->only(['estado', 'proveedor_id', 'buscar']),
-            'stats' => [
-                'total'      => $anticipos->count(),
-                'pendientes' => $anticipos->where('estado', 'pendiente')->count(),
-                'cruzados'   => $anticipos->where('estado', 'cruzado')->count(),
-                'monto_total'=> (float) $anticipos->where('estado', 'pendiente')->sum('saldo'),
-            ],
         ]);
+    }
+
+    public function cxpPendientes(Request $request): JsonResponse
+    {
+        $empresaId   = session('empresa_activa_id');
+        $proveedorId = $request->integer('proveedor_id');
+
+        if (!$proveedorId) {
+            return response()->json([]);
+        }
+
+        $cxp = CuentaPagar::where('empresa_id', $empresaId)
+            ->where('proveedor_id', $proveedorId)
+            ->whereIn('estado', ['pendiente', 'parcial'])
+            ->where('saldo', '>', 0)
+            ->with('compra:id,num_documento,fecha_emision')
+            ->orderBy('fecha_vencimiento')
+            ->get()
+            ->map(fn($c) => [
+                'compra_id'          => $c->compra_id,
+                'num_documento'      => $c->compra?->num_documento ?? "CxP #{$c->id}",
+                'fecha_emision'      => $c->fecha_emision?->format('d/m/Y'),
+                'fecha_vencimiento'  => $c->fecha_vencimiento?->format('d/m/Y'),
+                'monto'              => (float) $c->monto,
+                'saldo'              => (float) $c->saldo,
+                'estado'             => $c->estado,
+            ]);
+
+        return response()->json($cxp);
     }
 
     public function store(Request $request): RedirectResponse
@@ -152,11 +177,14 @@ class AnticipoProveedorController extends Controller
                 ]);
 
                 try {
-                    $asiento = $this->asientoService->pagoProveedor(
+                    $referencia = 'ANT-' . str_pad($anticipo->id, 4, '0', STR_PAD_LEFT);
+                    $asiento = $this->asientoService->anticipoProveedor(
                         empresaId:   $empresaId,
-                        documentoId: $anticipo->id,
-                        referencia:  'ANT-' . str_pad($anticipo->id, 4, '0', STR_PAD_LEFT),
+                        anticiPoId:  $anticipo->id,
+                        referencia:  $referencia,
                         monto:       (float) $request->monto,
+                        bancoCajaId: $request->banco_id,
+                        fecha:       $request->fecha,
                     );
                     $anticipo->update(['asiento_id' => $asiento->id]);
                 } catch (\Exception) {

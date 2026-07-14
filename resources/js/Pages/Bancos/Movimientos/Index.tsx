@@ -5,10 +5,10 @@ import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
-import { cn } from '@/lib/utils'
+import { cn, formatFecha } from '@/lib/utils'
 import {
     Plus, X, ArrowUpCircle, ArrowDownCircle, Search,
-    Ban, DollarSign, Clock, Download,
+    Ban, DollarSign, Clock, FileSpreadsheet,
 } from 'lucide-react'
 import type { MovimientoBancario, BancoCaja, PlanCuenta, PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
@@ -26,14 +26,18 @@ interface Paginated<T> {
     links: { url: string | null; label: string; active: boolean }[]
 }
 
+interface PersonaOpt { id: number; nombre: string; identificacion: string }
+
 interface Props extends PageProps {
     movimientos: Paginated<MovimientoBancario & {
         banco_caja?: BancoCaja
         cuenta_contrapartida?: PlanCuenta
         creado_por?: { nombre: string }
     }>
-    bancos: Pick<BancoCaja, 'id' | 'nombre' | 'tipo' | 'saldo_actual'>[]
-    cuentas: Pick<PlanCuenta, 'id' | 'codigo' | 'nombre'>[]
+    bancos:      Pick<BancoCaja, 'id' | 'nombre' | 'tipo' | 'saldo_actual'>[]
+    cuentas:     Pick<PlanCuenta, 'id' | 'codigo' | 'nombre'>[]
+    proveedores: PersonaOpt[]
+    clientes:    PersonaOpt[]
     filtros: { banco_caja_id?: string; tipo?: string; fecha_desde?: string; fecha_hasta?: string; buscar?: string }
     stats: { total_ingresos: number; total_egresos: number; pendientes_conciliar: number }
 }
@@ -80,13 +84,16 @@ function StatCard({ label, value, icon: Icon, cls, valueCls }: {
 
 // ─── Modal Nuevo Movimiento ───────────────────────────────────────────────────
 
-function MovimientoModal({ bancos, cuentas, onClose }: {
-    bancos: Props['bancos']
-    cuentas: Props['cuentas']
-    onClose: () => void
+function MovimientoModal({ bancos, cuentas, proveedores, clientes, onClose }: {
+    bancos:      Props['bancos']
+    cuentas:     Props['cuentas']
+    proveedores: Props['proveedores']
+    clientes:    Props['clientes']
+    onClose:     () => void
 }) {
     const [cuentaBusq, setCuentaBusq] = useState('')
     const [showCuentas, setShowCuentas] = useState(false)
+    const [personaTipo, setPersonaTipo] = useState<'manual' | 'cliente' | 'proveedor'>('manual')
 
     const { data, setData, post, processing, errors } = useForm({
         banco_caja_id:           '',
@@ -94,6 +101,8 @@ function MovimientoModal({ bancos, cuentas, onClose }: {
         sub_tipo:                'efectivo',
         fecha:                   new Date().toISOString().split('T')[0],
         monto:                   '',
+        persona_tipo:            '' as string,
+        persona_id:              '' as string,
         beneficiario:            '',
         num_documento:           '',
         num_cheque:              '',
@@ -102,6 +111,12 @@ function MovimientoModal({ bancos, cuentas, onClose }: {
         cuenta_contrapartida_id: '',
         es_postfechado:          false,
     })
+
+    const personasOpts = personaTipo === 'cliente' ? clientes : personaTipo === 'proveedor' ? proveedores : []
+
+    function seleccionarPersona(p: PersonaOpt) {
+        setData(d => ({ ...d, persona_id: String(p.id), beneficiario: p.nombre }))
+    }
 
     const cuentasFiltradas = cuentas.filter(c =>
         !cuentaBusq || `${c.codigo} ${c.nombre}`.toLowerCase().includes(cuentaBusq.toLowerCase())
@@ -218,11 +233,41 @@ function MovimientoModal({ bancos, cuentas, onClose }: {
                         </div>
                     )}
 
-                    {/* Beneficiario */}
+                    {/* Beneficiario con selector de persona */}
                     <div className="space-y-1.5">
-                        <Label>Beneficiario</Label>
-                        <Input value={data.beneficiario} onChange={e => setData('beneficiario', e.target.value)}
-                            placeholder="Nombre…" />
+                        <Label>Beneficiario / Persona</Label>
+                        <div className="grid grid-cols-3 gap-1 mb-2">
+                            {(['manual', 'cliente', 'proveedor'] as const).map(t => (
+                                <button key={t} type="button"
+                                    onClick={() => {
+                                        setPersonaTipo(t)
+                                        setData(d => ({ ...d, persona_tipo: t === 'manual' ? '' : t, persona_id: '' }))
+                                    }}
+                                    className="py-1.5 rounded-lg text-xs font-medium border transition-colors"
+                                    style={personaTipo === t
+                                        ? { background: 'var(--primary)', color: '#fff', borderColor: 'var(--primary)' }
+                                        : { borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
+                                    {{ manual: 'Manual', cliente: 'Cliente', proveedor: 'Proveedor' }[t]}
+                                </button>
+                            ))}
+                        </div>
+                        {personaTipo === 'manual' ? (
+                            <Input value={data.beneficiario} onChange={e => setData('beneficiario', e.target.value)}
+                                placeholder="Nombre del beneficiario…" />
+                        ) : (
+                            <select value={data.persona_id}
+                                onChange={e => {
+                                    const p = personasOpts.find(x => String(x.id) === e.target.value)
+                                    if (p) seleccionarPersona(p)
+                                    else setData(d => ({ ...d, persona_id: '', beneficiario: '' }))
+                                }}
+                                className="input-field select-field">
+                                <option value="">— Seleccionar {personaTipo} —</option>
+                                {personasOpts.map(p => (
+                                    <option key={p.id} value={p.id}>{p.nombre} ({p.identificacion})</option>
+                                ))}
+                            </select>
+                        )}
                     </div>
 
                     {/* Cuenta contrapartida */}
@@ -345,10 +390,11 @@ function AnularModal({ movimiento, onClose }: { movimiento: MovimientoBancario; 
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function MovimientosIndex() {
-    const { movimientos, bancos, cuentas, filtros, stats, flash } = usePage<Props>().props
+    const { movimientos, bancos, cuentas, proveedores, clientes, filtros, stats, flash } = usePage<Props>().props
     const [showModal, setShowModal] = useState(false)
     const [anularMov, setAnularMov] = useState<MovimientoBancario | null>(null)
     const [filtro, setFiltro] = useState(filtros)
+
 
     useEffect(() => {
         if (flash?.success) notify.ok(flash.success)
@@ -425,10 +471,14 @@ export default function MovimientosIndex() {
                     </div>
 
                     <div className="flex items-center gap-2">
-                        <a href={route('bancos.movimientos.exportar-xml')}
-                           className="btn-excel flex items-center gap-2 whitespace-nowrap">
-                            <Download size={15} /> XML
+                        <a href={route('bancos.movimientos.export-excel') + '?' + new URLSearchParams(
+                                Object.fromEntries(Object.entries(filtro).filter(([,v]) => v)) as Record<string, string>
+                            ).toString()}
+                           className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-sm font-medium text-white whitespace-nowrap transition-opacity hover:opacity-90"
+                           style={{ background: '#16a34a' }}>
+                            <FileSpreadsheet size={15} /> Excel
                         </a>
+
                     </div>
                 </div>
             </div>
@@ -473,14 +523,14 @@ export default function MovimientosIndex() {
                         <div key={m.id}
                             className={cn(
                                 'group grid grid-cols-12 gap-2 px-4 py-3 border-b items-center transition-colors text-sm',
-                                m.anulado && 'opacity-40 line-through'
+                                m.anulado && 'opacity-50'
                             )}
                             style={{ borderColor: 'var(--border)', background: 'transparent' }}
                             onMouseEnter={e => !m.anulado && (e.currentTarget.style.background = 'rgba(245,158,11,0.04)')}
                             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
 
                             <div className="col-span-1">
-                                <p className="text-xs font-mono" style={{ color: 'var(--text-main)' }}>{m.fecha}</p>
+                                <p className="text-xs font-mono" style={{ color: 'var(--text-main)' }}>{formatFecha(m.fecha)}</p>
                             </div>
                             <div className="col-span-2 min-w-0">
                                 <p className="text-xs truncate font-medium" style={{ color: 'var(--text-main)' }}>
@@ -550,8 +600,18 @@ export default function MovimientosIndex() {
                 )}
             </div>
 
-            {showModal && <MovimientoModal bancos={bancos} cuentas={cuentas} onClose={() => setShowModal(false)} />}
+            {showModal && (
+                <MovimientoModal
+                    bancos={bancos}
+                    cuentas={cuentas}
+                    proveedores={proveedores}
+                    clientes={clientes}
+                    onClose={() => setShowModal(false)}
+                />
+            )}
             {anularMov && <AnularModal movimiento={anularMov} onClose={() => setAnularMov(null)} />}
+
+
 
             <ToastContainer position="top-right" autoClose={3500} hideProgressBar={false}
                 newestOnTop closeOnClick pauseOnHover draggable theme="colored"

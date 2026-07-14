@@ -10,6 +10,7 @@ use App\Models\FacturaPago;
 use App\Models\Producto;
 use App\Models\TallerOrdenTrabajo;
 use App\Models\TallerOtRepuesto;
+use App\Services\AsientoService;
 use App\Services\AuditoriaService;
 use App\Services\Contracts\InventarioServiceInterface;
 use App\Services\SecuencialService;
@@ -29,10 +30,13 @@ class LiquidacionController extends Controller
         private AuditoriaService $auditoria,
         private InventarioServiceInterface $inventario,
         private SecuencialService $secuencial,
+        private AsientoService $asiento,
     ) {}
 
     public function show(TallerOrdenTrabajo $orden): Response
     {
+        abort_if((int) $orden->empresa_id !== (int) session('empresa_activa_id'), 403);
+
         $orden->load(['ingreso.cliente', 'ingreso.equipo', 'repuestos.producto', 'tecnico']);
 
         return Inertia::render('Taller/Liquidacion/Show', [
@@ -42,6 +46,8 @@ class LiquidacionController extends Controller
 
     public function liquidar(Request $request, TallerOrdenTrabajo $orden): RedirectResponse
     {
+        abort_if((int) $orden->empresa_id !== (int) session('empresa_activa_id'), 403);
+
         $data = $request->validate([
             'costo_mano_obra' => 'required|numeric|min:0',
             'forma_pago'      => 'required|string',
@@ -188,6 +194,25 @@ class LiquidacionController extends Controller
             return back()->withErrors(['error' => $e->getMessage()])->withInput();
         }
 
+        // Asiento contable automático — el liquidar una orden de Taller genera una
+        // Factura real (ventas + inventario + pago), pero nunca pasaba por
+        // AsientoService: la venta quedaba invisible para la contabilidad.
+        try {
+            $asientoFactura = $this->asiento->facturaAutorizada(
+                empresaId:     $empresaId,
+                facturaId:     $factura->id,
+                numeroFactura: $factura->numero_completo,
+                subtotal:      (float) $factura->subtotal_0 + (float) $factura->subtotal_15,
+                iva:           (float) $factura->total_iva,
+                total:         (float) $factura->total,
+                formaPago:     $data['forma_pago'],
+            );
+            $factura->update(['asiento_id' => $asientoFactura->id]);
+            $orden->update(['asiento_id' => $asientoFactura->id]);
+        } catch (\Throwable) {
+            // Asiento contable falla de forma silenciosa para no romper la liquidación
+        }
+
         $this->auditoria->documento('crear', 'taller', 'liquidacion', $orden->id,
             "Orden {$orden->numero} liquidada — factura {$factura->numero_completo}");
 
@@ -197,6 +222,8 @@ class LiquidacionController extends Controller
 
     public function agregarRepuesto(Request $request, TallerOrdenTrabajo $orden): RedirectResponse
     {
+        abort_if((int) $orden->empresa_id !== (int) session('empresa_activa_id'), 403);
+
         $data = $request->validate([
             'producto_id'  => 'required|integer|exists:productos,id',
             'cantidad'     => 'required|integer|min:1',

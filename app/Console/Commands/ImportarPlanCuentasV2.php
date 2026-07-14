@@ -224,6 +224,16 @@ class ImportarPlanCuentasV2 extends Command
         ];
     }
 
+    // Normaliza un código quitando ceros de relleno por segmento (p.ej. '1.1.1.01' y
+    // '1.1.1.1' son la MISMA cuenta bajo dos convenciones de padding distintas). Este
+    // normalizador es lo que faltaba: sin él, este comando compara por igualdad exacta
+    // de string y nunca encuentra la cuenta ya existente si el padding no coincide
+    // carácter por carácter — así se crearon ~70 cuentas duplicadas en 2026-07.
+    private function normalizarCodigo(string $codigo): string
+    {
+        return implode('.', array_map(fn($seg) => ltrim($seg, '0') ?: '0', explode('.', $codigo)));
+    }
+
     public function handle(): void
     {
         $cuentas = $this->getCuentas();
@@ -267,6 +277,13 @@ class ImportarPlanCuentasV2 extends Command
             ->pluck('id', 'codigo')
             ->toArray();
 
+        // Índice por código NORMALIZADO (sin padding) → id, para encontrar cuentas
+        // ya existentes aunque su código use otra convención de relleno.
+        $indiceNormalizado = [];
+        foreach (DB::table('plan_cuentas')->get(['id', 'codigo']) as $c) {
+            $indiceNormalizado[$this->normalizarCodigo($c->codigo)] = $c->id;
+        }
+
         $getPadreId = function(string $codigo) use (&$indice): ?int {
             $partes = explode('.', $codigo);
             if (count($partes) <= 1) return null;
@@ -293,12 +310,22 @@ class ImportarPlanCuentasV2 extends Command
                 ->where('codigo', $codigo)
                 ->first();
 
+            // Si no hubo match exacto, buscar por código normalizado (misma cuenta,
+            // distinto padding) antes de asumir que hay que crear una nueva.
+            if (!$existente) {
+                $idNormalizado = $indiceNormalizado[$this->normalizarCodigo($codigo)] ?? null;
+                if ($idNormalizado) {
+                    $existente = DB::table('plan_cuentas')->where('id', $idNormalizado)->first();
+                }
+            }
+
             if ($existente && \in_array($existente->id, $conAsientos)) {
                 // Solo actualizar el nombre — nunca tocar estructura
                 DB::table('plan_cuentas')
                     ->where('id', $existente->id)
                     ->update(['nombre' => $nombre]);
                 $indice[$codigo] = $existente->id;
+                $indiceNormalizado[$this->normalizarCodigo($codigo)] = $existente->id;
                 $omitidas++;
                 $this->line("   ⏭️  [{$codigo}] con asientos — solo nombre actualizado");
                 continue;
@@ -319,12 +346,14 @@ class ImportarPlanCuentasV2 extends Command
                     ->where('id', $existente->id)
                     ->update($datos);
                 $indice[$codigo] = $existente->id;
+                $indiceNormalizado[$this->normalizarCodigo($codigo)] = $existente->id;
                 $actualizadas++;
                 $prefijo = str_repeat('  ', min($nivel - 1, 5));
                 $this->line("   ✏️  {$prefijo}[{$codigo}] {$nombre}");
             } else {
                 $nuevoId = DB::table('plan_cuentas')->insertGetId($datos);
                 $indice[$codigo] = $nuevoId;
+                $indiceNormalizado[$this->normalizarCodigo($codigo)] = $nuevoId;
                 $creadas++;
                 $prefijo = str_repeat('  ', min($nivel - 1, 5));
                 $this->line("   ✅  {$prefijo}[{$codigo}] {$nombre}");

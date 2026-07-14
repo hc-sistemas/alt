@@ -3,10 +3,11 @@ import { router, usePage, useForm, Head } from '@inertiajs/react'
 import { toast, ToastContainer } from 'react-toastify'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
+import DesgloseHorasExtraModal from '@/Components/shared/DesgloseHorasExtraModal'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
-import { cn } from '@/lib/utils'
-import { Check, X, Filter, Clock } from 'lucide-react'
+import { cn, formatFecha } from '@/lib/utils'
+import { Check, X, Filter, Clock, Eye } from 'lucide-react'
 import type { HorasExtrasAprobacion, Colaborador, PageProps, PaginatedData } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
 
@@ -28,7 +29,6 @@ interface Props extends PageProps {
     extras: PaginatedData<HoraExtra>
     colaboradores: ColaboradorItem[]
     filtros: { estado?: string; colaborador_id?: string; fecha_desde?: string; fecha_hasta?: string }
-    flash: { success?: string; error?: string }
 }
 
 // ─── Notify ───────────────────────────────────────────────────────────────────
@@ -102,7 +102,7 @@ function ModalAprobar({ extra, onClose }: { extra: HoraExtra; onClose: () => voi
                                 {extra.colaborador?.apellidos} {extra.colaborador?.nombres}
                             </p>
                             <p style={{ color: 'var(--text-muted)' }}>
-                                {extra.fecha} · <TipoBadge tipo={extra.tipo} />
+                                {formatFecha(extra.fecha)} · <TipoBadge tipo={extra.tipo} />
                             </p>
                             <p style={{ color: 'var(--text-muted)' }}>
                                 Solicitado: <strong>{extra.horas_solicitadas}h</strong> ·
@@ -195,7 +195,7 @@ function ModalRechazar({ extra, onClose }: { extra: HoraExtra; onClose: () => vo
                                 {extra.colaborador?.apellidos} {extra.colaborador?.nombres}
                             </p>
                             <p style={{ color: 'var(--text-muted)' }}>
-                                {extra.fecha} · {extra.horas_solicitadas}h · <TipoBadge tipo={extra.tipo} />
+                                {formatFecha(extra.fecha)} · {extra.horas_solicitadas}h · <TipoBadge tipo={extra.tipo} />
                             </p>
                         </div>
 
@@ -232,16 +232,13 @@ function ModalRechazar({ extra, onClose }: { extra: HoraExtra; onClose: () => vo
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function HorasExtrasIndex() {
-    const { extras, colaboradores, filtros, flash } = usePage<Props>().props
+    const { extras, colaboradores, filtros } = usePage<Props>().props
 
-    const [modal, setModal] = useState<{ tipo: 'aprobar' | 'rechazar'; extra: HoraExtra } | null>(null)
+    const [modal, setModal] = useState<{ tipo: 'aprobar' | 'rechazar' | 'detalle'; extra: HoraExtra } | null>(null)
     const [estado, setEstado]         = useState(filtros.estado ?? '')
     const [colabId, setColabId]       = useState(filtros.colaborador_id ?? '')
     const [fechaDesde, setFechaDesde] = useState(filtros.fecha_desde ?? '')
     const [fechaHasta, setFechaHasta] = useState(filtros.fecha_hasta ?? '')
-
-    if (flash?.success) notify.ok(flash.success)
-    if (flash?.error)   notify.error(flash.error)
 
     function filtrar() {
         router.get(route('rrhh.horas-extras.index'), {
@@ -258,7 +255,7 @@ export default function HorasExtrasIndex() {
     }
 
     return (
-        <AppLayout title="Horas Extras">
+        <AppLayout title="Horas Extras" suppressFlash>
             <Head title="Horas Extras — RRHH" />
             <ToastContainer position="top-right" />
 
@@ -347,7 +344,7 @@ export default function HorasExtrasIndex() {
                                         {e.colaborador?.apellidos} {e.colaborador?.nombres}
                                     </td>
                                     <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>
-                                        {e.fecha}
+                                        {formatFecha(e.fecha)}
                                     </td>
                                     <td className="px-3 py-2.5">
                                         <TipoBadge tipo={e.tipo} />
@@ -373,26 +370,36 @@ export default function HorasExtrasIndex() {
                                         )}
                                     </td>
                                     <td className="px-3 py-2.5">
-                                        {e.estado === 'pendiente' && (
-                                            <div className="flex items-center gap-1">
-                                                <button
-                                                    onClick={() => setModal({ tipo: 'aprobar', extra: e })}
-                                                    className="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-white transition-colors"
-                                                    style={{ background: '#10b981' }}
-                                                    title="Aprobar"
-                                                >
-                                                    <Check className="w-3 h-3" /> Aprobar
-                                                </button>
-                                                <button
-                                                    onClick={() => setModal({ tipo: 'rechazar', extra: e })}
-                                                    className="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-white transition-colors"
-                                                    style={{ background: '#ef4444' }}
-                                                    title="Rechazar"
-                                                >
-                                                    <X className="w-3 h-3" /> Rechazar
-                                                </button>
-                                            </div>
-                                        )}
+                                        <div className="flex items-center gap-1">
+                                            <button
+                                                onClick={() => setModal({ tipo: 'detalle', extra: e })}
+                                                className="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-colors"
+                                                style={{ color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+                                                title="Ver detalle del cálculo (50%/100%)"
+                                            >
+                                                <Eye className="w-3 h-3" />
+                                            </button>
+                                            {e.estado === 'pendiente' && (
+                                                <>
+                                                    <button
+                                                        onClick={() => setModal({ tipo: 'aprobar', extra: e })}
+                                                        className="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-white transition-colors"
+                                                        style={{ background: '#10b981' }}
+                                                        title="Aprobar"
+                                                    >
+                                                        <Check className="w-3 h-3" /> Aprobar
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setModal({ tipo: 'rechazar', extra: e })}
+                                                        className="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-white transition-colors"
+                                                        style={{ background: '#ef4444' }}
+                                                        title="Rechazar"
+                                                    >
+                                                        <X className="w-3 h-3" /> Rechazar
+                                                    </button>
+                                                </>
+                                            )}
+                                        </div>
                                         {e.estado !== 'pendiente' && e.observacion && (
                                             <span className="text-[10px] italic" style={{ color: 'var(--text-muted)' }}
                                                 title={e.observacion}>
@@ -443,6 +450,22 @@ export default function HorasExtrasIndex() {
             {modal?.tipo === 'rechazar' && (
                 <ModalRechazar extra={modal.extra} onClose={() => setModal(null)} />
             )}
+            {modal?.tipo === 'detalle' && (() => {
+                const extra = modal.extra
+                const horas = extra.horas_aprobadas ?? extra.horas_solicitadas
+                const esSuplementaria = extra.tipo !== 'extraordinaria'
+                return (
+                    <DesgloseHorasExtraModal
+                        sueldoBase={extra.colaborador?.sueldo_base ?? 0}
+                        horas50={esSuplementaria ? horas : 0}
+                        horas100={esSuplementaria ? 0 : horas}
+                        nota={extra.estado === 'pendiente'
+                            ? 'Solicitud pendiente — cálculo con horas solicitadas (aún no aprobadas).'
+                            : undefined}
+                        onClose={() => setModal(null)}
+                    />
+                )
+            })()}
         </AppLayout>
     )
 }

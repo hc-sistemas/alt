@@ -2,11 +2,12 @@ import { useState } from 'react'
 import { Head, router, usePage } from '@inertiajs/react'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
+import DesgloseHorasExtraModal from '@/Components/shared/DesgloseHorasExtraModal'
 import type { Nomina, NominaDetalle, PageProps } from '@/types'
 import { cn } from '@/lib/utils'
 import {
     FileText, Download, CheckCircle, CreditCard,
-    Pencil, X, Save, ChevronLeft, AlertTriangle,
+    Pencil, X, Save, ChevronLeft, AlertTriangle, Eye,
 } from 'lucide-react'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -274,6 +275,8 @@ export default function NominaShow() {
     const [editando, setEditando] = useState<NominaDetalle | null>(null)
     const [showPagar, setShowPagar] = useState(false)
     const [procesando, setProcesando] = useState(false)
+    const [modalPdfUrl, setModalPdfUrl] = useState<string | null>(null)
+    const [detalleHorasExtra, setDetalleHorasExtra] = useState<NominaDetalle | null>(null)
 
     const detalles = nomina.detalles ?? []
 
@@ -296,6 +299,24 @@ export default function NominaShow() {
                     onClose={() => setEditando(null)}
                 />
             )}
+            {detalleHorasExtra && (() => {
+                const sueldoBase = detalleHorasExtra.colaborador?.sueldo_base ?? 0
+                const valorHora  = sueldoBase / 240
+                // Los subtotales ya vienen agregados (posiblemente de varios días
+                // aprobados en el período); se recupera la cantidad de horas a partir
+                // del subtotal guardado y el mismo VH usado al aprobar cada solicitud.
+                const horas50  = valorHora > 0 ? Number(detalleHorasExtra.horas_extras_50)  / (valorHora * 1.5) : 0
+                const horas100 = valorHora > 0 ? Number(detalleHorasExtra.horas_extras_100) / (valorHora * 2.0) : 0
+                return (
+                    <DesgloseHorasExtraModal
+                        sueldoBase={sueldoBase}
+                        horas50={horas50}
+                        horas100={horas100}
+                        nota="Total de horas extras aprobadas en el período de este rol de pagos."
+                        onClose={() => setDetalleHorasExtra(null)}
+                    />
+                )
+            })()}
             {showPagar && (
                 <PagarModal nominaId={nomina.id} onClose={() => setShowPagar(false)} />
             )}
@@ -318,7 +339,7 @@ export default function NominaShow() {
                 )}
                 {flash?.error && (
                     <div className="mb-4 px-4 py-2 rounded text-sm font-medium bg-red-50 text-red-700 border border-red-200 flex items-center gap-2">
-                        <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                        <AlertTriangle className="w-4 h-4 shrink-0" />
                         {flash.error}
                     </div>
                 )}
@@ -399,7 +420,7 @@ export default function NominaShow() {
 
                 {/* Tabla de detalles */}
                 <div className="rounded-lg border overflow-x-auto" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
-                    <table className="w-full text-sm min-w-[1100px]">
+                    <table className="w-full text-sm min-w-275">
                         <thead>
                             <tr style={{ background: 'var(--bg-main)', borderBottom: '1px solid var(--border)' }}>
                                 {['Empleado', 'Sueldo', 'H.Ext', 'Otros Ing.', 'IESS Pers.', 'Desc. Atr.', 'Prést.', 'Total Ing.', 'Total Egr.', 'Neto', 'Tipo Pago', 'Cta. Banco', 'Acciones'].map(h => (
@@ -439,7 +460,18 @@ export default function NominaShow() {
                                         {fmt(d.sueldo_base)}
                                     </td>
                                     <td className="px-3 py-2.5 font-mono text-xs text-right" style={{ color: 'var(--text-muted)' }}>
-                                        {fmt(Number(d.horas_extras_50) + Number(d.horas_extras_100))}
+                                        <div className="flex items-center justify-end gap-1">
+                                            {fmt(Number(d.horas_extras_50) + Number(d.horas_extras_100))}
+                                            {(Number(d.horas_extras_50) + Number(d.horas_extras_100)) > 0 && (
+                                                <button
+                                                    onClick={() => setDetalleHorasExtra(d)}
+                                                    className="p-0.5 rounded hover:bg-black/10 transition-colors"
+                                                    title="Ver desglose 50%/100%"
+                                                >
+                                                    <Eye className="w-3 h-3" />
+                                                </button>
+                                            )}
+                                        </div>
                                     </td>
                                     <td className="px-3 py-2.5 font-mono text-xs text-right" style={{ color: 'var(--text-muted)' }}>
                                         {fmt(d.otros_ingresos)}
@@ -472,15 +504,14 @@ export default function NominaShow() {
                                     </td>
                                     <td className="px-3 py-2.5">
                                         <div className="flex items-center gap-1">
-                                            {/* PDF individual — abre en nueva pestaña */}
-                                            <a
-                                                href={route('rrhh.nomina.pdf-individual', { id: nomina.id, did: d.id })}
-                                                target="_blank"
+                                            {/* PDF individual — abre en modal */}
+                                            <button
+                                                onClick={() => setModalPdfUrl(route('rrhh.nomina.pdf-individual', { id: nomina.id, did: d.id }))}
                                                 className="p-1.5 rounded hover:bg-blue-50 transition-colors"
-                                                title="Descargar rol individual"
+                                                title="Ver rol de pago"
                                             >
                                                 <FileText className="w-4 h-4 text-blue-600" />
-                                            </a>
+                                            </button>
                                             {/* Editar manual — solo en borrador */}
                                             {nomina.estado === 'borrador' && (
                                                 <button
@@ -524,6 +555,49 @@ export default function NominaShow() {
                     </table>
                 </div>
             </div>
+            {/* Modal PDF individual */}
+            {modalPdfUrl && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+                    onClick={() => setModalPdfUrl(null)}
+                >
+                    <div
+                        className="modal-card flex flex-col"
+                        style={{ width: '85vw', maxWidth: '860px', height: '90vh' }}
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <div className="modal-header flex items-center justify-between">
+                            <span className="font-semibold text-sm" style={{ color: 'var(--text-main)' }}>
+                                Rol de Pago Individual
+                            </span>
+                            <div className="flex items-center gap-2">
+                                <a
+                                    href={modalPdfUrl}
+                                    download
+                                    className="btn-secondary flex items-center gap-1.5 text-xs no-underline"
+                                    style={{ color: 'inherit' }}
+                                    onClick={e => e.stopPropagation()}
+                                >
+                                    <Download className="w-3.5 h-3.5" /> Descargar
+                                </a>
+                                <button
+                                    onClick={() => setModalPdfUrl(null)}
+                                    className="p-1 rounded hover:bg-red-50 text-red-500 transition-colors"
+                                >
+                                    <X className="w-4 h-4" />
+                                </button>
+                            </div>
+                        </div>
+                        <div className="flex-1 overflow-hidden">
+                            <iframe
+                                src={modalPdfUrl}
+                                className="w-full h-full border-0"
+                                title="Rol de pago"
+                            />
+                        </div>
+                    </div>
+                </div>
+            )}
         </AppLayout>
     )
 }

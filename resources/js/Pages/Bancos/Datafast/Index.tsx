@@ -5,7 +5,7 @@ import AppLayout from '@/Layouts/AppLayout'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
-import { Plus, X, CreditCard, CheckCircle, Clock, DollarSign } from 'lucide-react'
+import { Plus, X, CreditCard, CheckCircle } from 'lucide-react'
 import type { BancoCaja, DatafastLote, PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
 
@@ -13,17 +13,25 @@ import 'react-toastify/dist/ReactToastify.css'
 
 interface LoteRow {
     id: number; numero_lote: string; fecha: string; banco: string | null
-    total_vouchers: number; estado: 'pendiente' | 'liquidado'
+    banco_caja_id: number; total_vouchers: number; estado: 'pendiente' | 'liquidado'
     liquidacion: null | {
         fecha_deposito: string; valor_bruto: number
         comision_datafast: number; valor_neto: number
     }
 }
 
+interface Filtros {
+    banco_caja_id?: string
+    estado?:        string
+    fecha_desde?:   string
+    fecha_hasta?:   string
+    buscar?:        string
+}
+
 interface Props extends PageProps {
-    lotes: LoteRow[]
-    bancos: Pick<BancoCaja, 'id' | 'nombre' | 'tipo'>[]
-    stats: { pendientes: number; liquidados: number; total_vouchers: number }
+    lotes:   LoteRow[]
+    bancos:  Pick<BancoCaja, 'id' | 'nombre' | 'tipo'>[]
+    filtros: Filtros
 }
 
 // ─── Notify ───────────────────────────────────────────────────────────────────
@@ -36,21 +44,6 @@ const notify = {
 }
 
 const fmt = (n: number) => '$' + Number(n).toLocaleString('es-EC', { minimumFractionDigits: 2 })
-
-// ─── StatCard ─────────────────────────────────────────────────────────────────
-
-function StatCard({ label, value, icon: Icon, cls, valueCls }: {
-    label: string; value: string | number; icon: React.ElementType; cls: string; valueCls: string
-}) {
-    return (
-        <div className="rounded-xl border p-4 flex items-center gap-3 hover:shadow-md transition-shadow"
-            style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
-            <div className={cn('rounded-lg p-2.5 shrink-0', cls)}><Icon className="w-5 h-5" /></div>
-            <div><p className={cn('text-2xl font-bold leading-none mb-1', valueCls)}>{value}</p>
-                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{label}</p></div>
-        </div>
-    )
-}
 
 // ─── Modal Nuevo Lote ─────────────────────────────────────────────────────────
 
@@ -224,15 +217,39 @@ function LiquidarModal({ lote, bancos, onClose }: { lote: LoteRow; bancos: Props
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function DatafastIndex() {
-    const { lotes, bancos, stats, flash } = usePage<Props>().props
+    const { lotes, bancos, filtros, flash } = usePage<Props>().props
     const [showLote, setShowLote] = useState(false)
     const [liquidarLote, setLiquidarLote] = useState<LoteRow | null>(null)
+    const [bancoId,    setBancoId]    = useState(filtros.banco_caja_id ?? '')
+    const [estado,     setEstado]     = useState(filtros.estado        ?? '')
+    const [fechaDesde, setFechaDesde] = useState(filtros.fecha_desde   ?? '')
+    const [fechaHasta, setFechaHasta] = useState(filtros.fecha_hasta   ?? '')
+    const [buscar,     setBuscar]     = useState(filtros.buscar        ?? '')
 
     useEffect(() => {
         if (flash?.success) notify.ok(flash.success)
         if (flash?.error)   notify.error(flash.error)
         if (flash?.warning) notify.warn(flash.warning as string)
     }, [flash?.success, flash?.error])
+
+    function aplicarFiltros() {
+        router.get(route('bancos.datafast.index'), {
+            banco_caja_id: bancoId, estado, fecha_desde: fechaDesde, fecha_hasta: fechaHasta, buscar,
+        }, { preserveState: true, replace: true })
+    }
+
+    function limpiar() {
+        setBancoId(''); setEstado(''); setFechaDesde(''); setFechaHasta(''); setBuscar('')
+        router.get(route('bancos.datafast.index'), {}, { preserveState: false })
+    }
+
+    const hayFiltros = !!(bancoId || estado || fechaDesde || fechaHasta || buscar)
+
+    const lotesFiltrados = useMemo(() => {
+        if (!buscar.trim()) return lotes
+        const q = buscar.toLowerCase()
+        return lotes.filter(l => l.numero_lote.toLowerCase().includes(q))
+    }, [lotes, buscar])
 
     return (
         <AppLayout title="Datafast" suppressFlash>
@@ -254,21 +271,39 @@ export default function DatafastIndex() {
                         style={{ background: 'var(--primary)' }}>
                         <Plus size={15} /> Nuevo Lote
                     </button>
+
+                    <input type="text" placeholder="Buscar N° lote..."
+                        value={buscar} onChange={e => setBuscar(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
+                        className="input-field" style={{ width: '160px' }} />
+
+                    <select value={bancoId} onChange={e => setBancoId(e.target.value)}
+                        className="input-field select-field" style={{ width: 'auto' }}>
+                        <option value="">Todos los terminales</option>
+                        {bancos.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
+                    </select>
+
+                    <select value={estado} onChange={e => setEstado(e.target.value)}
+                        className="input-field select-field" style={{ width: 'auto' }}>
+                        <option value="">Todos los estados</option>
+                        <option value="pendiente">Pendiente</option>
+                        <option value="liquidado">Liquidado</option>
+                    </select>
+
+                    <input type="date" value={fechaDesde} onChange={e => setFechaDesde(e.target.value)}
+                        className="input-field" style={{ width: 'auto' }} />
+                    <input type="date" value={fechaHasta} onChange={e => setFechaHasta(e.target.value)}
+                        className="input-field" style={{ width: 'auto' }} />
+
+                    <button onClick={aplicarFiltros} className="btn-secondary whitespace-nowrap">Filtrar</button>
+                    {hayFiltros && (
+                        <button onClick={limpiar} className="btn-secondary flex items-center gap-1 whitespace-nowrap">
+                            <X size={13} /> Limpiar
+                        </button>
+                    )}
                 </div>
             </div>
 
-            {/* Stats */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 px-6 py-4">
-                <StatCard label="Pendientes" value={stats.pendientes} icon={Clock}
-                    cls="bg-orange-500/15 text-orange-600 dark:text-orange-400"
-                    valueCls="text-orange-600 dark:text-orange-400" />
-                <StatCard label="Liquidados" value={stats.liquidados} icon={CheckCircle}
-                    cls="bg-green-500/15 text-green-600 dark:text-green-400"
-                    valueCls="text-green-600 dark:text-green-400" />
-                <StatCard label="Total Vouchers" value={fmt(stats.total_vouchers)} icon={DollarSign}
-                    cls="bg-blue-500/15 text-blue-600 dark:text-blue-400"
-                    valueCls="text-blue-600 dark:text-blue-400" />
-            </div>
 
             {/* Tabla */}
             <div className="px-6 pb-8">
@@ -285,14 +320,14 @@ export default function DatafastIndex() {
                         <span className="col-span-2 text-right">Acción</span>
                     </div>
 
-                    {lotes.length === 0 && (
+                    {lotesFiltrados.length === 0 && (
                         <div className="py-20 text-center">
                             <CreditCard className="w-12 h-12 opacity-20 mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
                             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No hay lotes registrados</p>
                         </div>
                     )}
 
-                    {lotes.map(l => (
+                    {lotesFiltrados.map(l => (
                         <div key={l.id}
                             className="group grid grid-cols-12 gap-2 px-4 py-3 border-b items-center text-sm transition-colors"
                             style={{ borderColor: 'var(--border)' }}
