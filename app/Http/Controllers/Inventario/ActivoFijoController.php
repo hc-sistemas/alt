@@ -60,6 +60,7 @@ class ActivoFijoController extends Controller
             'codigo'            => ['required', 'string', 'max:50', Rule::unique('activos_fijos')->where('empresa_id', $empresaId)],
             'nombre'            => ['required', 'string', 'max:255'],
             'descripcion'       => ['nullable', 'string'],
+            'categoria'         => ['nullable', 'string', 'max:100'],
             'fecha_adquisicion' => ['required', 'date'],
             'costo_adquisicion' => ['required', 'numeric', 'min:0'],
             'valor_residual'    => ['nullable', 'numeric', 'min:0', 'lt:costo_adquisicion'],
@@ -68,6 +69,9 @@ class ActivoFijoController extends Controller
         ]);
 
         $data['empresa_id']             = $empresaId;
+        // categoria es NOT NULL en BD, pero el formulario actual no la captura
+        // todavía — se usa un valor por defecto hasta que se agregue el campo.
+        $data['categoria']              = $data['categoria'] ?? 'General';
         $data['depreciacion_acumulada'] = 0;
         $data['valor_residual']         = $data['valor_residual'] ?? 0;
         $data['valor_en_libros']        = $data['costo_adquisicion'];
