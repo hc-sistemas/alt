@@ -13,10 +13,6 @@ import { toastError } from '@/lib/toast'
 import { Plus, Save, X, Send, Search } from 'lucide-react'
 import type { PageProps, Empresa, Usuario, Cliente } from '@/types'
 
-// Bodega fija de la que siempre sale el stock (decisión de negocio: ya no se
-// selecciona bodega por línea). El backend resuelve el id real por este nombre.
-const BODEGA_FIJA_LABEL = 'Principal UIO'
-
 // ── Interfaces locales ────────────────────────────────────────────────────────
 
 interface ProductoVenta {
@@ -384,9 +380,10 @@ export default function Form() {
 
     const handleDescuentoChange = (idx: number, valor: number) => {
         const linea = detalles[idx]
-        // El tope de producto es un techo absoluto — ni siquiera con
-        // descuento especial activo (PIN de supervisor) se puede superar.
-        if (valor > linea.descuento_max_producto && linea.descuento_max_producto < 100) {
+        // El tope de producto solo aplica sin autorización especial — con
+        // descuento especial activo (PIN de supervisor) el vendedor puede
+        // superarlo, hasta el límite de perfil aprobado vía limites_descuento.
+        if (!descuentoEspecialActivo && valor > linea.descuento_max_producto && linea.descuento_max_producto < 100) {
             updateDetalle(idx, {
                 descuento_pct: linea.descuento_max_producto,
                 _desc_error: `Descuento máximo para este producto: ${linea.descuento_max_producto}%`,
@@ -691,7 +688,6 @@ export default function Form() {
                                     {[
                                         { label: 'N°', cls: 'w-8 text-center' },
                                         { label: 'Producto', cls: 'min-w-55' },
-                                        { label: 'Bodega', cls: 'w-32' },
                                         { label: 'Cant', cls: 'w-16 text-right' },
                                         { label: 'Precio', cls: 'w-24 text-right' },
                                         { label: 'Desc%', cls: 'w-20 text-right' },
@@ -784,22 +780,6 @@ export default function Form() {
                                             )}
                                         </td>
 
-                                        {/* Bodega — fija, no seleccionable */}
-                                        <td className="py-2 px-1 align-top">
-                                            <div
-                                                className="h-7 w-full rounded border px-2 text-xs flex items-center"
-                                                style={{
-                                                    background: 'var(--bg-main)',
-                                                    borderColor: 'var(--border)',
-                                                    color: 'var(--text-muted)',
-                                                }}
-                                                title="Bodega fija de despacho"
-                                            >
-                                                {BODEGA_FIJA_LABEL}
-                                            </div>
-                                            <div className={hintSlotCls} />
-                                        </td>
-
                                         {/* Cantidad — enteros + texto de stock */}
                                         <td className="py-2 px-1 align-top">
                                             <input
@@ -872,7 +852,9 @@ export default function Form() {
                                                 className={hintSlotCls}
                                                 style={{ color: det._desc_error ? 'var(--color-danger)' : 'var(--color-warning)' }}
                                             >
-                                                {det._desc_error || (det.producto_id !== null ? `Max. ${det.descuento_max_producto}%` : '')}
+                                                {det._desc_error || (det.producto_id !== null
+                                                    ? (descuentoEspecialActivo ? 'Descuento especial activo — sin tope de producto' : `Max. ${det.descuento_max_producto}%`)
+                                                    : '')}
                                             </div>
                                         </td>
 
