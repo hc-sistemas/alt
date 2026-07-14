@@ -549,13 +549,22 @@ export default function Form() {
                         <table className="w-full text-xs">
                             <thead>
                                 <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                                    {['Producto', 'Cant.', 'Precio Unit.', 'Desc%', 'Subtotal', 'IVA%', 'Total', ''].map((col, i) => (
+                                    {[
+                                        { label: 'Producto', cls: 'min-w-55' },
+                                        { label: 'Cant.', cls: 'w-20 text-right' },
+                                        { label: 'Precio Unit.', cls: 'w-24 text-right' },
+                                        { label: 'Desc%', cls: 'w-20 text-right' },
+                                        { label: 'Subtotal', cls: 'w-24 text-right' },
+                                        { label: 'IVA%', cls: 'w-14 text-center' },
+                                        { label: 'Total', cls: 'w-24 text-right' },
+                                        { label: '', cls: 'w-8' },
+                                    ].map((col, i) => (
                                         <th
                                             key={i}
-                                            className={cn('py-2 px-2 font-medium text-left', (i >= 1 && i <= 4) && 'text-right')}
+                                            className={cn('py-2 px-2 font-medium text-left', col.cls)}
                                             style={{ color: 'var(--text-muted)' }}
                                         >
-                                            {col}
+                                            {col.label}
                                         </th>
                                     ))}
                                 </tr>
@@ -626,14 +635,15 @@ export default function Form() {
                                                         )}
                                                     </div>
                                                 )}
+                                                <div className={hintSlotCls} />
                                             </td>
-                                            <td className="py-1.5 px-2" style={{ minWidth: 72 }}>
+                                            <td className="py-1.5 px-2">
                                                 <Input
                                                     type="number"
                                                     min="1"
                                                     step="1"
                                                     value={det.cantidad}
-                                                    className="text-xs text-right"
+                                                    className="h-7 px-2 text-xs text-right"
                                                     onKeyDown={e => { if (e.key === '.' || e.key === ',') e.preventDefault() }}
                                                     onChange={e => {
                                                         const val = parseInt(e.target.value, 10)
@@ -646,19 +656,28 @@ export default function Form() {
                                                         : ''}
                                                 </div>
                                             </td>
-                                            <td className="py-1.5 px-2" style={{ minWidth: 96 }}>
-                                                <Input type="number" min="0" step="0.01" value={det.precio_unitario} className="text-xs text-right" onChange={e => updateDetalle(idx, { precio_unitario: Number(e.target.value) })} />
+                                            <td className="py-1.5 px-2">
+                                                <Input type="number" min="0" step="0.01" value={det.precio_unitario} className="h-7 px-2 text-xs text-right" onChange={e => updateDetalle(idx, { precio_unitario: Number(e.target.value) })} />
+                                                <div className={hintSlotCls} />
                                             </td>
-                                            <td className="py-1.5 px-2 relative" style={{ minWidth: 72 }}>
+                                            <td className="py-1.5 px-2 relative">
                                                 <Input
                                                     type="number" min="0" max="100" step="0.1"
                                                     value={det.descuento_pct}
-                                                    className={cn('text-xs text-right pr-6', det.descuento_especial && 'border-amber-500')}
+                                                    className={cn('h-7 px-2 text-xs text-right pr-6', det.descuento_especial && 'border-amber-500')}
                                                     onChange={e => handleDescuentoChange(idx, Number(e.target.value))}
                                                 />
                                                 {det.descuento_especial && (
                                                     <AlertTriangle className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-amber-500 pointer-events-none" />
                                                 )}
+                                                <div
+                                                    className={hintSlotCls}
+                                                    style={{ color: det._desc_error ? 'var(--color-danger)' : 'var(--color-warning)' }}
+                                                >
+                                                    {det._desc_error || (det.producto_id !== null
+                                                        ? `Max. ${det.descuento_max_producto}%`
+                                                        : '')}
+                                                </div>
                                             </td>
                                             <td className="py-1.5 px-2 text-right font-medium" style={{ color: 'var(--text-main)' }}>{formatMoneda(det.subtotal)}</td>
                                             <td className="py-1.5 px-2 text-center" style={{ color: 'var(--text-muted)' }}>{det.porcentaje_iva}%</td>
