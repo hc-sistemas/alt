@@ -10,6 +10,7 @@ import { Label } from '@/Components/ui/label'
 import BuscadorClienteModal from '@/Components/shared/BuscadorClienteModal'
 import DescuentoEspecialModal from '@/Components/Ventas/DescuentoEspecialModal'
 import { cn, formatMoneda } from '@/lib/utils'
+import { toastError } from '@/lib/toast'
 import { Plus, Trash2, Search, Save, X, AlertTriangle } from 'lucide-react'
 import type { PageProps, Empresa, Usuario, Cliente, LimiteDescuento } from '@/types'
 
@@ -22,6 +23,7 @@ interface ProductoVenta {
     costo: number
     descuento_max: number
     porcentaje_iva: number
+    stock_disponible: number
 }
 
 interface DetalleLinea {
@@ -39,6 +41,9 @@ interface DetalleLinea {
     descuento_especial: boolean
     aprobacion_id: number | null
     descuento_max_producto: number
+    // Solo informativo (Bodega Principal UIO) — Proforma es cotización, no
+    // reserva ni descuenta stock. Sin lógica de bloqueo al guardar.
+    stock_disponible: number | null
     _busqueda: string
     _error: string
     _desc_error: string
@@ -74,6 +79,7 @@ function lineaVacia(): DetalleLinea {
         descuento_valor: 0, subtotal: 0, porcentaje_iva: 15,
         valor_iva: 0, total: 0, descuento_especial: false,
         aprobacion_id: null, descuento_max_producto: 100,
+        stock_disponible: null,
         _busqueda: '', _error: '', _desc_error: '',
     }
 }
@@ -253,6 +259,7 @@ export default function Form() {
                 porcentaje_iva: p.porcentaje_iva,
                 descuento_max_producto: p.descuento_max,
                 descuento_pct: 0,
+                stock_disponible: p.stock_disponible,
                 _busqueda: '',
                 _error: '',
                 _desc_error: '',
@@ -320,13 +327,19 @@ export default function Form() {
                 aprobacion_id: d.aprobacion_id,
             })),
         }, {
-            onError: () => setGuardando(false),
+            onError: errors => {
+                Object.values(errors).forEach(msg => { if (msg) toastError(msg) })
+                setGuardando(false)
+            },
             onFinish: () => setGuardando(false),
         })
     }
 
     const vendedorActual = vendedores.find(v => v.id === vendedorId)
     const tipoLabel: Record<string, string> = { '04': 'RUC', '05': 'CÉDULA', '06': 'PASAPORTE', '07': 'CONSUMIDOR' }
+    // Slot de altura fija debajo del input de cantidad (16px), mismo patrón
+    // de Facturas — aquí es solo informativo, nunca cambia de color a rojo.
+    const hintSlotCls = "h-4 mt-0.5 text-[11px] font-medium leading-4 whitespace-nowrap overflow-hidden"
 
     return (
         <AppLayout>
@@ -613,6 +626,11 @@ export default function Form() {
                                                         updateDetalle(idx, { cantidad: isNaN(val) || val < 1 ? 1 : val })
                                                     }}
                                                 />
+                                                <div className={hintSlotCls} style={{ color: 'var(--color-warning)' }}>
+                                                    {det.producto_id !== null && det.stock_disponible !== null
+                                                        ? `Stock: ${det.stock_disponible}`
+                                                        : ''}
+                                                </div>
                                             </td>
                                             <td className="py-1.5 px-2" style={{ minWidth: 96 }}>
                                                 <Input type="number" min="0" step="0.01" value={det.precio_unitario} className="text-xs text-right" onChange={e => updateDetalle(idx, { precio_unitario: Number(e.target.value) })} />

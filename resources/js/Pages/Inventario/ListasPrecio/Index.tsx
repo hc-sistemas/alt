@@ -1,5 +1,5 @@
 import { Head, Link, router, usePage } from '@inertiajs/react'
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
@@ -18,6 +18,7 @@ interface ListaPrecioRow {
     pvd_base: number
     lista_pvp_precio: number | null
     lista_pvp_descuento_max: number | null
+    lista_pvp_descuento_max_promo: number | null
     lista_pvd_precio: number | null
     lista_pvd_descuento_max: number | null
     vigencia_desde: string | null
@@ -46,6 +47,16 @@ interface EditState {
     pvd: string
     descuento_pvp: string
     descuento_pvd: string
+    // No se editan aquí (ver grupo de columnas Promo) — se preservan para
+    // no enviar null y borrar sin querer la vigencia de la promo al guardar
+    // solo precio/descuento.
+    vigencia_desde: string
+    vigencia_hasta: string
+}
+
+interface PromoEditState {
+    producto_id: number
+    descuento_max_promo: string
     vigencia_desde: string
     vigencia_hasta: string
 }
@@ -60,6 +71,23 @@ function fmtDate(val: string | null | undefined): string {
     return val.slice(0, 10)
 }
 
+// Hay valor útil en el campo: no es null/undefined, y si llega como string
+// (los NUMERIC/DATE de PostgreSQL vienen como string sin castear en el
+// query builder crudo de index()) tampoco está vacío tras recortar espacios.
+function tieneValor(val: unknown): boolean {
+    return val !== null && val !== undefined && String(val).trim() !== ''
+}
+
+// Determina si mostrar los valores de la promo en vez del botón "Agregar
+// promo": basta con que haya datos guardados (%, Desde y Hasta), sin
+// importar si la fecha está vigente o vencida hoy — eso solo afecta el
+// descuento aplicado (ver DescuentoService), no la visibilidad del bloque.
+function tienePromoGuardada(row: ListaPrecioRow): boolean {
+    return tieneValor(row.lista_pvp_descuento_max_promo)
+        && tieneValor(row.vigencia_desde)
+        && tieneValor(row.vigencia_hasta)
+}
+
 export default function ListasPrecioIndex() {
     const { listas, filters, marcas, categorias } = usePage<Props>().props
 
@@ -67,6 +95,7 @@ export default function ListasPrecioIndex() {
     const [marcaId, setMarcaId] = useState(filters.marca_id ?? '')
     const [catId, setCatId]     = useState(filters.categoria_id ?? '')
     const [editing, setEditing] = useState<EditState | null>(null)
+    const [promoEditing, setPromoEditing] = useState<PromoEditState | null>(null)
 
     const debounceRef   = useRef<ReturnType<typeof setTimeout> | null>(null)
     const isFirstRender = useRef(true)
@@ -120,6 +149,45 @@ export default function ListasPrecioIndex() {
         )
     }
 
+    function startPromoEdit(row: ListaPrecioRow) {
+        setPromoEditing({
+            producto_id:          row.producto_id,
+            descuento_max_promo:  fmt(row.lista_pvp_descuento_max_promo ?? 0),
+            vigencia_desde:       fmtDate(row.vigencia_desde),
+            vigencia_hasta:       fmtDate(row.vigencia_hasta),
+        })
+    }
+
+    // Reusa el mismo endpoint de update() — envía también los campos base
+    // (pvp/pvd/descuentos) sin cambios, porque el backend los exige juntos.
+    function guardarPromo(row: ListaPrecioRow, snap: PromoEditState) {
+        if (snap.descuento_max_promo.trim() !== '' && (!snap.vigencia_desde || !snap.vigencia_hasta)) {
+            toastError('Debe indicar Desde y Hasta para configurar la promo.')
+            return
+        }
+
+        router.put(
+            route('inventario.listas.update', snap.producto_id),
+            {
+                pvp:                  row.lista_pvp_precio ?? row.pvp_base,
+                pvd:                  row.lista_pvd_precio ?? row.pvd_base,
+                descuento_pvp:        row.lista_pvp_descuento_max ?? 0,
+                descuento_pvd:        row.lista_pvd_descuento_max ?? 0,
+                descuento_max_promo:  snap.descuento_max_promo.trim() !== '' ? parseFloat(snap.descuento_max_promo) : null,
+                vigencia_desde:       snap.vigencia_desde || null,
+                vigencia_hasta:       snap.vigencia_hasta || null,
+            },
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    toastExito('Promoción actualizada')
+                    setPromoEditing(null)
+                },
+                onError: () => toastError('Error al guardar la promoción'),
+            }
+        )
+    }
+
     function handleKeyDown(e: React.KeyboardEvent) {
         if (e.key === 'Enter') {
             if (blurTimerRef.current) clearTimeout(blurTimerRef.current)
@@ -150,6 +218,7 @@ export default function ListasPrecioIndex() {
                 pvd_lista:      r.lista_pvd_precio != null ? Number(r.lista_pvd_precio) : Number(r.pvd_base),
                 descuento_pvp:  r.lista_pvp_descuento_max != null ? Number(r.lista_pvp_descuento_max) : 0,
                 descuento_pvd:  r.lista_pvd_descuento_max != null ? Number(r.lista_pvd_descuento_max) : 0,
+                descuento_promo: r.lista_pvp_descuento_max_promo != null ? Number(r.lista_pvp_descuento_max_promo) : '',
                 vigencia_desde: fmtDate(r.vigencia_desde),
                 vigencia_hasta: fmtDate(r.vigencia_hasta),
             }))
@@ -214,6 +283,45 @@ export default function ListasPrecioIndex() {
                     {...props}
                 />
             </td>
+        )
+    }
+
+    // Grupo de 3 columnas de promo (Desc. promo % / Desde / Hasta), separado
+    // del resto con un borde izquierdo continuo. Sin datos guardados: botón
+    // ocupando las 3 columnas. Con datos guardados (vigentes o vencidos):
+    // los 3 valores, con el % clickeable para reabrir la misma edición inline.
+    function promoGroupCells(row: ListaPrecioRow) {
+        if (!tienePromoGuardada(row)) {
+            return (
+                <td colSpan={3} className={cn(tdBase, 'text-center')} style={{ borderLeft: '1px solid var(--border)' }}>
+                    <button
+                        type="button"
+                        onClick={() => startPromoEdit(row)}
+                        className="text-xs font-medium hover:underline whitespace-nowrap"
+                        style={{ color: 'var(--primary)' }}
+                    >
+                        Agregar promo
+                    </button>
+                </td>
+            )
+        }
+        return (
+            <>
+                <td
+                    className={cn(tdMuted, 'cursor-pointer hover:underline')}
+                    style={{ color: 'var(--primary)', borderLeft: '1px solid var(--border)' }}
+                    onClick={() => startPromoEdit(row)}
+                    title="Clic para editar la promo"
+                >
+                    {fmt(row.lista_pvp_descuento_max_promo)}%
+                </td>
+                <td className={tdBase} style={{ color: 'var(--text-muted)' }}>
+                    {fmtDate(row.vigencia_desde) || '—'}
+                </td>
+                <td className={tdBase} style={{ color: 'var(--text-muted)' }}>
+                    {fmtDate(row.vigencia_hasta) || '—'}
+                </td>
+            </>
         )
     }
 
@@ -302,11 +410,17 @@ export default function ListasPrecioIndex() {
                                     'Código', 'Nombre', 'Marca',
                                     'PVP Base', 'PVP Lista', 'Desc. PVP%',
                                     'PVD Base', 'PVD Lista', 'Desc. PVD%',
-                                    'Vigencia Desde', 'Vigencia Hasta',
                                 ].map(h => (
                                     <th key={h}
                                         className="text-left px-2 py-3 font-medium text-xs uppercase tracking-wider whitespace-nowrap"
                                         style={{ color: 'var(--text-muted)' }}>
+                                        {h}
+                                    </th>
+                                ))}
+                                {['Desc. Promo %', 'Desde', 'Hasta'].map((h, i) => (
+                                    <th key={h}
+                                        className="text-left px-2 py-3 font-medium text-xs uppercase tracking-wider whitespace-nowrap text-amber-400"
+                                        style={i === 0 ? { borderLeft: '1px solid var(--border)' } : undefined}>
                                         {h}
                                     </th>
                                 ))}
@@ -315,7 +429,7 @@ export default function ListasPrecioIndex() {
                         <tbody>
                             {listas.data.length === 0 ? (
                                 <tr>
-                                    <td colSpan={11} className="text-center py-16" style={{ color: 'var(--text-muted)' }}>
+                                    <td colSpan={12} className="text-center py-16" style={{ color: 'var(--text-muted)' }}>
                                         <p className="font-medium text-sm" style={{ color: 'var(--text-main)' }}>
                                             No hay productos
                                         </p>
@@ -332,9 +446,10 @@ export default function ListasPrecioIndex() {
                                 const focusHandler = () => {
                                     if (blurTimerRef.current) clearTimeout(blurTimerRef.current)
                                 }
+                                const promoOpen = promoEditing?.producto_id === row.producto_id
                                 return (
+                                    <Fragment key={row.producto_id}>
                                     <tr
-                                        key={row.producto_id}
                                         className="border-t transition-colors"
                                         style={{
                                             borderColor: 'var(--border)',
@@ -369,8 +484,6 @@ export default function ListasPrecioIndex() {
                                                 </td>
                                                 {editCell('pvd',          { type: 'number', step: 0.01, min: 0,       onBlur: blurHandler, onFocus: focusHandler })}
                                                 {editCell('descuento_pvd', { type: 'number', step: 0.01, min: 0, max: 100, onBlur: blurHandler, onFocus: focusHandler })}
-                                                {editCell('vigencia_desde', { type: 'date', onBlur: blurHandler, onFocus: focusHandler })}
-                                                {editCell('vigencia_hasta', { type: 'date', onBlur: blurHandler, onFocus: focusHandler })}
                                             </>
                                         ) : (
                                             <>
@@ -388,7 +501,7 @@ export default function ListasPrecioIndex() {
                                                     onClick={() => startEdit(row)}
                                                     title="Clic para editar"
                                                 >
-                                                    {row.lista_pvp_descuento_max != null ? Number(row.lista_pvp_descuento_max).toFixed(2) : '—'}
+                                                    {row.lista_pvp_descuento_max != null ? `${Number(row.lista_pvp_descuento_max).toFixed(2)}%` : '—'}
                                                 </td>
 
                                                 {/* PVD Base */}
@@ -410,26 +523,66 @@ export default function ListasPrecioIndex() {
                                                     onClick={() => startEdit(row)}
                                                     title="Clic para editar"
                                                 >
-                                                    {row.lista_pvd_descuento_max != null ? Number(row.lista_pvd_descuento_max).toFixed(2) : '—'}
-                                                </td>
-
-                                                <td
-                                                    className={cn(tdBase, 'cursor-pointer hover:underline')}
-                                                    style={{ color: 'var(--text-muted)' }}
-                                                    onClick={() => startEdit(row)}
-                                                >
-                                                    {fmtDate(row.vigencia_desde) || '—'}
-                                                </td>
-                                                <td
-                                                    className={cn(tdBase, 'cursor-pointer hover:underline')}
-                                                    style={{ color: 'var(--text-muted)' }}
-                                                    onClick={() => startEdit(row)}
-                                                >
-                                                    {fmtDate(row.vigencia_hasta) || '—'}
+                                                    {row.lista_pvd_descuento_max != null ? `${Number(row.lista_pvd_descuento_max).toFixed(2)}%` : '—'}
                                                 </td>
                                             </>
                                         )}
+                                        {promoGroupCells(row)}
                                     </tr>
+                                    {promoOpen && (
+                                        <tr style={{ borderColor: 'var(--border)' }}>
+                                            <td colSpan={12} className="px-4 py-3" style={{ background: 'var(--bg-card)', borderTop: '1px dashed var(--border)' }}>
+                                                <div className="flex items-end gap-3 flex-wrap">
+                                                    <div>
+                                                        <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>Desc. promo %</p>
+                                                        <Input
+                                                            type="number" step="0.01" min={0} max={100}
+                                                            value={promoEditing?.descuento_max_promo ?? ''}
+                                                            onChange={e => setPromoEditing(prev => prev ? { ...prev, descuento_max_promo: e.target.value } : prev)}
+                                                            className="h-7 text-xs w-24 font-mono"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>Desde</p>
+                                                        <Input
+                                                            type="date"
+                                                            value={promoEditing?.vigencia_desde ?? ''}
+                                                            onChange={e => setPromoEditing(prev => prev ? { ...prev, vigencia_desde: e.target.value } : prev)}
+                                                            className="h-7 text-xs"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>Hasta</p>
+                                                        <Input
+                                                            type="date"
+                                                            value={promoEditing?.vigencia_hasta ?? ''}
+                                                            onChange={e => setPromoEditing(prev => prev ? { ...prev, vigencia_hasta: e.target.value } : prev)}
+                                                            className="h-7 text-xs"
+                                                        />
+                                                    </div>
+                                                    <div className="flex gap-2">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => promoEditing && guardarPromo(row, promoEditing)}
+                                                            className="px-3 py-1.5 rounded-md text-xs font-medium"
+                                                            style={{ background: 'var(--primary)', color: 'black' }}
+                                                        >
+                                                            Guardar
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setPromoEditing(null)}
+                                                            className="px-3 py-1.5 rounded-md text-xs font-medium"
+                                                            style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-main)' }}
+                                                        >
+                                                            Cancelar
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    )}
+                                    </Fragment>
                                 )
                             })}
                         </tbody>

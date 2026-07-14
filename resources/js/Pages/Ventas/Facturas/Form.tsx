@@ -13,6 +13,10 @@ import { toastError } from '@/lib/toast'
 import { Plus, Save, X, Send, Search } from 'lucide-react'
 import type { PageProps, Empresa, Usuario, Cliente, LimiteDescuento } from '@/types'
 
+// Bodega fija de la que siempre sale el stock (decisión de negocio: ya no se
+// selecciona bodega por línea). El backend resuelve el id real por este nombre.
+const BODEGA_FIJA_LABEL = 'Principal UIO'
+
 // ── Interfaces locales ────────────────────────────────────────────────────────
 
 interface ProductoVenta {
@@ -43,6 +47,9 @@ interface DetalleLinea {
     _busqueda: string
     _error: string
     _desc_error: string
+    _disponible: number | null
+    _disponibleCargando: boolean
+    _disponibleError: string
 }
 
 interface FormaPagoLinea {
@@ -81,6 +88,7 @@ function lineaVacia(): DetalleLinea {
         descuento_valor: 0, subtotal: 0, porcentaje_iva: 15,
         valor_iva: 0, total: 0, descuento_max_producto: 100,
         _busqueda: '', _error: '', _desc_error: '',
+        _disponible: null, _disponibleCargando: false, _disponibleError: '',
     }
 }
 
@@ -96,6 +104,19 @@ const hoy = new Date().toLocaleDateString('es-EC', { day: '2-digit', month: '2-d
 
 function getCsrf(): string {
     return (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement | null)?.content ?? ''
+}
+
+async function consultarSaldoDisponible(productoId: number): Promise<number> {
+    const res = await fetch(
+        route('ventas.facturas.saldo-disponible', { producto_id: productoId }),
+        { headers: { Accept: 'application/json' } },
+    )
+    if (!res.ok) {
+        const data = await res.json().catch(() => null) as { error?: string } | null
+        throw new Error(data?.error || 'No se pudo consultar el stock.')
+    }
+    const data = await res.json() as { disponible: number }
+    return data.disponible
 }
 
 // ── ClienteField ──────────────────────────────────────────────────────────────
@@ -202,6 +223,21 @@ export default function Form() {
         return { subtotal0, subtotal15, descTotal, iva, total: subtotal0 + subtotal15 + iva }
     }, [detalles])
 
+    // Suma cantidades de un mismo producto repetido en varias líneas, para no
+    // dejar pasar por partes lo que junto sí supera el disponible. Todas las
+    // líneas descuentan de la misma bodega fija, así que basta agrupar por producto.
+    const excesosStock = useMemo(() => {
+        const sumas = new Map<number, number>()
+        for (const d of detalles) {
+            if (d.producto_id === null) continue
+            sumas.set(d.producto_id, (sumas.get(d.producto_id) ?? 0) + d.cantidad)
+        }
+        return detalles.map(d => {
+            if (d.producto_id === null || d._disponible === null) return false
+            return (sumas.get(d.producto_id) ?? 0) > d._disponible
+        })
+    }, [detalles])
+
     const totalPagado = useMemo(() => pagos.reduce((acc, p) => acc + p.valor, 0), [pagos])
     const diferencia = Math.round((totalPagado - totales.total) * 100) / 100
 
@@ -300,6 +336,52 @@ export default function Form() {
         })
     }
 
+    // Consulta InventarioService::getSaldoDisponible para la línea idx. Si falla
+    // por red/servidor, degrada a advertencia y no bloquea el formulario.
+    const actualizarDisponible = (idx: number, productoId: number | null) => {
+        if (productoId === null) {
+            setDetalles(prev => {
+                const next = [...prev]
+                if (next[idx]) next[idx] = { ...next[idx], _disponible: null, _disponibleError: '', _disponibleCargando: false }
+                return next
+            })
+            return
+        }
+        setDetalles(prev => {
+            const next = [...prev]
+            if (next[idx]) next[idx] = { ...next[idx], _disponibleCargando: true, _disponibleError: '' }
+            return next
+        })
+        consultarSaldoDisponible(productoId)
+            .then(disponible => {
+                setDetalles(prev => {
+                    const next = [...prev]
+                    const linea = next[idx]
+                    if (linea && linea.producto_id === productoId) {
+                        next[idx] = { ...linea, _disponible: disponible, _disponibleCargando: false, _disponibleError: '' }
+                    }
+                    return next
+                })
+            })
+            .catch((err: unknown) => {
+                setDetalles(prev => {
+                    const next = [...prev]
+                    const linea = next[idx]
+                    if (linea && linea.producto_id === productoId) {
+                        next[idx] = {
+                            ...linea,
+                            _disponible: null,
+                            _disponibleCargando: false,
+                            _disponibleError: err instanceof Error
+                                ? err.message
+                                : 'No se pudo consultar el stock. Verifique manualmente.',
+                        }
+                    }
+                    return next
+                })
+            })
+    }
+
     const handleDescuentoChange = (idx: number, valor: number) => {
         const linea = detalles[idx]
         if (!descuentoEspecialActivo && valor > linea.descuento_max_producto && linea.descuento_max_producto < 100) {
@@ -331,6 +413,7 @@ export default function Form() {
             return next
         })
         setModalProducto(null)
+        actualizarDisponible(idx, p.id)
     }
 
     const handleBuscarProducto = (idx: number, q: string) => {
@@ -386,6 +469,9 @@ export default function Form() {
         if (Math.abs(diferencia) > 0.01) {
             erroresGlobales.push(`Las formas de pago no cuadran. Diferencia: ${formatMoneda(Math.abs(diferencia))}`)
         }
+        if (excesosStock.some(Boolean)) {
+            erroresGlobales.push('Hay productos con cantidad mayor al stock disponible.')
+        }
 
         const nuevosErroresPago: Record<number, string> = {}
         pagos.forEach((p, i) => {
@@ -427,7 +513,10 @@ export default function Form() {
                 num_cheque: p.num_cheque,
             })),
         }, {
-            onError: () => setGuardando(false),
+            onError: errors => {
+                Object.values(errors).forEach(msg => { if (msg) toastError(msg) })
+                setGuardando(false)
+            },
             onFinish: () => setGuardando(false),
         })
     }
@@ -437,6 +526,10 @@ export default function Form() {
 
     const tdInput = "w-full text-xs py-1 px-1.5 rounded border focus:outline-none"
     const tdInputStyle = { background: 'var(--bg-main)', borderColor: 'var(--border)', color: 'var(--text-main)' }
+    // Slot de altura fija debajo del input (16px) — siempre presente, con o sin
+    // texto, para que Bodega/Cantidad/Precio/Desc% queden a la misma altura
+    // entre sí y entre líneas de producto distintas.
+    const hintSlotCls = "h-4 mt-0.5 text-[11px] font-medium leading-4 whitespace-nowrap overflow-hidden"
 
     void limite_descuento
 
@@ -598,6 +691,7 @@ export default function Form() {
                                     {[
                                         { label: 'N°', cls: 'w-8 text-center' },
                                         { label: 'Producto', cls: 'min-w-55' },
+                                        { label: 'Bodega', cls: 'w-32' },
                                         { label: 'Cant', cls: 'w-16 text-right' },
                                         { label: 'Precio', cls: 'w-24 text-right' },
                                         { label: 'Desc%', cls: 'w-20 text-right' },
@@ -620,12 +714,12 @@ export default function Form() {
                                     <tr key={idx} style={{ borderBottom: '1px solid var(--border)' }}>
 
                                         {/* N° */}
-                                        <td className="py-1 px-1.5 text-center" style={{ color: 'var(--text-muted)' }}>
+                                        <td className="py-2 px-1.5 text-center align-top" style={{ color: 'var(--text-muted)' }}>
                                             {idx + 1}
                                         </td>
 
                                         {/* Producto */}
-                                        <td className="py-1 px-1">
+                                        <td className="py-2 px-1 align-top">
                                             {det.producto_id !== null ? (
                                                 <div
                                                     className="flex items-center gap-1 min-w-0 px-1.5 py-0.5 rounded"
@@ -690,8 +784,24 @@ export default function Form() {
                                             )}
                                         </td>
 
-                                        {/* Cantidad — enteros */}
-                                        <td className="py-1 px-1">
+                                        {/* Bodega — fija, no seleccionable */}
+                                        <td className="py-2 px-1 align-top">
+                                            <div
+                                                className="h-7 w-full rounded border px-2 text-xs flex items-center"
+                                                style={{
+                                                    background: 'var(--bg-main)',
+                                                    borderColor: 'var(--border)',
+                                                    color: 'var(--text-muted)',
+                                                }}
+                                                title="Bodega fija de despacho"
+                                            >
+                                                {BODEGA_FIJA_LABEL}
+                                            </div>
+                                            <div className={hintSlotCls} />
+                                        </td>
+
+                                        {/* Cantidad — enteros + texto de stock */}
+                                        <td className="py-2 px-1 align-top">
                                             <input
                                                 type="number"
                                                 min={1}
@@ -707,10 +817,30 @@ export default function Form() {
                                                     updateDetalle(idx, { cantidad: isNaN(val) || val < 1 ? 1 : val })
                                                 }}
                                             />
+                                            <div
+                                                className={hintSlotCls}
+                                                style={{
+                                                    color: det._disponibleCargando
+                                                        ? 'var(--text-muted)'
+                                                        : excesosStock[idx]
+                                                            ? 'var(--color-danger)'
+                                                            : 'var(--color-warning)',
+                                                }}
+                                            >
+                                                {det.producto_id !== null && (
+                                                    det._disponibleCargando
+                                                        ? 'Consultando...'
+                                                        : det._disponibleError
+                                                            ? det._disponibleError
+                                                            : det._disponible !== null
+                                                                ? `Stock: ${det._disponible}`
+                                                                : ''
+                                                )}
+                                            </div>
                                         </td>
 
                                         {/* Precio */}
-                                        <td className="py-1 px-1">
+                                        <td className="py-2 px-1 align-top">
                                             <input
                                                 type="number"
                                                 min="0"
@@ -723,10 +853,11 @@ export default function Form() {
                                                     updateDetalle(idx, { precio_unitario: isNaN(val) ? 0 : Math.round(val * 100) / 100 })
                                                 }}
                                             />
+                                            <div className={hintSlotCls} />
                                         </td>
 
-                                        {/* Desc% */}
-                                        <td className="py-1 px-1">
+                                        {/* Desc% + texto de máximo permitido */}
+                                        <td className="py-2 px-1 align-top">
                                             <input
                                                 type="number"
                                                 min="0"
@@ -737,25 +868,26 @@ export default function Form() {
                                                 value={det.descuento_pct}
                                                 onChange={e => handleDescuentoChange(idx, Number(e.target.value))}
                                             />
-                                            {det._desc_error && (
-                                                <p className="text-xs mt-0.5 whitespace-nowrap" style={{ color: '#ef4444' }}>
-                                                    {det._desc_error}
-                                                </p>
-                                            )}
+                                            <div
+                                                className={hintSlotCls}
+                                                style={{ color: det._desc_error ? 'var(--color-danger)' : 'var(--color-warning)' }}
+                                            >
+                                                {det._desc_error || (det.producto_id !== null ? `Max. ${det.descuento_max_producto}%` : '')}
+                                            </div>
                                         </td>
 
                                         {/* Desc$ */}
-                                        <td className="py-1 px-1.5 text-right" style={{ color: 'var(--text-muted)' }}>
+                                        <td className="py-2 px-1.5 text-right align-top" style={{ color: 'var(--text-muted)' }}>
                                             {formatMoneda(det.descuento_valor)}
                                         </td>
 
                                         {/* V.Tot */}
-                                        <td className="py-1 px-1.5 text-right font-semibold" style={{ color: 'var(--text-main)' }}>
+                                        <td className="py-2 px-1.5 text-right font-semibold align-top" style={{ color: 'var(--text-main)' }}>
                                             {formatMoneda(det.total)}
                                         </td>
 
                                         {/* Eliminar */}
-                                        <td className="py-1 px-1 text-center">
+                                        <td className="py-2 px-1 text-center align-top">
                                             <button
                                                 type="button"
                                                 className="p-0.5 rounded hover:bg-red-500/10 transition-colors"

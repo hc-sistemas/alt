@@ -7,6 +7,7 @@ use App\Models\CategoriaProducto;
 use App\Models\ListaPrecio;
 use App\Models\Marca;
 use App\Models\Producto;
+use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -31,6 +32,7 @@ class ListaPrecioController extends Controller
                 'lp.id as lista_pvp_id',
                 'lp.precio as lista_pvp_precio',
                 'lp.descuento_max as lista_pvp_descuento_max',
+                'lp.descuento_max_promo as lista_pvp_descuento_max_promo',
                 'ld.id as lista_pvd_id',
                 'ld.precio as lista_pvd_precio',
                 'ld.descuento_max as lista_pvd_descuento_max',
@@ -77,12 +79,13 @@ class ListaPrecioController extends Controller
     public function update(Request $request, $productoId)
     {
         $request->validate([
-            'pvp'            => 'required|numeric|min:0',
-            'pvd'            => 'required|numeric|min:0',
-            'descuento_pvp'  => 'required|numeric|min:0|max:100',
-            'descuento_pvd'  => 'required|numeric|min:0|max:100',
-            'vigencia_desde' => 'nullable|date',
-            'vigencia_hasta' => 'nullable|date|after_or_equal:vigencia_desde',
+            'pvp'                  => 'required|numeric|min:0',
+            'pvd'                  => 'required|numeric|min:0',
+            'descuento_pvp'        => 'required|numeric|min:0|max:100',
+            'descuento_pvd'        => 'required|numeric|min:0|max:100',
+            'descuento_max_promo'  => 'nullable|numeric|min:0|max:100',
+            'vigencia_desde'       => 'nullable|date|required_with:descuento_max_promo',
+            'vigencia_hasta'       => 'nullable|date|required_with:descuento_max_promo|after_or_equal:vigencia_desde',
         ]);
 
         $empresaId = session('empresa_activa_id');
@@ -94,7 +97,11 @@ class ListaPrecioController extends Controller
 
         ListaPrecio::updateOrCreate(
             ['empresa_id' => $empresaId, 'producto_id' => $productoId, 'tipo' => 'PVP'],
-            array_merge($base, ['precio' => $request->pvp, 'descuento_max' => $request->descuento_pvp])
+            array_merge($base, [
+                'precio'              => $request->pvp,
+                'descuento_max'       => $request->descuento_pvp,
+                'descuento_max_promo' => $request->filled('descuento_max_promo') ? $request->descuento_max_promo : null,
+            ])
         );
 
         ListaPrecio::updateOrCreate(
@@ -149,18 +156,53 @@ class ListaPrecioController extends Controller
             $descPvd       = is_numeric($row['descuento_pvd'] ?? null) ? (float) $row['descuento_pvd'] : 0;
             $vigDesde      = !empty($row['vigencia_desde']) ? $row['vigencia_desde'] : null;
             $vigHasta      = !empty($row['vigencia_hasta']) ? $row['vigencia_hasta'] : null;
+            $descPromoRaw  = $row['descuento_promo'] ?? null;
+            $descPromo     = is_numeric($descPromoRaw) ? (float) $descPromoRaw : null;
 
             if ($pvp === null && $pvd === null) {
                 $errores[] = "Fila {$linea}: sin precios válidos para '{$codigo}'.";
                 continue;
             }
 
-            $base = ['vigencia_desde' => $vigDesde, 'vigencia_hasta' => $vigHasta];
+            // Misma validación que ListaPrecioController::update(): la promo
+            // exige las 2 fechas juntas, y si ambas vienen, hasta >= desde.
+            // Una fila que no cumple falla sola, no aborta el archivo.
+            if ($descPromo !== null && ($descPromo < 0 || $descPromo > 100)) {
+                $errores[] = "Fila {$linea}: descuento_promo debe estar entre 0 y 100.";
+                continue;
+            }
+            if ($descPromo !== null && ($vigDesde === null || $vigHasta === null)) {
+                $errores[] = "Fila {$linea}: la promo requiere vigencia_desde y vigencia_hasta juntas.";
+                continue;
+            }
+            if ($vigDesde !== null && $vigHasta !== null) {
+                try {
+                    $hastaValida = Carbon::parse($vigHasta)->gte(Carbon::parse($vigDesde));
+                } catch (\Throwable) {
+                    $errores[] = "Fila {$linea}: vigencia_desde/vigencia_hasta con fecha inválida.";
+                    continue;
+                }
+                if (!$hastaValida) {
+                    $errores[] = "Fila {$linea}: vigencia_hasta debe ser mayor o igual a vigencia_desde.";
+                    continue;
+                }
+            }
+
+            // $base es "sticky": solo se incluyen las claves con dato en el
+            // Excel, para no borrar una vigencia/promo ya guardada cuando la
+            // fila importada simplemente no trae esas columnas.
+            $base = [];
+            if ($vigDesde !== null) { $base['vigencia_desde'] = $vigDesde; }
+            if ($vigHasta !== null) { $base['vigencia_hasta'] = $vigHasta; }
 
             if ($pvp !== null) {
+                $datosPvp = array_merge($base, ['precio' => $pvp, 'descuento_max' => $descPvp]);
+                if ($descPromo !== null) {
+                    $datosPvp['descuento_max_promo'] = $descPromo;
+                }
                 ListaPrecio::updateOrCreate(
                     ['empresa_id' => $empresaId, 'producto_id' => $producto->id, 'tipo' => 'PVP'],
-                    array_merge($base, ['precio' => $pvp, 'descuento_max' => $descPvp])
+                    $datosPvp
                 );
             }
 

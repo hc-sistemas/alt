@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Ventas;
 
 use App\Http\Controllers\Controller;
-use App\Models\Bodega;
+use App\Http\Controllers\Ventas\Concerns\ResuelveBodegasFijas;
 use App\Models\Cliente;
 use App\Models\Empresa;
 use App\Models\Factura;
@@ -19,6 +19,7 @@ use App\Services\AsientoService;
 use App\Services\AuditoriaService;
 use App\Services\InventarioService;
 use App\Services\SecuencialService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -26,6 +27,8 @@ use Inertia\Inertia;
 
 class PrefacturaController extends Controller
 {
+    use ResuelveBodegasFijas;
+
     public function __construct(
         private AuditoriaService  $auditoria,
         private SecuencialService $secuencial,
@@ -108,29 +111,10 @@ class PrefacturaController extends Controller
         $limite = LimiteDescuento::whereHas('perfil', fn($q) => $q->where('nombre', $perfilNombre))
             ->first();
 
-        $bodegas = Bodega::where('empresa_id', $empresaId)
-            ->where('estado', true)
-            ->select('id', 'nombre')
-            ->orderBy('nombre')
-            ->get();
-
-        $bodegaIds = $bodegas->pluck('id');
-        $saldos = DB::table('inventario_saldos')
-            ->whereIn('bodega_id', $bodegaIds)
-            ->select('producto_id', 'bodega_id', 'stock_actual', 'cantidad_reservada')
-            ->get()
-            ->map(fn($s) => [
-                'producto_id' => $s->producto_id,
-                'bodega_id'   => $s->bodega_id,
-                'disponible'  => max(0, (float)$s->stock_actual - (float)($s->cantidad_reservada ?? 0)),
-            ]);
-
         return Inertia::render('Ventas/Prefacturas/Form', [
             'clientes'         => $clientes,
             'productos'        => $productos,
             'vendedores'       => $vendedores,
-            'bodegas'          => $bodegas,
-            'saldos'           => $saldos,
             'empresa_activa'   => $empresa,
             'siguiente_numero' => $siguienteNumero,
             'limites_descuento' => [
@@ -148,7 +132,6 @@ class PrefacturaController extends Controller
             'cliente_id'             => 'required|integer|exists:clientes,id',
             'detalles'               => 'required|array|min:1',
             'detalles.*.producto_id' => 'required|integer',
-            'detalles.*.bodega_id'   => 'required|integer',
             'detalles.*.cantidad'    => 'required|numeric|min:0.01',
             'detalles.*.precio'      => 'required|numeric|min:0.01',
         ]);
@@ -165,7 +148,14 @@ class PrefacturaController extends Controller
         }
 
         try {
-            $prefactura = DB::transaction(function () use ($request, $empresaId, $total) {
+            $bodegaPrincipalId = $this->bodegaPrincipalId();
+            $bodegaReservasId  = $this->bodegaReservasId();
+        } catch (\RuntimeException $e) {
+            return back()->withErrors(['error' => $e->getMessage()])->withInput();
+        }
+
+        try {
+            $prefactura = DB::transaction(function () use ($request, $empresaId, $total, $bodegaPrincipalId, $bodegaReservasId) {
                 $numero = $this->secuencial->siguiente($empresaId, 'PRE');
 
                 $prefactura = Prefactura::create([
@@ -200,7 +190,26 @@ class PrefacturaController extends Controller
                         'total'          => $neto + $iva,
                     ]);
 
-                    $this->inventario->reservarStock($det['producto_id'], $det['bodega_id'], $cantidad, 'prefactura_detalle', $detalle->id);
+                    // Traslado atómico Bodega Principal UIO -> Bodega Reservas.
+                    // egresarStock() no valida stock por sí solo (solo hace
+                    // floor en 0), así que el pre-check con getSaldoDisponible()
+                    // es lo que realmente evita reservar más de lo que hay.
+                    $disponible = $this->inventario->getSaldoDisponible((int) $det['producto_id'], $bodegaPrincipalId);
+                    if ($cantidad > $disponible) {
+                        $ref = $det['codigo'] ?? $det['descripcion'] ?? "producto #{$det['producto_id']}";
+                        throw new \RuntimeException(
+                            "Stock insuficiente para {$ref} en Bodega Principal UIO: disponible {$disponible}, solicitado {$cantidad}."
+                        );
+                    }
+
+                    $costoUnitario = (float) (DB::table('inventario_saldos')
+                        ->where('producto_id', $det['producto_id'])
+                        ->where('bodega_id', $bodegaPrincipalId)
+                        ->value('costo_promedio') ?? 0);
+
+                    $this->inventario->egresarStock((int) $det['producto_id'], $bodegaPrincipalId, $cantidad, 'prefactura_detalle', $detalle->id);
+                    $this->inventario->ingresarStock((int) $det['producto_id'], $bodegaReservasId, $cantidad, $costoUnitario, 'prefactura_detalle', $detalle->id);
+                    $this->inventario->reservarStock((int) $det['producto_id'], $bodegaReservasId, $cantidad, 'prefactura_detalle', $detalle->id);
                 }
 
                 return $prefactura;
@@ -292,7 +301,13 @@ class PrefacturaController extends Controller
         ]);
 
         try {
-            $factura = DB::transaction(function () use ($request, $prefactura, $empresaId) {
+            $bodegaReservasId = $this->bodegaReservasId();
+        } catch (\RuntimeException $e) {
+            return back()->withErrors(['error' => $e->getMessage()]);
+        }
+
+        try {
+            $factura = DB::transaction(function () use ($request, $prefactura, $empresaId, $bodegaReservasId) {
                 $numero = $this->secuencial->siguiente($empresaId, 'FAC');
                 [$est, $pe, $sec] = explode('-', $numero);
 
@@ -370,7 +385,7 @@ class PrefacturaController extends Controller
                         'valor_iva'       => $valorIva,
                         'total'           => $subtotal + $valorIva,
                     ]);
-                    $this->inventario->confirmarSalida($det->producto_id, $det->bodega_id, 'prefactura_detalle', $det->id);
+                    $this->inventario->confirmarSalida($det->producto_id, $bodegaReservasId, 'prefactura_detalle', $det->id);
                 }
 
                 if ($request->filled('formas_pago')) {
@@ -398,5 +413,25 @@ class PrefacturaController extends Controller
 
         return redirect()->route('ventas.facturas.show', $factura->id)
             ->with('flash', ['tipo' => 'exito', 'mensaje' => "Prefactura convertida a factura {$factura->numero_completo}."]);
+    }
+
+    public function saldoDisponible(Request $request): JsonResponse
+    {
+        $request->validate([
+            'producto_id' => 'required|integer',
+        ]);
+
+        try {
+            $bodegaId = $this->bodegaPrincipalId();
+        } catch (\RuntimeException $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+
+        $disponible = $this->inventario->getSaldoDisponible(
+            (int) $request->input('producto_id'),
+            $bodegaId
+        );
+
+        return response()->json(['disponible' => $disponible]);
     }
 }

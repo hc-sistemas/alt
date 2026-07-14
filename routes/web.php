@@ -395,6 +395,7 @@ Route::middleware('auth')->group(function () {
         Route::prefix('ventas/facturas')->name('ventas.facturas.')->group(function () {
             Route::get('/',                       [FacturaController::class, 'index'])          ->name('index');
             Route::get('/crear',                  [FacturaController::class, 'create'])         ->name('create');
+            Route::get('/saldo-disponible',       [FacturaController::class, 'saldoDisponible'])->name('saldo-disponible');
             Route::post('/',                      [FacturaController::class, 'store'])          ->name('store');
             Route::get('/{factura}',              [FacturaController::class, 'show'])           ->name('show');
             Route::patch('/{factura}/anular',     [FacturaController::class, 'anular'])         ->name('anular');
@@ -406,6 +407,7 @@ Route::middleware('auth')->group(function () {
             Route::get('/',                                  [PrefacturaController::class, 'index'])              ->name('index');
             Route::get('/crear',                             [PrefacturaController::class, 'create'])             ->name('create');
             Route::post('/',                                 [PrefacturaController::class, 'store'])              ->name('store');
+            Route::get('/saldo-disponible',                  [PrefacturaController::class, 'saldoDisponible'])    ->name('saldo-disponible');
             Route::get('/{prefactura}',                      [PrefacturaController::class, 'show'])               ->name('show');
             Route::post('/{prefactura}/abonar',              [PrefacturaController::class, 'abonar'])             ->name('abonar');
             Route::post('/{prefactura}/convertir-a-factura', [PrefacturaController::class, 'convertirAFactura']) ->name('convertir');
@@ -465,6 +467,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/ingresos/crear', [IngresoController::class, 'create'])->name('ingresos.create');
         Route::post('/ingresos', [IngresoController::class, 'store'])->name('ingresos.store');
         Route::get('/ingresos/{ingreso}', [IngresoController::class, 'show'])->name('ingresos.show');
+        Route::get('/ingresos/{ingreso}/pdf', [IngresoController::class, 'pdfOrdenTrabajo'])->name('ingresos.pdf');
         Route::get('/equipos/buscar', [IngresoController::class, 'buscarEquipo'])->name('equipos.buscar');
 
         // Órdenes de trabajo
@@ -472,6 +475,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/ordenes/{orden}', [OrdenTrabajoController::class, 'show'])->name('ordenes.show');
         Route::patch('/ordenes/{orden}/estado', [OrdenTrabajoController::class, 'cambiarEstado'])->name('ordenes.cambiar-estado');
         Route::post('/ordenes/{orden}/repuestos', [LiquidacionController::class, 'agregarRepuesto'])->name('ordenes.repuestos.store');
+        Route::get('/ordenes/{orden}/repuestos/saldo-disponible', [LiquidacionController::class, 'saldoDisponible'])->name('ordenes.repuestos.saldo-disponible');
 
         // Diagnósticos
         Route::get('/ordenes/{orden}/diagnostico', [DiagnosticoController::class, 'create'])->name('diagnosticos.create');
