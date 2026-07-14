@@ -80,11 +80,19 @@ class InventarioService implements InventarioServiceInterface
             $saldo = DB::table('inventario_saldos')
                 ->where('producto_id', $productoId)
                 ->where('bodega_id', $bodegaId)
+                ->lockForUpdate()
                 ->first();
 
             $cantActual    = $saldo ? (float) $saldo->stock_actual : 0;
             $costoPromedio = $saldo ? (float) $saldo->costo_promedio  : 0;
-            $nuevaCant     = max(0, $cantActual - $cantidad);
+
+            if ($cantidad > $cantActual) {
+                throw new \RuntimeException(
+                    "Stock insuficiente para producto {$productoId} en bodega {$bodegaId}: disponible {$cantActual}, solicitado {$cantidad}."
+                );
+            }
+
+            $nuevaCant = $cantActual - $cantidad;
 
             DB::table('inventario_saldos')->upsert(
                 [
