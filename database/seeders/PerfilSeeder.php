@@ -20,23 +20,24 @@ class PerfilSeeder extends Seeder
             ['nombre' => 'tecnico', 'descripcion' => 'Módulo de taller', 'estado' => true],
         ];
 
-        // Columnas reales de limites_descuento
+        // Columnas reales de limites_descuento: perfil_id, porcentaje_maximo,
+        // puede_aprobar, porcentaje_aprobacion_max (sin empresa_id).
+        //
+        // Valores de EJEMPLO para poder probar el flujo de descuento especial
+        // de punta a punta — deben confirmarse con el negocio antes de
+        // considerarse la configuración final de producción.
         $limites = [
-            'super_admin' => ['descuento_maximo_pct' => 100, 'puede_aprobar' => true, 'descuento_aprobacion_max_pct' => 100],
-            'admin'       => ['descuento_maximo_pct' => 30,  'puede_aprobar' => true, 'descuento_aprobacion_max_pct' => 50],
-            'contador'    => ['descuento_maximo_pct' => 0,   'puede_aprobar' => false, 'descuento_aprobacion_max_pct' => 0],
-            'vendedor'    => ['descuento_maximo_pct' => 5,   'puede_aprobar' => false, 'descuento_aprobacion_max_pct' => 0],
-            'bodeguero'   => ['descuento_maximo_pct' => 0,   'puede_aprobar' => false, 'descuento_aprobacion_max_pct' => 0],
-            'tecnico'     => ['descuento_maximo_pct' => 0,   'puede_aprobar' => false, 'descuento_aprobacion_max_pct' => 0],
+            'super_admin' => ['porcentaje_maximo' => 100, 'puede_aprobar' => true,  'porcentaje_aprobacion_max' => 100],
+            'admin'       => ['porcentaje_maximo' => 30,  'puede_aprobar' => true,  'porcentaje_aprobacion_max' => 50],
+            'contador'    => ['porcentaje_maximo' => 0,   'puede_aprobar' => false, 'porcentaje_aprobacion_max' => 0],
+            'vendedor'    => ['porcentaje_maximo' => 5,   'puede_aprobar' => false, 'porcentaje_aprobacion_max' => 0],
+            'bodeguero'   => ['porcentaje_maximo' => 0,   'puede_aprobar' => false, 'porcentaje_aprobacion_max' => 0],
+            'tecnico'     => ['porcentaje_maximo' => 0,   'puede_aprobar' => false, 'porcentaje_aprobacion_max' => 0],
         ];
 
         $tieneEsSistema = Schema::hasColumn('perfiles', 'es_sistema');
         $tieneLimitesPuedeAprobar = Schema::hasColumn('limites_descuento', 'puede_aprobar');
-        $tieneLimitesDescuentoPct = Schema::hasColumn('limites_descuento', 'descuento_maximo_pct');
-        $tieneLimitesEmpresaId = Schema::hasColumn('limites_descuento', 'empresa_id');
-
-        // Obtener la primera empresa para asociar límites
-        $primeraEmpresaId = \App\Models\Empresa::first()?->id;
+        $tieneLimitesDescuentoPct = Schema::hasColumn('limites_descuento', 'porcentaje_maximo');
 
         foreach ($perfiles as $data) {
             if ($tieneEsSistema) {
@@ -45,13 +46,7 @@ class PerfilSeeder extends Seeder
             $perfil = Perfil::firstOrCreate(['nombre' => $data['nombre']], $data);
 
             if ($tieneLimitesPuedeAprobar && $tieneLimitesDescuentoPct) {
-                $limiteData = $limites[$perfil->nombre];
-                $buscar = ['perfil_id' => $perfil->id];
-                if ($tieneLimitesEmpresaId && $primeraEmpresaId) {
-                    $buscar['empresa_id'] = $primeraEmpresaId;
-                    $limiteData['empresa_id'] = $primeraEmpresaId;
-                }
-                LimiteDescuento::firstOrCreate($buscar, $limiteData);
+                LimiteDescuento::firstOrCreate(['perfil_id' => $perfil->id], $limites[$perfil->nombre]);
             }
         }
     }

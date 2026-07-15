@@ -2,6 +2,7 @@
 namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
+use Illuminate\Console\ConfirmableTrait;
 use App\Models\EjercicioContable;
 use App\Models\AsientoContable;
 use App\Models\AsientoDetalle;
@@ -10,11 +11,17 @@ use App\Models\ParametroContable;
 
 class SeedearContabilidad extends Command
 {
-    protected $signature   = 'altamira:seedear-contabilidad';
-    protected $description = 'Datos de prueba para Contabilidad';
+    use ConfirmableTrait;
+
+    protected $signature   = 'altamira:seedear-contabilidad {--force : Ejecutar sin confirmar aunque haya asientos reales}';
+    protected $description = 'Datos de prueba para Contabilidad (crea asientos ficticios — NO idempotente, cada corrida agrega un lote nuevo)';
 
     public function handle(): void
     {
+        if (!$this->confirmToProceed('Esto crea asientos contables FICTICIOS (no ligados a documentos reales) y no es idempotente: cada ejecución agrega un lote nuevo. Nunca ejecutar contra una base con datos reales.')) {
+            return;
+        }
+
         $empresaId = 1;
         $this->info('📒 Seeding Contabilidad...');
 

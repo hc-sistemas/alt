@@ -49,7 +49,7 @@
 
 <div class="header">
     <div class="h-left">
-        <div class="empresa">{{ $empresa?->nombre ?? 'Altamira' }}</div>
+        <div class="empresa">{{ $empresa?->nombre_comercial ?? $empresa?->razon_social ?? 'Altamira' }}</div>
         <div class="titulo">ESTADO DE FLUJO DE EFECTIVO — MÉTODO INDIRECTO</div>
         <div class="sub">Período: {{ \Carbon\Carbon::parse($fecha_desde)->format('d/m/Y') }} al {{ \Carbon\Carbon::parse($fecha_hasta)->format('d/m/Y') }}</div>
     </div>

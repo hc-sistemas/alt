@@ -347,7 +347,7 @@ class CompraController extends Controller
                         ->where('tipo_documento', 'retencion')
                         ->first();
                     $numSec = $secuencial
-                        ? str_pad($secuencial->secuencial, 9, '0', STR_PAD_LEFT)
+                        ? str_pad($secuencial->siguiente, 9, '0', STR_PAD_LEFT)
                         : str_pad(1, 9, '0', STR_PAD_LEFT);
                     $establecimiento = $empresa->cod_establecimiento ?? '001';
                     $puntoEmision    = $empresa->cod_punto_emision    ?? '001';
@@ -397,7 +397,7 @@ class CompraController extends Controller
                     if ($secuencial) {
                         \DB::table('secuenciales')
                             ->where('tipo_documento', 'retencion')
-                            ->increment('secuencial');
+                            ->increment('siguiente');
                     }
                 } catch (\Throwable $e) {
                     \Log::warning("Retención compra {$compra->num_documento}: {$e->getMessage()}");
@@ -413,14 +413,15 @@ class CompraController extends Controller
                     default                                => 'inventario',
                 };
                 $asiento = $this->asientoService->compraRegistrada(
-                    empresaId:    $empresaId,
-                    compraId:     $compra->id,
-                    referencia:   $compra->num_documento,
-                    subtotal:     $compra->subtotal_0 + $compra->subtotal_iva,
-                    iva:          $compra->gasto_no_deducible ? 0.0 : $compra->total_iva,
-                    retencionIR:  $compra->gasto_no_deducible ? 0.0 : $retIR,
-                    retencionIVA: $compra->gasto_no_deducible ? 0.0 : $retIVA,
-                    tipo:         $tipoAsiento,
+                    empresaId:     $empresaId,
+                    compraId:      $compra->id,
+                    referencia:    $compra->num_documento,
+                    subtotal:      $compra->subtotal_0 + $compra->subtotal_iva,
+                    iva:           $compra->gasto_no_deducible ? 0.0 : $compra->total_iva,
+                    retencionIR:   $compra->gasto_no_deducible ? 0.0 : $retIR,
+                    retencionIVA:  $compra->gasto_no_deducible ? 0.0 : $retIVA,
+                    tipo:          $tipoAsiento,
+                    centroCostoId: $compra->centro_costo_id,
                 );
                 $compra->update(['asiento_id' => $asiento->id]);
             } catch (\Throwable $e) {

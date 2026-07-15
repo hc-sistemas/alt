@@ -5,8 +5,9 @@ import PageHeader from '@/Components/shared/PageHeader'
 import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Badge } from '@/Components/ui/badge'
+import PdfPreviewModal from '@/Components/shared/PdfPreviewModal'
 import { formatFecha } from '@/lib/utils'
-import { Plus, Search, Eye, Wrench } from 'lucide-react'
+import { Plus, Search, Eye, FileText, Wrench } from 'lucide-react'
 import type { PageProps, PaginatedData, TallerIngreso } from '@/types'
 
 interface Props extends PageProps {
@@ -26,6 +27,7 @@ export default function IngresosIndex() {
     const { ingresos, filtros } = usePage<Props>().props
     const [search, setSearch] = useState(filtros.search ?? '')
     const [estado, setEstado] = useState(filtros.estado ?? '')
+    const [pdfIngresoId, setPdfIngresoId] = useState<number | null>(null)
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const isFirstRender = useRef(true)
 
@@ -142,6 +144,9 @@ export default function IngresosIndex() {
                                                         <Eye className="w-4 h-4" />
                                                     </Button>
                                                 </Link>
+                                                <Button variant="ghost" size="icon" title="Ver PDF" onClick={() => setPdfIngresoId(ingreso.id)}>
+                                                    <FileText className="w-4 h-4" />
+                                                </Button>
                                             </div>
                                         </td>
                                     </tr>
@@ -174,6 +179,14 @@ export default function IngresosIndex() {
                     </div>
                 )}
             </div>
+
+            <PdfPreviewModal
+                abierto={pdfIngresoId !== null}
+                onCerrar={() => setPdfIngresoId(null)}
+                url={pdfIngresoId !== null ? route('taller.ingresos.pdf', pdfIngresoId) : ''}
+                titulo={`Orden de Trabajo — Ingreso #${pdfIngresoId}`}
+                nombreDescarga={`orden-trabajo-ingreso-${pdfIngresoId}.pdf`}
+            />
         </AppLayout>
     )
 }

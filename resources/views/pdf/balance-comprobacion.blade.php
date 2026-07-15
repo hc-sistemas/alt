@@ -31,7 +31,7 @@
 <body>
 <div class="header">
     <div class="h-left">
-        <div class="empresa">{{ $empresa?->nombre ?? 'Altamira' }}</div>
+        <div class="empresa">{{ $empresa?->nombre_comercial ?? $empresa?->razon_social ?? 'Altamira' }}</div>
         <div class="titulo">BALANCE DE COMPROBACIÓN</div>
         <div class="sub">Generado: {{ now()->format('d/m/Y H:i') }}</div>
     </div>

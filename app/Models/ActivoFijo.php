@@ -13,7 +13,7 @@ class ActivoFijo extends Model
     public const ESTADOS = ['activo', 'dado_de_baja', 'vendido'];
 
     protected $fillable = [
-        'empresa_id', 'cuenta_id', 'nombre', 'descripcion', 'codigo',
+        'empresa_id', 'cuenta_id', 'nombre', 'descripcion', 'codigo', 'categoria',
         'fecha_adquisicion', 'costo_adquisicion', 'vida_util_anios',
         'valor_residual', 'depreciacion_acumulada', 'valor_en_libros', 'estado',
     ];

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Taller;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Taller\Concerns\ResuelveBodegaTaller;
 use App\Models\Producto;
 use App\Models\TallerOrdenTrabajo;
 use App\Models\Usuario;
@@ -16,6 +17,8 @@ use Inertia\Response;
 
 class OrdenTrabajoController extends Controller
 {
+    use ResuelveBodegaTaller;
+
     public function __construct(
         private AuditoriaService $auditoria,
     ) {}
@@ -57,12 +60,38 @@ class OrdenTrabajoController extends Controller
         return Inertia::render('Taller/OrdenesTrabajo/Show', [
             'orden'     => $orden,
             'tecnicos'  => Usuario::select('id', 'nombre')->orderBy('nombre')->get(),
-            'productos' => Producto::where('empresa_id', session('empresa_activa_id'))
-                ->where('estado', true)
-                ->select('id', 'codigo', 'nombre', 'costo', 'pvp')
-                ->orderBy('nombre')
-                ->get(),
+            'productos' => $this->productosConStockTaller(),
         ]);
+    }
+
+    /**
+     * Solo productos con stock físico (stock_actual > 0) en Bodega Taller —
+     * el buscador de repuestos no debe ofrecer productos sin existencias ahí.
+     * Si la bodega no está configurada, no se rompe la vista de la orden:
+     * el buscador simplemente queda sin opciones.
+     */
+    private function productosConStockTaller(): Collection
+    {
+        $query = Producto::where('empresa_id', session('empresa_activa_id'))
+            ->where('estado', true)
+            ->select('id', 'codigo', 'nombre', 'costo', 'pvp')
+            ->orderBy('nombre');
+
+        try {
+            $bodegaTallerId = $this->bodegaTallerId();
+        } catch (\RuntimeException) {
+            return new Collection();
+        }
+
+        $query->whereExists(function ($sub) use ($bodegaTallerId) {
+            $sub->select(DB::raw(1))
+                ->from('inventario_saldos')
+                ->whereColumn('inventario_saldos.producto_id', 'productos.id')
+                ->where('inventario_saldos.bodega_id', $bodegaTallerId)
+                ->where('inventario_saldos.stock_actual', '>', 0);
+        });
+
+        return $query->get();
     }
 
     public function cambiarEstado(Request $request, TallerOrdenTrabajo $orden): RedirectResponse

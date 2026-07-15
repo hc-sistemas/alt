@@ -10,9 +10,11 @@ use App\Models\TallerIngreso;
 use App\Models\TallerOrdenTrabajo;
 use App\Models\TallerTipoEquipo;
 use App\Services\AuditoriaService;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -96,7 +98,7 @@ class IngresoController extends Controller
             'equipo.medida'                  => 'nullable|string|max:50',
             'equipo.adicional'               => 'nullable|string|max:200',
             'equipo.observaciones'           => 'nullable|string',
-            'diagnostico_inicial'            => 'nullable|string',
+            'diagnostico_inicial'            => 'required|string',
             'observaciones'                  => 'nullable|string',
             'imagen'                         => 'nullable|string',
         ]);
@@ -163,5 +165,32 @@ class IngresoController extends Controller
         return Inertia::render('Taller/Ingresos/Show', [
             'ingreso' => $ingreso,
         ]);
+    }
+
+    public function pdfOrdenTrabajo(Request $request, TallerIngreso $ingreso): HttpResponse
+    {
+        $ingreso->load(['cliente', 'equipo.tipo', 'ordenesTrabajo.tecnico']);
+
+        // Hoy siempre hay exactamente una OT por ingreso (se crean juntas en
+        // store()), pero el modelo permite varias a futuro — se imprime la
+        // más reciente.
+        $ot = $ingreso->ordenesTrabajo->sortByDesc('id')->first();
+
+        // Nota: no se habilita isRemoteEnabled — el campo imagen del ingreso
+        // es una URL libre sin validar, y activar fetch remoto en dompdf
+        // sería una superficie de SSRF innecesaria (nadie lo pidió y hoy
+        // ningún registro usa ese campo). El logo se sirve desde disco local,
+        // que dompdf sí puede leer sin esa opción.
+        $pdf = Pdf::loadView('pdf.taller.orden-trabajo', [
+            'ingreso'  => $ingreso,
+            'ot'       => $ot,
+            'logoPath' => public_path('images/logo-altamira.png'),
+        ])->setPaper('a4', 'portrait');
+
+        $nombreArchivo = 'orden-trabajo-' . ($ot?->id ?? $ingreso->id) . '.pdf';
+
+        return $request->boolean('download')
+            ? $pdf->download($nombreArchivo)
+            : $pdf->stream($nombreArchivo);
     }
 }

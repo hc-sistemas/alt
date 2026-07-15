@@ -24,17 +24,6 @@ interface ProductoVenta {
     porcentaje_iva: number
 }
 
-interface Bodega {
-    id: number
-    nombre: string
-}
-
-interface Saldo {
-    producto_id: number
-    bodega_id: number
-    disponible: number
-}
-
 interface DetalleLinea {
     producto_id: number | null
     codigo: string
@@ -46,18 +35,18 @@ interface DetalleLinea {
     porcentaje_iva: number
     valor_iva: number
     total: number
-    bodega_id: number | null
     _busqueda: string
     _error: string
     _desc_error: string
+    _disponible: number | null
+    _disponibleCargando: boolean
+    _disponibleError: string
 }
 
 interface Props extends PageProps {
     clientes: Cliente[]
     productos: ProductoVenta[]
     vendedores: Pick<Usuario, 'id' | 'nombre' | 'email'>[]
-    bodegas: Bodega[]
-    saldos: Saldo[]
     empresa_activa: Empresa
     siguiente_numero: string
     limites_descuento: { descuento_maximo_pct: number; puede_aprobar: boolean } | null
@@ -74,13 +63,26 @@ function lineaVacia(): DetalleLinea {
         producto_id: null, codigo: '', descripcion: '',
         cantidad: 1, precio_unitario: 0, descuento_pct: 0,
         subtotal: 0, porcentaje_iva: 15, valor_iva: 0, total: 0,
-        bodega_id: null,
         _busqueda: '', _error: '', _desc_error: '',
+        _disponible: null, _disponibleCargando: false, _disponibleError: '',
     }
 }
 
 function getCsrf(): string {
     return (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement | null)?.content ?? ''
+}
+
+async function consultarSaldoDisponible(productoId: number): Promise<number> {
+    const res = await fetch(
+        route('ventas.prefacturas.saldo-disponible', { producto_id: productoId }),
+        { headers: { Accept: 'application/json' } },
+    )
+    if (!res.ok) {
+        const data = await res.json().catch(() => null) as { error?: string } | null
+        throw new Error(data?.error || 'No se pudo consultar el stock.')
+    }
+    const data = await res.json() as { disponible: number }
+    return data.disponible
 }
 
 const hoy = new Date().toISOString().slice(0, 10)
@@ -114,13 +116,7 @@ function ClienteField({ label, value, onChange, type = 'text', onKeyDown }: {
 }
 
 export default function Form() {
-    const { clientes, productos, vendedores, bodegas, saldos, siguiente_numero, errors } = usePage<Props>().props
-
-    const getDisponible = (productoId: number | null, bodegaId: number | null): number | null => {
-        if (!productoId || !bodegaId) return null
-        const saldo = saldos.find(s => s.producto_id === productoId && s.bodega_id === bodegaId)
-        return saldo?.disponible ?? 0
-    }
+    const { clientes, productos, vendedores, siguiente_numero, errors } = usePage<Props>().props
 
     // — Cliente
     const [clienteSeleccionado, setClienteSeleccionado] = useState<Cliente | null>(null)
@@ -177,6 +173,21 @@ export default function Form() {
         return { subtotal, iva, total: subtotal + iva }
     }, [detalles])
 
+    // Suma cantidades de un mismo producto repetido en varias líneas, para no
+    // dejar pasar por partes lo que junto sí supera el disponible. Todas las
+    // líneas descuentan de la misma Bodega Principal UIO fija.
+    const excesosStock = useMemo(() => {
+        const sumas = new Map<number, number>()
+        for (const d of detalles) {
+            if (d.producto_id === null) continue
+            sumas.set(d.producto_id, (sumas.get(d.producto_id) ?? 0) + d.cantidad)
+        }
+        return detalles.map(d => {
+            if (d.producto_id === null || d._disponible === null) return false
+            return (sumas.get(d.producto_id) ?? 0) > d._disponible
+        })
+    }, [detalles])
+
     // ── Handlers: cliente ────────────────────────────────────────────────────
 
     const seleccionarCliente = (c: Cliente) => {
@@ -228,6 +239,51 @@ export default function Form() {
         })
     }
 
+    // Consulta InventarioService::getSaldoDisponible (Bodega Principal UIO)
+    // para la línea idx. Si falla por red/servidor, degrada a advertencia y
+    // no bloquea el formulario.
+    const actualizarDisponible = (idx: number, productoId: number | null) => {
+        if (productoId === null) {
+            setDetalles(prev => {
+                const next = [...prev]
+                if (next[idx]) next[idx] = { ...next[idx], _disponible: null, _disponibleError: '', _disponibleCargando: false }
+                return next
+            })
+            return
+        }
+        setDetalles(prev => {
+            const next = [...prev]
+            if (next[idx]) next[idx] = { ...next[idx], _disponibleCargando: true, _disponibleError: '' }
+            return next
+        })
+        consultarSaldoDisponible(productoId)
+            .then(disponible => {
+                setDetalles(prev => {
+                    const next = [...prev]
+                    const linea = next[idx]
+                    if (linea && linea.producto_id === productoId) {
+                        next[idx] = { ...linea, _disponible: disponible, _disponibleCargando: false, _disponibleError: '' }
+                    }
+                    return next
+                })
+            })
+            .catch((err: unknown) => {
+                setDetalles(prev => {
+                    const next = [...prev]
+                    const linea = next[idx]
+                    if (linea && linea.producto_id === productoId) {
+                        next[idx] = {
+                            ...linea,
+                            _disponible: null,
+                            _disponibleCargando: false,
+                            _disponibleError: err instanceof Error ? err.message : 'No se pudo consultar el stock. Verifique manualmente.',
+                        }
+                    }
+                    return next
+                })
+            })
+    }
+
     const seleccionarProductoLocal = (idx: number, p: ProductoVenta) => {
         setDetalles(prev => {
             const next = [...prev]
@@ -245,6 +301,7 @@ export default function Form() {
             return next
         })
         setModalProducto(null)
+        actualizarDisponible(idx, p.id)
     }
 
     const handleBuscarProducto = (idx: number, q: string) => {
@@ -278,20 +335,16 @@ export default function Form() {
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault()
 
-        // Validación de stock disponible por línea — feedback vía toast, sin duplicar en el bloque rojo
-        for (const d of detalles) {
-            const disponible = getDisponible(d.producto_id, d.bodega_id)
-            if (disponible !== null && d.cantidad > disponible) {
-                const ref = d.codigo || d.descripcion || 'el producto'
-                toastError(`Stock insuficiente para ${ref}. Disponible: ${disponible}, solicitado: ${d.cantidad}.`)
-                return
-            }
+        // Validación de stock disponible en Bodega Principal UIO — feedback
+        // vía toast, sin duplicar en el bloque rojo.
+        if (excesosStock.some(Boolean)) {
+            toastError('Hay productos con cantidad mayor al stock disponible en Bodega Principal UIO.')
+            return
         }
 
         const errs: string[] = []
         if (!clienteSeleccionado) errs.push('Debe seleccionar un cliente.')
         if (detalles.length === 0) errs.push('Agregue al menos un producto.')
-        if (detalles.some(d => !d.bodega_id)) errs.push('Todos los productos deben tener bodega seleccionada.')
         if (errs.length > 0) { setErrores(errs); return }
         setErrores([])
         setGuardando(true)
@@ -301,7 +354,6 @@ export default function Form() {
             observaciones,
             detalles: detalles.map(d => ({
                 producto_id:  d.producto_id,
-                bodega_id:    d.bodega_id,
                 descripcion:  d.descripcion,
                 cantidad:     d.cantidad,
                 precio:       d.precio_unitario,
@@ -316,6 +368,9 @@ export default function Form() {
 
     const vendedorActual = vendedores.find(v => v.id === vendedorId)
     const tipoLabel: Record<string, string> = { '04': 'RUC', '05': 'CÉDULA', '06': 'PASAPORTE', '07': 'CONSUMIDOR' }
+    // Slot de altura fija debajo del input de cantidad (16px), siempre
+    // presente con o sin texto, mismo patrón usado en Facturas.
+    const hintSlotCls = "h-4 mt-0.5 text-[11px] font-medium leading-4 whitespace-nowrap overflow-hidden"
 
     return (
         <AppLayout>
@@ -513,10 +568,10 @@ export default function Form() {
                         <table className="w-full text-xs">
                             <thead>
                                 <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                                    {['Producto', 'Bodega', 'Stock', 'Cant.', 'Precio Unit.', 'IVA%', 'Total', ''].map((col, i) => (
+                                    {['Producto', 'Cant.', 'Precio Unit.', 'IVA%', 'Total', ''].map((col, i) => (
                                         <th
                                             key={i}
-                                            className={cn('py-2 px-2 font-medium text-left', (i >= 3 && i <= 4) && 'text-right')}
+                                            className={cn('py-2 px-2 font-medium text-left', (i >= 1 && i <= 2) && 'text-right')}
                                             style={{ color: 'var(--text-muted)' }}
                                         >
                                             {col}
@@ -527,7 +582,7 @@ export default function Form() {
                             <tbody>
                                 {detalles.map((det, idx) => (
                                     <tr key={idx} style={{ borderBottom: '1px solid var(--border)' }}>
-                                        <td className="py-1 px-1">
+                                        <td className="py-1 px-1 align-top">
                                             {det.producto_id !== null ? (
                                                 <div
                                                     className="flex items-center gap-1 min-w-0 px-1.5 py-0.5 rounded"
@@ -591,48 +646,39 @@ export default function Form() {
                                                 </div>
                                             )}
                                         </td>
-                                        <td className="py-1 px-1">
-                                            <select
-                                                className="w-full h-7 rounded border px-1.5 text-xs"
-                                                style={{ background: 'var(--bg-main)', borderColor: det.bodega_id ? 'var(--border)' : '#ef4444', color: 'var(--text-main)' }}
-                                                value={det.bodega_id ?? ''}
-                                                onChange={e => updateDetalle(idx, { bodega_id: Number(e.target.value) || null })}
-                                            >
-                                                <option value="">-- Bodega --</option>
-                                                {bodegas.map(b => (
-                                                    <option key={b.id} value={b.id}>{b.nombre}</option>
-                                                ))}
-                                            </select>
-                                        </td>
-                                        <td className="py-1 px-1.5 text-right text-xs whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>
-                                            {(() => {
-                                                const disp = getDisponible(det.producto_id, det.bodega_id)
-                                                if (disp === null) return '—'
-                                                return (
-                                                    <span style={{ color: disp < det.cantidad ? '#ef4444' : disp === 0 ? '#ef4444' : 'var(--text-muted)' }}>
-                                                        {disp} disp.
-                                                    </span>
-                                                )
-                                            })()}
-                                        </td>
-                                        <td className="py-1.5 px-2" style={{ minWidth: 72 }}>
+                                        <td className="py-1.5 px-2 align-top" style={{ minWidth: 72 }}>
                                             <Input
                                                 type="number"
                                                 min="1"
                                                 step="1"
                                                 value={det.cantidad}
                                                 className="text-xs text-right"
-                                                style={{
-                                                    borderColor: (() => {
-                                                        const disp = getDisponible(det.producto_id, det.bodega_id)
-                                                        return disp !== null && det.cantidad > disp ? '#ef4444' : undefined
-                                                    })()
-                                                }}
+                                                style={{ borderColor: excesosStock[idx] ? 'var(--color-danger)' : undefined }}
                                                 onChange={e => updateDetalle(idx, { cantidad: parseInt(e.target.value) || 1 })}
                                                 onKeyDown={e => { if (e.key === '.' || e.key === ',') e.preventDefault() }}
                                             />
+                                            <div
+                                                className={hintSlotCls}
+                                                style={{
+                                                    color: det._disponibleCargando
+                                                        ? 'var(--text-muted)'
+                                                        : excesosStock[idx]
+                                                            ? 'var(--color-danger)'
+                                                            : 'var(--color-warning)',
+                                                }}
+                                            >
+                                                {det.producto_id !== null && (
+                                                    det._disponibleCargando
+                                                        ? 'Consultando...'
+                                                        : det._disponibleError
+                                                            ? det._disponibleError
+                                                            : det._disponible !== null
+                                                                ? `Stock: ${det._disponible}`
+                                                                : ''
+                                                )}
+                                            </div>
                                         </td>
-                                        <td className="py-1.5 px-2" style={{ minWidth: 96 }}>
+                                        <td className="py-1.5 px-2 align-top" style={{ minWidth: 96 }}>
                                             <Input
                                                 type="number"
                                                 min="0"
@@ -642,9 +688,9 @@ export default function Form() {
                                                 onChange={e => updateDetalle(idx, { precio_unitario: Number(e.target.value) })}
                                             />
                                         </td>
-                                        <td className="py-1.5 px-2 text-center" style={{ color: 'var(--text-muted)' }}>{det.porcentaje_iva}%</td>
-                                        <td className="py-1.5 px-2 text-right font-semibold" style={{ color: 'var(--text-main)' }}>{formatMoneda(det.total)}</td>
-                                        <td className="py-1.5 px-2">
+                                        <td className="py-1.5 px-2 text-center align-top" style={{ color: 'var(--text-muted)' }}>{det.porcentaje_iva}%</td>
+                                        <td className="py-1.5 px-2 text-right font-semibold align-top" style={{ color: 'var(--text-main)' }}>{formatMoneda(det.total)}</td>
+                                        <td className="py-1.5 px-2 align-top">
                                             <button type="button" className="p-1 rounded hover:bg-red-500/10 transition-colors" onClick={() => removeDetalle(idx)}>
                                                 <Trash2 className="w-4 h-4 text-red-400" />
                                             </button>
@@ -654,7 +700,7 @@ export default function Form() {
                             </tbody>
                             <tfoot>
                                 <tr style={{ borderTop: '2px solid var(--border)' }}>
-                                    <td colSpan={3} className="py-3 px-2">
+                                    <td colSpan={2} className="py-3 px-2">
                                         <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
                                             Subtotal: <strong style={{ color: 'var(--text-main)' }}>{formatMoneda(totales.subtotal)}</strong>
                                             <span className="mx-3">·</span>

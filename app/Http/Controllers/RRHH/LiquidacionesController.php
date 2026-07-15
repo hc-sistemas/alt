@@ -232,7 +232,8 @@ class LiquidacionesController extends Controller
 
                 // 5. Generar asiento contable
                 $liq->load('colaborador');
-                $this->asientoService->liquidacionEmpleado($liq, $empresaId);
+                $asiento = $this->asientoService->liquidacionEmpleado($liq, $empresaId);
+                $liq->update(['asiento_id' => $asiento->id]);
             });
         } catch (\Throwable $e) {
             return back()->with('error', 'Error al aprobar: ' . $e->getMessage());

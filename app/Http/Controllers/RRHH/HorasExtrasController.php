@@ -21,7 +21,7 @@ class HorasExtrasController extends Controller
     {
         $empresaId = session('empresa_activa_id');
 
-        $query = HorasExtrasAprobacion::with(['colaborador', 'aprobadoPor'])
+        $query = HorasExtrasAprobacion::with(['colaborador', 'aprobadoPorUsuario'])
             ->whereHas('colaborador', fn($q) => $q->where('empresa_id', $empresaId));
 
         if ($request->filled('estado')) {

@@ -119,9 +119,9 @@ if (csrfMeta) {
 
 | Colaborador | Motivo | Fecha salida | Total calculado |
 |---|---|---|---|
-| Cárdenas Vega Roberto Esteban (ID 6) | Renuncia | 07/07/2026 | **$788.61** (vacaciones $888.61 − anticipos $100) |
-| Ruiz Andrade Patricia Elizabet (ID 7) | Despido | 07/07/2026 | **$6,587.32** (décimos + vac + FR, sin anticipos) |
-| Maldonado Rivera Carlos Andrés (ID 1) | — | — | Anticipo activo: $200 — se descontaría correctamente |
+| Colaborador ID 6 | Renuncia | 07/07/2026 | **$788.61** (vacaciones $888.61 − anticipos $100) |
+| Colaborador ID 7 | Despido | 07/07/2026 | **$6,587.32** (décimos + vac + FR, sin anticipos) |
+| Colaborador ID 1 | — | — | Anticipo activo: $200 — se descontaría correctamente |
 
 ---
 

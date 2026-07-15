@@ -218,24 +218,31 @@ class DevolucionCompraController extends Controller
 
     // ─── helpers privados para obtener cuentas contables ─────────────────────
 
+    // Nota: los códigos de parámetro y de respaldo aquí deben coincidir con los que
+    // usa el resto del sistema (AsientoService::FALLBACK_PLAN) — el plan de cuentas
+    // real tiene códigos duplicados de una migración legacy (ej. "2.1.1.1" y
+    // "2.1.1.01" son ambos "Proveedores Locales", pero solo el segundo tiene
+    // actividad real). Los códigos de respaldo genéricos usados antes ("2.1.1",
+    // "1.1.3.1", "5.1") coincidían por accidente con cuentas de otro concepto
+    // (Clientes Locales, Envíos) por esa duplicación.
     private function cuentaCxP(int $empresaId): int
     {
-        return $this->cuentaParam('cta_cxp_proveedores', $empresaId)
-            ?? $this->cuentaPorCodigos(['2.1.1', '2.1.01', '2.1.1.1'], $empresaId)
+        return $this->cuentaParam('cta_proveedores_locales', $empresaId)
+            ?? $this->cuentaPorCodigos(['2.1.1.01'], $empresaId)
             ?? $this->primeraDelTipo('pasivo', $empresaId);
     }
 
     private function cuentaCompras(int $empresaId): int
     {
-        return $this->cuentaParam('cta_compras', $empresaId)
-            ?? $this->cuentaPorCodigos(['5.1', '5.1.1', '6.1.1'], $empresaId)
-            ?? $this->primeraDelTipo('gasto', $empresaId);
+        return $this->cuentaParam('cta_inventario_mercaderia', $empresaId)
+            ?? $this->cuentaPorCodigos(['1.1.4.01'], $empresaId)
+            ?? $this->primeraDelTipo('activo', $empresaId);
     }
 
     private function cuentaIvaCobrar(int $empresaId): int
     {
-        return $this->cuentaParam('cta_iva_credito_tributario', $empresaId)
-            ?? $this->cuentaPorCodigos(['1.1.3.1', '1.1.2.3', '1.1.3'], $empresaId)
+        return $this->cuentaParam('cta_iva_compras', $empresaId)
+            ?? $this->cuentaPorCodigos(['1.1.5.01'], $empresaId)
             ?? $this->primeraDelTipo('activo', $empresaId);
     }
 

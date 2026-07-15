@@ -137,7 +137,7 @@ class CierreCajaController extends Controller
         ]);
 
         // Asiento contable por diferencia (sobrante/faltante)
-        $cuentaCajaId = $cierre->bancoCaja?->cuenta_contable_id;
+        $cuentaCajaId = $cierre->bancoCaja?->cuenta_id;
         if ($cuentaCajaId) {
             try {
                 $this->asientoService->cierreCaja(

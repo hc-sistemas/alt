@@ -473,9 +473,19 @@
                     <td>Anticipos Proveedores DEBE · Banco/Caja HABER</td>
                 </tr>
                 <tr>
-                    <td><strong>Nómina</strong></td>
+                    <td><strong>Nómina (al Procesar)</strong></td>
                     <td>RRHH</td>
                     <td>Sueldos DEBE · Aporte Patronal DEBE · IESS x Pagar HABER · Nómina x Pagar HABER</td>
+                </tr>
+                <tr>
+                    <td><strong>Liquidación de empleado (finiquito)</strong></td>
+                    <td>RRHH</td>
+                    <td>Décimos/Vacaciones/Fondos de Reserva DEBE · Nómina/Efectivo por Pagar HABER</td>
+                </tr>
+                <tr>
+                    <td><strong>Facturación de Taller (liquidar orden de trabajo)</strong></td>
+                    <td>Taller</td>
+                    <td>Caja/Banco DEBE · Ventas HABER · IVA Ventas HABER (misma regla que una venta normal)</td>
                 </tr>
                 <tr>
                     <td><strong>Lote Datafast</strong></td>
@@ -500,7 +510,7 @@
             </tbody>
         </table>
 
-        <div class="nota"><p><strong>Si el período está cerrado o las cuentas no están configuradas</strong>, el asiento automático no bloquea la operación. El registro (venta, pago, etc.) se guarda igualmente y el asiento queda pendiente de creación manual.</p></div>
+        <div class="nota"><p><strong>Cuentas no configuradas:</strong> si un parámetro contable (Sección 5) no está configurado para una cuenta específica, el sistema usa automáticamente un código de respaldo predefinido — en la práctica, esto ya no bloquea ni deja asientos pendientes salvo en casos muy inusuales. <strong>Período cerrado:</strong> si el mes contable de la fecha del documento ya está cerrado, el asiento automático no se genera (el registro del módulo de origen —venta, compra, etc.— se guarda igual) y debe crearse manualmente en Contabilidad, o reabrirse el período si corresponde.</p></div>
     </div>
 
     <div class="footer">

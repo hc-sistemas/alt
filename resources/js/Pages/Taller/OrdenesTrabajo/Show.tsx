@@ -57,6 +57,24 @@ const TIPO_ORDEN_LABELS: Record<number, string> = {
     3: 'Revisión',
 }
 
+// Slot de altura fija debajo de un input (16px), siempre presente con o sin
+// texto, para que Cantidad/Precio/N° serie queden a la misma altura entre sí
+// — mismo patrón usado en Facturas para el hint de "Stock: N".
+const hintSlotCls = "h-4 mt-0.5 text-[11px] font-medium leading-4 whitespace-nowrap overflow-hidden"
+
+async function consultarSaldoDisponible(ordenId: number, productoId: number): Promise<number> {
+    const res = await fetch(
+        route('taller.ordenes.repuestos.saldo-disponible', { orden: ordenId, producto_id: productoId }),
+        { headers: { Accept: 'application/json' } },
+    )
+    if (!res.ok) {
+        const data = await res.json().catch(() => null) as { error?: string } | null
+        throw new Error(data?.error || 'No se pudo consultar el stock.')
+    }
+    const data = await res.json() as { disponible: number }
+    return data.disponible
+}
+
 export default function OrdenTrabajoShow() {
     const { orden, tecnicos, productos } = usePage<Props>().props
     const cfg = ESTADO_CONFIG[orden.estado] ?? { label: orden.estado, variant: 'secondary' as const }
@@ -98,6 +116,27 @@ export default function OrdenTrabajoShow() {
     const [precioVenta, setPrecioVenta] = useState('')
     const [numeroSerie, setNumeroSerie] = useState('')
     const [agregando, setAgregando] = useState(false)
+    const [disponible, setDisponible] = useState<number | null>(null)
+    const [disponibleCargando, setDisponibleCargando] = useState(false)
+    const [disponibleError, setDisponibleError] = useState('')
+
+    const cantidadNum = parseInt(cantidad, 10) || 0
+    const excedeStock = disponible !== null && cantidadNum > disponible
+
+    function actualizarDisponible(productoId: number) {
+        setDisponibleCargando(true)
+        setDisponibleError('')
+        consultarSaldoDisponible(orden.id, productoId)
+            .then(d => {
+                setDisponible(d)
+                setDisponibleCargando(false)
+            })
+            .catch((err: unknown) => {
+                setDisponible(null)
+                setDisponibleCargando(false)
+                setDisponibleError(err instanceof Error ? err.message : 'No se pudo consultar el stock.')
+            })
+    }
 
     function seleccionarProducto(p: ProductoOpcion) {
         setProductoSel(p)
@@ -105,6 +144,7 @@ export default function OrdenTrabajoShow() {
         setBusquedaProducto('')
         setMatchesModal(null)
         setErrorBusqueda('')
+        actualizarDisponible(p.id)
     }
 
     function buscarProducto() {
@@ -129,6 +169,9 @@ export default function OrdenTrabajoShow() {
         setPrecioVenta('')
         setCantidad('1')
         setNumeroSerie('')
+        setDisponible(null)
+        setDisponibleCargando(false)
+        setDisponibleError('')
     }
 
     function agregarRepuesto() {
@@ -137,6 +180,10 @@ export default function OrdenTrabajoShow() {
         if (!cant || cant < 1) { toastError('La cantidad debe ser mayor a 0.'); return }
         const precio = Number(precioVenta)
         if (isNaN(precio) || precio < 0) { toastError('El precio de venta no es válido.'); return }
+        if (disponible !== null && cant > disponible) {
+            toastError(`Stock insuficiente en Bodega Taller: disponible ${disponible}, solicitado ${cant}.`)
+            return
+        }
 
         setAgregando(true)
         router.post(route('taller.ordenes.repuestos.store', orden.id), {
@@ -238,6 +285,19 @@ export default function OrdenTrabajoShow() {
                         </div>
                     </div>
                 </div>
+
+                {orden.ingreso?.diagnostico_inicial && (
+                    <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+                        <div className="px-4 py-3" style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
+                            <h3 className="text-sm font-semibold" style={{ color: 'var(--text-main)' }}>Diagnóstico inicial (recepción)</h3>
+                        </div>
+                        <div className="p-4 text-sm">
+                            <p className="whitespace-pre-wrap" style={{ color: 'var(--text-muted)' }}>
+                                {orden.ingreso.diagnostico_inicial}
+                            </p>
+                        </div>
+                    </div>
+                )}
 
                 {/* Cambiar estado */}
                 <div className="rounded-xl border p-5 space-y-4" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
@@ -458,6 +518,7 @@ export default function OrdenTrabajoShow() {
                                         {errorBusqueda && <p className="text-xs mt-0.5" style={{ color: '#ef4444' }}>{errorBusqueda}</p>}
                                     </div>
                                 )}
+                                <div className={hintSlotCls} />
                             </div>
 
                             <div className="space-y-1">
@@ -470,6 +531,26 @@ export default function OrdenTrabajoShow() {
                                     value={cantidad}
                                     onChange={e => setCantidad(e.target.value)}
                                 />
+                                <div
+                                    className={hintSlotCls}
+                                    style={{
+                                        color: disponibleCargando
+                                            ? 'var(--text-muted)'
+                                            : excedeStock
+                                                ? 'var(--color-danger)'
+                                                : 'var(--color-warning)',
+                                    }}
+                                >
+                                    {productoSel && (
+                                        disponibleCargando
+                                            ? 'Consultando...'
+                                            : disponibleError
+                                                ? disponibleError
+                                                : disponible !== null
+                                                    ? `Stock: ${disponible}`
+                                                    : ''
+                                    )}
+                                </div>
                             </div>
 
                             <div className="space-y-1">
@@ -482,6 +563,7 @@ export default function OrdenTrabajoShow() {
                                     value={precioVenta}
                                     onChange={e => setPrecioVenta(e.target.value)}
                                 />
+                                <div className={hintSlotCls} />
                             </div>
 
                             <div className="space-y-1">
@@ -492,6 +574,7 @@ export default function OrdenTrabajoShow() {
                                     value={numeroSerie}
                                     onChange={e => setNumeroSerie(e.target.value)}
                                 />
+                                <div className={hintSlotCls} />
                             </div>
                         </div>
 

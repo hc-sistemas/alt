@@ -374,11 +374,15 @@ class ReporteSriController extends Controller
 
     private function mapTipoDocAts(?string $tipo): string
     {
+        // compras.tipo_documento usa los códigos reales del formulario (FAC, LIQ, TIK,
+        // CON, EXT) — antes se comparaba contra 'liquidacion'/'rise'/'exterior', que
+        // nunca coinciden con ningún valor real, así que TODAS las compras caían en
+        // el default '01' sin importar su tipo real (ej. una compra EXT se reportaba
+        // al SRI como factura común en vez de como comprobante del exterior).
         return match ($tipo) {
-            'liquidacion' => '03',
-            'rise'        => '04',
-            'exterior'    => '41',
-            default       => '01',
+            'LIQ' => '03',
+            'EXT' => '41',
+            default => '01',
         };
     }
 }

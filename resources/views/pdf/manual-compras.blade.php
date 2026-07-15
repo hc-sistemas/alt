@@ -478,7 +478,7 @@
                 <div class="paso-cont">Seleccionar el <strong>Proveedor</strong>, ingresar el <strong>monto</strong>, <strong>fecha</strong>, <strong>banco origen</strong> y el <strong>concepto</strong>.</div>
             </div>
             <div class="paso"><div class="paso-num"><span>3</span></div>
-                <div class="paso-cont">Guardar. El anticipo genera el asiento: <em>Anticipos Proveedores DEBE · Banco HABER</em>.</td>
+                <div class="paso-cont">Guardar. El anticipo genera el asiento: <em>Anticipos Proveedores DEBE · Banco HABER</em>.</div>
             </div>
         </div>
 

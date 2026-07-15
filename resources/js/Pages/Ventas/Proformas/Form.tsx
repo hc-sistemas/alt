@@ -10,8 +10,9 @@ import { Label } from '@/Components/ui/label'
 import BuscadorClienteModal from '@/Components/shared/BuscadorClienteModal'
 import DescuentoEspecialModal from '@/Components/Ventas/DescuentoEspecialModal'
 import { cn, formatMoneda } from '@/lib/utils'
+import { toastError } from '@/lib/toast'
 import { Plus, Trash2, Search, Save, X, AlertTriangle } from 'lucide-react'
-import type { PageProps, Empresa, Usuario, Cliente, LimiteDescuento } from '@/types'
+import type { PageProps, Empresa, Usuario, Cliente } from '@/types'
 
 interface ProductoVenta {
     id: number
@@ -22,6 +23,7 @@ interface ProductoVenta {
     costo: number
     descuento_max: number
     porcentaje_iva: number
+    stock_disponible: number
 }
 
 interface DetalleLinea {
@@ -39,6 +41,9 @@ interface DetalleLinea {
     descuento_especial: boolean
     aprobacion_id: number | null
     descuento_max_producto: number
+    // Solo informativo (Bodega Principal UIO) — Proforma es cotización, no
+    // reserva ni descuenta stock. Sin lógica de bloqueo al guardar.
+    stock_disponible: number | null
     _busqueda: string
     _error: string
     _desc_error: string
@@ -56,7 +61,7 @@ interface Props extends PageProps {
     vendedores: Pick<Usuario, 'id' | 'nombre' | 'email'>[]
     empresa_activa: Empresa
     siguiente_numero: string
-    limite_descuento: LimiteDescuento | null
+    limites_descuento: { descuento_maximo_pct: number; puede_aprobar: boolean }
 }
 
 function calcularLinea(linea: DetalleLinea): DetalleLinea {
@@ -74,6 +79,7 @@ function lineaVacia(): DetalleLinea {
         descuento_valor: 0, subtotal: 0, porcentaje_iva: 15,
         valor_iva: 0, total: 0, descuento_especial: false,
         aprobacion_id: null, descuento_max_producto: 100,
+        stock_disponible: null,
         _busqueda: '', _error: '', _desc_error: '',
     }
 }
@@ -114,7 +120,7 @@ function ClienteField({ label, value, onChange, type = 'text', onKeyDown }: {
 }
 
 export default function Form() {
-    const { clientes, productos, vendedores, siguiente_numero } = usePage<Props>().props
+    const { clientes, productos, vendedores, siguiente_numero, limites_descuento } = usePage<Props>().props
 
     // — Cliente
     const [clienteSeleccionado, setClienteSeleccionado] = useState<Cliente | null>(null)
@@ -230,15 +236,31 @@ export default function Form() {
 
     const handleDescuentoChange = (idx: number, valor: number) => {
         const linea = detalles[idx]
+
+        // Tope de producto/lista de precios — capa dura, sin excepción, ni
+        // siquiera con aprobación especial se puede superar.
         if (valor > linea.descuento_max_producto && linea.descuento_max_producto < 100) {
+            updateDetalle(idx, {
+                descuento_pct: linea.descuento_max_producto,
+                descuento_especial: false, aprobacion_id: null,
+                _desc_error: `Descuento máximo para este producto: ${linea.descuento_max_producto}%`,
+            })
+            return
+        }
+
+        // Tope del perfil del vendedor — sí se puede superar con PIN de un
+        // supervisor, mientras no exceda el tope de producto verificado arriba.
+        const limitePerfil = limites_descuento.descuento_maximo_pct
+        if (valor > limitePerfil) {
             if (linea.aprobacion_id) {
-                updateDetalle(idx, { descuento_pct: valor })
+                updateDetalle(idx, { descuento_pct: valor, _desc_error: '' })
                 return
             }
-            setModal({ indice: idx, descuentoSolicitado: valor, maxPermitido: linea.descuento_max_producto })
-        } else {
-            updateDetalle(idx, { descuento_pct: valor, descuento_especial: false, aprobacion_id: null })
+            setModal({ indice: idx, descuentoSolicitado: valor, maxPermitido: limitePerfil })
+            return
         }
+
+        updateDetalle(idx, { descuento_pct: valor, descuento_especial: false, aprobacion_id: null, _desc_error: '' })
     }
 
     const seleccionarProductoLocal = (idx: number, p: ProductoVenta) => {
@@ -253,6 +275,7 @@ export default function Form() {
                 porcentaje_iva: p.porcentaje_iva,
                 descuento_max_producto: p.descuento_max,
                 descuento_pct: 0,
+                stock_disponible: p.stock_disponible,
                 _busqueda: '',
                 _error: '',
                 _desc_error: '',
@@ -301,14 +324,12 @@ export default function Form() {
         if (errs.length > 0) { setErrores(errs); return }
         setErrores([])
 
-        const primeraAprobacion = detalles.find(d => d.aprobacion_id)?.aprobacion_id ?? null
         setGuardando(true)
         router.post(route('ventas.proformas.store'), {
             cliente_id: clienteSeleccionado!.id,
             vendedor_id: vendedorId,
             fecha_vencimiento: fechaVencimiento,
             observaciones,
-            aprobacion_especial: primeraAprobacion,
             detalles: detalles.map(d => ({
                 producto_id: d.producto_id,
                 codigo: d.codigo,
@@ -320,13 +341,19 @@ export default function Form() {
                 aprobacion_id: d.aprobacion_id,
             })),
         }, {
-            onError: () => setGuardando(false),
+            onError: errors => {
+                Object.values(errors).forEach(msg => { if (msg) toastError(msg) })
+                setGuardando(false)
+            },
             onFinish: () => setGuardando(false),
         })
     }
 
     const vendedorActual = vendedores.find(v => v.id === vendedorId)
     const tipoLabel: Record<string, string> = { '04': 'RUC', '05': 'CÉDULA', '06': 'PASAPORTE', '07': 'CONSUMIDOR' }
+    // Slot de altura fija debajo del input de cantidad (16px), mismo patrón
+    // de Facturas — aquí es solo informativo, nunca cambia de color a rojo.
+    const hintSlotCls = "h-4 mt-0.5 text-[11px] font-medium leading-4 whitespace-nowrap overflow-hidden"
 
     return (
         <AppLayout>
@@ -522,13 +549,22 @@ export default function Form() {
                         <table className="w-full text-xs">
                             <thead>
                                 <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                                    {['Producto', 'Cant.', 'Precio Unit.', 'Desc%', 'Subtotal', 'IVA%', 'Total', ''].map((col, i) => (
+                                    {[
+                                        { label: 'Producto', cls: 'min-w-55' },
+                                        { label: 'Cant.', cls: 'w-20 text-right' },
+                                        { label: 'Precio Unit.', cls: 'w-24 text-right' },
+                                        { label: 'Desc%', cls: 'w-20 text-right' },
+                                        { label: 'Subtotal', cls: 'w-24 text-right' },
+                                        { label: 'IVA%', cls: 'w-14 text-center' },
+                                        { label: 'Total', cls: 'w-24 text-right' },
+                                        { label: '', cls: 'w-8' },
+                                    ].map((col, i) => (
                                         <th
                                             key={i}
-                                            className={cn('py-2 px-2 font-medium text-left', (i >= 1 && i <= 4) && 'text-right')}
+                                            className={cn('py-2 px-2 font-medium text-left', col.cls)}
                                             style={{ color: 'var(--text-muted)' }}
                                         >
-                                            {col}
+                                            {col.label}
                                         </th>
                                     ))}
                                 </tr>
@@ -599,34 +635,49 @@ export default function Form() {
                                                         )}
                                                     </div>
                                                 )}
+                                                <div className={hintSlotCls} />
                                             </td>
-                                            <td className="py-1.5 px-2" style={{ minWidth: 72 }}>
+                                            <td className="py-1.5 px-2">
                                                 <Input
                                                     type="number"
                                                     min="1"
                                                     step="1"
                                                     value={det.cantidad}
-                                                    className="text-xs text-right"
+                                                    className="h-7 px-2 text-xs text-right"
                                                     onKeyDown={e => { if (e.key === '.' || e.key === ',') e.preventDefault() }}
                                                     onChange={e => {
                                                         const val = parseInt(e.target.value, 10)
                                                         updateDetalle(idx, { cantidad: isNaN(val) || val < 1 ? 1 : val })
                                                     }}
                                                 />
+                                                <div className={hintSlotCls} style={{ color: 'var(--color-warning)' }}>
+                                                    {det.producto_id !== null && det.stock_disponible !== null
+                                                        ? `Stock: ${det.stock_disponible}`
+                                                        : ''}
+                                                </div>
                                             </td>
-                                            <td className="py-1.5 px-2" style={{ minWidth: 96 }}>
-                                                <Input type="number" min="0" step="0.01" value={det.precio_unitario} className="text-xs text-right" onChange={e => updateDetalle(idx, { precio_unitario: Number(e.target.value) })} />
+                                            <td className="py-1.5 px-2">
+                                                <Input type="number" min="0" step="0.01" value={det.precio_unitario} className="h-7 px-2 text-xs text-right" onChange={e => updateDetalle(idx, { precio_unitario: Number(e.target.value) })} />
+                                                <div className={hintSlotCls} />
                                             </td>
-                                            <td className="py-1.5 px-2 relative" style={{ minWidth: 72 }}>
+                                            <td className="py-1.5 px-2 relative">
                                                 <Input
                                                     type="number" min="0" max="100" step="0.1"
                                                     value={det.descuento_pct}
-                                                    className={cn('text-xs text-right pr-6', det.descuento_especial && 'border-amber-500')}
+                                                    className={cn('h-7 px-2 text-xs text-right pr-6', det.descuento_especial && 'border-amber-500')}
                                                     onChange={e => handleDescuentoChange(idx, Number(e.target.value))}
                                                 />
                                                 {det.descuento_especial && (
                                                     <AlertTriangle className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-amber-500 pointer-events-none" />
                                                 )}
+                                                <div
+                                                    className={hintSlotCls}
+                                                    style={{ color: det._desc_error ? 'var(--color-danger)' : 'var(--color-warning)' }}
+                                                >
+                                                    {det._desc_error || (det.producto_id !== null
+                                                        ? `Max. ${det.descuento_max_producto}%`
+                                                        : '')}
+                                                </div>
                                             </td>
                                             <td className="py-1.5 px-2 text-right font-medium" style={{ color: 'var(--text-main)' }}>{formatMoneda(det.subtotal)}</td>
                                             <td className="py-1.5 px-2 text-center" style={{ color: 'var(--text-muted)' }}>{det.porcentaje_iva}%</td>

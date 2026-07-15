@@ -13,7 +13,7 @@ class Liquidacion extends Model
         'colaborador_id', 'fecha_salida', 'motivo',
         'decimos_acumulados', 'vacaciones', 'fondos_reserva',
         'anticipos_descontar', 'total_liquidacion',
-        'estado', 'modificado_manualmente', 'created_by',
+        'estado', 'modificado_manualmente', 'created_by', 'asiento_id',
     ];
 
     protected function casts(): array
@@ -37,5 +37,10 @@ class Liquidacion extends Model
     public function creadoPor(): BelongsTo
     {
         return $this->belongsTo(Usuario::class, 'created_by');
+    }
+
+    public function asiento(): BelongsTo
+    {
+        return $this->belongsTo(AsientoContable::class);
     }
 }

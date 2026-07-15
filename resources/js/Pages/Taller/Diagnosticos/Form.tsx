@@ -69,6 +69,15 @@ export default function DiagnosticoForm() {
                     </div>
                 </div>
 
+                {orden.ingreso?.diagnostico_inicial && (
+                    <div className="rounded-xl border p-5 space-y-1.5" style={{ borderColor: 'var(--border)', background: 'var(--bg-main)' }}>
+                        <Label style={{ color: 'var(--text-muted)' }}>Diagnóstico inicial (recepción)</Label>
+                        <p className="text-sm whitespace-pre-wrap" style={{ color: 'var(--text-muted)' }}>
+                            {orden.ingreso.diagnostico_inicial}
+                        </p>
+                    </div>
+                )}
+
                 <div className="rounded-xl border p-5 space-y-4" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
                     <div className="space-y-1.5">
                         <Label style={{ color: 'var(--text-main)' }}>Diagnóstico técnico *</Label>

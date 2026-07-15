@@ -128,7 +128,7 @@
     <div class="portada-titulo">Manual de Uso</div>
     <div class="portada-modulo">Módulo Bancos</div>
     <div class="portada-ver">
-        Versión 1.0 &nbsp;·&nbsp; {{ now()->format('d/m/Y') }}
+        Versión 2.0 &nbsp;·&nbsp; {{ now()->format('d/m/Y') }}
     </div>
     <div class="portada-meta">
         <strong>Empresa:</strong> {{ $empresa->nombre_comercial ?? 'Altamira' }}<br>

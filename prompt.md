@@ -753,14 +753,14 @@ const { puede } = usePermiso('ventas')
 ```
 Super Admin:
   email: admin@altamira.com
-  password: Altamira2026*
-  codigo_aprobacion: 1234
+  password: ver credenciales compartidas por canal seguro con el equipo
+  codigo_aprobacion: ver credenciales compartidas por canal seguro con el equipo
   empresa: Altamira Matriz
   perfil: super_admin
 
 Vendedor de prueba:
   email: vendedor@altamira.com
-  password: Vendedor2026*
+  password: ver credenciales compartidas por canal seguro con el equipo
   empresa: Altamira Matriz
   perfil: vendedor
 ```

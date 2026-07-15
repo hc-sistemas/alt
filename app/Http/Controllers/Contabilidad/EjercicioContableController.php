@@ -263,22 +263,26 @@ class EjercicioContableController extends Controller
                 $utilidad = round($totalIngresos - $totalGastos, 4);
 
                 // ── PASO 2: cuenta de resultado del ejercicio ──
+                // "cta_utilidad_periodo" es el código real, configurable desde Parámetros
+                // Contables (grupo "Contabilidad") y ya registrado en AsientoService::
+                // FALLBACK_PLAN (3.1.4.01). Antes se leía "cta_resultados_ejercicio", un
+                // código que no existía en ningún otro lugar del sistema — nunca aparecía
+                // en la UI de Parámetros, así que jamás podía configurarse, y su fallback
+                // por código/descripción resolvía a la cuenta equivocada (3.1.5.01, que en
+                // el plan de cuentas real es "Aportes de Socios o Accionistas", no utilidad).
                 $cuentaResultadoId = DB::table('parametros_contables')
                     ->where('empresa_id', $empresaId)
-                    ->where('codigo', 'cta_resultados_ejercicio')
+                    ->where('codigo', 'cta_utilidad_periodo')
                     ->value('cuenta_id');
 
                 if (!$cuentaResultadoId) {
-                    $cr = PlanCuenta::where(fn($q) => $q->where('codigo', 'like', '3.1.5%')
-                            ->orWhere('descripcion', 'ilike', '%utilidad%periodo%')
-                            ->orWhere('descripcion', 'ilike', '%resultado%ejercicio%'))
-                        ->first();
+                    $cr = PlanCuenta::where('codigo', '3.1.4.01')->first();
                     $cuentaResultadoId = $cr?->id;
                 }
 
                 if (!empty($detallesCierre) && !$cuentaResultadoId) {
                     throw new \Exception(
-                        'Configure la cuenta "cta_resultados_ejercicio" en Parámetros Contables antes del cierre fiscal.'
+                        'Configure la cuenta "Utilidad del Periodo" en Parámetros Contables antes del cierre fiscal.'
                     );
                 }
 
@@ -337,10 +341,7 @@ class EjercicioContableController extends Controller
                             ->value('cuenta_id');
 
                         if (!$cuentaAcumuladaId) {
-                            $ca = PlanCuenta::where(fn($q) => $q->where('codigo', 'like', '3.1.4%')
-                                    ->orWhere('descripcion', 'ilike', '%ganancias%acumuladas%')
-                                    ->orWhere('descripcion', 'ilike', '%utilidades%acumuladas%'))
-                                ->first();
+                            $ca = PlanCuenta::where('codigo', '3.1.3.01')->first();
                             $cuentaAcumuladaId = $ca?->id;
                         }
 

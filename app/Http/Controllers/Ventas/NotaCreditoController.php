@@ -220,13 +220,14 @@ class NotaCreditoController extends Controller
         });
 
         try {
-            $this->asiento->notaCreditoEmitida(
+            $asientoNC = $this->asiento->notaCreditoEmitida(
                 empresaId:    $empresaId,
                 notaCreditoId: $notaCredito->id,
                 referencia:   $notaCredito->numero_completo,
                 subtotal:     $subtotal,
                 iva:          $totalIva,
             );
+            $notaCredito->update(['asiento_id' => $asientoNC->id]);
         } catch (\Throwable) {
             // Asiento falla de forma silenciosa
         }
