@@ -55,9 +55,15 @@ class ManualesController extends Controller
             ],
             'inventario' => [
                 'titulo'      => 'Inventario',
-                'descripcion' => 'Productos, kárdex, bodegas, traslados y activos fijos.',
-                'tipo'        => 'estatico',
-                'archivo'     => storage_path('app/public/manuales/Manual_Inventario.pdf'),
+                'descripcion' => 'Productos, marcas, categorías, bodegas, listas de precio, kárdex, traslados y activos fijos.',
+                'tipo'        => 'dinamico',
+                'route'       => 'manuales.inventario-pdf',
+            ],
+            'taller' => [
+                'titulo'      => 'Taller',
+                'descripcion' => 'Ingreso de equipos, órdenes de trabajo, diagnóstico, repuestos y liquidación (Altamira Fix).',
+                'tipo'        => 'dinamico',
+                'route'       => 'manuales.taller-pdf',
             ],
             'personas' => [
                 'titulo'      => 'Personas',

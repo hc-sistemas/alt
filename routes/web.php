@@ -107,6 +107,22 @@ Route::middleware('auth')->group(function () {
         return $pdf->stream('manual-compras.pdf');
     })->name('manuales.compras-pdf');
 
+    Route::get('/manuales/inventario/pdf-dinamico', function () {
+        $empresa = \App\Models\Empresa::find(session('empresa_activa_id'));
+        $usuario = auth()->user();
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.manual-inventario', compact('empresa', 'usuario'))
+            ->setPaper('letter', 'portrait');
+        return $pdf->stream('manual-inventario.pdf');
+    })->name('manuales.inventario-pdf');
+
+    Route::get('/manuales/taller/pdf-dinamico', function () {
+        $empresa = \App\Models\Empresa::find(session('empresa_activa_id'));
+        $usuario = auth()->user();
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.manual-taller', compact('empresa', 'usuario'))
+            ->setPaper('letter', 'portrait');
+        return $pdf->stream('manual-taller.pdf');
+    })->name('manuales.taller-pdf');
+
     Route::get('/manuales/rrhh/pdf-dinamico', function () {
         $empresa = \App\Models\Empresa::find(session('empresa_activa_id'));
         $usuario = auth()->user();
@@ -581,35 +597,37 @@ Route::middleware('auth')->group(function () {
     });
 
     // Taller
-    Route::prefix('taller')->name('taller.')->group(function () {
-        // Tipos de equipo
-        Route::get('/tipos-equipo', [TipoEquipoController::class, 'index'])->name('tipos-equipo.index');
-        Route::post('/tipos-equipo', [TipoEquipoController::class, 'store'])->name('tipos-equipo.store');
-        Route::patch('/tipos-equipo/{tipoEquipo}', [TipoEquipoController::class, 'update'])->name('tipos-equipo.update');
-        Route::delete('/tipos-equipo/{tipoEquipo}', [TipoEquipoController::class, 'destroy'])->name('tipos-equipo.destroy');
+    Route::middleware('permiso:taller,ver')->group(function () {
+        Route::prefix('taller')->name('taller.')->group(function () {
+            // Tipos de equipo
+            Route::get('/tipos-equipo', [TipoEquipoController::class, 'index'])->name('tipos-equipo.index');
+            Route::post('/tipos-equipo', [TipoEquipoController::class, 'store'])->name('tipos-equipo.store');
+            Route::patch('/tipos-equipo/{tipoEquipo}', [TipoEquipoController::class, 'update'])->name('tipos-equipo.update');
+            Route::delete('/tipos-equipo/{tipoEquipo}', [TipoEquipoController::class, 'destroy'])->name('tipos-equipo.destroy');
 
-        // Ingresos
-        Route::get('/ingresos', [IngresoController::class, 'index'])->name('ingresos.index');
-        Route::get('/ingresos/crear', [IngresoController::class, 'create'])->name('ingresos.create');
-        Route::post('/ingresos', [IngresoController::class, 'store'])->name('ingresos.store');
-        Route::get('/ingresos/{ingreso}', [IngresoController::class, 'show'])->name('ingresos.show');
-        Route::get('/ingresos/{ingreso}/pdf', [IngresoController::class, 'pdfOrdenTrabajo'])->name('ingresos.pdf');
-        Route::get('/equipos/buscar', [IngresoController::class, 'buscarEquipo'])->name('equipos.buscar');
+            // Ingresos
+            Route::get('/ingresos', [IngresoController::class, 'index'])->name('ingresos.index');
+            Route::get('/ingresos/crear', [IngresoController::class, 'create'])->name('ingresos.create');
+            Route::post('/ingresos', [IngresoController::class, 'store'])->name('ingresos.store');
+            Route::get('/ingresos/{ingreso}', [IngresoController::class, 'show'])->name('ingresos.show');
+            Route::get('/ingresos/{ingreso}/pdf', [IngresoController::class, 'pdfOrdenTrabajo'])->name('ingresos.pdf');
+            Route::get('/equipos/buscar', [IngresoController::class, 'buscarEquipo'])->name('equipos.buscar');
 
-        // Órdenes de trabajo
-        Route::get('/ordenes', [OrdenTrabajoController::class, 'index'])->name('ordenes.index');
-        Route::get('/ordenes/{orden}', [OrdenTrabajoController::class, 'show'])->name('ordenes.show');
-        Route::patch('/ordenes/{orden}/estado', [OrdenTrabajoController::class, 'cambiarEstado'])->name('ordenes.cambiar-estado');
-        Route::post('/ordenes/{orden}/repuestos', [LiquidacionController::class, 'agregarRepuesto'])->name('ordenes.repuestos.store');
-        Route::get('/ordenes/{orden}/repuestos/saldo-disponible', [LiquidacionController::class, 'saldoDisponible'])->name('ordenes.repuestos.saldo-disponible');
+            // Órdenes de trabajo
+            Route::get('/ordenes', [OrdenTrabajoController::class, 'index'])->name('ordenes.index');
+            Route::get('/ordenes/{orden}', [OrdenTrabajoController::class, 'show'])->name('ordenes.show');
+            Route::patch('/ordenes/{orden}/estado', [OrdenTrabajoController::class, 'cambiarEstado'])->name('ordenes.cambiar-estado');
+            Route::post('/ordenes/{orden}/repuestos', [LiquidacionController::class, 'agregarRepuesto'])->name('ordenes.repuestos.store');
+            Route::get('/ordenes/{orden}/repuestos/saldo-disponible', [LiquidacionController::class, 'saldoDisponible'])->name('ordenes.repuestos.saldo-disponible');
 
-        // Diagnósticos
-        Route::get('/ordenes/{orden}/diagnostico', [DiagnosticoController::class, 'create'])->name('diagnosticos.create');
-        Route::post('/ordenes/{orden}/diagnostico', [DiagnosticoController::class, 'store'])->name('diagnosticos.store');
-        Route::patch('/diagnosticos/{diagnostico}/aprobar', [DiagnosticoController::class, 'aprobar'])->name('diagnosticos.aprobar');
+            // Diagnósticos
+            Route::get('/ordenes/{orden}/diagnostico', [DiagnosticoController::class, 'create'])->name('diagnosticos.create');
+            Route::post('/ordenes/{orden}/diagnostico', [DiagnosticoController::class, 'store'])->name('diagnosticos.store');
+            Route::patch('/diagnosticos/{diagnostico}/aprobar', [DiagnosticoController::class, 'aprobar'])->name('diagnosticos.aprobar');
 
-        // Liquidación
-        Route::get('/ordenes/{orden}/liquidar', [LiquidacionController::class, 'show'])->name('liquidacion.show');
-        Route::post('/ordenes/{orden}/liquidar', [LiquidacionController::class, 'liquidar'])->name('liquidacion.liquidar');
+            // Liquidación
+            Route::get('/ordenes/{orden}/liquidar', [LiquidacionController::class, 'show'])->name('liquidacion.show');
+            Route::post('/ordenes/{orden}/liquidar', [LiquidacionController::class, 'liquidar'])->name('liquidacion.liquidar');
+        });
     });
 });
