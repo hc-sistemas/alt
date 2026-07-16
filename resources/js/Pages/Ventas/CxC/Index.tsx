@@ -43,6 +43,10 @@ interface ModalCobro {
     saldo: number
 }
 
+function getCsrf(): string {
+    return (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement | null)?.content ?? ''
+}
+
 interface Props extends PageProps {
     cuentas: PaginatedData<CxCItem>
     metricas: CxCMetricas
@@ -139,25 +143,59 @@ export default function Index() {
     }
 
     const handleCastigar = async (cuenta: CxCItem) => {
-        const result = await Swal.fire({
+        const { value: formValues } = await Swal.fire({
             title: 'Castigar deuda',
-            text: `¿Desea castigar la deuda de ${cuenta.cliente_razon} (${formatMoneda(cuenta.saldo)})?`,
+            html:
+                `<p style="margin-bottom:12px;font-size:14px;text-align:left;">` +
+                `¿Desea castigar la deuda de ${cuenta.cliente_razon} (${formatMoneda(cuenta.saldo)})? ` +
+                `Requiere una aprobación especial de SuperAdmin.</p>` +
+                `<input id="swal-codigo" type="password" class="swal2-input" placeholder="Código de aprobación">` +
+                `<input id="swal-motivo" type="text" class="swal2-input" placeholder="Motivo del castigo">`,
             icon: 'warning',
-            input: 'password',
-            inputLabel: 'Código de aprobación (SuperAdmin)',
-            inputPlaceholder: '••••••••',
             showCancelButton: true,
-            confirmButtonText: 'Castigar',
+            confirmButtonText: 'Validar y castigar',
             cancelButtonText: 'Cancelar',
             confirmButtonColor: '#1e293b',
-            inputValidator: v => !v ? 'Ingrese el código de aprobación' : undefined,
+            focusConfirm: false,
+            preConfirm: () => {
+                const codigo = (document.getElementById('swal-codigo') as HTMLInputElement | null)?.value ?? ''
+                const motivo = (document.getElementById('swal-motivo') as HTMLInputElement | null)?.value ?? ''
+                if (!codigo.trim() || !motivo.trim()) {
+                    Swal.showValidationMessage('Ingrese el código y el motivo.')
+                    return false
+                }
+                return { codigo, motivo }
+            },
         })
-        if (!result.isConfirmed || !result.value) return
-        router.post(
-            route('ventas.cxc.castigar', cuenta.id),
-            { codigo_aprobacion: result.value as string },
-            { preserveState: true }
-        )
+        if (!formValues) return
+
+        try {
+            const res = await fetch(route('ventas.aprobacion.validar'), {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': getCsrf(),
+                    Accept: 'application/json',
+                },
+                body: JSON.stringify({
+                    tipo: 'castigo_cartera',
+                    codigo: formValues.codigo,
+                    motivo: formValues.motivo,
+                }),
+            })
+            const data = await res.json() as { valido: boolean; aprobacion_id?: number; mensaje?: string }
+            if (!data.valido || !data.aprobacion_id) {
+                void Swal.fire('Código inválido', data.mensaje ?? 'Código incorrecto.', 'error')
+                return
+            }
+            router.patch(
+                route('ventas.cxc.castigo', cuenta.id),
+                { aprobacion_especial_id: data.aprobacion_id },
+                { preserveState: true }
+            )
+        } catch {
+            void Swal.fire('Error', 'Error de conexión. Intente nuevamente.', 'error')
+        }
     }
 
     const hayFiltros = Object.values(filtro).some(v => v !== '')
