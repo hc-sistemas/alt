@@ -15,6 +15,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -259,52 +260,73 @@ class KardexController extends Controller
         $empresaId = session('empresa_activa_id');
 
         $data = $request->validate([
-            'producto_id'    => ['required', 'integer', 'exists:productos,id'],
-            'bodega_id'      => ['required', 'integer', 'exists:bodegas,id'],
-            'tipo_ajuste'    => ['required', 'in:positivo,negativo'],
-            'cantidad'       => ['required', 'integer', 'min:1'],
-            'costo_unitario' => ['required_if:tipo_ajuste,positivo', 'nullable', 'numeric', 'min:0'],
-            'motivo'         => ['required', 'string', 'max:255'],
-            'redirect_to'   => ['nullable', 'string', 'max:500'],
+            'bodega_id'                  => ['required', 'integer', 'exists:bodegas,id'],
+            'motivo'                     => ['required', 'string', 'max:255'],
+            'detalles'                   => ['required', 'array', 'min:1'],
+            'detalles.*.producto_id'     => ['required', 'integer', 'exists:productos,id'],
+            'detalles.*.tipo_ajuste'     => ['required', 'in:positivo,negativo'],
+            'detalles.*.cantidad'        => ['required', 'integer', 'min:1'],
+            'detalles.*.costo_unitario'  => ['required_if:detalles.*.tipo_ajuste,positivo', 'nullable', 'numeric', 'min:0'],
+            'redirect_to'                => ['nullable', 'string', 'max:500'],
         ]);
 
-        $producto = Producto::where('id', $data['producto_id'])
-            ->where('empresa_id', $empresaId)
-            ->firstOrFail();
+        $productoIds = collect($data['detalles'])->pluck('producto_id')->unique()->all();
+        $productos = Producto::where('empresa_id', $empresaId)
+            ->whereIn('id', $productoIds)
+            ->get(['id', 'codigo'])
+            ->keyBy('id');
+
+        foreach ($data['detalles'] as $det) {
+            if (!$productos->has($det['producto_id'])) {
+                return back()->withErrors([
+                    'error' => "Producto inválido en el ajuste (ID {$det['producto_id']}).",
+                ])->withInput();
+            }
+        }
 
         try {
-            if ($data['tipo_ajuste'] === 'positivo') {
-                $this->inventario->ingresarStock(
-                    (int) $data['producto_id'],
-                    (int) $data['bodega_id'],
-                    (float) $data['cantidad'],
-                    (float) ($data['costo_unitario'] ?? 0),
-                    'ajuste',
-                    0
-                );
-            } else {
-                $this->inventario->egresarStock(
-                    (int) $data['producto_id'],
-                    (int) $data['bodega_id'],
-                    (float) $data['cantidad'],
-                    'ajuste',
-                    0
-                );
-            }
+            DB::transaction(function () use ($data, $productos) {
+                foreach ($data['detalles'] as $det) {
+                    $producto = $productos->get($det['producto_id']);
+
+                    try {
+                        if ($det['tipo_ajuste'] === 'positivo') {
+                            $this->inventario->ingresarStock(
+                                (int) $det['producto_id'],
+                                (int) $data['bodega_id'],
+                                (float) $det['cantidad'],
+                                (float) ($det['costo_unitario'] ?? 0),
+                                'ajuste',
+                                0
+                            );
+                        } else {
+                            $this->inventario->egresarStock(
+                                (int) $det['producto_id'],
+                                (int) $data['bodega_id'],
+                                (float) $det['cantidad'],
+                                'ajuste',
+                                0
+                            );
+                        }
+                    } catch (\RuntimeException $e) {
+                        throw new \RuntimeException("{$producto->codigo}: {$e->getMessage()}");
+                    }
+
+                    $tipoTexto = $det['tipo_ajuste'] === 'positivo' ? 'positivo' : 'negativo';
+                    $this->auditoria->documento(
+                        'ajuste',
+                        'inventario',
+                        'inventario_movimientos',
+                        0,
+                        "Ajuste {$tipoTexto} de {$det['cantidad']} unidades — {$producto->codigo}: {$data['motivo']}"
+                    );
+                }
+            });
         } catch (\Throwable $e) {
             return back()->withErrors(['error' => $e->getMessage()])->withInput();
         }
 
-        $tipoTexto = $data['tipo_ajuste'] === 'positivo' ? 'positivo' : 'negativo';
-        $this->auditoria->documento(
-            'ajuste',
-            'inventario',
-            'inventario_movimientos',
-            0,
-            "Ajuste {$tipoTexto} de {$data['cantidad']} unidades — {$producto->codigo}: {$data['motivo']}"
-        );
-
-        $redirectTo = $request->input('redirect_to', route('inventario.kardex.saldos'));
+        $redirectTo = $data['redirect_to'] ?? route('inventario.kardex.saldos');
 
         return redirect($redirectTo)
             ->with('success', 'Ajuste de inventario registrado correctamente.');
