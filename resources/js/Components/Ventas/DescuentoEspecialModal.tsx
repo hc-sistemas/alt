@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { AlertTriangle, Lock } from 'lucide-react'
 import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
@@ -11,6 +11,12 @@ export interface DescuentoEspecialModalProps {
     productoNombre: string
     descuentoMaximo: number
     descuentoSolicitado: number
+    /** Clave de tipos_aprobacion a validar. Default preserva el uso actual (descuento). */
+    tipo?: string
+    /** Título del modal. Default preserva el uso actual (descuento). */
+    titulo?: string
+    /** Texto de ayuda. Si se omite, se arma el mensaje de descuento de siempre. */
+    mensaje?: ReactNode
 }
 
 function getCsrf(): string {
@@ -24,6 +30,9 @@ export default function DescuentoEspecialModal({
     productoNombre,
     descuentoMaximo,
     descuentoSolicitado,
+    tipo = 'descuento_excedido',
+    titulo = 'Descuento especial requerido',
+    mensaje,
 }: DescuentoEspecialModalProps) {
     const [codigo, setCodigo] = useState('')
     const [motivo, setMotivo] = useState('')
@@ -48,7 +57,7 @@ export default function DescuentoEspecialModal({
                     Accept: 'application/json',
                 },
                 body: JSON.stringify({
-                    tipo: 'descuento_excedido',
+                    tipo,
                     codigo,
                     motivo,
                     // Solo se conoce el % exacto cuando el modal se abre por
@@ -90,16 +99,20 @@ export default function DescuentoEspecialModal({
                 <div className="flex items-center gap-3 mb-4">
                     <AlertTriangle className="w-6 h-6 text-amber-500 shrink-0" />
                     <h3 className="text-base font-semibold" style={{ color: 'var(--text-main)' }}>
-                        Descuento especial requerido
+                        {titulo}
                     </h3>
                 </div>
 
                 <p className="text-sm mb-5" style={{ color: 'var(--text-muted)' }}>
-                    El descuento máximo para{' '}
-                    <strong style={{ color: 'var(--text-main)' }}>{productoNombre || 'este producto'}</strong>{' '}
-                    es <strong className="text-amber-500">{descuentoMaximo}%</strong>. Estás aplicando{' '}
-                    <strong style={{ color: 'var(--text-main)' }}>{descuentoSolicitado}%</strong>.{' '}
-                    Se requiere un código de autorización para continuar.
+                    {mensaje ?? (
+                        <>
+                            El descuento máximo para{' '}
+                            <strong style={{ color: 'var(--text-main)' }}>{productoNombre || 'este producto'}</strong>{' '}
+                            es <strong className="text-amber-500">{descuentoMaximo}%</strong>. Estás aplicando{' '}
+                            <strong style={{ color: 'var(--text-main)' }}>{descuentoSolicitado}%</strong>.{' '}
+                            Se requiere un código de autorización para continuar.
+                        </>
+                    )}
                 </p>
 
                 <div className="space-y-4">
