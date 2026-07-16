@@ -77,6 +77,10 @@ function esMismoDia(fecha: string): boolean {
     return fecha.startsWith(hoyLocal)
 }
 
+function getCsrf(): string {
+    return (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement | null)?.content ?? ''
+}
+
 // ── Componente ────────────────────────────────────────────────────────────────
 
 export default function Index() {
@@ -102,26 +106,59 @@ export default function Index() {
     }
 
     const handleAnular = async (factura: Factura) => {
-        const result = await Swal.fire({
+        const { value: formValues } = await Swal.fire({
             title: 'Anular factura',
-            text: `¿Desea anular la factura ${factura.numero_completo}? Esta acción requiere autorización.`,
+            html:
+                `<p style="margin-bottom:12px;font-size:14px;text-align:left;">` +
+                `¿Desea anular la factura ${factura.numero_completo}? ` +
+                `Requiere una aprobación especial de SuperAdmin.</p>` +
+                `<input id="swal-codigo" type="password" class="swal2-input" placeholder="Código de aprobación">` +
+                `<input id="swal-motivo" type="text" class="swal2-input" placeholder="Motivo de la anulación">`,
             icon: 'warning',
-            input: 'password',
-            inputLabel: 'Código de aprobación',
-            inputPlaceholder: '••••••••',
             showCancelButton: true,
-            confirmButtonText: 'Anular',
+            confirmButtonText: 'Validar y anular',
             cancelButtonText: 'Cancelar',
             confirmButtonColor: '#ef4444',
-            inputValidator: (v) => !v ? 'Ingrese el código de aprobación' : undefined,
+            focusConfirm: false,
+            preConfirm: () => {
+                const codigo = (document.getElementById('swal-codigo') as HTMLInputElement | null)?.value ?? ''
+                const motivo = (document.getElementById('swal-motivo') as HTMLInputElement | null)?.value ?? ''
+                if (!codigo.trim() || !motivo.trim()) {
+                    Swal.showValidationMessage('Ingrese el código y el motivo.')
+                    return false
+                }
+                return { codigo, motivo }
+            },
         })
-        if (!result.isConfirmed || !result.value) return
+        if (!formValues) return
 
-        router.patch(
-            route('ventas.facturas.anular', factura.id),
-            { codigo_aprobacion: result.value as string },
-            { preserveState: true },
-        )
+        try {
+            const res = await fetch(route('ventas.aprobacion.validar'), {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': getCsrf(),
+                    Accept: 'application/json',
+                },
+                body: JSON.stringify({
+                    tipo: 'anulacion_factura',
+                    codigo: formValues.codigo,
+                    motivo: formValues.motivo,
+                }),
+            })
+            const data = await res.json() as { valido: boolean; aprobacion_id?: number; mensaje?: string }
+            if (!data.valido || !data.aprobacion_id) {
+                void Swal.fire('Código inválido', data.mensaje ?? 'Código incorrecto.', 'error')
+                return
+            }
+            router.patch(
+                route('ventas.facturas.anular', factura.id),
+                { aprobacion_especial_id: data.aprobacion_id },
+                { preserveState: true },
+            )
+        } catch {
+            void Swal.fire('Error', 'Error de conexión. Intente nuevamente.', 'error')
+        }
     }
 
     const hayFiltros = Object.values(filtro).some(v => v !== '')
