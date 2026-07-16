@@ -206,7 +206,7 @@ class CuentaCobrarController extends Controller
             ->where('usuarios.id', $usuario->id)
             ->value('perfiles.nombre');
 
-        if ($perfilNombre !== 'superadmin') {
+        if ($perfilNombre !== 'super_admin') {
             return back()->withErrors(['error' => 'Solo el SuperAdmin puede castigar deudas.']);
         }
 
