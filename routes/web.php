@@ -139,6 +139,14 @@ Route::middleware('auth')->group(function () {
         return $pdf->stream('manual-reportes-sri.pdf');
     })->name('manuales.reportes-sri-pdf');
 
+    Route::get('/manuales/ventas/pdf-dinamico', function () {
+        $empresa = \App\Models\Empresa::find(session('empresa_activa_id'));
+        $usuario = auth()->user();
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.manual-ventas', compact('empresa', 'usuario'))
+            ->setPaper('letter', 'portrait');
+        return $pdf->stream('manual-ventas.pdf');
+    })->name('manuales.ventas-pdf');
+
     Route::get('/manuales/diagnostico/pdf-dinamico', function () {
         $empresa = \App\Models\Empresa::find(session('empresa_activa_id'));
         $usuario = auth()->user();

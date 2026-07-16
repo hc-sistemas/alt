@@ -65,6 +65,12 @@ class ManualesController extends Controller
                 'tipo'        => 'dinamico',
                 'route'       => 'manuales.taller-pdf',
             ],
+            'ventas' => [
+                'titulo'      => 'Ventas',
+                'descripcion' => 'Facturas, proformas, prefacturas, notas de crédito, retenciones, guías de remisión y cuentas por cobrar.',
+                'tipo'        => 'dinamico',
+                'route'       => 'manuales.ventas-pdf',
+            ],
             'personas' => [
                 'titulo'      => 'Personas',
                 'descripcion' => 'Clientes, proveedores y transportistas del sistema.',
