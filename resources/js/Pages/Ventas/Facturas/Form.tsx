@@ -33,6 +33,7 @@ interface DetalleLinea {
     serie: string
     cantidad: number
     precio_unitario: number
+    costo: number
     descuento_pct: number
     descuento_valor: number
     subtotal: number
@@ -40,9 +41,11 @@ interface DetalleLinea {
     valor_iva: number
     total: number
     descuento_max_producto: number
+    aprobacion_id_precio: number | null
     _busqueda: string
     _error: string
     _desc_error: string
+    _precio_error: string
     _disponible: number | null
     _disponibleCargando: boolean
     _disponibleError: string
@@ -80,10 +83,11 @@ function calcularLinea(linea: DetalleLinea): DetalleLinea {
 function lineaVacia(): DetalleLinea {
     return {
         producto_id: null, codigo: '', descripcion: '', serie: '',
-        cantidad: 1, precio_unitario: 0, descuento_pct: 0,
+        cantidad: 1, precio_unitario: 0, costo: 0, descuento_pct: 0,
         descuento_valor: 0, subtotal: 0, porcentaje_iva: 15,
         valor_iva: 0, total: 0, descuento_max_producto: 100,
-        _busqueda: '', _error: '', _desc_error: '',
+        aprobacion_id_precio: null,
+        _busqueda: '', _error: '', _desc_error: '', _precio_error: '',
         _disponible: null, _disponibleCargando: false, _disponibleError: '',
     }
 }
@@ -192,6 +196,9 @@ export default function Form() {
     // — Modal producto
     const [modalProducto, setModalProducto] = useState<{ idx: number; matches: ProductoVenta[] } | null>(null)
 
+    // — Modal aprobación precio bajo costo (por línea)
+    const [modalPrecioBajoCosto, setModalPrecioBajoCosto] = useState<{ idx: number; precio: number } | null>(null)
+
     // — Formas de pago (múltiples líneas)
     const [pagos, setPagos] = useState<FormaPagoLinea[]>(() => [pagoVacio(formas_pago)])
 
@@ -201,10 +208,10 @@ export default function Form() {
     const [erroresPago, setErroresPago] = useState<Record<number, string>>({})
 
     useEffect(() => {
-        const isOpen = modalCliente.length > 0 || modalProducto !== null || modalDescuentoGlobal
+        const isOpen = modalCliente.length > 0 || modalProducto !== null || modalDescuentoGlobal || modalPrecioBajoCosto !== null
         document.body.style.overflow = isOpen ? 'hidden' : ''
         return () => { document.body.style.overflow = '' }
-    }, [modalCliente.length, modalProducto, modalDescuentoGlobal])
+    }, [modalCliente.length, modalProducto, modalDescuentoGlobal, modalPrecioBajoCosto])
 
     // ── Computed ──────────────────────────────────────────────────────────────
 
@@ -393,6 +400,19 @@ export default function Form() {
         }
     }
 
+    // Precio bajo costo requiere aprobación especial (tipo precio_bajo_costo),
+    // igual que el descuento excedido — mientras la línea no tenga ya una
+    // aprobación válida, se abre el modal en vez de guardar el valor directo.
+    const handlePrecioChange = (idx: number, valor: number) => {
+        const linea = detalles[idx]
+        const nuevoPrecio = isNaN(valor) ? 0 : Math.round(valor * 100) / 100
+        if (linea.producto_id !== null && nuevoPrecio < linea.costo && !linea.aprobacion_id_precio) {
+            setModalPrecioBajoCosto({ idx, precio: nuevoPrecio })
+            return
+        }
+        updateDetalle(idx, { precio_unitario: nuevoPrecio, _precio_error: '' })
+    }
+
     const seleccionarProductoLocal = (idx: number, p: ProductoVenta) => {
         setDetalles(prev => {
             const next = [...prev]
@@ -402,12 +422,15 @@ export default function Form() {
                 codigo: p.codigo,
                 descripcion: p.nombre,
                 precio_unitario: Math.round(p.pvp * 100) / 100,
+                costo: p.costo,
                 porcentaje_iva: p.porcentaje_iva,
                 descuento_max_producto: p.descuento_max,
                 descuento_pct: 0,
+                aprobacion_id_precio: null,
                 _busqueda: '',
                 _error: '',
                 _desc_error: '',
+                _precio_error: '',
             })
             return next
         })
@@ -502,7 +525,7 @@ export default function Form() {
                 precio: d.precio_unitario,
                 descuento_pct: d.descuento_pct,
                 graba_iva: d.porcentaje_iva > 0,
-                aprobacion_id: null,
+                aprobacion_id: d.aprobacion_id_precio,
             })),
             formas_pago: pagos.map(p => ({
                 forma: p.forma_pago,
@@ -828,12 +851,14 @@ export default function Form() {
                                                 className={cn(tdInput, 'text-right')}
                                                 style={tdInputStyle}
                                                 value={det.precio_unitario}
-                                                onChange={e => {
-                                                    const val = Number(e.target.value)
-                                                    updateDetalle(idx, { precio_unitario: isNaN(val) ? 0 : Math.round(val * 100) / 100 })
-                                                }}
+                                                onChange={e => handlePrecioChange(idx, Number(e.target.value))}
                                             />
-                                            <div className={hintSlotCls} />
+                                            <div
+                                                className={hintSlotCls}
+                                                style={{ color: 'var(--color-danger)' }}
+                                            >
+                                                {det._precio_error}
+                                            </div>
                                         </td>
 
                                         {/* Desc% + texto de máximo permitido */}
@@ -1136,6 +1161,51 @@ export default function Form() {
                 }}
                 productoNombre=""
                 descuentoMaximo={limites_descuento.descuento_maximo_pct}
+                descuentoSolicitado={0}
+            />
+
+            {/* Modal aprobación precio bajo costo — por línea */}
+            <DescuentoEspecialModal
+                abierto={modalPrecioBajoCosto !== null}
+                onCerrar={() => {
+                    if (modalPrecioBajoCosto) {
+                        const linea = detalles[modalPrecioBajoCosto.idx]
+                        updateDetalle(modalPrecioBajoCosto.idx, {
+                            precio_unitario: linea.costo,
+                            _precio_error: `El precio no puede ser menor al costo (${formatMoneda(linea.costo)}) sin aprobación especial.`,
+                        })
+                    }
+                    setModalPrecioBajoCosto(null)
+                }}
+                onAutorizado={aprobacion_id => {
+                    if (modalPrecioBajoCosto) {
+                        updateDetalle(modalPrecioBajoCosto.idx, {
+                            precio_unitario: modalPrecioBajoCosto.precio,
+                            aprobacion_id_precio: aprobacion_id,
+                            _precio_error: '',
+                        })
+                    }
+                    setModalPrecioBajoCosto(null)
+                }}
+                tipo="precio_bajo_costo"
+                titulo="Aprobación de precio bajo costo"
+                mensaje={modalPrecioBajoCosto && (
+                    <>
+                        El precio ingresado (
+                        <strong style={{ color: 'var(--text-main)' }}>{formatMoneda(modalPrecioBajoCosto.precio)}</strong>
+                        ) es menor al costo del producto{' '}
+                        <strong style={{ color: 'var(--text-main)' }}>
+                            {detalles[modalPrecioBajoCosto.idx]?.descripcion || 'este producto'}
+                        </strong>{' '}
+                        (
+                        <strong className="text-amber-500">
+                            {formatMoneda(detalles[modalPrecioBajoCosto.idx]?.costo ?? 0)}
+                        </strong>
+                        ). Se requiere un código de autorización para continuar.
+                    </>
+                )}
+                productoNombre={modalPrecioBajoCosto ? (detalles[modalPrecioBajoCosto.idx]?.descripcion ?? '') : ''}
+                descuentoMaximo={0}
                 descuentoSolicitado={0}
             />
 
