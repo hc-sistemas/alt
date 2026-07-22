@@ -39,6 +39,9 @@ if [ -L "$DOMAIN_PATH" ]; then
     exit 1
 fi
 
+echo "=== [0/7] Verificando que se puede operar como $APP_USER ==="
+su -s /bin/bash - "$APP_USER" -c "echo OK" > /dev/null
+
 echo "=== [1/7] Backup completo antes de tocar nada ==="
 mkdir -p "$BACKUP_DIR"
 tar -czf "$BACKUP_DIR/pre-setup-$TIMESTAMP-archivos.tar.gz" -C "$BASE" "sistema.altamiralightsounds.com"
@@ -65,13 +68,13 @@ ln -s "$SHARED_DIR/.env" "$NEW_RELEASE/.env"
 chown -R "$APP_USER:$APP_USER" "$NEW_RELEASE" "$SHARED_DIR"
 
 echo "=== [6/7] Instalando dependencias, migrando y cacheando ==="
-su - "$APP_USER" -c "cd '$NEW_RELEASE' && $PHP_BIN $COMPOSER_BIN install --no-dev --optimize-autoloader --no-interaction"
-su - "$APP_USER" -c "cd '$NEW_RELEASE' && $PHP_BIN artisan migrate --force"
-su - "$APP_USER" -c "cd '$NEW_RELEASE' && $PHP_BIN artisan config:cache && $PHP_BIN artisan route:cache && $PHP_BIN artisan view:cache"
-su - "$APP_USER" -c "cd '$NEW_RELEASE' && [ -L public/storage ] || $PHP_BIN artisan storage:link"
+su -s /bin/bash - "$APP_USER" -c "cd '$NEW_RELEASE' && $PHP_BIN $COMPOSER_BIN install --no-dev --optimize-autoloader --no-interaction"
+su -s /bin/bash - "$APP_USER" -c "cd '$NEW_RELEASE' && $PHP_BIN artisan migrate --force"
+su -s /bin/bash - "$APP_USER" -c "cd '$NEW_RELEASE' && $PHP_BIN artisan config:cache && $PHP_BIN artisan route:cache && $PHP_BIN artisan view:cache"
+su -s /bin/bash - "$APP_USER" -c "cd '$NEW_RELEASE' && [ -L public/storage ] || $PHP_BIN artisan storage:link"
 
 echo "=== [7/7] Switch atómico: activando el nuevo release ==="
-su - "$APP_USER" -c "ln -sfn '$NEW_RELEASE' '$DOMAIN_PATH'"
+su -s /bin/bash - "$APP_USER" -c "ln -sfn '$NEW_RELEASE' '$DOMAIN_PATH'"
 
 echo ""
 echo "=== SETUP INICIAL COMPLETO ==="

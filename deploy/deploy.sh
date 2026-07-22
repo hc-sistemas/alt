@@ -34,6 +34,9 @@ KEEP_RELEASES=5
 TIMESTAMP=$(date +%Y%m%d%H%M%S)
 NEW_RELEASE="$RELEASES_DIR/$TIMESTAMP"
 
+echo "=== [0/7] Verificando que se puede operar como $APP_USER ==="
+su -s /bin/bash - "$APP_USER" -c "echo OK" > /dev/null
+
 echo "=== [1/7] Clonando rama '$BRANCH' en $NEW_RELEASE ==="
 git clone --branch "$BRANCH" --depth 1 "$REPO_URL" "$NEW_RELEASE"
 
@@ -44,17 +47,17 @@ ln -sf "$SHARED_DIR/.env" "$NEW_RELEASE/.env"
 chown -R "$APP_USER:$APP_USER" "$NEW_RELEASE"
 
 echo "=== [3/7] Instalando dependencias con Composer (sin dev) ==="
-su - "$APP_USER" -c "cd '$NEW_RELEASE' && $PHP_BIN $COMPOSER_BIN install --no-dev --optimize-autoloader --no-interaction"
+su -s /bin/bash - "$APP_USER" -c "cd '$NEW_RELEASE' && $PHP_BIN $COMPOSER_BIN install --no-dev --optimize-autoloader --no-interaction"
 
 echo "=== [4/7] Corriendo migraciones (idempotentes) ==="
-su - "$APP_USER" -c "cd '$NEW_RELEASE' && $PHP_BIN artisan migrate --force"
+su -s /bin/bash - "$APP_USER" -c "cd '$NEW_RELEASE' && $PHP_BIN artisan migrate --force"
 
 echo "=== [5/7] Reconstruyendo caché ==="
-su - "$APP_USER" -c "cd '$NEW_RELEASE' && $PHP_BIN artisan config:cache && $PHP_BIN artisan route:cache && $PHP_BIN artisan view:cache"
-su - "$APP_USER" -c "cd '$NEW_RELEASE' && [ -L public/storage ] || $PHP_BIN artisan storage:link"
+su -s /bin/bash - "$APP_USER" -c "cd '$NEW_RELEASE' && $PHP_BIN artisan config:cache && $PHP_BIN artisan route:cache && $PHP_BIN artisan view:cache"
+su -s /bin/bash - "$APP_USER" -c "cd '$NEW_RELEASE' && [ -L public/storage ] || $PHP_BIN artisan storage:link"
 
 echo "=== [6/7] Switch atómico del symlink del dominio ==="
-su - "$APP_USER" -c "ln -sfn '$NEW_RELEASE' '$DOMAIN_PATH'"
+su -s /bin/bash - "$APP_USER" -c "ln -sfn '$NEW_RELEASE' '$DOMAIN_PATH'"
 
 echo "=== [7/7] Limpiando releases viejos (dejando los últimos $KEEP_RELEASES) ==="
 cd "$RELEASES_DIR"
