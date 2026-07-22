@@ -232,6 +232,16 @@ class TrasladoController extends Controller
                         $traslado->id
                     );
 
+                    // Libera la reserva hecha en store() al crear el traslado — sin esto,
+                    // cantidad_reservada queda huerfana para siempre aunque el stock ya
+                    // se egreso fisicamente. Usa cantidad_enviada (lo reservado), no
+                    // cantidad_recibida (puede diferir por mermas).
+                    $this->inventario->liberarReserva(
+                        (int) $detalle->producto_id,
+                        (int) $traslado->bodega_origen_id,
+                        (float) $detalle->cantidad_enviada
+                    );
+
                     if ($cantidadRecibida > 0) {
                         $this->inventario->ingresarStock(
                             (int) $detalle->producto_id,
