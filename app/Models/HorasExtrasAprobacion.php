@@ -1,0 +1,50 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+
+class HorasExtrasAprobacion extends Model
+{
+    protected $table = 'horas_extras_aprobacion';
+    public $timestamps = false;
+    public const CREATED_AT = 'created_at';
+
+    protected $fillable = [
+        'colaborador_id', 'asistencia_id', 'fecha',
+        'horas_solicitadas', 'horas_aprobadas', 'tipo',
+        'valor_calculado', 'estado',
+        'aprobado_por', 'fecha_aprobacion', 'observacion',
+    ];
+
+    protected function casts(): array
+    {
+        return [
+            'fecha'             => 'date',
+            'fecha_aprobacion'  => 'datetime',
+            'horas_solicitadas' => 'float',
+            'horas_aprobadas'   => 'float',
+            'valor_calculado'   => 'float',
+            'created_at'        => 'datetime',
+        ];
+    }
+
+    public function colaborador(): BelongsTo
+    {
+        return $this->belongsTo(Colaborador::class);
+    }
+
+    public function asistencia(): BelongsTo
+    {
+        return $this->belongsTo(Asistencia::class);
+    }
+
+    // Nombrada distinto a la columna aprobado_por (FK cruda): si el método se
+    // llamara aprobadoPor(), Eloquent serializaría la relación bajo la misma
+    // clave "aprobado_por" y sobrescribiría el id crudo con el objeto Usuario.
+    public function aprobadoPorUsuario(): BelongsTo
+    {
+        return $this->belongsTo(Usuario::class, 'aprobado_por');
+    }
+}

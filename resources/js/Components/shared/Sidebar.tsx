@@ -1,0 +1,399 @@
+import { Link, usePage } from '@inertiajs/react'
+import { useState, useEffect, useMemo } from 'react'
+import {
+    LayoutDashboard, FileText, ShoppingCart, Package, BookOpen,
+    Landmark, Users, Wrench, BarChart2, Settings, Settings2, ClipboardList, ArrowLeftRight, ChevronDown,
+    ChevronLeft, ChevronRight, X, UserCircle, Library,
+} from 'lucide-react'
+import { cn } from '@/lib/utils'
+import type { PageProps } from '@/types'
+
+const MODULOS_SIN_PERMISO = new Set(['dashboard', 'personas', 'manuales', 'reportes'])
+
+interface NavSubgrupo {
+    nombre: string
+    icon: React.ElementType
+    clave: string
+    hijos: { nombre: string; href: string }[]
+}
+
+interface NavItem {
+    nombre: string
+    clave: string
+    icon: React.ElementType
+    href?: string
+    hijos?: { nombre: string; href: string }[]
+    subgrupos?: NavSubgrupo[]
+}
+
+const navItems: NavItem[] = [
+    { nombre: 'Dashboard', clave: 'dashboard', icon: LayoutDashboard, href: '/dashboard' },
+    {
+        nombre: 'Ventas', clave: 'ventas', icon: FileText,
+        hijos: [
+            { nombre: 'Facturas', href: '/ventas/facturas' },
+            { nombre: 'Proformas', href: '/ventas/proformas' },
+            { nombre: 'Prefacturas', href: '/ventas/prefacturas' },
+            { nombre: 'CxC', href: '/ventas/cxc' },
+            { nombre: 'Notas de Crédito', href: '/ventas/notas-credito' },
+            { nombre: 'Retenciones', href: '/ventas/retenciones' },
+            { nombre: 'Guías de Remisión', href: '/ventas/guias-remision' },
+        ]
+    },
+    {
+        nombre: 'Compras', clave: 'compras', icon: ShoppingCart,
+        hijos: [
+            { nombre: 'Facturas de Compra', href: '/compras/facturas' },
+            { nombre: 'Proveedores', href: '/compras/proveedores' },
+            { nombre: 'Cuentas por Pagar', href: '/compras/cuentas-pagar' },
+            { nombre: 'Anticipos Proveedores', href: '/compras/anticipos' },
+            { nombre: 'Devoluciones',          href: '/compras/devoluciones' },
+            { nombre: 'Importaciones',         href: '/compras/importaciones' },
+        ]
+    },
+    {
+        nombre: 'Inventario', clave: 'inventario', icon: Package,
+        hijos: [
+            { nombre: 'Productos', href: '/inventario/productos' },
+            { nombre: 'Kárdex', href: '/inventario/kardex' },
+            { nombre: 'Inventario General', href: '/inventario/kardex/saldos' },
+            { nombre: 'Movimientos', href: '/inventario/traslados' },
+            { nombre: 'Activos Fijos', href: '/inventario/activos' },
+            { nombre: 'Listas de Precio', href: '/inventario/listas' },
+            { nombre: 'Recepciones', href: '/inventario/recepciones' },
+        ],
+        subgrupos: [
+            {
+                nombre: 'Configuración', clave: 'inventario-config', icon: Settings2,
+                hijos: [
+                    { nombre: 'Marcas', href: '/inventario/configuracion/marcas' },
+                    { nombre: 'Categorías', href: '/inventario/configuracion/categorias' },
+                    { nombre: 'Bodegas', href: '/inventario/configuracion/bodegas' },
+                ],
+            },
+        ],
+    },
+    {
+        nombre: 'Contabilidad', clave: 'contabilidad', icon: BookOpen,
+        hijos: [
+            { nombre: 'Ejercicios', href: '/contabilidad/ejercicios' },
+            { nombre: 'Asientos', href: '/contabilidad/asientos' },
+            { nombre: 'Plan de Cuentas', href: '/contabilidad/plan-cuentas' },
+            { nombre: 'Parámetros Contables', href: '/contabilidad/parametros' },
+            { nombre: 'Reportes Contables', href: '/contabilidad/reportes' },
+        ]
+    },
+    {
+        nombre: 'Bancos', clave: 'bancos', icon: Landmark,
+        hijos: [
+            { nombre: 'Bancos y Cajas', href: '/bancos/catalogo' },
+            { nombre: 'Movimientos', href: '/bancos/movimientos' },
+            { nombre: 'Cajas', href: '/bancos/cajas' },
+            { nombre: 'Datafast', href: '/bancos/datafast' },
+            { nombre: 'Conciliación Bancaria', href: '/bancos/conciliaciones' },
+            { nombre: 'Cheques', href: '/bancos/cheques' },
+            { nombre: 'Reportes', href: '/bancos/reportes' },
+        ]
+    },
+    {
+        nombre: 'RRHH', clave: 'rrhh', icon: Users,
+        hijos: [
+            { nombre: 'Colaboradores',       href: '/rrhh/colaboradores'  },
+            { nombre: 'Asistencia',          href: '/rrhh/asistencia'     },
+            { nombre: 'Horas Extras',        href: '/rrhh/horas-extras'   },
+            { nombre: 'Nómina',              href: '/rrhh/nomina'         },
+            { nombre: 'Préstamos/Anticipos', href: '/rrhh/prestamos'      },
+            { nombre: 'Liquidaciones',       href: '/rrhh/liquidaciones'  },
+        ]
+    },
+    {
+        nombre: 'Taller', clave: 'taller', icon: Wrench,
+        hijos: [
+            { nombre: 'Ingresos', href: '/taller/ingresos' },
+            { nombre: 'Órdenes de Trabajo', href: '/taller/ordenes' },
+            { nombre: 'Tipos de Equipo', href: '/taller/tipos-equipo' },
+        ]
+    },
+    {
+        nombre: 'Personas', clave: 'personas', icon: UserCircle,
+        hijos: [
+            { nombre: 'Clientes', href: '/personas/clientes' },
+            { nombre: 'Proveedores', href: '/personas/proveedores' },
+            { nombre: 'Transportistas', href: '/personas/transportistas' },
+        ]
+    },
+    {
+        nombre: 'Reportes', clave: 'reportes', icon: BarChart2,
+        hijos: [
+            { nombre: 'Reportes SRI', href: '/reportes/sri' },
+        ]
+    },
+    { nombre: 'Manuales', clave: 'manuales', icon: Library, href: '/manuales' },
+    {
+        nombre: 'Configuración', clave: 'configuracion', icon: Settings,
+        hijos: [
+            { nombre: 'Usuarios', href: '/configuracion/usuarios' },
+            { nombre: 'Permisos', href: '/configuracion/permisos' },
+            { nombre: 'Empresa', href: '/configuracion/empresa' },
+        ]
+    },
+]
+
+function getInitialOpen(currentUrl: string): string[] {
+    const open = new Set(['configuracion', 'inventario-config'])
+    for (const item of navItems) {
+        if (!item.hijos && !item.subgrupos) continue
+        const hasActive =
+            (item.hijos?.some(h => currentUrl.startsWith(h.href)) ?? false) ||
+            (item.subgrupos?.some(sg => sg.hijos.some(h => currentUrl.startsWith(h.href))) ?? false)
+        if (hasActive) open.add(item.clave)
+        item.subgrupos?.forEach(sg => {
+            if (sg.hijos.some(h => currentUrl.startsWith(h.href))) open.add(sg.clave)
+        })
+    }
+    return [...open]
+}
+
+interface Props {
+    collapsed: boolean
+    onCollapse: (v: boolean) => void
+    mobileOpen: boolean
+    onMobileClose: () => void
+}
+
+export default function Sidebar({ collapsed, onCollapse, mobileOpen, onMobileClose }: Props) {
+    const { url, props } = usePage<PageProps>()
+    const permisos = props.permisos
+    const [openSections, setOpenSections] = useState<string[]>(() => getInitialOpen(url))
+
+    const itemsVisibles = useMemo(() => {
+        if (permisos === '*') return navItems
+        return navItems.filter(item => {
+            if (MODULOS_SIN_PERMISO.has(item.clave)) return true
+            return permisos[item.clave]?.ver === true
+        })
+    }, [permisos])
+
+    const toggleSection = (clave: string) => {
+        setOpenSections(prev => {
+            if (prev.includes(clave)) {
+                const item = navItems.find(i => i.clave === clave)
+                const hasActive =
+                    (item?.hijos?.some(h => url.startsWith(h.href)) ?? false) ||
+                    (item?.subgrupos?.some(sg => sg.hijos.some(h => url.startsWith(h.href))) ?? false)
+                if (hasActive) return prev
+                return prev.filter(s => s !== clave)
+            }
+            return [...prev, clave]
+        })
+    }
+
+    useEffect(() => {
+        const handle = () => {
+            const path = window.location.pathname
+            setOpenSections(prev => {
+                const next = new Set(prev)
+                for (const item of navItems) {
+                    if (!item.hijos && !item.subgrupos) continue
+                    const hasActive =
+                        (item.hijos?.some(h => path.startsWith(h.href)) ?? false) ||
+                        (item.subgrupos?.some(sg => sg.hijos.some(h => path.startsWith(h.href))) ?? false)
+                    if (hasActive) next.add(item.clave)
+                    item.subgrupos?.forEach(sg => {
+                        if (sg.hijos.some(h => path.startsWith(h.href))) next.add(sg.clave)
+                    })
+                }
+                return [...next]
+            })
+        }
+        document.addEventListener('inertia:navigate', handle)
+        return () => document.removeEventListener('inertia:navigate', handle)
+    }, [])
+
+    const isActive = (href: string) => url.startsWith(href)
+
+    const content = (
+        <div className="flex flex-col h-full"
+            style={{ background: 'var(--sidebar-bg)', color: 'var(--sidebar-text)' }}>
+
+            {/* Logo */}
+            <div className="flex items-center h-16 px-4 shrink-0 border-b border-slate-700/50">
+                {collapsed ? (
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                        style={{ background: 'rgba(245,158,11,0.2)', border: '1px solid rgba(245,158,11,0.3)' }}>
+                        <span className="text-base font-bold" style={{ color: '#F59E0B' }}>A</span>
+                    </div>
+                ) : (
+                    <img src="/images/logo-altamira.png" alt="Altamira Light & Sound" className="h-9 w-auto" />
+                )}
+            </div>
+
+            {/* Nav */}
+            <nav className="flex-1 overflow-y-auto py-4 px-2 space-y-1">
+                {itemsVisibles.map(item => {
+                    const Icon = item.icon
+                    const isOpen = openSections.includes(item.clave)
+                    const hasHijos = item.hijos && item.hijos.length > 0
+                    const isItemActive = item.href
+                        ? isActive(item.href)
+                        : (item.hijos?.some(h => isActive(h.href)) ?? false) ||
+                        (item.subgrupos?.some(sg => sg.hijos.some(h => isActive(h.href))) ?? false)
+
+                    return (
+                        <div key={item.clave}>
+                            {item.href && !hasHijos ? (
+                                <Link
+                                    href={item.href}
+                                    className={cn(
+                                        'flex items-center gap-3 px-2 py-2 rounded-lg text-sm nav-item-transition',
+                                        isItemActive
+                                            ? 'text-white font-medium'
+                                            : 'hover:text-white'
+                                    )}
+                                    style={isItemActive ? {
+                                        background: 'var(--sidebar-active-bg)',
+                                        color: 'var(--sidebar-active)',
+                                        borderLeft: `3px solid var(--sidebar-active)`,
+                                    } : {}}
+                                    title={collapsed ? item.nombre : undefined}
+                                >
+                                    <Icon className="w-5 h-5 shrink-0" />
+                                    {!collapsed && <span>{item.nombre}</span>}
+                                </Link>
+                            ) : (
+                                <>
+                                    <button
+                                        onClick={() => !collapsed && toggleSection(item.clave)}
+                                        className={cn(
+                                            'w-full flex items-center gap-3 px-2 py-2 rounded-lg text-sm nav-item-transition',
+                                            isItemActive ? 'font-medium' : 'hover:text-white'
+                                        )}
+                                        style={isItemActive ? {
+                                            color: 'var(--sidebar-active)',
+                                        } : {}}
+                                        title={collapsed ? item.nombre : undefined}
+                                    >
+                                        <Icon className="w-5 h-5 shrink-0" />
+                                        {!collapsed && (
+                                            <>
+                                                <span className="flex-1 text-left">{item.nombre}</span>
+                                                <ChevronDown className={cn(
+                                                    'w-4 h-4 transition-transform',
+                                                    isOpen && 'rotate-180'
+                                                )} />
+                                            </>
+                                        )}
+                                    </button>
+
+                                    {!collapsed && isOpen && hasHijos && (
+                                        <div className="mt-1 ml-4 space-y-1 border-l border-slate-700/50 pl-3">
+                                            {item.hijos!.map(hijo => (
+                                                <Link
+                                                    key={hijo.href}
+                                                    href={hijo.href}
+                                                    className={cn(
+                                                        'block px-2 py-1.5 rounded-md text-xs nav-item-transition',
+                                                        isActive(hijo.href)
+                                                            ? 'font-medium'
+                                                            : 'hover:text-white'
+                                                    )}
+                                                    style={isActive(hijo.href) ? {
+                                                        color: 'var(--sidebar-active)',
+                                                    } : {}}
+                                                >
+                                                    {hijo.nombre}
+                                                </Link>
+                                            ))}
+
+                                            {/* Subgrupos anidados */}
+                                            {item.subgrupos?.map(sg => {
+                                                const isSgOpen = openSections.includes(sg.clave)
+                                                const SgIcon = sg.icon
+                                                const isSgActive = sg.hijos.some(h => isActive(h.href))
+                                                return (
+                                                    <div key={sg.clave} className="mt-1">
+                                                        <button
+                                                            onClick={() => toggleSection(sg.clave)}
+                                                            className={cn(
+                                                                'w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-xs nav-item-transition',
+                                                                isSgActive ? 'font-medium' : 'hover:text-white'
+                                                            )}
+                                                            style={isSgActive ? { color: 'var(--sidebar-active)' } : {}}
+                                                        >
+                                                            <SgIcon className="w-3.5 h-3.5 shrink-0" />
+                                                            <span className="flex-1 text-left">{sg.nombre}</span>
+                                                            <ChevronDown className={cn('w-3 h-3 transition-transform', isSgOpen && 'rotate-180')} />
+                                                        </button>
+                                                        {isSgOpen && (
+                                                            <div className="mt-0.5 ml-3 space-y-0.5 border-l border-slate-700/40 pl-2">
+                                                                {sg.hijos.map(h => (
+                                                                    <Link
+                                                                        key={h.href}
+                                                                        href={h.href}
+                                                                        className={cn(
+                                                                            'block px-2 py-1 rounded-md text-xs nav-item-transition',
+                                                                            isActive(h.href) ? 'font-medium' : 'hover:text-white'
+                                                                        )}
+                                                                        style={isActive(h.href) ? { color: 'var(--sidebar-active)' } : {}}
+                                                                    >
+                                                                        {h.nombre}
+                                                                    </Link>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )
+                                            })}
+                                        </div>
+                                    )}
+                                </>
+                            )}
+                        </div>
+                    )
+                })}
+            </nav>
+
+            {/* Botón colapsar */}
+            <div className="p-2 border-t border-slate-700/50">
+                <button
+                    onClick={() => onCollapse(!collapsed)}
+                    className="w-full flex items-center justify-center p-2 rounded-lg hover:bg-slate-700/50 transition-colors"
+                    title={collapsed ? 'Expandir' : 'Colapsar'}
+                >
+                    {collapsed
+                        ? <ChevronRight className="w-4 h-4" />
+                        : <ChevronLeft className="w-4 h-4" />
+                    }
+                </button>
+            </div>
+        </div>
+    )
+
+    return (
+        <>
+            {/* Desktop sidebar */}
+            <aside
+                className="hidden md:flex flex-col h-full sidebar-transition shrink-0"
+                style={{ width: collapsed ? '56px' : '220px' }}
+            >
+                {content}
+            </aside>
+
+            {/* Mobile overlay */}
+            {mobileOpen && (
+                <div className="fixed inset-0 z-50 md:hidden">
+                    <div className="absolute inset-0 bg-black/60" onClick={onMobileClose} />
+                    <aside className="absolute left-0 top-0 bottom-0 w-64 flex flex-col">
+                        <div className="absolute top-3 right-3 z-10">
+                            <button onClick={onMobileClose}
+                                className="p-1.5 rounded-lg bg-slate-700/50 text-slate-300 hover:text-white">
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+                        {content}
+                    </aside>
+                </div>
+            )}
+        </>
+    )
+}

@@ -1,0 +1,648 @@
+<?php
+
+namespace App\Http\Controllers\Ventas;
+
+use App\Http\Controllers\Controller;
+use App\Models\Bodega;
+use App\Models\Cliente;
+use App\Models\CuentaCobrar;
+use App\Models\Empresa;
+use App\Models\Factura;
+use App\Models\FacturaDetalle;
+use App\Models\FacturaPago;
+use App\Models\LimiteDescuento;
+use App\Models\Producto;
+use App\Models\Usuario;
+use App\Services\AsientoService;
+use App\Services\AuditoriaService;
+use App\Services\DescuentoService;
+use App\Services\InventarioService;
+use App\Services\SecuencialService;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Inertia\Inertia;
+
+class FacturaController extends Controller
+{
+    public function __construct(
+        private AuditoriaService  $auditoria,
+        private SecuencialService $secuencial,
+        private AsientoService    $asiento,
+        private InventarioService $inventario,
+        private DescuentoService  $descuento,
+    ) {}
+
+    /** Id de la Bodega Principal UIO resuelto por nombre y cacheado en el request. */
+    private ?int $bodegaPrincipalId = null;
+
+    /**
+     * Resuelve el id de la "Bodega Principal UIO" por nombre en tiempo de
+     * ejecución (no se hardcodea el id, que puede diferir entre entornos).
+     * El resultado se cachea dentro del mismo request.
+     */
+    private function bodegaPrincipalId(): int
+    {
+        if ($this->bodegaPrincipalId !== null) {
+            return $this->bodegaPrincipalId;
+        }
+
+        $bodega = Bodega::where('nombre', 'Bodega Principal UIO')
+            ->where('estado', true)
+            ->first();
+
+        if (!$bodega) {
+            throw new \RuntimeException('No se encontró la Bodega Principal UIO configurada.');
+        }
+
+        return $this->bodegaPrincipalId = (int) $bodega->id;
+    }
+
+    public function index(Request $request)
+    {
+        $empresaId = session('empresa_activa_id');
+
+        $query = Factura::with(['cliente', 'usuario', 'pagos'])
+            ->where('empresa_id', $empresaId)
+            ->orderByDesc('fecha_emision')
+            ->orderByDesc('id');
+
+        if ($request->filled('fecha_desde')) {
+            $query->where('fecha_emision', '>=', $request->fecha_desde);
+        }
+        if ($request->filled('fecha_hasta')) {
+            $query->where('fecha_emision', '<=', $request->fecha_hasta);
+        }
+        if ($request->filled('cliente')) {
+            $query->whereHas('cliente', function ($q) use ($request) {
+                $q->where('razon_social', 'ilike', "%{$request->cliente}%")
+                  ->orWhere('identificacion', 'ilike', "%{$request->cliente}%");
+            });
+        }
+        if ($request->filled('estado')) {
+            $query->where('estado', $request->estado);
+        }
+        if ($request->filled('estado_sri')) {
+            $query->where('estado_sri', $request->estado_sri);
+        }
+        if ($request->filled('forma_pago')) {
+            $query->whereHas('pagos', fn($q) => $q->where('forma_pago', $request->forma_pago));
+        }
+        if ($request->filled('centro_costo_id')) {
+            $query->where('centro_costo_id', $request->centro_costo_id);
+        }
+
+        $facturas = $query->paginate(25)->withQueryString();
+
+        return Inertia::render('Ventas/Facturas/Index', [
+            'facturas' => $facturas,
+            'filtros'  => $request->only(['fecha_desde', 'fecha_hasta', 'cliente', 'estado', 'estado_sri', 'forma_pago', 'centro_costo_id']),
+        ]);
+    }
+
+    public function create()
+    {
+        $empresaId = session('empresa_activa_id');
+        $usuario   = Auth::user();
+
+        $clientes = Cliente::where('empresa_id', $empresaId)
+            ->select('id', 'identificacion', 'razon_social', 'tiene_credito', 'dias_credito',
+                     'cupo_maximo', 'tipo_identificacion', 'email', 'telefono', 'direccion',
+                     'ciudad', 'pais')
+            ->orderBy('razon_social')
+            ->get();
+
+        $productos = Producto::where('estado', true)
+            ->select('id', 'codigo', 'nombre', 'pvp', 'pvd', 'costo', 'porcentaje_iva')
+            ->orderBy('nombre')
+            ->get();
+
+        $descuentosMaximos = $this->descuento->mapaMaximosPermitidos($productos->pluck('id')->all(), $empresaId);
+        $productos->each(function ($p) use ($descuentosMaximos) {
+            $p->descuento_max = $descuentosMaximos[$p->id] ?? 0.0;
+        });
+
+        $perfilNombre = DB::table('perfiles')
+            ->join('usuarios', 'usuarios.perfil_id', '=', 'perfiles.id')
+            ->where('usuarios.id', $usuario->id)
+            ->value('perfiles.nombre');
+
+        if ($perfilNombre === 'vendedor') {
+            $vendedores = collect([$usuario]);
+        } else {
+            $vendedores = Usuario::whereHas('perfil', fn($q) => $q->where('nombre', 'vendedor'))
+                ->where('empresa_id', $empresaId)
+                ->where('estado', true)
+                ->select('id', 'nombre', 'email')
+                ->orderBy('nombre')
+                ->get();
+        }
+
+        // Peek del secuencial sin avanzarlo — leemos el valor actual
+        $sec = DB::table('secuenciales')
+            ->where('empresa_id', $empresaId)
+            ->where('tipo_documento', 'FAC')
+            ->first();
+
+        $empresa = Empresa::findOrFail($empresaId);
+        $est = $empresa->cod_establecimiento ?? '001';
+        $pe  = $empresa->cod_punto_emision   ?? '001';
+
+        $siguienteNumero = $sec
+            ? sprintf('%s-%s-%09d', $est, $pe, (int)($sec->secuencial ?? $sec->siguiente ?? 1))
+            : sprintf('%s-%s-%09d', $est, $pe, 1);
+
+        $limite = LimiteDescuento::whereHas('perfil', fn($q) => $q->where('nombre', $perfilNombre))
+            ->first();
+
+        return Inertia::render('Ventas/Facturas/Form', [
+            'clientes'         => $clientes,
+            'productos'        => $productos,
+            'vendedores'       => $vendedores,
+            'formas_pago'      => ['efectivo', 'transferencia', 'tarjeta', 'cheque', 'credito'],
+            'empresa_activa'   => $empresa,
+            'siguiente_numero' => $siguienteNumero,
+            'limites_descuento' => [
+                'descuento_maximo_pct' => $limite?->porcentaje_maximo ?? 0,
+                'puede_aprobar'        => $limite?->puede_aprobar ?? false,
+            ],
+        ]);
+    }
+
+    public function saldoDisponible(Request $request): JsonResponse
+    {
+        $request->validate([
+            'producto_id' => 'required|integer',
+        ]);
+
+        try {
+            $bodegaId = $this->bodegaPrincipalId();
+        } catch (\RuntimeException $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+
+        $disponible = $this->inventario->getSaldoDisponible(
+            (int) $request->input('producto_id'),
+            $bodegaId
+        );
+
+        return response()->json(['disponible' => $disponible]);
+    }
+
+    public function store(Request $request)
+    {
+        $empresaId = session('empresa_activa_id');
+        $usuario   = Auth::user();
+
+        $request->validate([
+            'cliente_id'              => 'required|integer|exists:clientes,id',
+            'detalles'                => 'required|array|min:1',
+            'detalles.*.producto_id'  => 'required|integer',
+            'detalles.*.cantidad'     => 'required|numeric|min:0.01',
+            'detalles.*.precio'       => 'required|numeric|min:0.01',
+            'detalles.*.descuento_pct'=> 'nullable|numeric|min:0',
+            'detalles.*.aprobacion_id'=> 'nullable|integer',
+            'formas_pago'             => 'required|array|min:1',
+            'formas_pago.*.forma'     => 'required|string',
+            'formas_pago.*.monto'     => 'required|numeric|min:0.01',
+        ]);
+
+        // Calcular totales
+        $subtotal0   = 0;
+        $subtotal15  = 0;
+        $descTotal   = 0;
+        $tieneDescuentoEspecial = false;
+
+        $perfilNombre = DB::table('perfiles')
+            ->join('usuarios', 'usuarios.perfil_id', '=', 'perfiles.id')
+            ->where('usuarios.id', $usuario->id)
+            ->value('perfiles.nombre');
+
+        $limiteDescuento = LimiteDescuento::whereHas('perfil', fn($q) => $q->where('nombre', $perfilNombre))
+            ->first();
+
+        $limiteMax = (float) ($limiteDescuento?->porcentaje_maximo ?? 0);
+
+        $productoIds = collect($request->detalles)->pluck('producto_id')->unique()->all();
+        $maximosPermitidos = $this->descuento->mapaMaximosPermitidos($productoIds, $empresaId);
+
+        // Costo real desde la tabla productos — nunca se confía en un valor
+        // de costo que venga del request, para que no se pueda manipular el
+        // payload y saltarse la validación de precio bajo costo.
+        $costosProductos = Producto::whereIn('id', $productoIds)->pluck('costo', 'id');
+
+        // Se resuelve una sola vez (la aprobación es global para toda la
+        // factura, no por línea) y se reutiliza para cada detalle que la
+        // necesite.
+        $aprobacionValida = null;
+
+        // Aprobaciones de precio bajo costo, en cambio, son por línea — cada
+        // una se valida y se acumula aquí para marcarlas consumidas luego.
+        $aprobacionesPrecioUsadas = [];
+
+        foreach ($request->detalles as $detalle) {
+            $precio    = (float)($detalle['precio'] ?? 0);
+            $costoReal = (float) ($costosProductos[$detalle['producto_id']] ?? 0);
+
+            if ($precio < $costoReal) {
+                if (empty($detalle['aprobacion_id'])) {
+                    return back()->withErrors([
+                        'aprobacion_especial' => "El precio del producto {$detalle['codigo']} ({$precio}) es menor a su costo ({$costoReal}) y requiere aprobación especial.",
+                    ])->withInput();
+                }
+
+                if (in_array((int) $detalle['aprobacion_id'], $aprobacionesPrecioUsadas, true)) {
+                    return back()->withErrors([
+                        'aprobacion_especial' => "La aprobación especial de precio del producto {$detalle['codigo']} ya fue utilizada en otra línea.",
+                    ])->withInput();
+                }
+
+                // Mismo esquema de aprobación especial que castigo()/anular():
+                // debe existir, estar pedida por este mismo usuario, ser del
+                // tipo correcto y no haberse usado todavía.
+                $aprobacionPrecio = DB::table('aprobaciones_especiales')
+                    ->join('tipos_aprobacion', 'tipos_aprobacion.id', '=', 'aprobaciones_especiales.tipo_aprobacion_id')
+                    ->where('aprobaciones_especiales.id', $detalle['aprobacion_id'])
+                    ->where('aprobaciones_especiales.solicitado_por', $usuario->id)
+                    ->where('tipos_aprobacion.clave', 'precio_bajo_costo')
+                    ->whereNull('aprobaciones_especiales.registro_id')
+                    ->select('aprobaciones_especiales.id')
+                    ->first();
+
+                if (!$aprobacionPrecio) {
+                    return back()->withErrors([
+                        'aprobacion_especial' => "La aprobación especial de precio del producto {$detalle['codigo']} no es válida o ya fue utilizada.",
+                    ])->withInput();
+                }
+
+                $aprobacionesPrecioUsadas[] = (int) $aprobacionPrecio->id;
+            }
+
+            $descPct = (float)($detalle['descuento_pct'] ?? 0);
+            $maximoProducto = $maximosPermitidos[$detalle['producto_id']] ?? 0.0;
+
+            // El descuento requiere aprobación especial si supera el límite
+            // de perfil del vendedor o el techo del producto/promo — la
+            // aprobación válida cubre ambos límites a la vez, igual que en
+            // el frontend (Form.tsx: descuentoEspecialActivo).
+            if ($descPct > $limiteMax || $descPct > $maximoProducto) {
+                if (!$request->filled('aprobacion_especial_id')) {
+                    return back()->withErrors(['aprobacion_especial' => 'Se requiere aprobación especial para el descuento aplicado.'])->withInput();
+                }
+
+                if ($aprobacionValida === null) {
+                    $aprobacionValida = DB::table('aprobaciones_especiales')
+                        ->join('tipos_aprobacion', 'tipos_aprobacion.id', '=', 'aprobaciones_especiales.tipo_aprobacion_id')
+                        ->where('aprobaciones_especiales.id', $request->input('aprobacion_especial_id'))
+                        ->where('aprobaciones_especiales.solicitado_por', $usuario->id)
+                        ->where('tipos_aprobacion.clave', 'descuento_excedido')
+                        ->whereNull('aprobaciones_especiales.registro_id')
+                        ->select('aprobaciones_especiales.id', 'aprobaciones_especiales.valor_aprobado')
+                        ->first();
+
+                    if (!$aprobacionValida) {
+                        return back()->withErrors(['aprobacion_especial' => 'La aprobación especial no es válida o ya fue utilizada.'])->withInput();
+                    }
+                }
+
+                if ($descPct > (float) $aprobacionValida->valor_aprobado) {
+                    return back()->withErrors([
+                        'aprobacion_especial' => "La aprobación otorgada cubre hasta {$aprobacionValida->valor_aprobado}%, pero se solicita {$descPct}%.",
+                    ])->withInput();
+                }
+
+                $tieneDescuentoEspecial = true;
+            }
+
+            $cantidad   = (float)$detalle['cantidad'];
+            $descuento  = $precio * $cantidad * ($descPct / 100);
+            $subtotalItem = ($precio * $cantidad) - $descuento;
+
+            $descTotal += $descuento;
+
+            // Determinar si el producto grava IVA — simplificación: usar pvp > 0 como proxy
+            // En producción esto viene del campo graba_iva del producto
+            $grabaIva = (bool)($detalle['graba_iva'] ?? true);
+            if ($grabaIva) {
+                $subtotal15 += $subtotalItem;
+            } else {
+                $subtotal0 += $subtotalItem;
+            }
+        }
+
+        $totalIva = $subtotal15 * 0.15;
+        $total    = $subtotal0 + $subtotal15 + $totalIva;
+
+        // Validar que suma de formas_pago == total
+        $sumaFormasPago = collect($request->formas_pago)->sum('monto');
+        if (abs($sumaFormasPago - $total) > 0.01) {
+            return back()->withErrors(['formas_pago' => "La suma de formas de pago ({$sumaFormasPago}) no coincide con el total ({$total})."]);
+        }
+
+        try {
+            $factura = DB::transaction(function () use (
+                $request, $empresaId, $usuario, $subtotal0, $subtotal15,
+                $descTotal, $totalIva, $total, $tieneDescuentoEspecial, $aprobacionValida,
+                $aprobacionesPrecioUsadas
+            ) {
+                $empresa = Empresa::findOrFail($empresaId);
+                $numero  = $this->secuencial->siguiente($empresaId, 'FAC');
+
+                [$est, $pe, $sec] = explode('-', $numero);
+
+                $cliente = Cliente::findOrFail($request->cliente_id);
+
+                $factura = Factura::create([
+                    'empresa_id'              => $empresaId,
+                    'centro_costo_id'         => $request->centro_costo_id,
+                    'cliente_id'              => $request->cliente_id,
+                    'usuario_id'              => $usuario->id,
+                    'establecimiento'         => $est,
+                    'punto_emision'           => $pe,
+                    'secuencial'              => ltrim($sec, '0') ?: '1',
+                    'numero_completo'         => $numero,
+                    'fecha_emision'           => now()->toDateString(),
+                    'hora_emision'            => now()->toTimeString(),
+                    'estado_sri'              => 'pendiente',
+                    'tipo_identificacion'     => $cliente->tipo_identificacion,
+                    'identificacion'          => $cliente->identificacion,
+                    'razon_social'            => $cliente->razon_social,
+                    'email_cliente'           => $cliente->email,
+                    'telefono_cliente'        => $cliente->telefono,
+                    'direccion_cliente'       => $cliente->direccion,
+                    'subtotal_0'              => $subtotal0,
+                    'subtotal_15'             => $subtotal15,
+                    'descuento_total'         => $descTotal,
+                    'total_iva'               => $totalIva,
+                    'total'                   => $total,
+                    'observaciones'           => $request->observaciones,
+                    'tipo'                    => 1,
+                    'estado'                  => 'activa',
+                    'email_enviado'           => false,
+                ]);
+
+                $productoTipos = Producto::whereIn('id', collect($request->detalles)->pluck('producto_id'))
+                    ->pluck('tipo', 'id');
+
+                foreach ($request->detalles as $det) {
+                    $descPct     = (float)($det['descuento_pct'] ?? 0);
+                    $precio      = (float)$det['precio'];
+                    $cantidad    = (float)$det['cantidad'];
+                    $descuento   = $precio * $cantidad * ($descPct / 100);
+                    $subtotalDet = ($precio * $cantidad) - $descuento;
+                    $grabaIva    = (bool)($det['graba_iva'] ?? true);
+                    $iva         = $grabaIva ? $subtotalDet * 0.15 : 0;
+
+                    FacturaDetalle::create([
+                        'factura_id'      => $factura->id,
+                        'producto_id'     => $det['producto_id'],
+                        'codigo_producto' => $det['codigo']      ?? null,
+                        'descripcion'     => $det['descripcion'] ?? null,
+                        'cantidad'        => $cantidad,
+                        'precio_unitario' => $precio,
+                        'descuento_pct'   => $descPct,
+                        'descuento_valor' => $descuento,
+                        'subtotal'        => $subtotalDet,
+                        'porcentaje_iva'  => $grabaIva ? 15 : 0,
+                        'valor_iva'       => $iva,
+                        'total'           => $subtotalDet + $iva,
+                    ]);
+
+                    $tipoProducto = $productoTipos[$det['producto_id']] ?? null;
+
+                    if ($tipoProducto !== 'servicio') {
+                        $bodegaId = $this->bodegaPrincipalId();
+
+                        $disponible = $this->inventario->getSaldoDisponible((int) $det['producto_id'], $bodegaId);
+
+                        if ($cantidad > $disponible) {
+                            throw new \RuntimeException(
+                                "Stock insuficiente para {$det['codigo']}: disponible {$disponible}, solicitado {$cantidad}."
+                            );
+                        }
+
+                        $this->inventario->egresarStock(
+                            (int) $det['producto_id'],
+                            $bodegaId,
+                            $cantidad,
+                            'factura',
+                            $factura->id
+                        );
+                    }
+                }
+
+                $incluyeCredito = false;
+                $montoCredito   = 0;
+
+                foreach ($request->formas_pago as $pago) {
+                    FacturaPago::create([
+                        'factura_id' => $factura->id,
+                        'forma_pago' => $pago['forma'],
+                        'valor'      => $pago['monto'],
+                        'plazo'      => $pago['plazo'] ?? null,
+                        'unidad'     => $pago['unidad'] ?? null,
+                    ]);
+
+                    if ($pago['forma'] === 'credito') {
+                        $incluyeCredito = true;
+                        $montoCredito   += (float)$pago['monto'];
+                    }
+                }
+
+                if ($incluyeCredito) {
+                    $cliente = Cliente::findOrFail($request->cliente_id);
+                    CuentaCobrar::create([
+                        'empresa_id'        => $empresaId,
+                        'cliente_id'        => $request->cliente_id,
+                        'factura_id'        => $factura->id,
+                        'monto'             => $montoCredito,
+                        'saldo'             => $montoCredito,
+                        'fecha_emision'     => now()->toDateString(),
+                        'fecha_vencimiento' => now()->addDays($cliente->dias_credito ?? 30)->toDateString(),
+                        'forma_cobro'       => 'credito',
+                        'estado'            => 'pendiente',
+                    ]);
+                }
+
+                if ($tieneDescuentoEspecial && $aprobacionValida) {
+                    // Marca la aprobación como consumida — evita que se
+                    // reutilice el mismo aprobacion_especial_id en otra factura.
+                    DB::table('aprobaciones_especiales')
+                        ->where('id', $aprobacionValida->id)
+                        ->update([
+                            'tabla_referencia' => 'facturas',
+                            'registro_id'      => $factura->id,
+                            'updated_at'       => now(),
+                        ]);
+                }
+
+                if (!empty($aprobacionesPrecioUsadas)) {
+                    // Marca cada aprobación de precio bajo costo (una por
+                    // línea) como consumida — mismo patrón que arriba.
+                    DB::table('aprobaciones_especiales')
+                        ->whereIn('id', $aprobacionesPrecioUsadas)
+                        ->update([
+                            'tabla_referencia' => 'facturas',
+                            'registro_id'      => $factura->id,
+                            'updated_at'       => now(),
+                        ]);
+                }
+
+                return $factura;
+            });
+        } catch (\Throwable $e) {
+            return back()->withErrors(['stock' => $e->getMessage()])->withInput();
+        }
+
+        try {
+            $formaPrincipal = collect($request->formas_pago)->sortByDesc('monto')->first()['forma'] ?? 'efectivo';
+            $asientoFactura = $this->asiento->facturaAutorizada(
+                empresaId:      $empresaId,
+                facturaId:      $factura->id,
+                numeroFactura:  $factura->numero_completo,
+                subtotal:       $subtotal0 + $subtotal15,
+                iva:            $totalIva,
+                total:          $total,
+                formaPago:      $formaPrincipal,
+            );
+            $factura->update(['asiento_id' => $asientoFactura->id]);
+        } catch (\Throwable) {
+            // Asiento contable falla de forma silenciosa para no romper la factura
+        }
+
+        $this->auditoria->documento('crear', 'ventas', 'facturas', $factura->id, "Factura {$factura->numero_completo} creada");
+
+        return redirect()->route('ventas.facturas.show', $factura->id)
+            ->with('flash', ['tipo' => 'exito', 'mensaje' => "Factura {$factura->numero_completo} creada correctamente."]);
+    }
+
+    public function show(Factura $factura)
+    {
+        $factura->load(['cliente', 'usuario', 'pagos', 'detalles.producto', 'empresa', 'asiento']);
+
+        return Inertia::render('Ventas/Facturas/Show', [
+            'factura' => $factura,
+        ]);
+    }
+
+    public function anular(Request $request, Factura $factura)
+    {
+        $request->validate([
+            'aprobacion_especial_id' => 'required|integer',
+        ]);
+
+        $usuario = Auth::user();
+
+        $perfilNombre = DB::table('perfiles')
+            ->join('usuarios', 'usuarios.perfil_id', '=', 'perfiles.id')
+            ->where('usuarios.id', $usuario->id)
+            ->value('perfiles.nombre');
+
+        if ($perfilNombre !== 'super_admin') {
+            return back()->withErrors(['error' => 'Solo el SuperAdmin puede anular facturas.']);
+        }
+
+        if ($factura->fecha_emision->toDateString() !== now()->toDateString()) {
+            return back()->withErrors(['error' => 'Solo se pueden anular facturas del día actual.']);
+        }
+
+        if ($factura->estado === 'anulada') {
+            return back()->withErrors(['error' => 'La factura ya está anulada.']);
+        }
+
+        // Mismo esquema de aprobación especial que Proformas/CxC: la
+        // aprobación debe existir, estar pedida por este mismo usuario, ser
+        // del tipo correcto y no haberse usado todavía.
+        $aprobacion = DB::table('aprobaciones_especiales')
+            ->join('tipos_aprobacion', 'tipos_aprobacion.id', '=', 'aprobaciones_especiales.tipo_aprobacion_id')
+            ->where('aprobaciones_especiales.id', $request->aprobacion_especial_id)
+            ->where('aprobaciones_especiales.solicitado_por', $usuario->id)
+            ->where('tipos_aprobacion.clave', 'anulacion_factura')
+            ->whereNull('aprobaciones_especiales.registro_id')
+            ->select('aprobaciones_especiales.id')
+            ->first();
+
+        if (!$aprobacion) {
+            return back()->withErrors(['aprobacion_especial' => 'La aprobación especial no es válida o ya fue utilizada.']);
+        }
+
+        DB::transaction(function () use ($factura, $aprobacion) {
+            $movimientosStock = DB::table('inventario_movimientos')
+                ->where('doc_tipo', 'FACTURA')
+                ->where('doc_id', $factura->id)
+                ->where('tipo', 'salida')
+                ->get();
+
+            foreach ($movimientosStock as $mov) {
+                $this->inventario->ingresarStock(
+                    (int) $mov->producto_id,
+                    (int) $mov->bodega_id,
+                    (float) $mov->cantidad,
+                    (float) $mov->costo_unitario,
+                    'factura_anulada',
+                    $factura->id
+                );
+            }
+
+            $factura->update([
+                'estado'     => 'anulada',
+                'estado_sri' => 'anulada',
+            ]);
+
+            // Marca la aprobación como consumida — mismo patrón que
+            // CuentaCobrarController::castigo().
+            DB::table('aprobaciones_especiales')
+                ->where('id', $aprobacion->id)
+                ->update([
+                    'tabla_referencia' => 'facturas',
+                    'registro_id'      => $factura->id,
+                    'updated_at'       => now(),
+                ]);
+        });
+
+        $this->auditoria->documento('anular', 'ventas', 'facturas', $factura->id, "Factura {$factura->numero_completo} anulada");
+
+        return back()->with('flash', ['tipo' => 'exito', 'mensaje' => "Factura {$factura->numero_completo} anulada."]);
+    }
+
+    public function enviarSri(Factura $factura)
+    {
+        // TODO: implementar ciclo SRI (XML + firma + webservice)
+        // Pendiente — commit separado
+        return response()->json(['message' => 'Funcionalidad SRI pendiente']);
+    }
+
+    public function clienteGuardar(Request $request)
+    {
+        $empresaId = session('empresa_activa_id');
+
+        $request->validate([
+            'identificacion' => 'required|string|max:20',
+            'razon_social'   => 'required|string|max:300',
+            'tipo_identificacion' => 'required|string',
+        ]);
+
+        $cliente = Cliente::updateOrCreate(
+            [
+                'empresa_id'     => $empresaId,
+                'identificacion' => $request->identificacion,
+            ],
+            [
+                'razon_social'        => $request->razon_social,
+                'tipo_identificacion' => $request->tipo_identificacion,
+                'email'               => $request->email,
+                'telefono'            => $request->telefono,
+                'direccion'           => $request->direccion,
+                'tiene_credito'       => $request->tiene_credito ?? false,
+                'dias_credito'        => $request->dias_credito ?? 0,
+                'cupo_maximo'         => $request->cupo_maximo ?? 0,
+            ]
+        );
+
+        $accion = $cliente->wasRecentlyCreated ? 'crear' : 'actualizar';
+        $this->auditoria->documento($accion, 'ventas', 'clientes', $cliente->id, "{$accion} cliente {$cliente->razon_social}");
+
+        return response()->json(['cliente' => $cliente]);
+    }
+}
