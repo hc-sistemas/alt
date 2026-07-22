@@ -73,6 +73,21 @@ rm /home/altamira/sistema.altamiralightsounds.com
 mv /home/altamira/releases/00-legacy-manual /home/altamira/sistema.altamiralightsounds.com
 ```
 
+### Problema ya resuelto: ownership de tablas en PostgreSQL
+
+Al correr `setup-inicial.sh` la primera vez, las migraciones fallaron con `SQLSTATE[42501]: Insufficient privilege` al alterar tablas existentes. Causa: las 91 tablas de la base `altamira` eran dueñas del rol `postgres`, no de `altamira_user` (el usuario que usa la app en `.env`). Los `CREATE TABLE` funcionan igual (el que crea se vuelve dueño), pero cualquier `ALTER TABLE` sobre una tabla ya existente falla si el usuario de la app no es su dueño.
+
+Ya se corrigió una sola vez con:
+
+```bash
+sudo -u postgres psql -d altamira <<'EOF'
+SELECT 'ALTER TABLE public.' || quote_ident(tablename) || ' OWNER TO altamira_user;' FROM pg_tables WHERE schemaname='public' AND tableowner != 'altamira_user' \gexec
+SELECT 'ALTER SEQUENCE public.' || quote_ident(sequencename) || ' OWNER TO altamira_user;' FROM pg_sequences WHERE schemaname='public' AND sequenceowner != 'altamira_user' \gexec
+EOF
+```
+
+No debería volver a pasar (las tablas nuevas las crea `altamira_user` y ya queda como dueño), pero si algún día se restaura un dump con `pg_dump`/`psql` como usuario `postgres`, va a repetirse — correr el mismo bloque de arriba después de restaurar.
+
 ---
 
 ## Actualizaciones futuras (esto es lo único que necesitas correr)
