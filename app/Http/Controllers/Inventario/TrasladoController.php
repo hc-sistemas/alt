@@ -304,8 +304,7 @@ class TrasladoController extends Controller
                     $this->inventario->liberarReserva(
                         (int) $detalle->producto_id,
                         (int) $traslado->bodega_origen_id,
-                        'traslado_detalle',
-                        $detalle->id
+                        (float) $detalle->cantidad_enviada
                     );
                 }
 
