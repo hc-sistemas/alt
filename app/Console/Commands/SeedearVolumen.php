@@ -47,8 +47,14 @@ class SeedearVolumen extends Command
     private array $stockTocado = []; // set de "producto_id:bodega_id" tocados
     private int $contadorAsiento = 0;
 
-    public function handle(): void
+    public function handle(): int
     {
+        if (app()->environment('production')) {
+            $this->error('Este comando es SOLO para entornos de desarrollo/pruebas.');
+            $this->error('No se puede ejecutar con APP_ENV=production.');
+            return self::FAILURE;
+        }
+
         $this->hoy = now();
         $this->inicio = Carbon::create((int) $this->option('anio-inicio'), 1, 1);
 
@@ -77,6 +83,8 @@ class SeedearVolumen extends Command
         $this->cerrarEjerciciosAntiguos();
 
         $this->imprimirResumen();
+
+        return self::SUCCESS;
     }
 
     // ─────────────────────────────────────────────────────────────
