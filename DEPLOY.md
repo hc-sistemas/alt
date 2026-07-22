@@ -88,6 +88,25 @@ EOF
 
 No debería volver a pasar (las tablas nuevas las crea `altamira_user` y ya queda como dueño), pero si algún día se restaura un dump con `pg_dump`/`psql` como usuario `postgres`, va a repetirse — correr el mismo bloque de arriba después de restaurar.
 
+### Cómo restaurar un backup completo de datos (ej. base local sobre producción)
+
+Hecho el 22/07/2026 con `database/altamira22072026.backup` (96 tablas). Pasos:
+
+1. Backup fresco de la BD actual de producción, por si hay que revertir:
+   ```bash
+   sudo -u postgres pg_dump -Fc altamira > /home/altamira/backups/pre-restore-$(date +%Y%m%d%H%M%S).backup
+   ```
+2. Subir el `.backup` al VPS (File Manager de CWP o SFTP), a cualquier carpeta temporal.
+3. Restaurar (esto reemplaza TODO — schema y datos de las 96 tablas):
+   ```bash
+   sudo -u postgres pg_restore --clean --if-exists --no-owner --no-privileges --disable-triggers -d altamira /ruta/al/archivo.backup
+   ```
+4. **Obligatorio después de cualquier restore:** volver a correr el bloque de la sección anterior para reasignar ownership a `altamira_user` (el restore lo resetea a `postgres`).
+5. Si `usuarios` se reemplazó, las contraseñas de login cambian a las que tenía el backup — resetear la del admin si hace falta (ver sección de tinker más abajo, o usar `php artisan tinker`).
+6. Borrar el archivo `.backup` temporal del VPS una vez confirmado que todo funciona.
+
+**Advertencia:** un restore completo (`--clean`) borra y reemplaza TODO, incluyendo cualquier dato real que ya exista en producción (facturas, clientes nuevos, etc. generados después del deploy). Antes de repetir esto, confirmar que no hay datos de producción reales que se vayan a perder.
+
 ---
 
 ## Actualizaciones futuras (esto es lo único que necesitas correr)
