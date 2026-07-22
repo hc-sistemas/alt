@@ -305,7 +305,7 @@ Route::middleware('auth')->group(function () {
             Route::post('traslados/{traslado}/anular', [TrasladoController::class, 'anular'])->name('traslados.anular');
             Route::get('traslados/{traslado}', [TrasladoController::class, 'show'])->name('traslados.show');
 
-            Route::resource('activos', ActivoFijoController::class)->except(['show']);
+            Route::resource('activos', ActivoFijoController::class)->except(['show'])->parameters(['activos' => 'activoFijo']);
             Route::get('activos/{activoFijo}', [ActivoFijoController::class, 'show'])->name('activos.show');
             Route::post('activos/{activoFijo}/depreciar', [ActivoFijoController::class, 'depreciar'])->name('activos.depreciar');
 
