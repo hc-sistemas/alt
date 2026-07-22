@@ -16,6 +16,7 @@ use App\Models\ProformaDetalle;
 use App\Models\Usuario;
 use App\Services\AuditoriaService;
 use App\Services\DescuentoService;
+use App\Services\InventarioService;
 use App\Services\SecuencialService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -30,6 +31,7 @@ class ProformaController extends Controller
         private AuditoriaService  $auditoria,
         private SecuencialService $secuencial,
         private DescuentoService  $descuento,
+        private InventarioService $inventario,
     ) {}
 
     public function index(Request $request)
@@ -351,73 +353,103 @@ class ProformaController extends Controller
             'formas_pago.*.monto' => 'required|numeric|min:0.01',
         ]);
 
-        $factura = DB::transaction(function () use ($request, $proforma, $empresaId) {
-            $numero  = (new SecuencialService())->siguiente($empresaId, 'FAC');
-            [$est, $pe, $sec] = explode('-', $numero);
+        try {
+            $factura = DB::transaction(function () use ($request, $proforma, $empresaId) {
+                $numero  = (new SecuencialService())->siguiente($empresaId, 'FAC');
+                [$est, $pe, $sec] = explode('-', $numero);
 
-            $cliente = Cliente::findOrFail($proforma->cliente_id);
+                $cliente = Cliente::findOrFail($proforma->cliente_id);
 
-            $factura = Factura::create([
-                'empresa_id'          => $empresaId,
-                'centro_costo_id'     => $proforma->centro_costo_id,
-                'cliente_id'          => $proforma->cliente_id,
-                'usuario_id'          => Auth::id(),
-                'establecimiento'     => $est,
-                'punto_emision'       => $pe,
-                'secuencial'          => ltrim($sec, '0') ?: '1',
-                'numero_completo'     => $numero,
-                'fecha_emision'       => now()->toDateString(),
-                'hora_emision'        => now()->toTimeString(),
-                'estado_sri'          => 'pendiente',
-                'tipo_identificacion' => $cliente->tipo_identificacion,
-                'identificacion'      => $cliente->identificacion,
-                'razon_social'        => $cliente->razon_social,
-                'email_cliente'       => $cliente->email,
-                'telefono_cliente'    => $cliente->telefono,
-                'direccion_cliente'   => $cliente->direccion,
-                'subtotal_0'          => 0,
-                'subtotal_15'         => $proforma->subtotal,
-                'descuento_total'     => $proforma->descuento_total,
-                'total_iva'           => $proforma->total_iva,
-                'total'               => $proforma->total,
-                'observaciones'       => $proforma->observaciones,
-                'tipo'                => 1,
-                'estado'              => 'activa',
-                'tiene_descuento_especial' => false,
-                'email_enviado'       => false,
-            ]);
-
-            foreach ($proforma->detalles as $det) {
-                $descuentoValor = $det->precio_unitario * $det->cantidad * ($det->descuento_pct / 100);
-                $valorIva = $det->subtotal * ($det->porcentaje_iva / 100);
-
-                FacturaDetalle::create([
-                    'factura_id'      => $factura->id,
-                    'producto_id'     => $det->producto_id,
-                    'descripcion'     => $det->descripcion,
-                    'cantidad'        => $det->cantidad,
-                    'precio_unitario' => $det->precio_unitario,
-                    'descuento_pct'   => $det->descuento_pct,
-                    'descuento_valor' => $descuentoValor,
-                    'subtotal'        => $det->subtotal,
-                    'porcentaje_iva'  => $det->porcentaje_iva,
-                    'valor_iva'       => $valorIva,
-                    'total'           => $det->total,
+                $factura = Factura::create([
+                    'empresa_id'          => $empresaId,
+                    'centro_costo_id'     => $proforma->centro_costo_id,
+                    'cliente_id'          => $proforma->cliente_id,
+                    'usuario_id'          => Auth::id(),
+                    'establecimiento'     => $est,
+                    'punto_emision'       => $pe,
+                    'secuencial'          => ltrim($sec, '0') ?: '1',
+                    'numero_completo'     => $numero,
+                    'fecha_emision'       => now()->toDateString(),
+                    'hora_emision'        => now()->toTimeString(),
+                    'estado_sri'          => 'pendiente',
+                    'tipo_identificacion' => $cliente->tipo_identificacion,
+                    'identificacion'      => $cliente->identificacion,
+                    'razon_social'        => $cliente->razon_social,
+                    'email_cliente'       => $cliente->email,
+                    'telefono_cliente'    => $cliente->telefono,
+                    'direccion_cliente'   => $cliente->direccion,
+                    'subtotal_0'          => 0,
+                    'subtotal_15'         => $proforma->subtotal,
+                    'descuento_total'     => $proforma->descuento_total,
+                    'total_iva'           => $proforma->total_iva,
+                    'total'               => $proforma->total,
+                    'observaciones'       => $proforma->observaciones,
+                    'tipo'                => 1,
+                    'estado'              => 'activa',
+                    'tiene_descuento_especial' => false,
+                    'email_enviado'       => false,
                 ]);
-            }
 
-            foreach ($request->formas_pago as $pago) {
-                FacturaPago::create([
-                    'factura_id' => $factura->id,
-                    'forma_pago' => $pago['forma'],
-                    'valor'      => $pago['monto'],
-                ]);
-            }
+                $productos = Producto::whereIn('id', $proforma->detalles->pluck('producto_id'))
+                    ->get(['id', 'codigo', 'tipo'])
+                    ->keyBy('id');
 
-            $proforma->update(['estado' => 'facturada', 'factura_id' => $factura->id]);
+                foreach ($proforma->detalles as $det) {
+                    $descuentoValor = $det->precio_unitario * $det->cantidad * ($det->descuento_pct / 100);
+                    $valorIva = $det->subtotal * ($det->porcentaje_iva / 100);
 
-            return $factura;
-        });
+                    FacturaDetalle::create([
+                        'factura_id'      => $factura->id,
+                        'producto_id'     => $det->producto_id,
+                        'descripcion'     => $det->descripcion,
+                        'cantidad'        => $det->cantidad,
+                        'precio_unitario' => $det->precio_unitario,
+                        'descuento_pct'   => $det->descuento_pct,
+                        'descuento_valor' => $descuentoValor,
+                        'subtotal'        => $det->subtotal,
+                        'porcentaje_iva'  => $det->porcentaje_iva,
+                        'valor_iva'       => $valorIva,
+                        'total'           => $det->total,
+                    ]);
+
+                    $producto = $productos->get($det->producto_id);
+
+                    if ($producto && $producto->tipo !== 'servicio') {
+                        $bodegaId = $this->bodegaPrincipalId();
+
+                        $disponible = $this->inventario->getSaldoDisponible((int) $det->producto_id, $bodegaId);
+
+                        if ((float) $det->cantidad > $disponible) {
+                            throw new \RuntimeException(
+                                "Stock insuficiente para {$producto->codigo}: disponible {$disponible}, solicitado {$det->cantidad}."
+                            );
+                        }
+
+                        $this->inventario->egresarStock(
+                            (int) $det->producto_id,
+                            $bodegaId,
+                            (float) $det->cantidad,
+                            'factura',
+                            $factura->id
+                        );
+                    }
+                }
+
+                foreach ($request->formas_pago as $pago) {
+                    FacturaPago::create([
+                        'factura_id' => $factura->id,
+                        'forma_pago' => $pago['forma'],
+                        'valor'      => $pago['monto'],
+                    ]);
+                }
+
+                $proforma->update(['estado' => 'facturada', 'factura_id' => $factura->id]);
+
+                return $factura;
+            });
+        } catch (\Throwable $e) {
+            return back()->withErrors(['stock' => $e->getMessage()])->withInput();
+        }
 
         $this->auditoria->documento('convertir', 'ventas', 'proformas', $proforma->id, "Proforma {$proforma->numero} convertida a factura {$factura->numero_completo}");
 
