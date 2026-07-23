@@ -117,14 +117,14 @@ class ImportacionController extends Controller
         }
 
         $request->validate([
-            'metodo_prorrateo'  => 'required|in:cantidad,precio',
+            'metodo_prorrateo'  => 'required|in:cantidad,precio,peso',
             'fecha_liquidacion' => 'required|date',
         ]);
 
-        // Compras de productos (base del prorrateo)
+        // Compras de productos (base del prorrateo) — con producto para el método "peso"
         $comprasProducto = Compra::where('importacion_id', $importacion->id)
             ->where('gasto_no_deducible', false)
-            ->with('detalles')->get();
+            ->with('detalles.producto')->get();
 
         // Costos extra ya registrados como compras
         $comprasGasto = Compra::where('importacion_id', $importacion->id)
@@ -145,20 +145,34 @@ class ImportacionController extends Controller
 
         $metodo = $request->input('metodo_prorrateo');
 
-        $bases = $comprasProducto->map(fn($compra) => match ($metodo) {
-            'cantidad' => (float) $compra->detalles->sum('cantidad'),
-            default    => (float) $compra->total,
+        // Base de prorrateo por línea de detalle, según el método elegido — se usa
+        // tanto para repartir el costo extra ENTRE facturas como DENTRO de cada factura.
+        $baseDetalle = fn($d) => match ($metodo) {
+            'peso'   => (float) $d->cantidad * (float) ($d->producto?->peso ?? 0),
+            'precio' => (float) $d->cantidad * (float) $d->precio_unitario,
+            default  => (float) $d->cantidad,
+        };
+
+        $bases = $comprasProducto->map(function ($compra) use ($baseDetalle) {
+            $validos = $compra->detalles->filter(
+                fn($d) => $d->producto_id !== null
+                    && (float) $d->cantidad > 0
+                    && (float) $d->precio_unitario > 0.01
+            );
+            return (float) $validos->sum($baseDetalle);
         });
 
         $baseTotal = (float) $bases->sum();
 
         if ($baseTotal <= 0) {
-            return back()->with('error',
-                'No se puede prorratear: las facturas de productos no tienen cantidad ni valor.');
+            $mensaje = $metodo === 'peso'
+                ? 'No se puede prorratear por peso: ningún producto de esta importación tiene peso configurado (ver ficha de producto).'
+                : 'No se puede prorratear: las facturas de productos no tienen cantidad ni valor.';
+            return back()->with('error', $mensaje);
         }
 
-        DB::transaction(function () use ($comprasProducto, $bases, $baseTotal, $totalCostosExtra) {
-            $comprasProducto->each(function ($compra, $idx) use ($bases, $baseTotal, $totalCostosExtra) {
+        DB::transaction(function () use ($comprasProducto, $bases, $baseTotal, $totalCostosExtra, $baseDetalle) {
+            $comprasProducto->each(function ($compra, $idx) use ($bases, $baseTotal, $totalCostosExtra, $baseDetalle) {
                 $proporcion    = $bases[$idx] / $baseTotal;
                 $costoAsignado = $totalCostosExtra * $proporcion;
 
@@ -167,13 +181,16 @@ class ImportacionController extends Controller
                         && (float) $d->cantidad > 0
                         && (float) $d->precio_unitario > 0.01
                 );
-                $cantidadValida = (float) $detallesValidos->sum('cantidad');
+                $baseValidaFactura = (float) $detallesValidos->sum($baseDetalle);
 
-                if ($cantidadValida <= 0) return;
+                if ($baseValidaFactura <= 0) return;
 
                 foreach ($detallesValidos as $detalle) {
-                    $costoPorUnitario = ($costoAsignado * ($detalle->cantidad / $cantidadValida))
-                        / $detalle->cantidad;
+                    $baseLinea = $baseDetalle($detalle);
+                    if ($baseLinea <= 0) continue; // ej: método "peso" y este producto no tiene peso configurado
+
+                    $costoLineaTotal  = $costoAsignado * ($baseLinea / $baseValidaFactura);
+                    $costoPorUnitario = $costoLineaTotal / $detalle->cantidad;
                     $costoPorUnitarioRedondeado = round($costoPorUnitario, 4);
 
                     $saldo = InventarioSaldo::where('producto_id', $detalle->producto_id)->first();
@@ -182,13 +199,12 @@ class ImportacionController extends Controller
                     }
 
                     $nuevoCosto = round((float) $detalle->precio_unitario + $costoPorUnitario, 4);
-                    Producto::where('id', $detalle->producto_id)
-                        ->update(['costo' => $nuevoCosto]);
+                    Producto::where('id', $detalle->producto_id)->update(['costo' => $nuevoCosto]);
                 }
             });
         });
 
-        // Auto-cruce de anticipos pendientes contra CxP de esta importación
+        // Auto-cruce de anticipos pendientes contra CxP de esta importación (C-08)
         if ($importacion->proveedor_id) {
             try {
                 $anticiposPendientes = AnticipoProveedor::where('empresa_id', $importacion->empresa_id)

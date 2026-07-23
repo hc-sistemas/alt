@@ -29,7 +29,7 @@ const TABS: { key: Tab; label: string }[] = [
 const TAB_FIELDS: Record<Tab, string[]> = {
     general: ['codigo', 'nombre', 'tipo', 'unidad', 'descripcion'],
     precios: ['pvp', 'pvd', 'costo', 'descuento_maximo', 'porcentaje_iva', 'porcentaje_ice'],
-    inventario: ['stock_minimo', 'stock_maximo'],
+    inventario: ['stock_minimo', 'stock_maximo', 'peso'],
     contabilidad: ['cuenta_inventario', 'cuenta_costo_ventas', 'cuenta_ventas'],
 }
 
@@ -56,6 +56,7 @@ export default function ProductoForm() {
         porcentaje_ice: producto?.porcentaje_ice?.toString() ?? '0',
         stock_minimo: producto ? Math.round(Number(producto.stock_minimo)).toString() : '0',
         stock_maximo: producto?.stock_maximo ? Math.round(Number(producto.stock_maximo)).toString() : '',
+        peso: producto?.peso?.toString() ?? '0',
         cuenta_inventario: producto?.cuenta_inventario ?? '1.1.4.1',
         cuenta_costo_ventas: producto?.cuenta_costo_ventas ?? '5.1.1.1',
         cuenta_ventas: producto?.cuenta_ventas ?? '4.1.1.01',
@@ -365,6 +366,17 @@ export default function ProductoForm() {
                                         }}
                                         placeholder="Sin límite" />
                                     {errors.stock_maximo && <p className="text-xs text-red-400">{errors.stock_maximo}</p>}
+                                </div>
+                                <div className="space-y-1.5">
+                                    <Label>Peso unitario (kg)</Label>
+                                    <Input type="number" min={0} step="0.0001"
+                                        value={data.peso}
+                                        onChange={e => setData('peso', e.target.value)}
+                                        placeholder="0.0000" />
+                                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                        Usado para prorratear costos de importación por el método "Peso".
+                                    </p>
+                                    {errors.peso && <p className="text-xs text-red-400">{errors.peso}</p>}
                                 </div>
                             </div>
                         </>

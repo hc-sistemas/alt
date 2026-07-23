@@ -326,7 +326,7 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
     }
 
     // ── Tab 4: Liquidar ──
-    const [metodo,        setMetodo]    = useState<'cantidad' | 'precio'>('cantidad')
+    const [metodo,        setMetodo]    = useState<'cantidad' | 'precio' | 'peso'>('cantidad')
     const [fechaLiq,      setFechaLiq]  = useState(new Date().toISOString().slice(0, 10))
     const [liqProcessing, setLiqProc]   = useState(false)
 
@@ -901,6 +901,7 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
                                                     className="input-field select-field">
                                                     <option value="cantidad">Por cantidad (unidades)</option>
                                                     <option value="precio">Por precio (valor FOB)</option>
+                                                    <option value="peso">Por peso (kg)</option>
                                                 </select>
                                             </div>
 

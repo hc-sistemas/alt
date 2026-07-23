@@ -246,6 +246,7 @@ export interface Producto {
     unidad: string
     tipo: 'producto' | 'servicio' | 'repuesto' | 'insumo'
     requiere_serie: boolean
+    peso: number | null
     costo: number
     pvp: number
     pvd: number
