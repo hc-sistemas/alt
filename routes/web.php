@@ -259,6 +259,7 @@ Route::middleware('auth')->group(function () {
             Route::get('/{importacion}/detalle',    [ImportacionController::class, 'detalle']) ->name('detalle');
             Route::put('/{importacion}',            [ImportacionController::class, 'update'])  ->name('update');
             Route::patch('/{importacion}/liquidar', [ImportacionController::class, 'liquidar'])->name('liquidar');
+            Route::patch('/{importacion}/revertir', [ImportacionController::class, 'revertir'])->name('revertir');
         });
     });
 
@@ -356,6 +357,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/{importacion}/detalle',         [ImportacionController::class, 'detalle'])        ->name('detalle');
         Route::put('/{importacion}',                 [ImportacionController::class, 'update'])         ->name('update');
         Route::patch('/{importacion}/liquidar',      [ImportacionController::class, 'liquidar'])       ->name('liquidar');
+        Route::patch('/{importacion}/revertir',      [ImportacionController::class, 'revertir'])       ->name('revertir');
         Route::post('/{importacion}/agregar-costo',  [ImportacionController::class, 'agregarCosto'])  ->name('agregar-costo');
         Route::post('/{importacion}/crear-factura',  [ImportacionController::class, 'crearFactura'])  ->name('crear-factura');
     });

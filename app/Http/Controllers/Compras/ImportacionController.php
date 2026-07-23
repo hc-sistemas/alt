@@ -3,6 +3,7 @@ namespace App\Http\Controllers\Compras;
 
 use App\Http\Controllers\Controller;
 use App\Models\AnticipoProveedor;
+use App\Models\AsientoContable;
 use App\Models\Compra;
 use App\Models\CompraDetalle;
 use App\Models\CuentaPagar;
@@ -116,6 +117,8 @@ class ImportacionController extends Controller
             return back()->with('error', 'Esta importación ya está liquidada.');
         }
 
+        $estadoAnterior = $importacion->estado;
+
         $request->validate([
             'metodo_prorrateo'  => 'required|in:cantidad,precio,peso',
             'fecha_liquidacion' => 'required|date',
@@ -171,8 +174,12 @@ class ImportacionController extends Controller
             return back()->with('error', $mensaje);
         }
 
-        DB::transaction(function () use ($comprasProducto, $bases, $baseTotal, $totalCostosExtra, $baseDetalle) {
-            $comprasProducto->each(function ($compra, $idx) use ($bases, $baseTotal, $totalCostosExtra, $baseDetalle) {
+        // ── Snapshot para poder revertir esta liquidación más adelante ──
+        $snapshotProductos = []; // producto_id => [costo_anterior, saldo_id, costo_promedio_anterior, delta, stock_actual_al_momento]
+        $snapshotCruces    = [];
+
+        DB::transaction(function () use ($comprasProducto, $bases, $baseTotal, $totalCostosExtra, $baseDetalle, &$snapshotProductos) {
+            $comprasProducto->each(function ($compra, $idx) use ($bases, $baseTotal, $totalCostosExtra, $baseDetalle, &$snapshotProductos) {
                 $proporcion    = $bases[$idx] / $baseTotal;
                 $costoAsignado = $totalCostosExtra * $proporcion;
 
@@ -193,13 +200,30 @@ class ImportacionController extends Controller
                     $costoPorUnitario = $costoLineaTotal / $detalle->cantidad;
                     $costoPorUnitarioRedondeado = round($costoPorUnitario, 4);
 
-                    $saldo = InventarioSaldo::where('producto_id', $detalle->producto_id)->first();
+                    $productoId = $detalle->producto_id;
+                    if (!isset($snapshotProductos[$productoId])) {
+                        $costoActual = Producto::where('id', $productoId)->value('costo');
+                        $snapshotProductos[$productoId] = [
+                            'producto_id'             => $productoId,
+                            'costo_anterior'           => (float) $costoActual,
+                            'saldo_id'                 => null,
+                            'delta_costo_promedio'     => 0.0,
+                            'stock_actual_al_momento'  => 0.0,
+                        ];
+                    }
+
+                    $saldo = InventarioSaldo::where('producto_id', $productoId)->first();
                     if ($saldo && $saldo->stock_actual > 0) {
+                        if ($snapshotProductos[$productoId]['saldo_id'] === null) {
+                            $snapshotProductos[$productoId]['saldo_id'] = $saldo->id;
+                            $snapshotProductos[$productoId]['stock_actual_al_momento'] = (float) $saldo->stock_actual;
+                        }
+                        $snapshotProductos[$productoId]['delta_costo_promedio'] += $costoPorUnitarioRedondeado;
                         $saldo->increment('costo_promedio', $costoPorUnitarioRedondeado);
                     }
 
                     $nuevoCosto = round((float) $detalle->precio_unitario + $costoPorUnitario, 4);
-                    Producto::where('id', $detalle->producto_id)->update(['costo' => $nuevoCosto]);
+                    Producto::where('id', $productoId)->update(['costo' => $nuevoCosto]);
                 }
             });
         });
@@ -224,7 +248,7 @@ class ImportacionController extends Controller
                 ->get();
 
                 if ($anticiposPendientes->isNotEmpty() && $cxpPendientes->isNotEmpty()) {
-                    DB::transaction(function () use ($anticiposPendientes, $cxpPendientes, $importacion, $request) {
+                    DB::transaction(function () use ($anticiposPendientes, $cxpPendientes, $importacion, $request, &$snapshotCruces) {
                         foreach ($anticiposPendientes as $anticipo) {
                             foreach ($cxpPendientes as $cxp) {
                                 if ((float) $anticipo->saldo <= 0.001 || (float) $cxp->saldo <= 0.001) {
@@ -233,14 +257,19 @@ class ImportacionController extends Controller
 
                                 $montoCruce = min((float) $anticipo->saldo, (float) $cxp->saldo);
 
-                                $nuevoSaldoAnticipo = max(0, (float) $anticipo->saldo - $montoCruce);
+                                $saldoAnticipoAnterior  = (float) $anticipo->saldo;
+                                $estadoAnticipoAnterior = $anticipo->estado;
+                                $saldoCxpAnterior       = (float) $cxp->saldo;
+                                $estadoCxpAnterior      = $cxp->estado;
+
+                                $nuevoSaldoAnticipo = max(0, $saldoAnticipoAnterior - $montoCruce);
                                 $anticipo->update([
                                     'saldo'  => $nuevoSaldoAnticipo,
                                     'estado' => $nuevoSaldoAnticipo <= 0.001 ? 'cruzado' : 'pendiente',
                                 ]);
                                 $anticipo->refresh();
 
-                                $nuevoSaldoCxP = max(0, (float) $cxp->saldo - $montoCruce);
+                                $nuevoSaldoCxP = max(0, $saldoCxpAnterior - $montoCruce);
                                 $cxp->update([
                                     'saldo'  => $nuevoSaldoCxP,
                                     'estado' => $nuevoSaldoCxP <= 0.001 ? 'pagada' : 'parcial',
@@ -249,15 +278,27 @@ class ImportacionController extends Controller
 
                                 try {
                                     $referencia = 'CRZ-ANT-' . str_pad($anticipo->id, 4, '0', STR_PAD_LEFT);
-                                    $this->asientoService->cruciarAnticipo(
+                                    $asientoCruce = $this->asientoService->cruciarAnticipo(
                                         empresaId:  $importacion->empresa_id,
                                         anticipoId: $anticipo->id,
                                         referencia: $referencia,
                                         monto:      $montoCruce,
                                         fecha:      $request->input('fecha_liquidacion'),
                                     );
+
+                                    $snapshotCruces[] = [
+                                        'anticipo_id'              => $anticipo->id,
+                                        'cxp_id'                   => $cxp->id,
+                                        'monto_cruzado'            => $montoCruce,
+                                        'saldo_anticipo_anterior'  => $saldoAnticipoAnterior,
+                                        'estado_anticipo_anterior'=> $estadoAnticipoAnterior,
+                                        'saldo_cxp_anterior'       => $saldoCxpAnterior,
+                                        'estado_cxp_anterior'      => $estadoCxpAnterior,
+                                        'asiento_id'               => $asientoCruce->id,
+                                    ];
                                 } catch (\Exception) {
-                                    // No bloquear si período contable cerrado
+                                    // No bloquear si período contable cerrado — pero entonces este
+                                    // cruce no queda en el snapshot (no hay asiento que revertir).
                                 }
                             }
                         }
@@ -272,16 +313,105 @@ class ImportacionController extends Controller
         $costoTotal = $costoFob + $totalCostosExtra;
 
         $importacion->update([
-            'metodo_prorrateo'   => $metodo,
-            'total_costos_extra' => $totalCostosExtra,
-            'costo_total'        => $costoTotal,
-            'fecha_liquidacion'  => $request->input('fecha_liquidacion'),
-            'estado'             => 'liquidada',
+            'metodo_prorrateo'     => $metodo,
+            'total_costos_extra'   => $totalCostosExtra,
+            'costo_total'          => $costoTotal,
+            'fecha_liquidacion'    => $request->input('fecha_liquidacion'),
+            'estado'               => 'liquidada',
+            'snapshot_liquidacion' => [
+                'estado_anterior'  => $estadoAnterior,
+                'productos'        => array_values($snapshotProductos),
+                'cruces_anticipo'  => $snapshotCruces,
+            ],
         ]);
 
         return back()->with('success',
             "Importación {$importacion->nombre} liquidada. " .
             'Costo total: $' . number_format($costoTotal, 2));
+    }
+
+    public function revertir(Importacion $importacion): RedirectResponse
+    {
+        if ($importacion->estado !== 'liquidada') {
+            return back()->with('error', 'Solo se puede revertir una importación que esté liquidada.');
+        }
+
+        $snapshot = $importacion->snapshot_liquidacion;
+        if (!$snapshot) {
+            return back()->with('error',
+                'Esta importación no tiene información de reversión disponible ' .
+                '(fue liquidada antes de existir esta función). Contacta al administrador.');
+        }
+
+        // Candado: si ya se vendió/movió stock con el costo liquidado, revertir
+        // dejaría el costo de ventas ya registrado inconsistente con el costo anterior.
+        $productosVendidos = [];
+        foreach ($snapshot['productos'] ?? [] as $p) {
+            if (!$p['saldo_id']) continue;
+            $saldoActual = InventarioSaldo::find($p['saldo_id']);
+            if ($saldoActual && (float) $saldoActual->stock_actual < (float) $p['stock_actual_al_momento']) {
+                $productosVendidos[] = $p['producto_id'];
+            }
+        }
+
+        if (!empty($productosVendidos)) {
+            $codigos = Producto::whereIn('id', $productosVendidos)->pluck('codigo')->implode(', ');
+            return back()->with('error',
+                "No se puede revertir: ya se vendieron o movieron unidades con el costo liquidado " .
+                "de los productos [{$codigos}]. Revertir ahora dejaría el costo de ventas ya " .
+                "registrado inconsistente con el costo anterior.");
+        }
+
+        try {
+            DB::transaction(function () use ($importacion, $snapshot) {
+                foreach ($snapshot['productos'] ?? [] as $p) {
+                    Producto::where('id', $p['producto_id'])->update(['costo' => $p['costo_anterior']]);
+
+                    if ($p['saldo_id'] && (float) $p['delta_costo_promedio'] != 0.0) {
+                        InventarioSaldo::where('id', $p['saldo_id'])
+                            ->decrement('costo_promedio', $p['delta_costo_promedio']);
+                    }
+                }
+
+                foreach ($snapshot['cruces_anticipo'] ?? [] as $c) {
+                    AnticipoProveedor::where('id', $c['anticipo_id'])->update([
+                        'saldo'  => $c['saldo_anticipo_anterior'],
+                        'estado' => $c['estado_anticipo_anterior'],
+                    ]);
+
+                    CuentaPagar::where('id', $c['cxp_id'])->update([
+                        'saldo'  => $c['saldo_cxp_anterior'],
+                        'estado' => $c['estado_cxp_anterior'],
+                    ]);
+
+                    $asiento = AsientoContable::find($c['asiento_id']);
+                    if ($asiento && !$asiento->estaAnulado()) {
+                        $this->asientoService->anular(
+                            $asiento,
+                            "Reversión de liquidación de importación \"{$importacion->nombre}\""
+                        );
+                    }
+                }
+
+                $importacion->update([
+                    'estado'               => $snapshot['estado_anterior'] ?? 'en_aduana',
+                    // metodo_prorrateo es NOT NULL en BD (default 'cantidad') — se resetea
+                    // al valor por defecto de una importación aún no liquidada.
+                    'metodo_prorrateo'     => 'cantidad',
+                    'fecha_liquidacion'    => null,
+                    'total_costos_extra'   => 0,
+                    'costo_total'          => 0,
+                    'snapshot_liquidacion' => null,
+                ]);
+            });
+        } catch (\Exception $e) {
+            return back()->with('error',
+                'No se pudo revertir la liquidación: ' . $e->getMessage());
+        }
+
+        return back()->with('success',
+            "Liquidación de \"{$importacion->nombre}\" revertida. " .
+            'Puedes volver a liquidarla con otro método.');
     }
 
     public function crearFactura(Importacion $importacion): JsonResponse

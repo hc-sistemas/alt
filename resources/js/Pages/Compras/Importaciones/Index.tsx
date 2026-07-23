@@ -5,6 +5,7 @@ import AppLayout from '@/Layouts/AppLayout'
 import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
+import ConfirmModal from '@/Components/shared/ConfirmModal'
 import { cn } from '@/lib/utils'
 import {
     Plus, Pencil, Package, Plane, Anchor, CheckCircle2,
@@ -329,6 +330,27 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
     const [metodo,        setMetodo]    = useState<'cantidad' | 'precio' | 'peso'>('cantidad')
     const [fechaLiq,      setFechaLiq]  = useState(new Date().toISOString().slice(0, 10))
     const [liqProcessing, setLiqProc]   = useState(false)
+
+    // ── Tab 4: Revertir ──
+    const [confirmRevertir, setConfirmRevertir] = useState(false)
+    const [revProcessing,   setRevProc]         = useState(false)
+
+    function ejecutarRevertir() {
+        setRevProc(true)
+        router.patch(route('compras.importaciones.revertir', importacion.id), {}, {
+            // back()->with('error', ...) llega como respuesta "exitosa" para Inertia —
+            // hay que mirar el flash para saber si en realidad falló el candado de reversión.
+            onSuccess: (page) => {
+                const flash = page.props.flash as { success?: string; error?: string } | undefined
+                if (flash?.error) {
+                    setConfirmRevertir(false)
+                } else {
+                    onClose()
+                }
+            },
+            onFinish: () => setRevProc(false),
+        })
+    }
 
     useEffect(() => { refetchDetalle(true) }, [importacion.id])
 
@@ -801,12 +823,26 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
 
                                 <button
                                     type="button"
-                                    disabled
-                                    title="Contacte al administrador para revertir manualmente"
-                                    className="w-full py-2 px-4 rounded-lg text-sm font-medium border opacity-40 cursor-not-allowed"
+                                    onClick={() => setConfirmRevertir(true)}
+                                    className="w-full py-2 px-4 rounded-lg text-sm font-medium border transition-colors hover:bg-red-500/10"
                                     style={{ borderColor: '#ef4444', color: '#ef4444', background: 'transparent' }}>
-                                    Revertir liquidación (no disponible)
+                                    Revertir liquidación
                                 </button>
+                                <p className="text-xs text-center" style={{ color: 'var(--text-muted)' }}>
+                                    Restaura el costo anterior de los productos y el estado previo a la liquidación.
+                                    Se bloqueará si ya se vendió o movió stock con el costo actual.
+                                </p>
+
+                                <ConfirmModal
+                                    open={confirmRevertir}
+                                    title="¿Revertir esta liquidación?"
+                                    message={`Se restaurará el costo anterior de los productos de "${importacion.nombre}" y, si hubo cruce de anticipo, se generará un asiento de reversión. Esta acción no se puede deshacer.`}
+                                    confirmLabel="Sí, revertir"
+                                    variant="danger"
+                                    loading={revProcessing}
+                                    onConfirm={ejecutarRevertir}
+                                    onCancel={() => setConfirmRevertir(false)}
+                                />
                             </div>
                         ) : (
                             /* ── Formulario liquidar ── */
