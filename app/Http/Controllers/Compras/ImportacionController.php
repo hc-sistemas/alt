@@ -414,6 +414,28 @@ class ImportacionController extends Controller
             'Puedes volver a liquidarla con otro método.');
     }
 
+    public function copiar(Importacion $importacion): RedirectResponse
+    {
+        $empresaId = session('empresa_activa_id');
+        if ($importacion->empresa_id !== $empresaId) abort(403);
+
+        $nueva = Importacion::create([
+            'empresa_id'      => $empresaId,
+            'proveedor_id'    => $importacion->proveedor_id,
+            'nombre'          => $importacion->nombre . ' (Copia)',
+            'agente_aduanero' => $importacion->agente_aduanero,
+            'pais_embarque'   => $importacion->pais_embarque,
+            'divisa'          => $importacion->divisa,
+            'costo_fob'       => 0,
+            'estado'          => 'en_transito',
+            'created_by'      => Auth::id(),
+        ]);
+
+        return back()->with('success',
+            "Importación \"{$nueva->nombre}\" creada a partir de \"{$importacion->nombre}\". " .
+            'Completa fechas y monto FOB.');
+    }
+
     public function crearFactura(Importacion $importacion): JsonResponse
     {
         $empresaId = session('empresa_activa_id');

@@ -9,7 +9,7 @@ import ConfirmModal from '@/Components/shared/ConfirmModal'
 import { cn } from '@/lib/utils'
 import {
     Plus, Pencil, Package, Plane, Anchor, CheckCircle2,
-    X, DollarSign, Loader2, Eye, ExternalLink, AlertCircle,
+    X, DollarSign, Loader2, Eye, ExternalLink, AlertCircle, Copy,
 } from 'lucide-react'
 import type { Importacion, Proveedor, PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
@@ -982,6 +982,12 @@ export default function ImportacionesIndex() {
 
     function cerrar() { setModal({ type: 'none' }) }
 
+    function copiarImportacion(i: ImportacionRow) {
+        router.post(route('compras.importaciones.copiar', i.id), {}, {
+            preserveScroll: true,
+        })
+    }
+
     return (
         <AppLayout title="Importaciones" suppressFlash>
             <Head title="Importaciones" />
@@ -1100,6 +1106,13 @@ export default function ImportacionesIndex() {
                                         <DollarSign className="w-3.5 h-3.5" />
                                     </button>
                                 )}
+                                {/* Copiar → siempre disponible, como plantilla de una nueva */}
+                                <button
+                                    onClick={() => copiarImportacion(i)}
+                                    title="Copiar como plantilla de una nueva importación"
+                                    className="p-1.5 rounded transition-colors text-amber-600 dark:text-amber-400 hover:bg-amber-500/20">
+                                    <Copy className="w-3.5 h-3.5" />
+                                </button>
                             </div>
                         </div>
                     ))}
