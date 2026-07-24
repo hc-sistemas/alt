@@ -76,12 +76,15 @@ interface ProductoResultadoLiquidacion {
     costo_nuevo: number
     pvp: number
     pvd: number
+    pvp_sugerido: number | null
+    pvd_sugerido: number | null
 }
 
 interface ResultadoLiquidacionData {
     metodo_prorrateo: string | null
     costo_total: number
     cantidad_productos: number
+    factor_importacion: number | null
     productos: ProductoResultadoLiquidacion[]
 }
 
@@ -89,6 +92,7 @@ const METODO_LABEL: Record<string, string> = {
     cantidad: 'Cantidad',
     precio: 'Precio Unitario',
     peso: 'Peso',
+    factor_importacion: 'Factor de Importación',
 }
 
 function calcularMargen(precio: number, costo: number): number | null {
@@ -369,9 +373,12 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
     }
 
     // ── Tab 4: Liquidar ──
-    const [metodo,        setMetodo]    = useState<'cantidad' | 'precio' | 'peso'>('cantidad')
+    const [metodo,        setMetodo]    = useState<'cantidad' | 'precio' | 'peso' | 'factor_importacion'>('cantidad')
     const [fechaLiq,      setFechaLiq]  = useState(new Date().toISOString().slice(0, 10))
     const [liqProcessing, setLiqProc]   = useState(false)
+    const [comisionPct,  setComisionPct]  = useState('3')
+    const [margenPvdPct, setMargenPvdPct] = useState('20')
+    const [margenPvpPct, setMargenPvpPct] = useState('35')
 
     // ── Tab 4: Revertir ──
     const [confirmRevertir, setConfirmRevertir] = useState(false)
@@ -410,7 +417,13 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
                 setResultado(d)
                 const inicial: Record<number, { pvp: string; pvd: string }> = {}
                 d.productos.forEach(p => {
-                    inicial[p.producto_id] = { pvp: p.pvp.toString(), pvd: p.pvd.toString() }
+                    // Con el método "Factor de Importación" se precargan los precios
+                    // SUGERIDOS por la fórmula (comisión + margen + IVA) en vez del
+                    // precio anterior — el usuario los puede seguir editando aquí mismo.
+                    inicial[p.producto_id] = {
+                        pvp: (p.pvp_sugerido ?? p.pvp).toString(),
+                        pvd: (p.pvd_sugerido ?? p.pvd).toString(),
+                    }
                 })
                 setPrecios(inicial)
             })
@@ -466,6 +479,11 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
         router.patch(route('compras.importaciones.liquidar', importacion.id), {
             metodo_prorrateo:  metodo,
             fecha_liquidacion: fechaLiq,
+            ...(metodo === 'factor_importacion' ? {
+                comision_pct:   comisionPct,
+                margen_pvd_pct: margenPvdPct,
+                margen_pvp_pct: margenPvpPct,
+            } : {}),
         }, {
             onSuccess: () => { notify.ok(`Importación "${importacion.nombre}" liquidada`); onClose() },
             onError:   (errs) => { notify.error('Error: ' + Object.values(errs).join(', ')); setLiqProc(false) },
@@ -1035,8 +1053,37 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
                                                     <option value="cantidad">Por cantidad (unidades)</option>
                                                     <option value="precio">Por precio (valor FOB)</option>
                                                     <option value="peso">Por peso (kg)</option>
+                                                    <option value="factor_importacion">Factor de Importación</option>
                                                 </select>
                                             </div>
+
+                                            {metodo === 'factor_importacion' && (
+                                                <div className="rounded-lg p-3 space-y-3"
+                                                    style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+                                                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                                        Factor = (Mercadería + todos los costos extra) / Mercadería FOB.
+                                                        Se aplica directamente al costo unitario original de cada producto,
+                                                        y se sugieren precios de venta con estos parámetros:
+                                                    </p>
+                                                    <div className="grid grid-cols-3 gap-3">
+                                                        <div className="space-y-1">
+                                                            <label className="input-label">% Comisión</label>
+                                                            <input type="number" step="0.01" min="0" className="input-field text-sm"
+                                                                value={comisionPct} onChange={e => setComisionPct(e.target.value)} />
+                                                        </div>
+                                                        <div className="space-y-1">
+                                                            <label className="input-label">% Margen PVD</label>
+                                                            <input type="number" step="0.01" min="0" max="99.99" className="input-field text-sm"
+                                                                value={margenPvdPct} onChange={e => setMargenPvdPct(e.target.value)} />
+                                                        </div>
+                                                        <div className="space-y-1">
+                                                            <label className="input-label">% Margen PVP</label>
+                                                            <input type="number" step="0.01" min="0" max="99.99" className="input-field text-sm"
+                                                                value={margenPvpPct} onChange={e => setMargenPvpPct(e.target.value)} />
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
 
                                             <div className="space-y-1.5">
                                                 <Label>Fecha de liquidación <span className="text-red-400">*</span></Label>
@@ -1070,7 +1117,7 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
                         ) : (
                             <div className="p-5 space-y-4">
                                 {/* Resumen */}
-                                <div className="rounded-lg p-3 grid grid-cols-3 gap-3 text-sm"
+                                <div className={cn('rounded-lg p-3 grid gap-3 text-sm', resultado.factor_importacion !== null ? 'grid-cols-4' : 'grid-cols-3')}
                                     style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)' }}>
                                     <div>
                                         <p className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
@@ -1098,6 +1145,16 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
                                                 : '—'}
                                         </p>
                                     </div>
+                                    {resultado.factor_importacion !== null && (
+                                        <div>
+                                            <p className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+                                                Factor de Importación
+                                            </p>
+                                            <p className="font-bold tabular-nums" style={{ color: 'var(--text-main)' }}>
+                                                {resultado.factor_importacion.toFixed(6)}
+                                            </p>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Tabla editable */}

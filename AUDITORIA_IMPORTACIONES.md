@@ -2,8 +2,37 @@
 
 **Fecha auditoría original:** 2026-07-23
 **Fecha de corrección de las 3 brechas reales:** 2026-07-23 (misma sesión, segunda pasada)
-**Fuente de verdad:** `Sistema Altamira.pdf`, secciones "8. Módulo de Compras" y "8.2 Módulos de importación".
+**Fecha de implementación del método "Factor de Importación":** 2026-07-23 (misma sesión, tercera pasada)
+**Fuente de verdad:** `Sistema Altamira.pdf`, secciones "8. Módulo de Compras" y "8.2 Módulos de importación"; y `MIYAKO USA JULIO 14.xlsx` (hoja de cálculo real del cliente usada en producción para prorratear, aportada como referencia — ver sección dedicada más abajo).
 **Método:** lectura directa del código (controllers, modelo, rutas, frontend React) — sin asumir nada del documento de especificaciones ni de reportes previos.
+
+## Método de prorrateo "Factor de Importación" (2026-07-23)
+
+El documento del cliente (página 37) menciona 3 métodos de cálculo (Cantidad, Precio Unitario, Peso), pero **en la práctica real el cliente no usa ninguno de los 3** — usa una hoja de cálculo propia ("MIYAKO USA JULIO 14.xlsx") con una lógica distinta: un **Factor de Importación** único, aplicado multiplicativamente al costo FOB original de cada línea, más un cálculo de precios de venta sugeridos (PVD/PVP) con comisión y márgenes configurables. Se implementó como un 4º método, `factor_importacion`, replicando la fórmula exacta de esa hoja.
+
+**Fórmula implementada** (verificada línea por línea contra el Excel real, 39 aserciones, ver validación abajo):
+1. `Factor = (Costo FOB Mercadería + Σ todos los costos extra) / Costo FOB Mercadería`
+2. `Costo Unitario Nuevo = Precio Unitario Original de la línea × Factor` (multiplicativo, no un prorrateo proporcional entre líneas como cantidad/precio/peso)
+3. `Costo con Comisión = Costo Unitario Nuevo × (1 + %comisión/100)` (default 3%)
+4. `PVD sugerido = Costo con Comisión / (1 - %margen_PVD/100) × (1 + %IVA/100)` (default margen 20%)
+5. `PVP sugerido = Costo con Comisión / (1 - %margen_PVP/100) × (1 + %IVA/100)` (default margen 35%)
+
+**Nota técnica:** matemáticamente, el paso 1-2 (costo liquidado) da el mismo resultado que el método "Precio Unitario" ya existente cuando todas las líneas están en una sola factura (ambos convergen a `precio_unitario × (1 + costos_extra/costo_fob)`). La diferencia real y el valor agregado de este método son: (a) expone el **Factor** como dato explícito para el usuario, (b) no depende de que haya una única factura para dar el resultado correcto (aplica el factor línea por línea sin prorrateo proporcional intermedio), y (c) calcula precios de venta sugeridos (PVD/PVP) — funcionalidad que no existía en ningún otro método.
+
+**Dónde viven los 3 parámetros configurables (%comisión, %margen PVD, %margen PVP):** se evaluó reutilizar el módulo de "Parámetros Contables" (`ParametroContableController`), pero ese módulo solo mapea eventos a cuentas contables (no maneja valores porcentuales), y la tabla genérica `configuraciones` existe en el schema pero no tiene ningún controller ni página que la use — construir un CRUD nuevo desde cero para esto era una expansión de alcance no pedida. Se implementó tal como pide la propia especificación del frontend: **campos editables en el momento de liquidar**, precargados con los defaults (3% / 20% / 35%), sin necesidad de una pantalla de configuración global separada.
+
+**Archivos:**
+- `app/Http/Controllers/Compras/ImportacionController.php`: `liquidar()` con rama `factor_importacion` (lógica multiplicativa, sin el prorrateo proporcional de los otros 3 métodos) + helper `aplicarCostoLinea()` extraído para reusar el snapshot/reversión entre todos los métodos; `resultadoLiquidacion()` calcula PVD/PVP sugeridos a partir del costo ya liquidado + comisión/margen/IVA (guardados en `snapshot_liquidacion`, sin necesidad de columnas nuevas).
+- `resources/js/Pages/Compras/Importaciones/Index.tsx`: opción "Factor de Importación" en el selector de método, 3 campos editables (comisión/margen PVD/margen PVP) que aparecen solo con este método, Factor mostrado en el resumen de "Resultado de Liquidación", y precarga automática de PVP/PVD con los precios sugeridos en esa misma vista (en vez de dejarlos en blanco o con el precio anterior).
+
+**Validación (39 aserciones, escenario real recreado exacto del Excel MIYAKO USA, dentro de `DB::transaction()` con rollback forzado — cero residuos):**
+- Proveedor MIYAKO USA + 17 productos con cantidades/precios unitarios FOB exactos del Excel + 10 costos extra exactos (Advalorem, Fodinfa, IVA, Flete Marítimo, Gastos Destino, Factura Honorarios, Almacenaje, ISD, Honorarios Banco, Transporte Nacional) — suma verificada = $5,584.969, igual al Excel.
+- **Factor calculado = 1.3596574187724** — coincide con el 1.359657 del Excel.
+- **Los 17 productos** (incluido el ítem con FOB=$0, que correctamente da costo 0) — costo unitario nuevo coincide con el Excel en cada uno, con margen de error <0.001.
+- **PVD/PVP sugeridos** verificados en 2 productos distintos (ítem 1: $20.13/$24.78; ítem 9, el de mayor valor: $785.09/$966.26) — coinciden exactamente con el Excel.
+- Cruce de anticipo (C-08) probado junto con este método: anticipo se cruza contra la CxP de la importación, asiento del cruce generado y balanceado (`debe = haber`).
+- Balance de Comprobación general verificado cuadrado antes y después.
+- `npm run build` sin errores.
 
 ## Estado tras la corrección (2026-07-23)
 

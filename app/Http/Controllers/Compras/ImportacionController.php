@@ -120,11 +120,14 @@ class ImportacionController extends Controller
         $estadoAnterior = $importacion->estado;
 
         $request->validate([
-            'metodo_prorrateo'  => 'required|in:cantidad,precio,peso',
+            'metodo_prorrateo'  => 'required|in:cantidad,precio,peso,factor_importacion',
             'fecha_liquidacion' => 'required|date',
+            'comision_pct'      => 'nullable|numeric|min:0',
+            'margen_pvd_pct'    => 'nullable|numeric|min:0|max:99.99',
+            'margen_pvp_pct'    => 'nullable|numeric|min:0|max:99.99',
         ]);
 
-        // Compras de productos (base del prorrateo) — con producto para el método "peso"
+        // Compras de productos (base del prorrateo) — con producto para los métodos "peso" y "factor_importacion"
         $comprasProducto = Compra::where('importacion_id', $importacion->id)
             ->where('gasto_no_deducible', false)
             ->with('detalles.producto')->get();
@@ -145,49 +148,89 @@ class ImportacionController extends Controller
         }
 
         $totalCostosExtra = (float) $comprasGasto->sum('total');
+        $costoFob         = (float) $importacion->costo_fob;
 
         $metodo = $request->input('metodo_prorrateo');
 
-        // Base de prorrateo por línea de detalle, según el método elegido — se usa
-        // tanto para repartir el costo extra ENTRE facturas como DENTRO de cada factura.
-        $baseDetalle = fn($d) => match ($metodo) {
-            'peso'   => (float) $d->cantidad * (float) ($d->producto?->peso ?? 0),
-            'precio' => (float) $d->cantidad * (float) $d->precio_unitario,
-            default  => (float) $d->cantidad,
-        };
+        // ── Método "Factor de Importación" — réplica exacta de la hoja de cálculo real
+        // del cliente (ver AUDITORIA_IMPORTACIONES.md): Factor = (Mercadería + TODOS los
+        // costos extra) / Mercadería FOB. Se aplica multiplicando directamente el precio
+        // unitario original de cada línea — no es un prorrateo proporcional entre líneas
+        // como cantidad/precio/peso, es un factor único aplicado uniformemente.
+        $factorImportacion = null;
+        $comisionPct       = null;
+        $margenPvdPct      = null;
+        $margenPvpPct      = null;
+        $baseDetalle       = null;
+        $bases             = collect();
+        $baseTotal         = 0.0;
 
-        $bases = $comprasProducto->map(function ($compra) use ($baseDetalle) {
-            $validos = $compra->detalles->filter(
-                fn($d) => $d->producto_id !== null
-                    && (float) $d->cantidad > 0
-                    && (float) $d->precio_unitario > 0.01
-            );
-            return (float) $validos->sum($baseDetalle);
-        });
+        if ($metodo === 'factor_importacion') {
+            if ($costoFob <= 0) {
+                return back()->with('error',
+                    'El costo FOB (Mercadería) de la importación debe ser mayor a 0 para calcular el Factor de Importación.');
+            }
+            $comisionPct       = (float) $request->input('comision_pct', 3);
+            $margenPvdPct      = (float) $request->input('margen_pvd_pct', 20);
+            $margenPvpPct      = (float) $request->input('margen_pvp_pct', 35);
+            $factorImportacion = ($costoFob + $totalCostosExtra) / $costoFob;
+        } else {
+            // Base de prorrateo por línea de detalle, según el método elegido — se usa
+            // tanto para repartir el costo extra ENTRE facturas como DENTRO de cada factura.
+            $baseDetalle = fn($d) => match ($metodo) {
+                'peso'   => (float) $d->cantidad * (float) ($d->producto?->peso ?? 0),
+                'precio' => (float) $d->cantidad * (float) $d->precio_unitario,
+                default  => (float) $d->cantidad,
+            };
 
-        $baseTotal = (float) $bases->sum();
+            $bases = $comprasProducto->map(function ($compra) use ($baseDetalle) {
+                $validos = $compra->detalles->filter(
+                    fn($d) => $d->producto_id !== null
+                        && (float) $d->cantidad > 0
+                        && (float) $d->precio_unitario > 0.01
+                );
+                return (float) $validos->sum($baseDetalle);
+            });
 
-        if ($baseTotal <= 0) {
-            $mensaje = $metodo === 'peso'
-                ? 'No se puede prorratear por peso: ningún producto de esta importación tiene peso configurado (ver ficha de producto).'
-                : 'No se puede prorratear: las facturas de productos no tienen cantidad ni valor.';
-            return back()->with('error', $mensaje);
+            $baseTotal = (float) $bases->sum();
+
+            if ($baseTotal <= 0) {
+                $mensaje = $metodo === 'peso'
+                    ? 'No se puede prorratear por peso: ningún producto de esta importación tiene peso configurado (ver ficha de producto).'
+                    : 'No se puede prorratear: las facturas de productos no tienen cantidad ni valor.';
+                return back()->with('error', $mensaje);
+            }
         }
 
         // ── Snapshot para poder revertir esta liquidación más adelante ──
         $snapshotProductos = []; // producto_id => [costo_anterior, saldo_id, costo_promedio_anterior, delta, stock_actual_al_momento]
         $snapshotCruces    = [];
 
-        DB::transaction(function () use ($comprasProducto, $bases, $baseTotal, $totalCostosExtra, $baseDetalle, &$snapshotProductos) {
-            $comprasProducto->each(function ($compra, $idx) use ($bases, $baseTotal, $totalCostosExtra, $baseDetalle, &$snapshotProductos) {
-                $proporcion    = $bases[$idx] / $baseTotal;
-                $costoAsignado = $totalCostosExtra * $proporcion;
-
+        DB::transaction(function () use (
+            $comprasProducto, $bases, $baseTotal, $totalCostosExtra, $baseDetalle,
+            $metodo, $factorImportacion, &$snapshotProductos
+        ) {
+            $comprasProducto->each(function ($compra, $idx) use (
+                $bases, $baseTotal, $totalCostosExtra, $baseDetalle, $metodo, $factorImportacion, &$snapshotProductos
+            ) {
                 $detallesValidos = $compra->detalles->filter(
                     fn($d) => $d->producto_id !== null
                         && (float) $d->cantidad > 0
                         && (float) $d->precio_unitario > 0.01
                 );
+
+                if ($metodo === 'factor_importacion') {
+                    foreach ($detallesValidos as $detalle) {
+                        $precioOriginal = (float) $detalle->precio_unitario;
+                        $costoNuevo     = round($precioOriginal * $factorImportacion, 4);
+                        $deltaCosto     = round($costoNuevo - $precioOriginal, 4);
+                        $this->aplicarCostoLinea($detalle->producto_id, $costoNuevo, $deltaCosto, $snapshotProductos);
+                    }
+                    return;
+                }
+
+                $proporcion    = $bases[$idx] / $baseTotal;
+                $costoAsignado = $totalCostosExtra * $proporcion;
                 $baseValidaFactura = (float) $detallesValidos->sum($baseDetalle);
 
                 if ($baseValidaFactura <= 0) return;
@@ -199,31 +242,9 @@ class ImportacionController extends Controller
                     $costoLineaTotal  = $costoAsignado * ($baseLinea / $baseValidaFactura);
                     $costoPorUnitario = $costoLineaTotal / $detalle->cantidad;
                     $costoPorUnitarioRedondeado = round($costoPorUnitario, 4);
-
-                    $productoId = $detalle->producto_id;
-                    if (!isset($snapshotProductos[$productoId])) {
-                        $costoActual = Producto::where('id', $productoId)->value('costo');
-                        $snapshotProductos[$productoId] = [
-                            'producto_id'             => $productoId,
-                            'costo_anterior'           => (float) $costoActual,
-                            'saldo_id'                 => null,
-                            'delta_costo_promedio'     => 0.0,
-                            'stock_actual_al_momento'  => 0.0,
-                        ];
-                    }
-
-                    $saldo = InventarioSaldo::where('producto_id', $productoId)->first();
-                    if ($saldo && $saldo->stock_actual > 0) {
-                        if ($snapshotProductos[$productoId]['saldo_id'] === null) {
-                            $snapshotProductos[$productoId]['saldo_id'] = $saldo->id;
-                            $snapshotProductos[$productoId]['stock_actual_al_momento'] = (float) $saldo->stock_actual;
-                        }
-                        $snapshotProductos[$productoId]['delta_costo_promedio'] += $costoPorUnitarioRedondeado;
-                        $saldo->increment('costo_promedio', $costoPorUnitarioRedondeado);
-                    }
-
                     $nuevoCosto = round((float) $detalle->precio_unitario + $costoPorUnitario, 4);
-                    Producto::where('id', $productoId)->update(['costo' => $nuevoCosto]);
+
+                    $this->aplicarCostoLinea($detalle->producto_id, $nuevoCosto, $costoPorUnitarioRedondeado, $snapshotProductos);
                 }
             });
         });
@@ -309,7 +330,6 @@ class ImportacionController extends Controller
             }
         }
 
-        $costoFob   = (float) $importacion->costo_fob;
         $costoTotal = $costoFob + $totalCostosExtra;
 
         $importacion->update([
@@ -319,15 +339,45 @@ class ImportacionController extends Controller
             'fecha_liquidacion'    => $request->input('fecha_liquidacion'),
             'estado'               => 'liquidada',
             'snapshot_liquidacion' => [
-                'estado_anterior'  => $estadoAnterior,
-                'productos'        => array_values($snapshotProductos),
-                'cruces_anticipo'  => $snapshotCruces,
+                'estado_anterior'    => $estadoAnterior,
+                'productos'          => array_values($snapshotProductos),
+                'cruces_anticipo'    => $snapshotCruces,
+                'factor_importacion' => $factorImportacion,
+                'comision_pct'       => $comisionPct,
+                'margen_pvd_pct'     => $margenPvdPct,
+                'margen_pvp_pct'     => $margenPvpPct,
             ],
         ]);
 
         return back()->with('success',
             "Importación {$importacion->nombre} liquidada. " .
             'Costo total: $' . number_format($costoTotal, 2));
+    }
+
+    private function aplicarCostoLinea(int $productoId, float $costoNuevo, float $deltaCosto, array &$snapshotProductos): void
+    {
+        if (!isset($snapshotProductos[$productoId])) {
+            $costoActual = Producto::where('id', $productoId)->value('costo');
+            $snapshotProductos[$productoId] = [
+                'producto_id'             => $productoId,
+                'costo_anterior'          => (float) $costoActual,
+                'saldo_id'                => null,
+                'delta_costo_promedio'    => 0.0,
+                'stock_actual_al_momento' => 0.0,
+            ];
+        }
+
+        $saldo = InventarioSaldo::where('producto_id', $productoId)->first();
+        if ($saldo && $saldo->stock_actual > 0) {
+            if ($snapshotProductos[$productoId]['saldo_id'] === null) {
+                $snapshotProductos[$productoId]['saldo_id'] = $saldo->id;
+                $snapshotProductos[$productoId]['stock_actual_al_momento'] = (float) $saldo->stock_actual;
+            }
+            $snapshotProductos[$productoId]['delta_costo_promedio'] += $deltaCosto;
+            $saldo->increment('costo_promedio', $deltaCosto);
+        }
+
+        Producto::where('id', $productoId)->update(['costo' => $costoNuevo]);
     }
 
     public function revertir(Importacion $importacion): RedirectResponse
@@ -593,9 +643,20 @@ class ImportacionController extends Controller
         // costo_anterior viene del snapshot capturado justo antes de liquidar (fuente
         // exacta, no una estimación). Si la importación se liquidó antes de que este
         // snapshot existiera, queda en null — no se inventa un valor.
-        $costoAnteriorPorProducto = collect($importacion->snapshot_liquidacion['productos'] ?? [])
+        $snapshot = $importacion->snapshot_liquidacion ?? [];
+        $costoAnteriorPorProducto = collect($snapshot['productos'] ?? [])
             ->keyBy('producto_id')
             ->map(fn($p) => (float) $p['costo_anterior']);
+
+        // Precios sugeridos (PVD/PVP) solo aplican al método "Factor de Importación" —
+        // se recalculan aquí a partir del costo YA liquidado (que ya trae el factor
+        // incorporado) más comisión/margen/IVA, sin necesidad de guardar un precio
+        // sugerido por producto en el snapshot.
+        $esFactorImportacion = $importacion->metodo_prorrateo === 'factor_importacion'
+            && isset($snapshot['factor_importacion']);
+        $comisionPct  = $esFactorImportacion ? (float) $snapshot['comision_pct']  : null;
+        $margenPvdPct = $esFactorImportacion ? (float) $snapshot['margen_pvd_pct'] : null;
+        $margenPvpPct = $esFactorImportacion ? (float) $snapshot['margen_pvp_pct'] : null;
 
         $cantidadPorProducto = CompraDetalle::whereHas('compra', function ($q) use ($importacion) {
                 $q->where('importacion_id', $importacion->id)->where('gasto_no_deducible', false);
@@ -608,22 +669,38 @@ class ImportacionController extends Controller
         $productos = Producto::whereIn('id', $cantidadPorProducto->keys())
             ->orderBy('codigo')
             ->get()
-            ->map(fn($p) => [
-                'producto_id'    => $p->id,
-                'codigo'         => $p->codigo,
-                'nombre'         => $p->nombre,
-                'cantidad'       => (float) $cantidadPorProducto->get($p->id, 0),
-                'costo_anterior' => $costoAnteriorPorProducto->get($p->id),
-                'costo_nuevo'    => (float) $p->costo,
-                'pvp'            => (float) $p->pvp,
-                'pvd'            => (float) $p->pvd,
-            ])
+            ->map(function ($p) use ($cantidadPorProducto, $costoAnteriorPorProducto, $esFactorImportacion, $comisionPct, $margenPvdPct, $margenPvpPct) {
+                $fila = [
+                    'producto_id'    => $p->id,
+                    'codigo'         => $p->codigo,
+                    'nombre'         => $p->nombre,
+                    'cantidad'       => (float) $cantidadPorProducto->get($p->id, 0),
+                    'costo_anterior' => $costoAnteriorPorProducto->get($p->id),
+                    'costo_nuevo'    => (float) $p->costo,
+                    'pvp'            => (float) $p->pvp,
+                    'pvd'            => (float) $p->pvd,
+                    'pvp_sugerido'   => null,
+                    'pvd_sugerido'   => null,
+                ];
+
+                if ($esFactorImportacion && $p->costo > 0) {
+                    $ivaPct           = (float) ($p->porcentaje_iva ?: 15);
+                    $costoConComision = $p->costo * (1 + $comisionPct / 100);
+                    $pvdSinIva        = $costoConComision / (1 - $margenPvdPct / 100);
+                    $pvpSinIva        = $costoConComision / (1 - $margenPvpPct / 100);
+                    $fila['pvd_sugerido'] = round($pvdSinIva * (1 + $ivaPct / 100), 4);
+                    $fila['pvp_sugerido'] = round($pvpSinIva * (1 + $ivaPct / 100), 4);
+                }
+
+                return $fila;
+            })
             ->values();
 
         return response()->json([
             'metodo_prorrateo'   => $importacion->metodo_prorrateo,
             'costo_total'        => (float) $importacion->costo_total,
             'cantidad_productos' => $productos->count(),
+            'factor_importacion' => $esFactorImportacion ? (float) $snapshot['factor_importacion'] : null,
             'productos'          => $productos,
         ]);
     }
