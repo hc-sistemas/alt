@@ -6,6 +6,7 @@ import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import ConfirmModal from '@/Components/shared/ConfirmModal'
+import axios from '@/lib/axios'
 import { cn } from '@/lib/utils'
 import {
     Plus, Pencil, Package, Plane, Anchor, CheckCircle2,
@@ -109,6 +110,14 @@ const notify = {
     ok:    (msg: string) => toast.success(msg, { icon: () => '✅', style: { ...S, background: 'linear-gradient(135deg,#10b981,#059669)' } }),
     edit:  (msg: string) => toast.success(msg, { icon: () => '✏️', style: { ...S, background: 'linear-gradient(135deg,#3b82f6,#2563eb)' } }),
     error: (msg: string) => toast.error(msg,   { icon: () => '❌', autoClose: 6000, style: { ...S, background: 'linear-gradient(135deg,#ef4444,#dc2626)' } }),
+}
+
+function mensajeError(err: unknown, fallback: string): string {
+    if (typeof err === 'object' && err !== null && 'response' in err) {
+        const data = (err as { response?: { data?: { message?: string } } }).response?.data
+        if (data?.message) return data.message
+    }
+    return fallback
 }
 
 // ─── Estado Badge ─────────────────────────────────────────────────────────────
@@ -290,21 +299,17 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
     async function crearFacturaExterior() {
         setCreandoFact(true)
         setYaExisteWarn(false)
-        const csrf = (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement | null)?.content ?? ''
         try {
-            const res = await fetch(route('compras.importaciones.crear-factura', importacion.id), {
-                method: 'POST',
-                headers: { 'X-CSRF-TOKEN': csrf, Accept: 'application/json' },
-            })
-            const datos = await res.json() as { ya_existe: boolean }
-            if (!res.ok) { notify.error('Error al verificar factura'); return }
+            const { data: datos } = await axios.post<{ ya_existe: boolean }>(
+                route('compras.importaciones.crear-factura', importacion.id)
+            )
             if (datos.ya_existe) {
                 setYaExisteWarn(true)
             } else {
                 router.get(route('compras.facturas.index'), { iniciar_exterior: String(importacion.id) })
             }
-        } catch {
-            notify.error('Error de conexión')
+        } catch (err) {
+            notify.error(mensajeError(err, 'Error al verificar factura'))
         } finally {
             setCreandoFact(false)
         }
@@ -338,20 +343,17 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
         if (!monto || monto <= 0) { notify.error('Ingresa un monto válido'); return }
 
         setCostoSaving(true)
-        const csrf = (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement | null)?.content ?? ''
         try {
-            const res = await fetch(route('compras.importaciones.agregar-costo', importacion.id), {
-                method:  'POST',
-                headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf, Accept: 'application/json' },
-                body: JSON.stringify({
+            const { data: json } = await axios.post<{ success?: boolean; message?: string }>(
+                route('compras.importaciones.agregar-costo', importacion.id),
+                {
                     concepto:     conceptoFinal,
                     proveedor_id: formCosto.proveedor_id || null,
                     monto,
                     num_factura:  formCosto.num_factura || null,
-                }),
-            })
-            const json = await res.json() as { success?: boolean; message?: string }
-            if (res.ok && json.success) {
+                }
+            )
+            if (json.success) {
                 notify.ok(json.message ?? 'Costo registrado')
                 setFormCosto({ concepto: CONCEPTOS_COSTO[0], conceptoLibre: '', proveedor_id: '', monto: '', num_factura: '' })
                 setShowFormCosto(false)
@@ -359,8 +361,8 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
             } else {
                 notify.error(json.message ?? 'Error al guardar el costo')
             }
-        } catch {
-            notify.error('Error de conexión al guardar el costo')
+        } catch (err) {
+            notify.error(mensajeError(err, 'Error al guardar el costo'))
         } finally {
             setCostoSaving(false)
         }
@@ -422,7 +424,6 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
     async function guardarPrecios() {
         if (!resultado) return
         setGuardandoPrecios(true)
-        const csrf = (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement | null)?.content ?? ''
         try {
             const payload = {
                 precios: resultado.productos.map(p => ({
@@ -431,20 +432,18 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
                     pvd: parseFloat(precios[p.producto_id]?.pvd ?? String(p.pvd)) || 0,
                 })),
             }
-            const res = await fetch(route('compras.importaciones.actualizar-precios-lote', importacion.id), {
-                method:  'PATCH',
-                headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf, Accept: 'application/json' },
-                body: JSON.stringify(payload),
-            })
-            const json = await res.json() as { success?: boolean; message?: string }
-            if (res.ok && json.success) {
+            const { data: json } = await axios.patch<{ success?: boolean; message?: string }>(
+                route('compras.importaciones.actualizar-precios-lote', importacion.id),
+                payload
+            )
+            if (json.success) {
                 notify.ok(json.message ?? 'Precios actualizados')
                 fetchResultado()
             } else {
                 notify.error(json.message ?? 'Error al guardar los precios')
             }
-        } catch {
-            notify.error('Error de conexión al guardar los precios')
+        } catch (err) {
+            notify.error(mensajeError(err, 'Error al guardar los precios'))
         } finally {
             setGuardandoPrecios(false)
         }
