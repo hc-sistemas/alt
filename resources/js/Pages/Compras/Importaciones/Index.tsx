@@ -41,7 +41,7 @@ const CONCEPTOS_COSTO = [
     'Otro',
 ] as const
 
-type TabKey = 'general' | 'productos' | 'gastos' | 'liquidar'
+type TabKey = 'general' | 'productos' | 'gastos' | 'liquidar' | 'resultado'
 
 interface ProductoImportado {
     codigo: string
@@ -62,6 +62,44 @@ interface DetalleData {
     productos: ProductoImportado[]
     gastos: GastoImportado[]
     totales: { fob: number; gastos: number; total: number }
+}
+
+// ─── Resultado de Liquidación ─────────────────────────────────────────────────
+
+interface ProductoResultadoLiquidacion {
+    producto_id: number
+    codigo: string
+    nombre: string
+    cantidad: number
+    costo_anterior: number | null
+    costo_nuevo: number
+    pvp: number
+    pvd: number
+}
+
+interface ResultadoLiquidacionData {
+    metodo_prorrateo: string | null
+    costo_total: number
+    cantidad_productos: number
+    productos: ProductoResultadoLiquidacion[]
+}
+
+const METODO_LABEL: Record<string, string> = {
+    cantidad: 'Cantidad',
+    precio: 'Precio Unitario',
+    peso: 'Peso',
+}
+
+function calcularMargen(precio: number, costo: number): number | null {
+    if (!costo || costo <= 0) return null
+    return ((precio - costo) / costo) * 100
+}
+
+function colorMargen(margen: number | null): string {
+    if (margen === null) return 'var(--text-muted)'
+    if (margen < 0) return '#ef4444'
+    if (margen < 20) return '#f59e0b'
+    return '#10b981'
 }
 
 // ─── Notify ───────────────────────────────────────────────────────────────────
@@ -213,11 +251,12 @@ function CrearModal({ proveedores, onClose }: {
 
 // ─── Modal Detalle (4 tabs) ───────────────────────────────────────────────────
 
-const TABS: { key: TabKey; label: string }[] = [
+const TABS: { key: TabKey; label: string; soloLiquidada?: boolean }[] = [
     { key: 'general',   label: '1. General' },
     { key: 'productos', label: '2. Productos' },
     { key: 'gastos',    label: '3. Costos Extra' },
     { key: 'liquidar',  label: '4. Liquidación' },
+    { key: 'resultado', label: 'Resultado de Liquidación', soloLiquidada: true },
 ]
 
 function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
@@ -229,6 +268,7 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
     const [tab,      setTab]      = useState<TabKey>(initialTab)
     const [cargando, setCargando] = useState(true)
     const [detalle,  setDetalle]  = useState<DetalleData | null>(null)
+    const yaLiquidada = importacion.estado === 'liquidada'
 
     // ── Tab 1: General ──
     const { data, setData, put, processing, errors } = useForm({
@@ -352,7 +392,66 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
         })
     }
 
+    // ── Tab Resultado de Liquidación ──
+    const [resultado,        setResultado]        = useState<ResultadoLiquidacionData | null>(null)
+    const [cargandoResultado, setCargandoResultado] = useState(true)
+    const [precios,          setPrecios]          = useState<Record<number, { pvp: string; pvd: string }>>({})
+    const [guardandoPrecios, setGuardandoPrecios]  = useState(false)
+
+    function fetchResultado() {
+        setCargandoResultado(true)
+        fetch(route('compras.importaciones.resultado-liquidacion', importacion.id), {
+            headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+        })
+            .then(r => r.json())
+            .then((d: ResultadoLiquidacionData) => {
+                setResultado(d)
+                const inicial: Record<number, { pvp: string; pvd: string }> = {}
+                d.productos.forEach(p => {
+                    inicial[p.producto_id] = { pvp: p.pvp.toString(), pvd: p.pvd.toString() }
+                })
+                setPrecios(inicial)
+            })
+            .finally(() => setCargandoResultado(false))
+    }
+
+    function actualizarPrecio(productoId: number, campo: 'pvp' | 'pvd', valor: string) {
+        setPrecios(prev => ({ ...prev, [productoId]: { ...prev[productoId], [campo]: valor } }))
+    }
+
+    async function guardarPrecios() {
+        if (!resultado) return
+        setGuardandoPrecios(true)
+        const csrf = (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement | null)?.content ?? ''
+        try {
+            const payload = {
+                precios: resultado.productos.map(p => ({
+                    producto_id: p.producto_id,
+                    pvp: parseFloat(precios[p.producto_id]?.pvp ?? String(p.pvp)) || 0,
+                    pvd: parseFloat(precios[p.producto_id]?.pvd ?? String(p.pvd)) || 0,
+                })),
+            }
+            const res = await fetch(route('compras.importaciones.actualizar-precios-lote', importacion.id), {
+                method:  'PATCH',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf, Accept: 'application/json' },
+                body: JSON.stringify(payload),
+            })
+            const json = await res.json() as { success?: boolean; message?: string }
+            if (res.ok && json.success) {
+                notify.ok(json.message ?? 'Precios actualizados')
+                fetchResultado()
+            } else {
+                notify.error(json.message ?? 'Error al guardar los precios')
+            }
+        } catch {
+            notify.error('Error de conexión al guardar los precios')
+        } finally {
+            setGuardandoPrecios(false)
+        }
+    }
+
     useEffect(() => { refetchDetalle(true) }, [importacion.id])
+    useEffect(() => { if (yaLiquidada) fetchResultado() }, [importacion.id])
 
     function submitGeneral(e: React.FormEvent) {
         e.preventDefault()
@@ -375,7 +474,6 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
         })
     }
 
-    const yaLiquidada = importacion.estado === 'liquidada'
     const inputStyle  = { background: 'var(--bg-card)', color: 'var(--text-main)', borderColor: 'var(--border)' }
 
     return (
@@ -398,7 +496,7 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
                 {/* ── Tab nav ── */}
                 <div className="shrink-0 flex gap-0.5 px-4 border-b"
                     style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
-                    {TABS.map(t => (
+                    {TABS.filter(t => !t.soloLiquidada || yaLiquidada).map(t => (
                         <button key={t.key} type="button" onClick={() => setTab(t.key)}
                             className="px-3 py-2.5 text-xs font-semibold transition-colors whitespace-nowrap"
                             style={{
@@ -955,6 +1053,130 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
                                     </form>
                                 )
                             })()
+                        )
+                    )}
+
+                    {/* ════ TAB: RESULTADO DE LIQUIDACIÓN ════ */}
+                    {tab === 'resultado' && (
+                        cargandoResultado ? (
+                            <div className="flex items-center justify-center py-20 gap-2"
+                                style={{ color: 'var(--text-muted)' }}>
+                                <Loader2 className="w-5 h-5 animate-spin" /> Cargando resultado de liquidación...
+                            </div>
+                        ) : !resultado ? (
+                            <div className="py-12 text-center" style={{ color: 'var(--text-muted)' }}>
+                                <AlertCircle className="w-10 h-10 mx-auto mb-3 opacity-20" />
+                                <p className="text-sm">No se pudo cargar el resultado de la liquidación.</p>
+                            </div>
+                        ) : (
+                            <div className="p-5 space-y-4">
+                                {/* Resumen */}
+                                <div className="rounded-lg p-3 grid grid-cols-3 gap-3 text-sm"
+                                    style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)' }}>
+                                    <div>
+                                        <p className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+                                            Costo total liquidado
+                                        </p>
+                                        <p className="font-bold tabular-nums" style={{ color: 'var(--primary)' }}>
+                                            ${resultado.costo_total.toFixed(2)}
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <p className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+                                            Productos afectados
+                                        </p>
+                                        <p className="font-bold tabular-nums" style={{ color: 'var(--text-main)' }}>
+                                            {resultado.cantidad_productos}
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <p className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+                                            Método de prorrateo
+                                        </p>
+                                        <p className="font-bold" style={{ color: 'var(--text-main)' }}>
+                                            {resultado.metodo_prorrateo
+                                                ? (METODO_LABEL[resultado.metodo_prorrateo] ?? resultado.metodo_prorrateo)
+                                                : '—'}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {/* Tabla editable */}
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-xs">
+                                        <thead>
+                                            <tr className="border-b" style={{ borderColor: 'var(--border)' }}>
+                                                {['Producto', 'Cant.', 'Costo Anterior', 'Costo Nuevo', 'PVP', 'Margen PVP', 'PVD', 'Margen PVD'].map(h => (
+                                                    <th key={h}
+                                                        className="pb-2 pt-1 px-2 font-semibold uppercase text-[10px] tracking-wider text-left whitespace-nowrap"
+                                                        style={{ color: 'var(--text-muted)' }}>
+                                                        {h}
+                                                    </th>
+                                                ))}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {resultado.productos.map(p => {
+                                                const pvpActual  = parseFloat(precios[p.producto_id]?.pvp ?? String(p.pvp)) || 0
+                                                const pvdActual  = parseFloat(precios[p.producto_id]?.pvd ?? String(p.pvd)) || 0
+                                                const margenPvp  = calcularMargen(pvpActual, p.costo_nuevo)
+                                                const margenPvd  = calcularMargen(pvdActual, p.costo_nuevo)
+                                                return (
+                                                    <tr key={p.producto_id} className="border-b"
+                                                        style={{ borderColor: 'var(--border)' }}>
+                                                        <td className="py-2 px-2 max-w-40">
+                                                            <p className="font-mono font-bold" style={{ color: 'var(--primary)' }}>{p.codigo}</p>
+                                                            <p className="truncate" style={{ color: 'var(--text-main)' }}>{p.nombre}</p>
+                                                        </td>
+                                                        <td className="py-2 px-2 tabular-nums" style={{ color: 'var(--text-main)' }}>
+                                                            {p.cantidad % 1 === 0 ? p.cantidad.toFixed(0) : p.cantidad.toFixed(2)}
+                                                        </td>
+                                                        <td className="py-2 px-2 tabular-nums" style={{ color: 'var(--text-muted)' }}>
+                                                            {p.costo_anterior !== null ? `$${p.costo_anterior.toFixed(4)}` : '—'}
+                                                        </td>
+                                                        <td className="py-2 px-2 tabular-nums font-medium" style={{ color: 'var(--text-main)' }}>
+                                                            ${p.costo_nuevo.toFixed(4)}
+                                                        </td>
+                                                        <td className="py-2 px-2">
+                                                            <input type="number" step="0.01" min="0"
+                                                                className="input-field text-xs"
+                                                                style={{ width: '6.5rem' }}
+                                                                value={precios[p.producto_id]?.pvp ?? ''}
+                                                                onChange={e => actualizarPrecio(p.producto_id, 'pvp', e.target.value)} />
+                                                        </td>
+                                                        <td className="py-2 px-2 font-semibold tabular-nums"
+                                                            style={{ color: colorMargen(margenPvp) }}>
+                                                            {margenPvp !== null ? `${margenPvp.toFixed(1)}%` : '—'}
+                                                        </td>
+                                                        <td className="py-2 px-2">
+                                                            <input type="number" step="0.01" min="0"
+                                                                className="input-field text-xs"
+                                                                style={{ width: '6.5rem' }}
+                                                                value={precios[p.producto_id]?.pvd ?? ''}
+                                                                onChange={e => actualizarPrecio(p.producto_id, 'pvd', e.target.value)} />
+                                                        </td>
+                                                        <td className="py-2 px-2 font-semibold tabular-nums"
+                                                            style={{ color: colorMargen(margenPvd) }}>
+                                                            {margenPvd !== null ? `${margenPvd.toFixed(1)}%` : '—'}
+                                                        </td>
+                                                    </tr>
+                                                )
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <div className="flex justify-start">
+                                    <button type="button" onClick={guardarPrecios} disabled={guardandoPrecios}
+                                        className="btn-primary flex items-center gap-2 text-sm">
+                                        {guardandoPrecios
+                                            ? <Loader2 className="w-4 h-4 animate-spin" />
+                                            : <DollarSign className="w-4 h-4" />
+                                        }
+                                        Guardar cambios de precios
+                                    </button>
+                                </div>
+                            </div>
                         )
                     )}
 

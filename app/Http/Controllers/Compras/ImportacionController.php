@@ -580,4 +580,95 @@ class ImportacionController extends Controller
             ],
         ]);
     }
+
+    public function resultadoLiquidacion(Importacion $importacion): JsonResponse
+    {
+        $empresaId = session('empresa_activa_id');
+        if ($importacion->empresa_id !== $empresaId) abort(403);
+
+        if ($importacion->estado !== 'liquidada') {
+            return response()->json(['message' => 'Esta importación todavía no está liquidada.'], 422);
+        }
+
+        // costo_anterior viene del snapshot capturado justo antes de liquidar (fuente
+        // exacta, no una estimación). Si la importación se liquidó antes de que este
+        // snapshot existiera, queda en null — no se inventa un valor.
+        $costoAnteriorPorProducto = collect($importacion->snapshot_liquidacion['productos'] ?? [])
+            ->keyBy('producto_id')
+            ->map(fn($p) => (float) $p['costo_anterior']);
+
+        $cantidadPorProducto = CompraDetalle::whereHas('compra', function ($q) use ($importacion) {
+                $q->where('importacion_id', $importacion->id)->where('gasto_no_deducible', false);
+            })
+            ->whereNotNull('producto_id')
+            ->selectRaw('producto_id, SUM(cantidad) as cantidad_total')
+            ->groupBy('producto_id')
+            ->pluck('cantidad_total', 'producto_id');
+
+        $productos = Producto::whereIn('id', $cantidadPorProducto->keys())
+            ->orderBy('codigo')
+            ->get()
+            ->map(fn($p) => [
+                'producto_id'    => $p->id,
+                'codigo'         => $p->codigo,
+                'nombre'         => $p->nombre,
+                'cantidad'       => (float) $cantidadPorProducto->get($p->id, 0),
+                'costo_anterior' => $costoAnteriorPorProducto->get($p->id),
+                'costo_nuevo'    => (float) $p->costo,
+                'pvp'            => (float) $p->pvp,
+                'pvd'            => (float) $p->pvd,
+            ])
+            ->values();
+
+        return response()->json([
+            'metodo_prorrateo'   => $importacion->metodo_prorrateo,
+            'costo_total'        => (float) $importacion->costo_total,
+            'cantidad_productos' => $productos->count(),
+            'productos'          => $productos,
+        ]);
+    }
+
+    public function actualizarPreciosLote(Request $request, Importacion $importacion): JsonResponse
+    {
+        $empresaId = session('empresa_activa_id');
+        if ($importacion->empresa_id !== $empresaId) abort(403);
+
+        $request->validate([
+            'precios'              => 'required|array|min:1',
+            'precios.*.producto_id'=> 'required|integer',
+            'precios.*.pvp'        => 'required|numeric|min:0',
+            'precios.*.pvd'        => 'required|numeric|min:0',
+        ]);
+
+        // Solo se permite tocar productos que realmente pertenecen a esta importación —
+        // evita que el endpoint se use para editar precios de cualquier producto.
+        $productosValidos = CompraDetalle::whereHas('compra', function ($q) use ($importacion) {
+                $q->where('importacion_id', $importacion->id)->where('gasto_no_deducible', false);
+            })
+            ->whereNotNull('producto_id')
+            ->distinct()
+            ->pluck('producto_id');
+
+        $actualizados = 0;
+
+        DB::transaction(function () use ($request, $productosValidos, &$actualizados) {
+            foreach ($request->input('precios') as $fila) {
+                if (!$productosValidos->contains((int) $fila['producto_id'])) {
+                    continue;
+                }
+
+                Producto::where('id', $fila['producto_id'])->update([
+                    'pvp' => $fila['pvp'],
+                    'pvd' => $fila['pvd'],
+                ]);
+                $actualizados++;
+            }
+        });
+
+        return response()->json([
+            'success'      => true,
+            'actualizados' => $actualizados,
+            'message'      => "Precios actualizados en {$actualizados} producto(s).",
+        ]);
+    }
 }
