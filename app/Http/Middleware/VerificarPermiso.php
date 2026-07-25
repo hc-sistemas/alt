@@ -25,6 +25,7 @@ class VerificarPermiso
         $permitido = DB::table('permisos')
             ->join('modulos', 'modulos.id', '=', 'permisos.modulo_id')
             ->where('permisos.perfil_id', $user->perfil_id)
+            ->where('permisos.empresa_id', $request->session()->get('empresa_activa_id'))
             ->where('modulos.clave', $moduloClave)
             ->value("permisos.{$accion}");
 

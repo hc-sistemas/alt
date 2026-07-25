@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Configuracion;
 
 use App\Http\Controllers\Controller;
+use App\Models\Empresa;
 use App\Models\LimiteDescuento;
 use App\Models\Modulo;
 use App\Models\Perfil;
@@ -14,10 +15,13 @@ use Inertia\Response;
 
 class PermisoController extends Controller
 {
-    public function index(): Response
+    public function index(Request $request): Response
     {
+        $empresas = Empresa::orderBy('nombre_comercial')->get(['id', 'nombre_comercial']);
+        $empresaId = $request->integer('empresa_id') ?: $empresas->first()?->id;
+
         $perfiles = Perfil::with([
-            'permisos.modulo',
+            'permisos' => fn ($q) => $q->where('empresa_id', $empresaId)->with('modulo'),
             'limiteDescuento',
         ])->get();
 
@@ -29,6 +33,8 @@ class PermisoController extends Controller
         return Inertia::render('Configuracion/Permisos/Index', [
             'perfiles' => $perfiles,
             'modulos' => $modulos,
+            'empresas' => $empresas,
+            'empresaId' => $empresaId,
         ]);
     }
 
@@ -37,12 +43,13 @@ class PermisoController extends Controller
         $data = $request->validate([
             'perfil_id' => ['required', 'exists:perfiles,id'],
             'modulo_id' => ['required', 'exists:modulos,id'],
+            'empresa_id' => ['required', 'exists:empresas,id'],
             'accion' => ['required', 'in:ver,crear,editar,eliminar,anular'],
             'valor' => ['required', 'boolean'],
         ]);
 
         Permiso::updateOrCreate(
-            ['perfil_id' => $data['perfil_id'], 'modulo_id' => $data['modulo_id']],
+            ['perfil_id' => $data['perfil_id'], 'modulo_id' => $data['modulo_id'], 'empresa_id' => $data['empresa_id']],
             [$data['accion'] => $data['valor']]
         );
 

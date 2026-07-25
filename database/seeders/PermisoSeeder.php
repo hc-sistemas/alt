@@ -57,18 +57,22 @@ class PermisoSeeder extends Seeder
             [$tecnico, [$modulos['ventas'], $modulos['compras'], $modulos['contabilidad'], $modulos['bancos'], $modulos['rrhh'], $modulos['configuracion']], false, false, false, false, false],
         ];
 
+        $empresaIds = DB::table('empresas')->pluck('id');
+
         foreach ($permisos as [$perfilId, $moduloIds, $ver, $crear, $editar, $eliminar, $anular]) {
             foreach ($moduloIds as $moduloId) {
-                DB::table('permisos')->updateOrInsert(
-                    ['perfil_id' => $perfilId, 'modulo_id' => $moduloId],
-                    [
-                        'ver'      => $ver,
-                        'crear'    => $crear,
-                        'editar'   => $editar,
-                        'eliminar' => $eliminar,
-                        'anular'   => $anular,
-                    ]
-                );
+                foreach ($empresaIds as $empresaId) {
+                    DB::table('permisos')->updateOrInsert(
+                        ['perfil_id' => $perfilId, 'modulo_id' => $moduloId, 'empresa_id' => $empresaId],
+                        [
+                            'ver'      => $ver,
+                            'crear'    => $crear,
+                            'editar'   => $editar,
+                            'eliminar' => $eliminar,
+                            'anular'   => $anular,
+                        ]
+                    );
+                }
             }
         }
     }
