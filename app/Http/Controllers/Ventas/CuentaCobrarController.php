@@ -189,7 +189,7 @@ class CuentaCobrarController extends Controller
     public function castigo(Request $request, CuentaCobrar $cuentaCobrar)
     {
         $request->validate([
-            'codigo_aprobacion' => 'required|string',
+            'aprobacion_especial_id' => 'required|integer',
         ]);
 
         $usuario = Auth::user();
@@ -203,32 +203,76 @@ class CuentaCobrarController extends Controller
             return back()->withErrors(['error' => 'Solo el SuperAdmin puede castigar deudas.']);
         }
 
-        DB::transaction(function () use ($request, $cuentaCobrar) {
-            $cuentaCobrar->update(['estado' => 'castigada']);
+        $fv = $cuentaCobrar->fecha_vencimiento?->toDateString();
+        $hoy = now()->toDateString();
+        $diasVencido = ($fv && $fv < $hoy)
+            // abs(): ver nota en index() sobre diffInDays() firmado en Carbon 3
+            ? (int) abs(now()->startOfDay()->diffInDays($cuentaCobrar->fecha_vencimiento->startOfDay()))
+            : 0;
 
-            DB::table('aprobaciones_especiales')->insert([
-                'empresa_id'   => $cuentaCobrar->empresa_id,
-                'usuario_id'   => Auth::id(),
-                'tipo'         => 'castigar_deuda',
-                'documento_id' => $cuentaCobrar->id,
-                'referencia'   => "CXC-{$cuentaCobrar->id}",
-                'codigo'       => $request->codigo_aprobacion,
-                'created_at'   => now(),
+        if ($diasVencido <= 360) {
+            return back()->withErrors([
+                'error' => "Solo se pueden castigar cuentas con más de 360 días de vencimiento (esta tiene {$diasVencido}).",
             ]);
-        });
-
-        try {
-            $this->asiento->crear(
-                empresaId: $cuentaCobrar->empresa_id,
-                concepto:  "Castigo de cartera CXC-{$cuentaCobrar->id}",
-                partidas:  [],
-            );
-        } catch (\Throwable) {
-            // AsientoService no disponible o sin partidas — silencioso
         }
 
-        $this->auditoria->documento('castigar', 'ventas', 'cuentas_cobrar', $cuentaCobrar->id, "Castigo de deuda CXC {$cuentaCobrar->id}");
+        // Mismo esquema de aprobación especial que Facturas/Proformas (ver
+        // FacturaController::store(), caso 'descuento_excedido'): la aprobación
+        // debe existir, haber sido pedida por este mismo usuario, ser del tipo
+        // correcto, y no haberse usado todavía.
+        $aprobacion = DB::table('aprobaciones_especiales')
+            ->join('tipos_aprobacion', 'tipos_aprobacion.id', '=', 'aprobaciones_especiales.tipo_aprobacion_id')
+            ->where('aprobaciones_especiales.id', $request->input('aprobacion_especial_id'))
+            ->where('aprobaciones_especiales.solicitado_por', $usuario->id)
+            ->where('tipos_aprobacion.clave', 'castigo_cartera')
+            ->whereNull('aprobaciones_especiales.registro_id')
+            ->select('aprobaciones_especiales.id')
+            ->first();
 
-        return back()->with('flash', ['tipo' => 'exito', 'mensaje' => "Deuda CXC-{$cuentaCobrar->id} castigada."]);
+        if (!$aprobacion) {
+            return back()->withErrors(['aprobacion_especial' => 'La aprobación especial no es válida o ya fue utilizada.']);
+        }
+
+        $montoCastigado = (float) $cuentaCobrar->saldo;
+
+        $ctaGastoIncobrables = DB::table('plan_cuentas')->where('codigo', '5.2.4.01')->value('id');
+        $ctaProvisionIncobrables = DB::table('plan_cuentas')->where('codigo', '1.1.3.05')->value('id');
+
+        if (!$ctaGastoIncobrables || !$ctaProvisionIncobrables) {
+            return back()->withErrors(['error' => 'Faltan cuentas del plan de cuentas (5.2.4.01 / 1.1.3.05) para registrar el castigo.']);
+        }
+
+        DB::transaction(function () use ($cuentaCobrar, $aprobacion, $montoCastigado, $ctaGastoIncobrables, $ctaProvisionIncobrables) {
+            $cuentaCobrar->update(['estado' => 'castigada', 'saldo' => 0]);
+
+            // Marca la aprobación como consumida — mismo patrón que
+            // FacturaController::store() para 'descuento_excedido'.
+            DB::table('aprobaciones_especiales')
+                ->where('id', $aprobacion->id)
+                ->update([
+                    'tabla_referencia' => 'cuentas_cobrar',
+                    'registro_id'      => $cuentaCobrar->id,
+                    'updated_at'       => now(),
+                ]);
+
+            $asiento = $this->asiento->crear(
+                empresaId: $cuentaCobrar->empresa_id,
+                concepto:  "Castigo de cartera CXC-{$cuentaCobrar->id}",
+                partidas:  [
+                    ['cuenta_id' => $ctaGastoIncobrables,     'debe' => $montoCastigado, 'haber' => 0, 'descripcion' => "Castigo de cartera CXC-{$cuentaCobrar->id}"],
+                    ['cuenta_id' => $ctaProvisionIncobrables, 'debe' => 0, 'haber' => $montoCastigado, 'descripcion' => "Castigo de cartera CXC-{$cuentaCobrar->id}"],
+                ],
+                documentoTipo: 'CXC',
+                documentoId:   $cuentaCobrar->id,
+                documentoRef:  "CXC-{$cuentaCobrar->id}",
+                esAutomatico:  true,
+            );
+
+            $cuentaCobrar->update(['asiento_cobro_id' => $asiento->id]);
+        });
+
+        $this->auditoria->documento('castigar', 'ventas', 'cuentas_cobrar', $cuentaCobrar->id, "Castigo de deuda CXC {$cuentaCobrar->id} por \${$montoCastigado}");
+
+        return back()->with('flash', ['tipo' => 'exito', 'mensaje' => "Deuda CXC-{$cuentaCobrar->id} castigada por \${$montoCastigado}."]);
     }
 }

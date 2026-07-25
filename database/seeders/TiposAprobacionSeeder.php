@@ -27,6 +27,7 @@ class TiposAprobacionSeeder extends Seeder
             ['clave' => 'descuento_compra', 'nombre' => 'Descuento en Compra', 'descripcion' => 'Descuento adicional en orden de compra', 'activo' => true],
             ['clave' => 'egreso_caja_mayor', 'nombre' => 'Egreso de Caja Mayor', 'descripcion' => 'Egreso de caja mayor al límite autorizado', 'activo' => true],
             ['clave' => 'reactivacion_ot', 'nombre' => 'Reactivación de OT', 'descripcion' => 'Reactivación de orden de trabajo cerrada', 'activo' => true],
+            ['clave' => 'castigo_cartera', 'nombre' => 'Castigo de Cartera', 'descripcion' => 'Castigo de cuenta por cobrar incobrable (>360 días de vencimiento)', 'activo' => true],
         ];
 
         foreach ($tipos as $tipo) {

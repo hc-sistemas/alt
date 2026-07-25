@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Head, usePage, router, Link } from '@inertiajs/react'
 import Swal from 'sweetalert2'
+import axios from '@/lib/axios'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
 import { Button } from '@/Components/ui/button'
@@ -141,27 +142,45 @@ export default function Index() {
     const handleCastigar = async (cuenta: CxCItem) => {
         const result = await Swal.fire({
             title: 'Castigar deuda',
-            text: `¿Desea castigar la deuda de ${cuenta.cliente_razon} (${formatMoneda(cuenta.saldo)})?`,
+            text: `¿Desea castigar la deuda de ${cuenta.cliente_razon} (${formatMoneda(cuenta.saldo)})? Requiere una aprobación especial de SuperAdmin.`,
             icon: 'warning',
             input: 'password',
             inputLabel: 'Código de aprobación (SuperAdmin)',
             inputPlaceholder: '••••••••',
             showCancelButton: true,
-            confirmButtonText: 'Castigar',
+            confirmButtonText: 'Validar y castigar',
             cancelButtonText: 'Cancelar',
             confirmButtonColor: '#1e293b',
             inputValidator: v => !v ? 'Ingrese el código de aprobación' : undefined,
         })
         if (!result.isConfirmed || !result.value) return
-        router.post(
-            route('ventas.cxc.castigar', cuenta.id),
-            { codigo_aprobacion: result.value as string },
-            { preserveState: true }
-        )
+
+        try {
+            // Paso 1: validar el código contra un aprobador real (mismo flujo que
+            // Facturas/Proformas para descuento_excedido — ver AprobacionController).
+            const { data } = await axios.post<{ valido: boolean; aprobacion_id?: number; mensaje?: string }>(
+                route('ventas.aprobacion.validar'),
+                { tipo: 'castigo_cartera', codigo: result.value as string },
+            )
+
+            if (!data.valido || !data.aprobacion_id) {
+                void Swal.fire('Código incorrecto', data.mensaje ?? 'La aprobación no es válida.', 'error')
+                return
+            }
+
+            // Paso 2: consumir la aprobación ya validada y ejecutar el castigo.
+            router.patch(
+                route('ventas.cxc.castigo', cuenta.id),
+                { aprobacion_especial_id: data.aprobacion_id },
+                { preserveState: true }
+            )
+        } catch {
+            void Swal.fire('Error', 'No se pudo validar el código de aprobación.', 'error')
+        }
     }
 
     const hayFiltros = Object.values(filtro).some(v => v !== '')
-    const esSuperAdmin = auth.user?.perfil === 'Super Admin'
+    const esSuperAdmin = auth.user?.perfil === 'super_admin'
 
     return (
         <AppLayout>
