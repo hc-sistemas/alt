@@ -7,11 +7,10 @@ use Illuminate\Notifications\Notifiable;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Spatie\Permission\Traits\HasRoles;
 
 class Usuario extends Authenticatable
 {
-    use Notifiable, HasRoles;
+    use Notifiable;
 
     protected $table = 'usuarios';
 
