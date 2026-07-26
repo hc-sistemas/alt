@@ -10,6 +10,7 @@ import {
     Plus, Pencil, ToggleLeft, ToggleRight, X, Trash2,
     Landmark, Wallet, CreditCard, PiggyBank, TrendingUp, Search,
 } from 'lucide-react'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { BancoCaja, PlanCuenta, PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
 
@@ -72,11 +73,13 @@ function StatCard({ label, value, icon: Icon, cls, valueCls }: {
 
 // ─── BancoCajaCard ────────────────────────────────────────────────────────────
 
-function BancoCard({ banco, onEdit, onToggle, onDelete }: {
+function BancoCard({ banco, onEdit, onToggle, onDelete, puedeEditar, puedeEliminar: puedeEliminarPermiso }: {
     banco: BancoCaja & { cuenta: string | null }
     onEdit: () => void
     onToggle: () => void
     onDelete: () => void
+    puedeEditar: boolean
+    puedeEliminar: boolean
 }) {
     const Icon = tipoIcon[banco.tipo] ?? Landmark
     const saldoCero = Math.abs(Number(banco.saldo_actual)) <= 0.01
@@ -97,27 +100,33 @@ function BancoCard({ banco, onEdit, onToggle, onDelete }: {
                     </div>
                 </div>
                 <div className="flex gap-1">
-                    <button onClick={onEdit} title="Editar"
-                        className="p-1.5 rounded hover:bg-blue-500/20 text-blue-500 transition-colors">
-                        <Pencil className="w-3.5 h-3.5" />
-                    </button>
-                    <button onClick={onToggle} title={banco.estado ? 'Desactivar' : 'Activar'}
-                        className={cn('p-1.5 rounded transition-colors',
-                            banco.estado ? 'hover:bg-red-500/20 text-red-500' : 'hover:bg-green-500/20 text-green-600')}>
-                        {banco.estado ? <ToggleRight className="w-3.5 h-3.5" /> : <ToggleLeft className="w-3.5 h-3.5" />}
-                    </button>
-                    <button
-                        onClick={saldoCero ? onDelete : undefined}
-                        title={saldoCero ? 'Eliminar permanentemente' : `Tiene saldo de ${fmt(banco.saldo_actual)}. Solo puedes inactivarlo`}
-                        disabled={!saldoCero}
-                        className={cn(
-                            'p-1.5 rounded transition-colors',
-                            saldoCero
-                                ? 'hover:bg-red-500/20 text-red-400 cursor-pointer'
-                                : 'opacity-25 cursor-not-allowed text-gray-400'
-                        )}>
-                        <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    {puedeEditar && (
+                        <button onClick={onEdit} title="Editar"
+                            className="p-1.5 rounded hover:bg-blue-500/20 text-blue-500 transition-colors">
+                            <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                    )}
+                    {puedeEditar && (
+                        <button onClick={onToggle} title={banco.estado ? 'Desactivar' : 'Activar'}
+                            className={cn('p-1.5 rounded transition-colors',
+                                banco.estado ? 'hover:bg-red-500/20 text-red-500' : 'hover:bg-green-500/20 text-green-600')}>
+                            {banco.estado ? <ToggleRight className="w-3.5 h-3.5" /> : <ToggleLeft className="w-3.5 h-3.5" />}
+                        </button>
+                    )}
+                    {puedeEliminarPermiso && (
+                        <button
+                            onClick={saldoCero ? onDelete : undefined}
+                            title={saldoCero ? 'Eliminar permanentemente' : `Tiene saldo de ${fmt(banco.saldo_actual)}. Solo puedes inactivarlo`}
+                            disabled={!saldoCero}
+                            className={cn(
+                                'p-1.5 rounded transition-colors',
+                                saldoCero
+                                    ? 'hover:bg-red-500/20 text-red-400 cursor-pointer'
+                                    : 'opacity-25 cursor-not-allowed text-gray-400'
+                            )}>
+                            <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -418,6 +427,7 @@ function BancoModal({ banco, cuentas, onClose }: ModalProps) {
 
 export default function BancosCajasIndex() {
     const { bancos, cuentas, stats, flash } = usePage<Props>().props
+    const { puede } = usePermiso('bancos')
     const [modal, setModal] = useState<{ open: boolean; banco?: Props['bancos'][0] }>({ open: false })
 
 
@@ -501,22 +511,23 @@ export default function BancosCajasIndex() {
             <Head title="Bancos y Cajas" />
 
             <div className="px-6 pt-6 mb-2">
-                <div className="flex items-center gap-3 mb-4">
-                    <div className="p-2 rounded-xl" style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
-                        <Landmark size={24} style={{ color: 'var(--primary)' }} />
+                <div className="flex items-center justify-between gap-3 mb-4">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-xl" style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
+                            <Landmark size={24} style={{ color: 'var(--primary)' }} />
+                        </div>
+                        <div>
+                            <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>Bancos y Cajas</h1>
+                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Catálogo de cuentas bancarias y cajas</p>
+                        </div>
                     </div>
-                    <div>
-                        <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>Bancos y Cajas</h1>
-                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Catálogo de cuentas bancarias y cajas</p>
-                    </div>
-                </div>
-                <div className="flex items-center gap-2 flex-wrap mb-6">
-                    <button onClick={() => setModal({ open: true })}
-                        className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5"
-                        style={{ background: 'var(--primary)' }}>
-                        <Plus size={15} /> Nuevo Banco/Caja
-                    </button>
-
+                    {puede('crear') && (
+                        <button onClick={() => setModal({ open: true })}
+                            className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5 shrink-0"
+                            style={{ background: 'var(--primary)' }}>
+                            <Plus size={15} /> Nuevo
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -550,7 +561,9 @@ export default function BancosCajasIndex() {
                                     <BancoCard key={b.id} banco={b}
                                         onEdit={() => setModal({ open: true, banco: b })}
                                         onToggle={() => confirmarToggle(b)}
-                                        onDelete={() => confirmarEliminar(b)} />
+                                        onDelete={() => confirmarEliminar(b)}
+                                        puedeEditar={puede('editar')}
+                                        puedeEliminar={puede('eliminar')} />
                                 ))}
                             </div>
                         </div>

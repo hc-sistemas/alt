@@ -13,6 +13,7 @@ import {
     FileText, Download, Users, ShoppingCart,
 } from 'lucide-react'
 import type { Proveedor, PageProps } from '@/types'
+import { usePermiso } from '@/Hooks/usePermiso'
 import 'react-toastify/dist/ReactToastify.css'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -299,6 +300,7 @@ function ProveedorModal({ proveedor, onClose }: ModalProps) {
 
 export default function ProveedoresIndex() {
     const { proveedores, flash } = usePage<Props>().props
+    const { puede } = usePermiso('compras')
 
     const [busqueda, setBusqueda] = useState('')
     const [modal, setModal] = useState<{ open: boolean; proveedor?: Proveedor }>({ open: false })
@@ -358,34 +360,35 @@ export default function ProveedoresIndex() {
             <Head title="Proveedores" />
 
             <div className="px-6 pt-6 mb-2">
-                <div className="flex items-center gap-3 mb-4">
-                    <div className="p-2 rounded-xl"
-                         style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
-                        <Users size={24} style={{ color: 'var(--primary)' }} />
+                <div className="flex items-center justify-between gap-3 mb-4">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-xl"
+                             style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
+                            <Users size={24} style={{ color: 'var(--primary)' }} />
+                        </div>
+                        <div>
+                            <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>
+                                Proveedores
+                            </h1>
+                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                                Gestión de proveedores nacionales e internacionales
+                            </p>
+                        </div>
                     </div>
-                    <div>
-                        <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>
-                            Proveedores
-                        </h1>
-                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                            Gestión de proveedores nacionales e internacionales
-                        </p>
-                    </div>
+                    {puede('crear') && (
+                        <button onClick={() => setModal({ open: true })} className="btn-primary flex items-center gap-2 whitespace-nowrap shrink-0">
+                            <Plus size={15} /> Nuevo Proveedor
+                        </button>
+                    )}
                 </div>
                 {/* Toolbar */}
                 <div className="flex items-center justify-between gap-3 mb-6">
-                    <div className="flex items-center gap-2">
-                        <button onClick={() => setModal({ open: true })} className="btn-primary flex items-center gap-2 whitespace-nowrap">
-                            <Plus size={15} /> Nuevo Proveedor
-                        </button>
-
-                        <div className="input-with-icon">
-                            <Search size={14} className="input-icon" />
-                            <input type="text" value={busqueda}
-                                onChange={e => setBusqueda(e.target.value)}
-                                placeholder="Buscar por nombre, RUC, email…"
-                                className="input-field w-52" />
-                        </div>
+                    <div className="input-with-icon">
+                        <Search size={14} className="input-icon" />
+                        <input type="text" value={busqueda}
+                            onChange={e => setBusqueda(e.target.value)}
+                            placeholder="Buscar por nombre, RUC, email…"
+                            className="input-field w-52" />
                     </div>
 
                     <div className="flex items-center gap-2">
@@ -477,24 +480,28 @@ export default function ProveedoresIndex() {
                                 }
                             </div>
                             <div className="col-span-1 flex justify-end gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button onClick={() => setModal({ open: true, proveedor: p })}
-                                    title="Editar"
-                                    className="p-1.5 rounded hover:bg-blue-500/20 text-blue-500 dark:text-blue-400 transition-colors">
-                                    <Pencil className="w-3.5 h-3.5" />
-                                </button>
-                                <button onClick={() => confirmarToggle(p)}
-                                    title={p.estado ? 'Desactivar' : 'Activar'}
-                                    className={cn(
-                                        'p-1.5 rounded transition-colors',
-                                        p.estado
-                                            ? 'hover:bg-red-500/20 text-red-500 dark:text-red-400'
-                                            : 'hover:bg-green-500/20 text-green-600 dark:text-green-400'
-                                    )}>
-                                    {p.estado
-                                        ? <ToggleRight className="w-3.5 h-3.5" />
-                                        : <ToggleLeft className="w-3.5 h-3.5" />
-                                    }
-                                </button>
+                                {puede('editar') && (
+                                    <button onClick={() => setModal({ open: true, proveedor: p })}
+                                        title="Editar"
+                                        className="p-1.5 rounded hover:bg-blue-500/20 text-blue-500 dark:text-blue-400 transition-colors">
+                                        <Pencil className="w-3.5 h-3.5" />
+                                    </button>
+                                )}
+                                {puede('editar') && (
+                                    <button onClick={() => confirmarToggle(p)}
+                                        title={p.estado ? 'Desactivar' : 'Activar'}
+                                        className={cn(
+                                            'p-1.5 rounded transition-colors',
+                                            p.estado
+                                                ? 'hover:bg-red-500/20 text-red-500 dark:text-red-400'
+                                                : 'hover:bg-green-500/20 text-green-600 dark:text-green-400'
+                                        )}>
+                                        {p.estado
+                                            ? <ToggleRight className="w-3.5 h-3.5" />
+                                            : <ToggleLeft className="w-3.5 h-3.5" />
+                                        }
+                                    </button>
+                                )}
                             </div>
                         </div>
                     ))}

@@ -15,6 +15,7 @@ import {
     Barcode, CheckCircle, XCircle, RefreshCw, Upload,
 } from 'lucide-react'
 import type { Compra, Importacion, Proveedor, CentroCosto, PlanCuenta, Bodega, PageProps, PaginatedData, Producto, EtiquetaDetalleData, EtiquetaGrupoProducto } from '@/types'
+import { usePermiso } from '@/Hooks/usePermiso'
 import 'react-toastify/dist/ReactToastify.css'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -1739,6 +1740,7 @@ function ReimprimirEtiquetasModal({ compra, onClose, abrirPdf }: ReimprimirEtiqu
 
 export default function ComprasIndex() {
     const { compras, proveedores, centros, cuentas, bodegas, productos, importacionesActivas, filtros, flash, prefillExterior } = usePage<Props>().props
+    const { puede } = usePermiso('compras')
 
     // Estado local de filas — permite actualizar una fila sin recargar la página
     const [comprasData, setComprasData] = useState(compras.data)
@@ -1924,31 +1926,39 @@ export default function ComprasIndex() {
             <Head title="Facturas de Compra" />
 
             <div className="px-6 pt-6 mb-2">
-                <div className="flex items-center gap-3 mb-4">
-                    <div className="p-2 rounded-xl"
-                         style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
-                        <ShoppingCart size={24} style={{ color: 'var(--primary)' }} />
+                <div className="flex items-center justify-between gap-3 mb-4">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-xl"
+                             style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
+                            <ShoppingCart size={24} style={{ color: 'var(--primary)' }} />
+                        </div>
+                        <div>
+                            <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>
+                                Facturas de Compra
+                            </h1>
+                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                                Registro y gestión de facturas, liquidaciones y documentos de compra
+                            </p>
+                        </div>
                     </div>
-                    <div>
-                        <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>
-                            Facturas de Compra
-                        </h1>
-                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                            Registro y gestión de facturas, liquidaciones y documentos de compra
-                        </p>
+                    <div className="flex items-center gap-2 shrink-0">
+                        {puede('crear') && (
+                            <button onClick={() => setModal({ type: 'nueva' })} className="btn-primary flex items-center gap-2 whitespace-nowrap">
+                                <Plus size={15} /> Nueva Factura
+                            </button>
+                        )}
+                        {puede('crear') && (
+                            <button onClick={() => setModalXml(true)}
+                                className="btn-primary flex items-center gap-2 whitespace-nowrap"
+                                style={{ background: '#0891b2' }}>
+                                <Upload size={15} /> Cargar XML SRI
+                            </button>
+                        )}
                     </div>
                 </div>
                 {/* Toolbar */}
                 <div className="flex items-center justify-between gap-3 mb-6">
                     <div className="flex items-center gap-2 flex-wrap">
-                        <button onClick={() => setModal({ type: 'nueva' })} className="btn-primary flex items-center gap-2 whitespace-nowrap">
-                            <Plus size={15} /> Nueva Factura de Compra
-                        </button>
-                        <button onClick={() => setModalXml(true)}
-                            className="btn-primary flex items-center gap-2 whitespace-nowrap"
-                            style={{ background: '#0891b2' }}>
-                            <Upload size={15} /> Cargar XML SRI
-                        </button>
 
                         <div className="input-with-icon">
                             <Search size={14} className="input-icon" />
@@ -2105,23 +2115,27 @@ export default function ComprasIndex() {
                                                 )}
                                             </>
                                         )}
-                                        <button
-                                            onClick={() => confirmarRecepcion(c)}
-                                            title="Confirmar recepción manual"
-                                            className="h-7 w-7 flex items-center justify-center rounded hover:bg-green-500/20 text-green-600 dark:text-green-400 transition-colors">
-                                            <CheckCircle className="w-4 h-4" />
-                                        </button>
+                                        {puede('editar') && (
+                                            <button
+                                                onClick={() => confirmarRecepcion(c)}
+                                                title="Confirmar recepción manual"
+                                                className="h-7 w-7 flex items-center justify-center rounded hover:bg-green-500/20 text-green-600 dark:text-green-400 transition-colors">
+                                                <CheckCircle className="w-4 h-4" />
+                                            </button>
+                                        )}
                                         <Link href={route('compras.facturas.show', c.id)}
                                             title="Ver detalle"
                                             className="h-7 w-7 flex items-center justify-center rounded hover:bg-blue-500/20 text-blue-500 dark:text-blue-400 transition-colors">
                                             <Eye className="w-4 h-4" />
                                         </Link>
-                                        <button
-                                            onClick={() => iniciarAnulacion(c)}
-                                            title="Anular compra"
-                                            className="h-7 w-7 flex items-center justify-center rounded hover:bg-red-500/20 text-red-500 dark:text-red-400 transition-colors">
-                                            <XCircle className="w-4 h-4" />
-                                        </button>
+                                        {puede('anular') && (
+                                            <button
+                                                onClick={() => iniciarAnulacion(c)}
+                                                title="Anular compra"
+                                                className="h-7 w-7 flex items-center justify-center rounded hover:bg-red-500/20 text-red-500 dark:text-red-400 transition-colors">
+                                                <XCircle className="w-4 h-4" />
+                                            </button>
+                                        )}
                                     </>
                                 )}
                                 {c.estado === 'activa' && (
@@ -2140,7 +2154,7 @@ export default function ComprasIndex() {
                                             className="h-7 w-7 flex items-center justify-center rounded hover:bg-blue-500/20 text-blue-500 dark:text-blue-400 transition-colors">
                                             <Eye className="w-4 h-4" />
                                         </Link>
-                                        {c.tiene_pago && (
+                                        {c.tiene_pago && puede('anular') && (
                                             <button
                                                 onClick={() => anularPago(c)}
                                                 title="Anular pago registrado"
@@ -2149,15 +2163,17 @@ export default function ComprasIndex() {
                                                 <CreditCard className="w-4 h-4" />
                                             </button>
                                         )}
-                                        <button
-                                            onClick={() => !c.tiene_pago && iniciarAnulacion(c)}
-                                            disabled={c.tiene_pago}
-                                            title={c.tiene_pago
-                                                ? 'Factura con pago registrado — anula el pago primero (candado CxP-02)'
-                                                : 'Anular factura'}
-                                            className="h-7 w-7 flex items-center justify-center rounded hover:bg-red-500/20 text-red-500 dark:text-red-400 transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent">
-                                            <XCircle className="w-4 h-4" />
-                                        </button>
+                                        {puede('anular') && (
+                                            <button
+                                                onClick={() => !c.tiene_pago && iniciarAnulacion(c)}
+                                                disabled={c.tiene_pago}
+                                                title={c.tiene_pago
+                                                    ? 'Factura con pago registrado — anula el pago primero (candado CxP-02)'
+                                                    : 'Anular factura'}
+                                                className="h-7 w-7 flex items-center justify-center rounded hover:bg-red-500/20 text-red-500 dark:text-red-400 transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent">
+                                                <XCircle className="w-4 h-4" />
+                                            </button>
+                                        )}
                                     </>
                                 )}
                                 {c.estado === 'anulada' && (

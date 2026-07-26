@@ -9,6 +9,7 @@ import { Button } from '@/Components/ui/button'
 import { cn } from '@/lib/utils'
 import { DollarSign, Search, X, FileText, Download, CreditCard, XCircle } from 'lucide-react'
 import type { PageProps, Proveedor, BancoCaja } from '@/types'
+import { usePermiso } from '@/Hooks/usePermiso'
 import 'react-toastify/dist/ReactToastify.css'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -232,6 +233,7 @@ function ModalPago({ cxp, bancos, onClose }: {
 
 export default function CuentasPagarIndex() {
     const { cxp, proveedores, bancos, filtros, flash } = usePage<Props>().props
+    const { puede } = usePermiso('compras')
 
     const [buscar,      setBuscar]      = useState('')
     const [estado,      setEstado]      = useState(filtros.estado ?? '')
@@ -579,7 +581,7 @@ export default function CuentasPagarIndex() {
                             </div>
                             {/* Acciones: Pagar + Anular (ocultas si la compra ya fue anulada) */}
                             <div className="col-span-1 flex justify-center items-center gap-1">
-                                {!c.compra_anulada && c.estado !== 'pagada' && bancos.length > 0 && (
+                                {!c.compra_anulada && c.estado !== 'pagada' && bancos.length > 0 && puede('editar') && (
                                     <button
                                         onClick={() => setModalPago(c)}
                                         title="Registrar pago"
@@ -587,7 +589,7 @@ export default function CuentasPagarIndex() {
                                         <CreditCard className="w-4 h-4" />
                                     </button>
                                 )}
-                                {!c.compra_anulada && c.compra_id !== null && (
+                                {!c.compra_anulada && c.compra_id !== null && puede('anular') && (
                                     <button
                                         onClick={() => iniciarAnulacion(c)}
                                         title="Anular compra asociada"

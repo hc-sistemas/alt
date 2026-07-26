@@ -7,6 +7,7 @@ import {
     Plus, X, CheckCircle, XCircle,
     CreditCard
 } from 'lucide-react'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { BancoCaja, PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
 
@@ -323,6 +324,7 @@ function CambioEstadoModal({ cheque, estadoNuevo, onClose }: {
 
 export default function ChequesIndex() {
     const { cheques, bancos, filtros, flash } = usePage<Props>().props
+    const { puede } = usePermiso('bancos')
 
     const [showModal, setShowModal] = useState(false)
     const [estadoModal, setEstadoModal] = useState<{ cheque: Cheque; estado: 'cobrado' | 'protestado' } | null>(null)
@@ -363,27 +365,31 @@ export default function ChequesIndex() {
                  style={{ background: 'var(--bg-main)', minHeight: '100vh' }}>
 
                 {/* Header */}
-                <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-xl"
-                         style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
-                        <CreditCard size={24} style={{ color: 'var(--primary)' }} />
+                <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-xl"
+                             style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
+                            <CreditCard size={24} style={{ color: 'var(--primary)' }} />
+                        </div>
+                        <div>
+                            <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>
+                                Cheques
+                            </h1>
+                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                                {filtrados.length} de {cheques.length} cheques
+                            </p>
+                        </div>
                     </div>
-                    <div>
-                        <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>
-                            Cheques
-                        </h1>
-                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                            {filtrados.length} de {cheques.length} cheques
-                        </p>
-                    </div>
+                    {puede('crear') && (
+                        <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-2 whitespace-nowrap shrink-0">
+                            <Plus className="w-4 h-4" /> Nuevo
+                        </button>
+                    )}
                 </div>
 
                 {/* Toolbar */}
                 <div className="flex items-center justify-between gap-3">
                     <div className="flex flex-wrap gap-2 items-center">
-                        <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-2 whitespace-nowrap">
-                            <Plus className="w-4 h-4" /> Nuevo Cheque
-                        </button>
                         <div className="relative">
                             <input type="text" placeholder="Buscar N°, beneficiario..."
                                 value={buscar} onChange={e => setBuscar(e.target.value)}
@@ -496,7 +502,7 @@ export default function ChequesIndex() {
                                     <EstadoBadge estado={cheque.estado} />
                                 </div>
                                 <div className="flex items-center gap-1">
-                                    {cheque.estado === 'emitido' && (
+                                    {cheque.estado === 'emitido' && puede('editar') && (
                                         <>
                                             <button
                                                 onClick={() => abrirCambioEstado(cheque, 'cobrado')}

@@ -6,6 +6,7 @@ import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
 import { Plus, X, CreditCard, CheckCircle } from 'lucide-react'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { BancoCaja, DatafastLote, PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
 
@@ -218,6 +219,7 @@ function LiquidarModal({ lote, bancos, onClose }: { lote: LoteRow; bancos: Props
 
 export default function DatafastIndex() {
     const { lotes, bancos, filtros, flash } = usePage<Props>().props
+    const { puede } = usePermiso('bancos')
     const [showLote, setShowLote] = useState(false)
     const [liquidarLote, setLiquidarLote] = useState<LoteRow | null>(null)
     const [bancoId,    setBancoId]    = useState(filtros.banco_caja_id ?? '')
@@ -256,22 +258,25 @@ export default function DatafastIndex() {
             <Head title="Datafast" />
 
             <div className="px-6 pt-6 mb-2">
-                <div className="flex items-center gap-3 mb-4">
-                    <div className="p-2 rounded-xl" style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
-                        <CreditCard size={24} style={{ color: 'var(--primary)' }} />
+                <div className="flex items-center justify-between gap-3 mb-4">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-xl" style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
+                            <CreditCard size={24} style={{ color: 'var(--primary)' }} />
+                        </div>
+                        <div>
+                            <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>Datafast</h1>
+                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Lotes de vouchers y liquidaciones</p>
+                        </div>
                     </div>
-                    <div>
-                        <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>Datafast</h1>
-                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Lotes de vouchers y liquidaciones</p>
-                    </div>
+                    {puede('crear') && (
+                        <button onClick={() => setShowLote(true)}
+                            className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5 shrink-0"
+                            style={{ background: 'var(--primary)' }}>
+                            <Plus size={15} /> Nuevo Lote
+                        </button>
+                    )}
                 </div>
                 <div className="flex items-center gap-2 flex-wrap mb-6">
-                    <button onClick={() => setShowLote(true)}
-                        className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5"
-                        style={{ background: 'var(--primary)' }}>
-                        <Plus size={15} /> Nuevo Lote
-                    </button>
-
                     <input type="text" placeholder="Buscar N° lote..."
                         value={buscar} onChange={e => setBuscar(e.target.value)}
                         onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
@@ -364,7 +369,7 @@ export default function DatafastIndex() {
                                 }
                             </div>
                             <div className="col-span-2 flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                                {l.estado === 'pendiente' && (
+                                {l.estado === 'pendiente' && puede('editar') && (
                                     <button onClick={() => setLiquidarLote(l)}
                                         className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium text-white"
                                         style={{ background: 'var(--primary)' }}>

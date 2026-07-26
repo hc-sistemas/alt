@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import type { PageProps, Proveedor, BancoCaja } from '@/types'
 import { notify, formatMoney, swalBase, injectSwalStyles } from '@/utils/contabilidad'
+import { usePermiso } from '@/Hooks/usePermiso'
 import 'react-toastify/dist/ReactToastify.css'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -328,6 +329,7 @@ function ModalCruzar({ anticipo, onClose }: {
 
 export default function AnticiposIndex() {
     const { anticipos, proveedores, importaciones, bancos, filtros, flash } = usePage<Props>().props
+    const { puede } = usePermiso('compras')
 
     const [buscar,      setBuscar]      = useState(filtros.buscar       ?? '')
     const [estado,      setEstado]      = useState(filtros.estado       ?? '')
@@ -415,28 +417,31 @@ export default function AnticiposIndex() {
 
             <div className="px-6 pt-6 mb-2">
                 {/* Header */}
-                <div className="flex items-center gap-3 mb-4">
-                    <div className="p-2 rounded-xl"
-                         style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
-                        <CreditCard size={24} style={{ color: 'var(--primary)' }} />
+                <div className="flex items-center justify-between gap-3 mb-4">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-xl"
+                             style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
+                            <CreditCard size={24} style={{ color: 'var(--primary)' }} />
+                        </div>
+                        <div>
+                            <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>
+                                Anticipos a Proveedores
+                            </h1>
+                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                                Pagos adelantados antes de recibir la factura formal
+                            </p>
+                        </div>
                     </div>
-                    <div>
-                        <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>
-                            Anticipos a Proveedores
-                        </h1>
-                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                            Pagos adelantados antes de recibir la factura formal
-                        </p>
-                    </div>
+                    {puede('crear') && (
+                        <button onClick={() => setModalNuevo(true)} className="btn-primary flex items-center gap-2 whitespace-nowrap shrink-0">
+                            <Plus size={15} /> Nuevo Anticipo
+                        </button>
+                    )}
                 </div>
 
                 {/* Toolbar */}
                 <div className="flex items-center justify-between gap-3 mb-6">
                     <div className="flex items-center gap-2 flex-wrap">
-                        <button onClick={() => setModalNuevo(true)} className="btn-primary flex items-center gap-2 whitespace-nowrap">
-                            <Plus size={15} /> Nuevo Anticipo
-                        </button>
-
                         <div className="input-with-icon">
                             <Search size={14} className="input-icon" />
                             <input type="text" value={buscar}
@@ -558,16 +563,20 @@ export default function AnticiposIndex() {
                             <div className="col-span-1 flex justify-center gap-1">
                                 {a.estado === 'pendiente' && (
                                     <>
-                                        <button onClick={() => setCruzarActivo(a)}
-                                            title="Cruzar con factura"
-                                            className="p-1.5 rounded-lg hover:bg-blue-500/20 text-blue-500 transition-colors">
-                                            <ArrowLeftRight className="w-3.5 h-3.5" />
-                                        </button>
-                                        <button onClick={() => confirmarAnulacion(a)}
-                                            title="Anular anticipo"
-                                            className="p-1.5 rounded-lg hover:bg-red-500/20 text-red-500 transition-colors">
-                                            <X className="w-3.5 h-3.5" />
-                                        </button>
+                                        {puede('editar') && (
+                                            <button onClick={() => setCruzarActivo(a)}
+                                                title="Cruzar con factura"
+                                                className="p-1.5 rounded-lg hover:bg-blue-500/20 text-blue-500 transition-colors">
+                                                <ArrowLeftRight className="w-3.5 h-3.5" />
+                                            </button>
+                                        )}
+                                        {puede('anular') && (
+                                            <button onClick={() => confirmarAnulacion(a)}
+                                                title="Anular anticipo"
+                                                className="p-1.5 rounded-lg hover:bg-red-500/20 text-red-500 transition-colors">
+                                                <X className="w-3.5 h-3.5" />
+                                            </button>
+                                        )}
                                     </>
                                 )}
                             </div>

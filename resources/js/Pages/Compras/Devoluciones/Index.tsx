@@ -6,6 +6,7 @@ import {
     RotateCcw, Plus, Search, X, CheckCircle, XCircle, Clock, PackageX,
 } from 'lucide-react'
 import type { PageProps } from '@/types'
+import { usePermiso } from '@/Hooks/usePermiso'
 import 'react-toastify/dist/ReactToastify.css'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -371,6 +372,7 @@ function NuevaDevolucionModal({ proveedores, compras, onClose }: {
 
 export default function DevolucionesIndex() {
     const { devoluciones, proveedores, compras, filtros, flash } = usePage<Props>().props
+    const { puede } = usePermiso('compras')
 
     const [showModal, setShowModal] = useState(false)
     const [buscar, setBuscar]         = useState('')
@@ -423,29 +425,32 @@ export default function DevolucionesIndex() {
             <div className="p-4 md:p-6 space-y-5" style={{ background: 'var(--bg-main)', minHeight: '100vh' }}>
 
                 {/* Header */}
-                <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-xl"
-                        style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
-                        <RotateCcw size={24} style={{ color: 'var(--primary)' }} />
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-xl"
+                            style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
+                            <RotateCcw size={24} style={{ color: 'var(--primary)' }} />
+                        </div>
+                        <div>
+                            <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>
+                                Devoluciones de Compra
+                            </h1>
+                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                                {filtradas.length} devolución(es)
+                            </p>
+                        </div>
                     </div>
-                    <div>
-                        <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>
-                            Devoluciones de Compra
-                        </h1>
-                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                            {filtradas.length} devolución(es)
-                        </p>
-                    </div>
+                    {puede('crear') && (
+                        <button onClick={() => setShowModal(true)}
+                            className="btn-primary flex items-center gap-2 whitespace-nowrap shrink-0">
+                            <Plus size={15} /> Nueva Devolución
+                        </button>
+                    )}
                 </div>
 
                 {/* Toolbar */}
                 <div className="flex items-center justify-between gap-3 flex-wrap">
                     <div className="flex flex-wrap items-center gap-2">
-                        <button onClick={() => setShowModal(true)}
-                            className="btn-primary flex items-center gap-2 whitespace-nowrap">
-                            <Plus size={15} /> Nueva Devolución
-                        </button>
-
                         <div className="relative">
                             <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none"
                                 style={{ color: 'var(--text-muted)' }} />
@@ -541,7 +546,7 @@ export default function DevolucionesIndex() {
                             </p>
                             <EstadoBadge estado={dev.estado} />
                             <div>
-                                {dev.estado !== 'anulada' && (
+                                {dev.estado !== 'anulada' && puede('anular') && (
                                     <button onClick={() => confirmarAnular(dev)}
                                         title="Anular devolución"
                                         className="p-1.5 rounded-lg transition-colors hover:bg-red-100 dark:hover:bg-red-900/30">

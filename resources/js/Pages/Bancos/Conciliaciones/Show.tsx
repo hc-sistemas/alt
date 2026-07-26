@@ -9,6 +9,7 @@ import {
     ChevronLeft, CheckCircle, AlertTriangle, GitMerge,
     Upload, ArrowLeftRight, PlusCircle, Lock, Trash2, FilePlus2, X,
 } from 'lucide-react'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
 
@@ -302,6 +303,7 @@ function GenerarAsientoPartidaModal({
 
 export default function ConciliacionShow() {
     const { conciliacion, partidas_sistema, partidas_banco, resumen, flash, cuentas, cuenta_comision_sugerida_id } = usePage<Props>().props
+    const { puede } = usePermiso('bancos')
     const tieneDif   = Math.abs(Number(conciliacion.diferencia)) > 0.01
     const isCerrada  = conciliacion.estado === 'conciliada'
 
@@ -419,18 +421,20 @@ export default function ConciliacionShow() {
                     {!isCerrada && (
                         <div className="flex items-center gap-2 flex-wrap">
                             {/* Upload CSV */}
-                            <label className={cn(
-                                'flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium cursor-pointer transition-opacity',
-                                uploading && 'opacity-50 cursor-not-allowed'
-                            )} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-main)' }}>
-                                <Upload className="w-3.5 h-3.5" />
-                                {uploading ? 'Cargando…' : 'Cargar CSV banco'}
-                                <input ref={fileRef} type="file" accept=".csv,.txt" className="hidden"
-                                    onChange={handleUpload} disabled={uploading} />
-                            </label>
+                            {puede('crear') && (
+                                <label className={cn(
+                                    'flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium cursor-pointer transition-opacity',
+                                    uploading && 'opacity-50 cursor-not-allowed'
+                                )} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-main)' }}>
+                                    <Upload className="w-3.5 h-3.5" />
+                                    {uploading ? 'Cargando…' : 'Cargar CSV banco'}
+                                    <input ref={fileRef} type="file" accept=".csv,.txt" className="hidden"
+                                        onChange={handleUpload} disabled={uploading} />
+                                </label>
+                            )}
 
                             {/* Ajuste */}
-                            {tieneDif && (
+                            {tieneDif && puede('editar') && (
                                 <button onClick={() => setShowAjuste(v => !v)}
                                     className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-white"
                                     style={{ background: '#7c3aed' }}>
@@ -439,13 +443,15 @@ export default function ConciliacionShow() {
                             )}
 
                             {/* Cerrar */}
-                            <button onClick={cerrarConciliacion}
-                                disabled={resumen.pendientes > 0}
-                                title={resumen.pendientes > 0 ? 'Hay partidas pendientes sin conciliar' : ''}
-                                className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-white disabled:opacity-40"
-                                style={{ background: '#1d4ed8' }}>
-                                <Lock className="w-3.5 h-3.5" /> Cerrar conciliación
-                            </button>
+                            {puede('anular') && (
+                                <button onClick={cerrarConciliacion}
+                                    disabled={resumen.pendientes > 0}
+                                    title={resumen.pendientes > 0 ? 'Hay partidas pendientes sin conciliar' : ''}
+                                    className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-white disabled:opacity-40"
+                                    style={{ background: '#1d4ed8' }}>
+                                    <Lock className="w-3.5 h-3.5" /> Cerrar conciliación
+                                </button>
+                            )}
                         </div>
                     )}
                 </div>
@@ -463,11 +469,13 @@ export default function ConciliacionShow() {
                             placeholder={`Ajuste conciliación ${conciliacion.banco_caja?.nombre}`}
                             className="input-field w-full" />
                     </div>
-                    <button onClick={generarAjuste}
-                        className="px-4 py-2 rounded-xl text-sm font-medium text-white shrink-0"
-                        style={{ background: '#7c3aed' }}>
-                        Generar
-                    </button>
+                    {puede('editar') && (
+                        <button onClick={generarAjuste}
+                            className="px-4 py-2 rounded-xl text-sm font-medium text-white shrink-0"
+                            style={{ background: '#7c3aed' }}>
+                            Generar
+                        </button>
+                    )}
                     <button onClick={() => setShowAjuste(false)}
                         className="px-3 py-2 rounded-xl text-sm text-gray-500 hover:text-gray-700 shrink-0">
                         <Trash2 className="w-4 h-4" />
@@ -523,7 +531,7 @@ export default function ConciliacionShow() {
             </div>
 
             {/* ── Botón cruce ──────────────────────────────────────────────── */}
-            {!isCerrada && (
+            {!isCerrada && puede('editar') && (
                 <div className="px-6 mb-4 flex items-center gap-3">
                     <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                         {selSistema && selBanco
@@ -556,7 +564,7 @@ export default function ConciliacionShow() {
                     seleccionada={selBanco}
                     onSeleccionar={setSelBanco}
                     isCerrada={isCerrada}
-                    onGenerarAsiento={setPartidaAsiento}
+                    onGenerarAsiento={puede('editar') ? setPartidaAsiento : undefined}
                 />
             </div>
 

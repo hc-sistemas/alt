@@ -7,6 +7,7 @@ import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
 import { Plus, X, Wallet, AlertTriangle, CheckCircle, Lock } from 'lucide-react'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { BancoCaja, CierreCaja, CentroCosto, PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
 
@@ -234,6 +235,7 @@ function CerrarModal({ cierre, onClose }: { cierre: CierreRow; onClose: () => vo
 
 export default function CajasIndex() {
     const { cierres, cajas, centros, cajaAbierta, flash } = usePage<Props>().props
+    const { puede } = usePermiso('bancos')
     const [showAbrir, setShowAbrir] = useState(false)
     const [cerrarCierre, setCerrarCierre] = useState<CierreRow | null>(null)
 
@@ -248,19 +250,19 @@ export default function CajasIndex() {
             <Head title="Control de Cajas" />
 
             <div className="px-6 pt-6 mb-2">
-                <div className="flex items-center gap-3 mb-4">
-                    <div className="p-2 rounded-xl" style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
-                        <Wallet size={24} style={{ color: 'var(--primary)' }} />
+                <div className="flex items-center justify-between gap-3 mb-4">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-xl" style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
+                            <Wallet size={24} style={{ color: 'var(--primary)' }} />
+                        </div>
+                        <div>
+                            <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>Control de Cajas</h1>
+                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Apertura y cierre de cajas diarias</p>
+                        </div>
                     </div>
-                    <div>
-                        <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>Control de Cajas</h1>
-                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Apertura y cierre de cajas diarias</p>
-                    </div>
-                </div>
-                <div className="flex items-center gap-2 flex-wrap mb-6">
-                    {!cajaAbierta && (
+                    {!cajaAbierta && puede('crear') && (
                         <button onClick={() => setShowAbrir(true)}
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5"
+                            className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5 shrink-0"
                             style={{ background: 'var(--primary)' }}>
                             <Plus size={15} /> Abrir Caja
                         </button>
@@ -284,21 +286,23 @@ export default function CajasIndex() {
                                 </p>
                             </div>
                         </div>
-                        <button
-                            onClick={() => setCerrarCierre({
-                                id: cajaAbierta.id,
-                                caja: (cajaAbierta as any).banco_caja?.nombre ?? '',
-                                centro_costo: null, fecha: '',
-                                monto_inicial: Number(cajaAbierta.monto_inicial),
-                                total_cobrado: 0, total_efectivo: 0, total_tarjeta: 0,
-                                diferencia: 0, estado: 'abierto',
-                                hora_apertura: null, hora_cierre: null,
-                                usuario_apertura: null, usuario_cierre: null,
-                                tiene_diferencia: false, total_facturado: 0,
-                            } as any)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white bg-green-600 hover:bg-green-700">
-                            <Lock className="w-4 h-4" /> Cerrar Caja
-                        </button>
+                        {puede('editar') && (
+                            <button
+                                onClick={() => setCerrarCierre({
+                                    id: cajaAbierta.id,
+                                    caja: (cajaAbierta as any).banco_caja?.nombre ?? '',
+                                    centro_costo: null, fecha: '',
+                                    monto_inicial: Number(cajaAbierta.monto_inicial),
+                                    total_cobrado: 0, total_efectivo: 0, total_tarjeta: 0,
+                                    diferencia: 0, estado: 'abierto',
+                                    hora_apertura: null, hora_cierre: null,
+                                    usuario_apertura: null, usuario_cierre: null,
+                                    tiene_diferencia: false, total_facturado: 0,
+                                } as any)}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white bg-green-600 hover:bg-green-700">
+                                <Lock className="w-4 h-4" /> Cerrar Caja
+                            </button>
+                        )}
                     </div>
                 ) : (
                     <div className="rounded-xl p-4 flex items-center gap-3"
@@ -375,7 +379,7 @@ export default function CajasIndex() {
                                 }
                             </div>
                             <div className="col-span-1 flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                                {c.estado === 'abierto' && (
+                                {c.estado === 'abierto' && puede('editar') && (
                                     <button onClick={() => setCerrarCierre(c)}
                                         className="p-1.5 rounded hover:bg-orange-500/20 text-orange-500 transition-colors" title="Cerrar caja">
                                         <Lock className="w-3.5 h-3.5" />

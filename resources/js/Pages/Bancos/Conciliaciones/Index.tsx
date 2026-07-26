@@ -6,6 +6,7 @@ import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
 import { Plus, X, GitMerge, AlertTriangle, CheckCircle, Eye } from 'lucide-react'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { BancoCaja, ConciliacionBancaria, PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
 
@@ -160,6 +161,7 @@ function ConciliacionModal({ bancos, onClose }: { bancos: Props['bancos']; onClo
 
 export default function ConciliacionesIndex() {
     const { conciliaciones, bancos, filtros, flash } = usePage<Props>().props
+    const { puede } = usePermiso('bancos')
     const [showModal, setShowModal] = useState(false)
     const [bancoId,     setBancoId]     = useState(filtros.banco_caja_id ?? '')
     const [fechaDesde,  setFechaDesde]  = useState(filtros.fecha_desde   ?? '')
@@ -191,22 +193,25 @@ export default function ConciliacionesIndex() {
             <Head title="Conciliación Bancaria" />
 
             <div className="px-6 pt-6 mb-2">
-                <div className="flex items-center gap-3 mb-4">
-                    <div className="p-2 rounded-xl" style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
-                        <GitMerge size={24} style={{ color: 'var(--primary)' }} />
+                <div className="flex items-center justify-between gap-3 mb-4">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-xl" style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
+                            <GitMerge size={24} style={{ color: 'var(--primary)' }} />
+                        </div>
+                        <div>
+                            <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>Conciliación Bancaria</h1>
+                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Cuadre de saldos banco vs sistema</p>
+                        </div>
                     </div>
-                    <div>
-                        <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>Conciliación Bancaria</h1>
-                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Cuadre de saldos banco vs sistema</p>
-                    </div>
+                    {puede('crear') && (
+                        <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-2 whitespace-nowrap shrink-0">
+                            <Plus size={15} /> Nueva
+                        </button>
+                    )}
                 </div>
                 {/* Toolbar */}
                 <div className="flex items-center justify-between gap-3 mb-6 flex-wrap">
                     <div className="flex flex-wrap items-center gap-2">
-                        <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-2 whitespace-nowrap">
-                            <Plus size={15} /> Nueva Conciliación
-                        </button>
-
                         <select value={bancoId} onChange={e => setBancoId(e.target.value)}
                             className="input-field select-field" style={{ width: 'auto' }}>
                             <option value="">Todos los bancos</option>

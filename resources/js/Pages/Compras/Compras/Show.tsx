@@ -11,6 +11,7 @@ import type {
     Compra, Proveedor, CentroCosto, AsientoContable,
     CuentaPagar, CompraDetalle, PageProps,
 } from '@/types'
+import { usePermiso } from '@/Hooks/usePermiso'
 import 'react-toastify/dist/ReactToastify.css'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -99,6 +100,7 @@ function AnularModal({ compra, onClose }: { compra: CompraShow; onClose: () => v
 
 export default function CompraShow() {
     const { compra, flash } = usePage<Props>().props
+    const { puede } = usePermiso('compras')
     const [showAnular, setShowAnular] = useState(false)
     const [modalPdf,   setModalPdf]   = useState(false)
     const [urlPdf,     setUrlPdf]     = useState('')
@@ -185,7 +187,7 @@ export default function CompraShow() {
                             style={{ background: '#ef4444' }}>
                             <Printer size={15} /> PDF
                         </button>
-                        {compra.estado === 'pendiente' && (
+                        {compra.estado === 'pendiente' && puede('editar') && (
                             <button
                                 onClick={() => {
                                     if (compra.recepcion_bodega) {
@@ -199,14 +201,14 @@ export default function CompraShow() {
                                 <PackageCheck size={15} /> Confirmar recepción
                             </button>
                         )}
-                        {compra.estado === 'activa' && compra.tiene_pago && (
+                        {compra.estado === 'activa' && compra.tiene_pago && puede('anular') && (
                             <button onClick={confirmarAnularPago}
                                 className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90"
                                 style={{ background: '#f59e0b' }}>
                                 <CreditCard size={15} /> Anular Pago
                             </button>
                         )}
-                        {compra.estado === 'activa' && (
+                        {compra.estado === 'activa' && puede('anular') && (
                             <button onClick={confirmarAnulacion}
                                 className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90"
                                 style={{ background: '#ef4444' }}>

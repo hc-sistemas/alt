@@ -10,6 +10,7 @@ import {
     Plus, X, ArrowUpCircle, ArrowDownCircle, Search,
     Ban, DollarSign, Clock, FileSpreadsheet,
 } from 'lucide-react'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { MovimientoBancario, BancoCaja, PlanCuenta, PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
 
@@ -391,6 +392,7 @@ function AnularModal({ movimiento, onClose }: { movimiento: MovimientoBancario; 
 
 export default function MovimientosIndex() {
     const { movimientos, bancos, cuentas, proveedores, clientes, filtros, stats, flash } = usePage<Props>().props
+    const { puede } = usePermiso('bancos')
     const [showModal, setShowModal] = useState(false)
     const [anularMov, setAnularMov] = useState<MovimientoBancario | null>(null)
     const [filtro, setFiltro] = useState(filtros)
@@ -418,22 +420,25 @@ export default function MovimientosIndex() {
             <Head title="Movimientos Bancarios" />
 
             <div className="px-6 pt-6 mb-2">
-                <div className="flex items-center gap-3 mb-4">
-                    <div className="p-2 rounded-xl" style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
-                        <DollarSign size={24} style={{ color: 'var(--primary)' }} />
+                <div className="flex items-center justify-between gap-3 mb-4">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-xl" style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
+                            <DollarSign size={24} style={{ color: 'var(--primary)' }} />
+                        </div>
+                        <div>
+                            <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>Movimientos Bancarios</h1>
+                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Ingresos y egresos de bancos y cajas</p>
+                        </div>
                     </div>
-                    <div>
-                        <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>Movimientos Bancarios</h1>
-                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Ingresos y egresos de bancos y cajas</p>
-                    </div>
+                    {puede('crear') && (
+                        <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-2 whitespace-nowrap shrink-0">
+                            <Plus size={15} /> Nuevo
+                        </button>
+                    )}
                 </div>
                 {/* Toolbar */}
                 <div className="flex items-center justify-between gap-3 mb-6">
                     <div className="flex items-center gap-2 flex-wrap">
-                        <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-2 whitespace-nowrap">
-                            <Plus size={15} /> Nuevo Movimiento
-                        </button>
-
                         <div className="input-with-icon">
                             <Search size={14} className="input-icon" />
                             <input type="text" value={filtro.buscar ?? ''}
@@ -566,7 +571,7 @@ export default function MovimientosIndex() {
                                 }
                             </div>
                             <div className="col-span-1 flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                                {!m.anulado && !m.conciliado && (
+                                {!m.anulado && !m.conciliado && puede('anular') && (
                                     <button onClick={() => setAnularMov(m)} title="Anular"
                                         className="p-1.5 rounded hover:bg-red-500/20 text-red-500 transition-colors">
                                         <Ban className="w-3.5 h-3.5" />
