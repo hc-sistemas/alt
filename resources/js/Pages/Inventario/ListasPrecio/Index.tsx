@@ -7,6 +7,7 @@ import { Input } from '@/Components/ui/input'
 import { Search, FileSpreadsheet, Upload } from 'lucide-react'
 import { toastExito, toastError } from '@/lib/toast'
 import { cn } from '@/lib/utils'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { PaginatedData, PageProps } from '@/types'
 
 interface ListaPrecioRow {
@@ -16,6 +17,7 @@ interface ListaPrecioRow {
     marca_nombre: string
     pvp_base: number
     pvd_base: number
+    porcentaje_iva: number
     lista_pvp_precio: number | null
     lista_pvp_descuento_max: number | null
     lista_pvp_descuento_max_promo: number | null
@@ -69,6 +71,12 @@ function fmt(val: number | null | undefined): string {
     return Number(val).toFixed(2)
 }
 
+// Precio base (sin IVA) -> precio final mostrado, sumando el % de IVA propio
+// del producto (varía por producto: 0%, 5%, 15%, etc.).
+function conIva(base: number, porcentajeIva: number): number {
+    return base * (1 + (Number(porcentajeIva) || 0) / 100)
+}
+
 function fmtDate(val: string | null | undefined): string {
     if (!val) return ''
     return val.slice(0, 10)
@@ -93,7 +101,9 @@ function tienePromoGuardada(row: ListaPrecioRow): boolean {
 
 export default function ListasPrecioIndex() {
     const { listas, filters, marcas, categorias, bodegas } = usePage<Props>().props
-    const totalColumnas = 9 + bodegas.length + 3
+    const { puede } = usePermiso('inventario')
+    // Código, Nombre, PVP+IVA, Desc. PVP%, PVD+IVA, Desc. PVD% (6) + bodegas + Promo (1)
+    const totalColumnas = 7 + bodegas.length
 
     const [search, setSearch]   = useState(filters.search ?? '')
     const [marcaId, setMarcaId] = useState(filters.marca_id ?? '')
@@ -290,14 +300,17 @@ export default function ListasPrecioIndex() {
         )
     }
 
-    // Grupo de 3 columnas de promo (Desc. promo % / Desde / Hasta), separado
-    // del resto con un borde izquierdo continuo. Sin datos guardados: botón
-    // ocupando las 3 columnas. Con datos guardados (vigentes o vencidos):
-    // los 3 valores, con el % clickeable para reabrir la misma edición inline.
-    function promoGroupCells(row: ListaPrecioRow) {
+    // Columna única de promo, al final de la tabla. Sin promo guardada: enlace
+    // "Agregar promo" (si hay permiso de editar). Con promo guardada: % +
+    // vigencia compacta, clickeable para reabrir el panel de edición inline
+    // (Desc. promo % / Desde / Hasta).
+    function promoCell(row: ListaPrecioRow) {
         if (!tienePromoGuardada(row)) {
+            if (!puede('editar')) {
+                return <td className={tdBase} style={{ borderLeft: '1px solid var(--border)' }} />
+            }
             return (
-                <td colSpan={3} className={cn(tdBase, 'text-center')} style={{ borderLeft: '1px solid var(--border)' }}>
+                <td className={tdBase} style={{ borderLeft: '1px solid var(--border)' }}>
                     <button
                         type="button"
                         onClick={() => startPromoEdit(row)}
@@ -310,22 +323,14 @@ export default function ListasPrecioIndex() {
             )
         }
         return (
-            <>
-                <td
-                    className={cn(tdMuted, 'cursor-pointer hover:underline')}
-                    style={{ color: 'var(--primary)', borderLeft: '1px solid var(--border)' }}
-                    onClick={() => startPromoEdit(row)}
-                    title="Clic para editar la promo"
-                >
-                    {fmt(row.lista_pvp_descuento_max_promo)}%
-                </td>
-                <td className={tdBase} style={{ color: 'var(--text-muted)' }}>
-                    {fmtDate(row.vigencia_desde) || '—'}
-                </td>
-                <td className={tdBase} style={{ color: 'var(--text-muted)' }}>
-                    {fmtDate(row.vigencia_hasta) || '—'}
-                </td>
-            </>
+            <td
+                className={cn(tdBase, puede('editar') && 'cursor-pointer hover:underline')}
+                style={{ color: 'var(--primary)', borderLeft: '1px solid var(--border)' }}
+                onClick={() => puede('editar') && startPromoEdit(row)}
+                title={puede('editar') ? 'Clic para editar la promo' : undefined}
+            >
+                {fmt(row.lista_pvp_descuento_max_promo)}% · {fmtDate(row.vigencia_desde)} a {fmtDate(row.vigencia_hasta)}
+            </td>
         )
     }
 
@@ -343,7 +348,21 @@ export default function ListasPrecioIndex() {
             <Head title="Listas de Precio" />
             <PageHeader
                 title="Listas de Precio"
-                description="Precios especiales PVP/PVD por producto. Clic en una celda para editar."
+                description={
+                    <>
+                        Precios especiales PVP/PVD por producto. Clic en una celda para editar.
+                        <span
+                            className="px-2 py-0.5 rounded-full text-xs font-semibold whitespace-nowrap"
+                            style={{
+                                background: 'color-mix(in srgb, var(--primary) 15%, transparent)',
+                                border: '1px solid var(--primary)',
+                                color: 'var(--primary)',
+                            }}
+                        >
+                            Los precios se ingresan SIN IVA — el sistema lo calcula
+                        </span>
+                    </>
+                }
                 breadcrumbs={[{ label: 'Inventario' }, { label: 'Listas de Precio' }]}
             />
 
@@ -385,16 +404,18 @@ export default function ListasPrecioIndex() {
                             <FileSpreadsheet className="w-4 h-4" />
                             Excel
                         </button>
-                        <button
-                            onClick={() => fileInputRef.current?.click()}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium"
-                            style={{ background: 'var(--primary)', color: 'black', transition: 'background 0.2s' }}
-                            onMouseEnter={e => (e.currentTarget.style.background = 'var(--primary-hover)')}
-                            onMouseLeave={e => (e.currentTarget.style.background = 'var(--primary)')}
-                        >
-                            <Upload className="w-4 h-4" />
-                            Importar
-                        </button>
+                        {puede('crear') && (
+                            <button
+                                onClick={() => fileInputRef.current?.click()}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium"
+                                style={{ background: 'var(--primary)', color: 'black', transition: 'background 0.2s' }}
+                                onMouseEnter={e => (e.currentTarget.style.background = 'var(--primary-hover)')}
+                                onMouseLeave={e => (e.currentTarget.style.background = 'var(--primary)')}
+                            >
+                                <Upload className="w-4 h-4" />
+                                Importar
+                            </button>
+                        )}
                         <input
                             ref={fileInputRef}
                             type="file"
@@ -411,9 +432,9 @@ export default function ListasPrecioIndex() {
                         <thead>
                             <tr style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
                                 {[
-                                    'Código', 'Nombre', 'Marca',
-                                    'PVP Base', 'PVP Lista', 'Desc. PVP%',
-                                    'PVD Base', 'PVD Lista', 'Desc. PVD%',
+                                    'Código', 'Nombre',
+                                    'PVP+IVA', 'Desc. PVP%',
+                                    'PVD+IVA', 'Desc. PVD%',
                                 ].map(h => (
                                     <th key={h}
                                         className="text-left px-2 py-3 font-medium text-xs uppercase tracking-wider whitespace-nowrap"
@@ -428,13 +449,10 @@ export default function ListasPrecioIndex() {
                                         Stock {b.nombre}
                                     </th>
                                 ))}
-                                {['Desc. Promo %', 'Desde', 'Hasta'].map((h, i) => (
-                                    <th key={h}
-                                        className="text-left px-2 py-3 font-medium text-xs uppercase tracking-wider whitespace-nowrap text-amber-400"
-                                        style={i === 0 ? { borderLeft: '1px solid var(--border)' } : undefined}>
-                                        {h}
-                                    </th>
-                                ))}
+                                <th className="text-left px-2 py-3 font-medium text-xs uppercase tracking-wider whitespace-nowrap text-amber-400"
+                                    style={{ borderLeft: '1px solid var(--border)' }}>
+                                    Promo
+                                </th>
                             </tr>
                         </thead>
                         <tbody>
@@ -475,64 +493,47 @@ export default function ListasPrecioIndex() {
                                         <td className={cn(tdBase, 'max-w-45 truncate')} style={{ color: 'var(--text-main)' }}>
                                             {row.nombre}
                                         </td>
-                                        {/* Marca */}
-                                        <td className={tdBase} style={{ color: 'var(--text-muted)' }}>
-                                            {row.marca_nombre}
-                                        </td>
-
-                                        {/* PVP Base — solo lectura */}
-                                        <td className={tdMuted} style={{ color: 'var(--text-muted)' }}>
-                                            {Number(row.pvp_base).toFixed(2)}
-                                        </td>
-
                                         {active ? (
                                             <>
                                                 {editCell('pvp',          { type: 'number', step: 0.01, min: 0,       onBlur: blurHandler, onFocus: focusHandler })}
                                                 {editCell('descuento_pvp', { type: 'number', step: 0.01, min: 0, max: 100, onBlur: blurHandler, onFocus: focusHandler })}
-                                                {/* PVD Base — solo lectura intercalada */}
-                                                <td className={tdMuted} style={{ color: 'var(--text-muted)' }}>
-                                                    {Number(row.pvd_base).toFixed(2)}
-                                                </td>
                                                 {editCell('pvd',          { type: 'number', step: 0.01, min: 0,       onBlur: blurHandler, onFocus: focusHandler })}
                                                 {editCell('descuento_pvd', { type: 'number', step: 0.01, min: 0, max: 100, onBlur: blurHandler, onFocus: focusHandler })}
                                             </>
                                         ) : (
                                             <>
+                                                {/* PVP+IVA: precio base (o de lista) + % IVA del producto */}
                                                 <td
-                                                    className={cn(tdMuted, 'cursor-pointer hover:underline')}
+                                                    className={cn(tdMuted, puede('editar') && 'cursor-pointer hover:underline')}
                                                     style={{ color: row.lista_pvp_precio != null ? 'var(--primary)' : 'var(--text-muted)' }}
-                                                    onClick={() => startEdit(row)}
-                                                    title="Clic para editar"
+                                                    onClick={() => puede('editar') && startEdit(row)}
+                                                    title={puede('editar') ? 'Clic para editar' : undefined}
                                                 >
-                                                    {row.lista_pvp_precio != null ? Number(row.lista_pvp_precio).toFixed(2) : '—'}
+                                                    {conIva(Number(row.lista_pvp_precio ?? row.pvp_base), row.porcentaje_iva).toFixed(2)}
                                                 </td>
                                                 <td
-                                                    className={cn(tdMuted, 'cursor-pointer hover:underline')}
+                                                    className={cn(tdMuted, puede('editar') && 'cursor-pointer hover:underline')}
                                                     style={{ color: 'var(--text-muted)' }}
-                                                    onClick={() => startEdit(row)}
-                                                    title="Clic para editar"
+                                                    onClick={() => puede('editar') && startEdit(row)}
+                                                    title={puede('editar') ? 'Clic para editar' : undefined}
                                                 >
                                                     {row.lista_pvp_descuento_max != null ? `${Number(row.lista_pvp_descuento_max).toFixed(2)}%` : '—'}
                                                 </td>
 
-                                                {/* PVD Base */}
-                                                <td className={tdMuted} style={{ color: 'var(--text-muted)' }}>
-                                                    {Number(row.pvd_base).toFixed(2)}
-                                                </td>
-
+                                                {/* PVD+IVA */}
                                                 <td
-                                                    className={cn(tdMuted, 'cursor-pointer hover:underline')}
+                                                    className={cn(tdMuted, puede('editar') && 'cursor-pointer hover:underline')}
                                                     style={{ color: row.lista_pvd_precio != null ? 'var(--primary)' : 'var(--text-muted)' }}
-                                                    onClick={() => startEdit(row)}
-                                                    title="Clic para editar"
+                                                    onClick={() => puede('editar') && startEdit(row)}
+                                                    title={puede('editar') ? 'Clic para editar' : undefined}
                                                 >
-                                                    {row.lista_pvd_precio != null ? Number(row.lista_pvd_precio).toFixed(2) : '—'}
+                                                    {conIva(Number(row.lista_pvd_precio ?? row.pvd_base), row.porcentaje_iva).toFixed(2)}
                                                 </td>
                                                 <td
-                                                    className={cn(tdMuted, 'cursor-pointer hover:underline')}
+                                                    className={cn(tdMuted, puede('editar') && 'cursor-pointer hover:underline')}
                                                     style={{ color: 'var(--text-muted)' }}
-                                                    onClick={() => startEdit(row)}
-                                                    title="Clic para editar"
+                                                    onClick={() => puede('editar') && startEdit(row)}
+                                                    title={puede('editar') ? 'Clic para editar' : undefined}
                                                 >
                                                     {row.lista_pvd_descuento_max != null ? `${Number(row.lista_pvd_descuento_max).toFixed(2)}%` : '—'}
                                                 </td>
@@ -543,7 +544,7 @@ export default function ListasPrecioIndex() {
                                                 {Number(row.inventario?.[b.id] ?? 0).toFixed(2)}
                                             </td>
                                         ))}
-                                        {promoGroupCells(row)}
+                                        {promoCell(row)}
                                     </tr>
                                     {promoOpen && (
                                         <tr style={{ borderColor: 'var(--border)' }}>

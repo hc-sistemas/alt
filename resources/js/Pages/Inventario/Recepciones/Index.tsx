@@ -363,11 +363,8 @@ export default function RecepcionesIndex() {
                 title="Recepciones de Bodega"
                 description="Confirmación de ingreso físico de productos desde facturas de compra"
                 breadcrumbs={[{ label: 'Inventario' }, { label: 'Recepciones' }]}
-            />
-
-            <div className="p-6">
-                <div className="flex items-center gap-3 mb-4 flex-wrap">
-                    {puede('crear') && (
+                actions={
+                    puede('crear') ? (
                         <button onClick={() => setModalAbierto(true)}
                             className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-white transition-colors"
                             style={{ background: 'var(--primary)' }}
@@ -375,8 +372,12 @@ export default function RecepcionesIndex() {
                             onMouseLeave={e => (e.currentTarget.style.background = 'var(--primary)')}>
                             <Plus size={15} /> Nueva Recepción
                         </button>
-                    )}
+                    ) : undefined
+                }
+            />
 
+            <div className="p-6">
+                <div className="flex items-center gap-3 mb-4 flex-wrap">
                     <select value={estado} onChange={e => setEstado(e.target.value)}
                         className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm"
                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>

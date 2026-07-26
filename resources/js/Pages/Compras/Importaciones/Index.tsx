@@ -13,6 +13,7 @@ import {
     X, DollarSign, Loader2, Eye, ExternalLink, AlertCircle, Copy,
 } from 'lucide-react'
 import type { Importacion, Proveedor, PageProps } from '@/types'
+import { usePermiso } from '@/Hooks/usePermiso'
 import 'react-toastify/dist/ReactToastify.css'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -278,6 +279,7 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
     proveedores: Props['proveedores']
     onClose: () => void
 }) {
+    const { puede } = usePermiso('compras')
     const [tab,      setTab]      = useState<TabKey>(initialTab)
     const [cargando, setCargando] = useState(true)
     const [detalle,  setDetalle]  = useState<DetalleData | null>(null)
@@ -589,7 +591,7 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
                                 </div>
                                 {errors.estado && <p className="text-red-400 text-xs">{errors.estado}</p>}
                             </div>
-                            {!yaLiquidada && (
+                            {!yaLiquidada && puede('editar') && (
                                 <div className="modal-footer">
                                     <Button type="submit" disabled={processing}>
                                         <Pencil className="w-4 h-4" /> Guardar cambios
@@ -616,17 +618,19 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
                                     <p className="text-xs mb-4 max-w-xs mx-auto">
                                         Crea una factura de compra exterior pre-llenada con los datos de esta importación.
                                     </p>
-                                    <button
-                                        type="button"
-                                        onClick={crearFacturaExterior}
-                                        disabled={creandoFact}
-                                        className="btn-primary inline-flex items-center gap-2 text-sm">
-                                        {creandoFact
-                                            ? <Loader2 className="w-4 h-4 animate-spin" />
-                                            : <ExternalLink className="w-4 h-4" />
-                                        }
-                                        {creandoFact ? 'Verificando...' : 'Crear factura de compra exterior'}
-                                    </button>
+                                    {puede('crear') && (
+                                        <button
+                                            type="button"
+                                            onClick={crearFacturaExterior}
+                                            disabled={creandoFact}
+                                            className="btn-primary inline-flex items-center gap-2 text-sm">
+                                            {creandoFact
+                                                ? <Loader2 className="w-4 h-4 animate-spin" />
+                                                : <ExternalLink className="w-4 h-4" />
+                                            }
+                                            {creandoFact ? 'Verificando...' : 'Crear factura de compra exterior'}
+                                        </button>
+                                    )}
 
                                     {/* Aviso cuando ya existe una factura vinculada */}
                                     {yaExisteWarn && (
@@ -733,7 +737,7 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
                     {tab === 'gastos' && (
                         <div className="p-5 space-y-4">
                             {/* Botón + formulario inline */}
-                            {!yaLiquidada && (
+                            {!yaLiquidada && puede('editar') && (
                                 <div>
                                     {!showFormCosto ? (
                                         <button type="button"
@@ -936,13 +940,15 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
                                     </div>
                                 </div>
 
-                                <button
-                                    type="button"
-                                    onClick={() => setConfirmRevertir(true)}
-                                    className="w-full py-2 px-4 rounded-lg text-sm font-medium border transition-colors hover:bg-red-500/10"
-                                    style={{ borderColor: '#ef4444', color: '#ef4444', background: 'transparent' }}>
-                                    Revertir liquidación
-                                </button>
+                                {puede('editar') && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setConfirmRevertir(true)}
+                                        className="w-full py-2 px-4 rounded-lg text-sm font-medium border transition-colors hover:bg-red-500/10"
+                                        style={{ borderColor: '#ef4444', color: '#ef4444', background: 'transparent' }}>
+                                        Revertir liquidación
+                                    </button>
+                                )}
                                 <p className="text-xs text-center" style={{ color: 'var(--text-muted)' }}>
                                     Restaura el costo anterior de los productos y el estado previo a la liquidación.
                                     Se bloqueará si ya se vendió o movió stock con el costo actual.
@@ -1091,9 +1097,11 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
                                             </div>
                                         </div>
                                         <div className="modal-footer">
-                                            <Button type="submit" disabled={liqProcessing}>
-                                                <CheckCircle2 className="w-4 h-4" /> Liquidar importación
-                                            </Button>
+                                            {puede('editar') && (
+                                                <Button type="submit" disabled={liqProcessing}>
+                                                    <CheckCircle2 className="w-4 h-4" /> Liquidar importación
+                                                </Button>
+                                            )}
                                             <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
                                         </div>
                                     </form>
@@ -1222,16 +1230,18 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
                                     </table>
                                 </div>
 
-                                <div className="flex justify-start">
-                                    <button type="button" onClick={guardarPrecios} disabled={guardandoPrecios}
-                                        className="btn-primary flex items-center gap-2 text-sm">
-                                        {guardandoPrecios
-                                            ? <Loader2 className="w-4 h-4 animate-spin" />
-                                            : <DollarSign className="w-4 h-4" />
-                                        }
-                                        Guardar cambios de precios
-                                    </button>
-                                </div>
+                                {puede('editar') && (
+                                    <div className="flex justify-start">
+                                        <button type="button" onClick={guardarPrecios} disabled={guardandoPrecios}
+                                            className="btn-primary flex items-center gap-2 text-sm">
+                                            {guardandoPrecios
+                                                ? <Loader2 className="w-4 h-4 animate-spin" />
+                                                : <DollarSign className="w-4 h-4" />
+                                            }
+                                            Guardar cambios de precios
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         )
                     )}
@@ -1251,6 +1261,7 @@ type ModalState =
 
 export default function ImportacionesIndex() {
     const { importaciones, proveedores, flash } = usePage<Props>().props
+    const { puede } = usePermiso('compras')
     const [modal, setModal] = useState<ModalState>({ type: 'none' })
 
     useEffect(() => {
@@ -1286,10 +1297,12 @@ export default function ImportacionesIndex() {
                     </div>
                 </div>
                 <div className="flex items-center justify-between gap-3 mb-6">
-                    <button onClick={() => setModal({ type: 'crear' })}
-                        className="btn-primary flex items-center gap-2 whitespace-nowrap">
-                        <Plus size={15} /> Nueva Importación
-                    </button>
+                    {puede('crear') && (
+                        <button onClick={() => setModal({ type: 'crear' })}
+                            className="btn-primary flex items-center gap-2 whitespace-nowrap">
+                            <Plus size={15} /> Nueva Importación
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -1360,23 +1373,25 @@ export default function ImportacionesIndex() {
                                 <EstadoBadge estado={i.estado} />
                             </div>
                             <div className="col-span-2 flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                {/* Ver / Editar → siempre visible */}
-                                <button
-                                    onClick={() => setModal({ type: 'detalle', importacion: i, tab: 'general' })}
-                                    title={i.estado === 'liquidada' ? 'Ver detalle' : 'Editar importación'}
-                                    className={cn(
-                                        'p-1.5 rounded transition-colors',
-                                        i.estado === 'liquidada'
-                                            ? 'text-gray-500 dark:text-gray-400 hover:bg-gray-500/20'
-                                            : 'text-blue-500 dark:text-blue-400 hover:bg-blue-500/20',
-                                    )}>
-                                    {i.estado === 'liquidada'
-                                        ? <Eye className="w-3.5 h-3.5" />
-                                        : <Pencil className="w-3.5 h-3.5" />
-                                    }
-                                </button>
+                                {/* Ver / Editar → siempre visible si es solo ver; editar requiere permiso */}
+                                {(i.estado === 'liquidada' || puede('editar')) && (
+                                    <button
+                                        onClick={() => setModal({ type: 'detalle', importacion: i, tab: 'general' })}
+                                        title={i.estado === 'liquidada' ? 'Ver detalle' : 'Editar importación'}
+                                        className={cn(
+                                            'p-1.5 rounded transition-colors',
+                                            i.estado === 'liquidada'
+                                                ? 'text-gray-500 dark:text-gray-400 hover:bg-gray-500/20'
+                                                : 'text-blue-500 dark:text-blue-400 hover:bg-blue-500/20',
+                                        )}>
+                                        {i.estado === 'liquidada'
+                                            ? <Eye className="w-3.5 h-3.5" />
+                                            : <Pencil className="w-3.5 h-3.5" />
+                                        }
+                                    </button>
+                                )}
                                 {/* Liquidar → solo si no está liquidada */}
-                                {i.estado !== 'liquidada' && (
+                                {i.estado !== 'liquidada' && puede('editar') && (
                                     <button
                                         onClick={() => setModal({ type: 'detalle', importacion: i, tab: 'liquidar' })}
                                         title="Liquidar importación"
@@ -1385,12 +1400,14 @@ export default function ImportacionesIndex() {
                                     </button>
                                 )}
                                 {/* Copiar → siempre disponible, como plantilla de una nueva */}
-                                <button
-                                    onClick={() => copiarImportacion(i)}
-                                    title="Copiar como plantilla de una nueva importación"
-                                    className="p-1.5 rounded transition-colors text-amber-600 dark:text-amber-400 hover:bg-amber-500/20">
-                                    <Copy className="w-3.5 h-3.5" />
-                                </button>
+                                {puede('crear') && (
+                                    <button
+                                        onClick={() => copiarImportacion(i)}
+                                        title="Copiar como plantilla de una nueva importación"
+                                        className="p-1.5 rounded transition-colors text-amber-600 dark:text-amber-400 hover:bg-amber-500/20">
+                                        <Copy className="w-3.5 h-3.5" />
+                                    </button>
+                                )}
                             </div>
                         </div>
                     ))}
