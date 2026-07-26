@@ -9,6 +9,7 @@ import { Input } from '@/Components/ui/input'
 import { Badge } from '@/Components/ui/badge'
 import { cn, formatMoneda, formatFecha } from '@/lib/utils'
 import { Search, Eye, FileText, ChevronLeft, ChevronRight, DollarSign, AlertTriangle, X } from 'lucide-react'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { PageProps, PaginatedData, AuthUser } from '@/types'
 
 interface CxCItem {
@@ -82,6 +83,7 @@ function MetricaCard({ label, valor, color }: { label: string; valor: number; co
 
 export default function Index() {
     const { cuentas, metricas, filtros, auth } = usePage<Props>().props
+    const { puede } = usePermiso('ventas')
 
     const [filtro, setFiltro] = useState<Filtros>({
         cliente:           filtros.cliente           ?? '',
@@ -140,27 +142,38 @@ export default function Index() {
     }
 
     const handleCastigar = async (cuenta: CxCItem) => {
-        const result = await Swal.fire({
+        const { value: formValues } = await Swal.fire({
             title: 'Castigar deuda',
-            text: `¿Desea castigar la deuda de ${cuenta.cliente_razon} (${formatMoneda(cuenta.saldo)})? Requiere una aprobación especial de SuperAdmin.`,
+            html:
+                `<p style="margin-bottom:12px;font-size:14px;text-align:left;">` +
+                `¿Desea castigar la deuda de ${cuenta.cliente_razon} (${formatMoneda(cuenta.saldo)})? ` +
+                `Requiere una aprobación especial de SuperAdmin.</p>` +
+                `<input id="swal-codigo" type="password" class="swal2-input" placeholder="Código de aprobación">` +
+                `<input id="swal-motivo" type="text" class="swal2-input" placeholder="Motivo del castigo">`,
             icon: 'warning',
-            input: 'password',
-            inputLabel: 'Código de aprobación (SuperAdmin)',
-            inputPlaceholder: '••••••••',
             showCancelButton: true,
             confirmButtonText: 'Validar y castigar',
             cancelButtonText: 'Cancelar',
             confirmButtonColor: '#1e293b',
-            inputValidator: v => !v ? 'Ingrese el código de aprobación' : undefined,
+            focusConfirm: false,
+            preConfirm: () => {
+                const codigo = (document.getElementById('swal-codigo') as HTMLInputElement | null)?.value ?? ''
+                const motivo = (document.getElementById('swal-motivo') as HTMLInputElement | null)?.value ?? ''
+                if (!codigo.trim() || !motivo.trim()) {
+                    Swal.showValidationMessage('Ingrese el código y el motivo.')
+                    return false
+                }
+                return { codigo, motivo }
+            },
         })
-        if (!result.isConfirmed || !result.value) return
+        if (!formValues) return
 
         try {
             // Paso 1: validar el código contra un aprobador real (mismo flujo que
             // Facturas/Proformas para descuento_excedido — ver AprobacionController).
             const { data } = await axios.post<{ valido: boolean; aprobacion_id?: number; mensaje?: string }>(
                 route('ventas.aprobacion.validar'),
-                { tipo: 'castigo_cartera', codigo: result.value as string },
+                { tipo: 'castigo_cartera', codigo: formValues.codigo, motivo: formValues.motivo },
             )
 
             if (!data.valido || !data.aprobacion_id) {
@@ -189,6 +202,11 @@ export default function Index() {
                 title="Cuentas por Cobrar"
                 description="Control de cartera y cobros"
                 breadcrumbs={[{ label: 'Ventas' }, { label: 'Cuentas por Cobrar' }]}
+                actions={
+                    <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                        {cuentas.total} cuenta{cuentas.total === 1 ? '' : 's'}
+                    </span>
+                }
             />
 
             <div className="p-6 space-y-4">
@@ -202,67 +220,58 @@ export default function Index() {
                 </div>
 
                 {/* Filtros */}
-                <div
-                    className="rounded-xl p-4 border"
-                    style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
-                >
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                        <div>
-                            <label className="text-xs mb-1 block" style={{ color: 'var(--text-muted)' }}>Cliente</label>
-                            <div className="relative">
-                                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none" style={{ color: 'var(--text-muted)' }} />
-                                <Input
-                                    className="pl-8"
-                                    placeholder="Nombre o RUC..."
-                                    value={filtro.cliente}
-                                    onChange={e => setFiltro(p => ({ ...p, cliente: e.target.value }))}
-                                    onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
-                                />
-                            </div>
-                        </div>
-                        <div>
-                            <label className="text-xs mb-1 block" style={{ color: 'var(--text-muted)' }}>Estado</label>
-                            <select
-                                className="w-full h-9 rounded-md border px-3 text-sm"
-                                style={{ background: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
-                                value={filtro.estado}
-                                onChange={e => setFiltro(p => ({ ...p, estado: e.target.value }))}
-                            >
-                                <option value="">Todos</option>
-                                <option value="pendiente">Pendiente</option>
-                                <option value="parcial">Parcial</option>
-                                <option value="cobrada">Cobrada</option>
-                                <option value="vencida">Vencida</option>
-                                <option value="castigada">Castigada</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label className="text-xs mb-1 block" style={{ color: 'var(--text-muted)' }}>Vencimiento desde</label>
-                            <Input
-                                type="date"
-                                value={filtro.vencimiento_desde}
-                                onChange={e => setFiltro(p => ({ ...p, vencimiento_desde: e.target.value }))}
-                            />
-                        </div>
-                        <div>
-                            <label className="text-xs mb-1 block" style={{ color: 'var(--text-muted)' }}>Vencimiento hasta</label>
-                            <Input
-                                type="date"
-                                value={filtro.vencimiento_hasta}
-                                onChange={e => setFiltro(p => ({ ...p, vencimiento_hasta: e.target.value }))}
-                            />
-                        </div>
-                    </div>
-                    <div className="flex justify-end gap-2 mt-3">
-                        {hayFiltros && (
-                            <Button type="button" variant="ghost" size="sm" onClick={limpiarFiltros}>
-                                Limpiar
-                            </Button>
-                        )}
-                        <Button type="button" size="sm" onClick={aplicarFiltros}>
-                            <Search className="w-4 h-4" />
-                            Buscar
+                <div className="flex items-center gap-3 flex-wrap">
+                    <select
+                        className="input-field shrink-0"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}
+                        value={filtro.estado}
+                        onChange={e => setFiltro(p => ({ ...p, estado: e.target.value }))}
+                    >
+                        <option value="">Todos los estados</option>
+                        <option value="pendiente">Pendiente</option>
+                        <option value="parcial">Parcial</option>
+                        <option value="cobrada">Cobrada</option>
+                        <option value="vencida">Vencida</option>
+                        <option value="castigada">Castigada</option>
+                    </select>
+                    <Input
+                        type="date"
+                        value={filtro.vencimiento_desde}
+                        onChange={e => setFiltro(p => ({ ...p, vencimiento_desde: e.target.value }))}
+                        className="shrink-0 w-36"
+                        title="Vencimiento desde"
+                    />
+                    <Input
+                        type="date"
+                        value={filtro.vencimiento_hasta}
+                        onChange={e => setFiltro(p => ({ ...p, vencimiento_hasta: e.target.value }))}
+                        className="shrink-0 w-36"
+                        title="Vencimiento hasta"
+                    />
+
+                    {hayFiltros && (
+                        <Button type="button" variant="ghost" size="sm" onClick={limpiarFiltros} className="shrink-0">
+                            Limpiar
                         </Button>
+                    )}
+
+                    <div className="flex shrink-0 ml-auto" role="group">
+                        <div className="relative">
+                            <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+                            <Input
+                                value={filtro.cliente}
+                                onChange={e => setFiltro(p => ({ ...p, cliente: e.target.value }))}
+                                onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
+                                placeholder="Cliente o RUC..."
+                                className="pl-9 w-52 rounded-r-none border-r-0"
+                            />
+                        </div>
+                        <button className="flex items-center justify-center w-9 h-9 rounded-r-md border text-sm font-medium shrink-0"
+                            style={{ background: 'var(--primary)', color: 'black', borderColor: 'var(--primary)' }}
+                            onClick={aplicarFiltros}
+                            title="Buscar">
+                            <Search className="w-4 h-4" />
+                        </button>
                     </div>
                 </div>
 
@@ -354,7 +363,7 @@ export default function Index() {
                                                                 Ver
                                                             </button>
                                                         </Link>
-                                                        {puedeAccion && (
+                                                        {puedeAccion && puede('editar') && (
                                                             <button
                                                                 type="button"
                                                                 className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors hover:bg-emerald-500/10 text-emerald-400"
@@ -364,7 +373,7 @@ export default function Index() {
                                                                 Cobrar
                                                             </button>
                                                         )}
-                                                        {puedeCastigar && (
+                                                        {puedeCastigar && puede('anular') && (
                                                             <button
                                                                 type="button"
                                                                 className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors hover:bg-slate-500/10"

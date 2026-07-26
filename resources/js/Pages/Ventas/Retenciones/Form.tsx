@@ -6,6 +6,7 @@ import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { cn, formatMoneda, formatFecha } from '@/lib/utils'
 import { Plus, Trash2, Save, X, Send, AlertTriangle } from 'lucide-react'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { PageProps, Empresa } from '@/types'
 
 interface FacturaCliente {
@@ -63,6 +64,7 @@ function lineaVacia(factura: FacturaOrigen): LineaRetencion {
 
 export default function Form() {
     const { factura, impuestos } = usePage<Props>().props
+    const { puede } = usePermiso('ventas')
 
     const [lineas, setLineas] = useState<LineaRetencion[]>([lineaVacia(factura)])
     const [guardando, setGuardando] = useState(false)
@@ -293,16 +295,20 @@ export default function Form() {
                         </Button>
                     </Link>
                     <div className="flex gap-3">
-                        <span title="Funcionalidad en desarrollo">
-                            <Button type="button" variant="secondary" disabled>
-                                <Send className="w-4 h-4" />
-                                Enviar al SRI
+                        {puede('editar') && (
+                            <span title="Funcionalidad en desarrollo">
+                                <Button type="button" variant="secondary" disabled>
+                                    <Send className="w-4 h-4" />
+                                    Enviar al SRI
+                                </Button>
+                            </span>
+                        )}
+                        {puede('crear') && (
+                            <Button type="submit" loading={guardando}>
+                                <Save className="w-4 h-4" />
+                                Guardar Retención
                             </Button>
-                        </span>
-                        <Button type="submit" loading={guardando}>
-                            <Save className="w-4 h-4" />
-                            Guardar Retención
-                        </Button>
+                        )}
                     </div>
                 </div>
             </form>

@@ -8,6 +8,7 @@ import { Button } from '@/Components/ui/button'
 import { Badge } from '@/Components/ui/badge'
 import { formatMoneda, formatFecha } from '@/lib/utils'
 import { ArrowLeft, ArrowRightLeft, Ban, X, Plus, Trash2 } from 'lucide-react'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { PageProps } from '@/types'
 
 interface ProformaDetalle {
@@ -77,6 +78,7 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
 
 export default function Show() {
     const { proforma } = usePage<Props>().props
+    const { puede } = usePermiso('ventas')
     const esPendiente = proforma.estado === 'pendiente'
     const cfg = ESTADO_CONFIG[proforma.estado] ?? ESTADO_CONFIG.pendiente
 
@@ -142,17 +144,17 @@ export default function Show() {
                 ]}
                 actions={
                     <div className="flex gap-2">
-                        {esPendiente && (
-                            <>
-                                <Button size="sm" onClick={() => void handleConvertir()}>
-                                    <ArrowRightLeft className="w-4 h-4" />
-                                    Convertir a Factura
-                                </Button>
-                                <Button size="sm" variant="destructive" onClick={() => void handleAnular()}>
-                                    <Ban className="w-4 h-4" />
-                                    Anular
-                                </Button>
-                            </>
+                        {esPendiente && puede('editar') && (
+                            <Button size="sm" onClick={() => void handleConvertir()}>
+                                <ArrowRightLeft className="w-4 h-4" />
+                                Convertir a Factura
+                            </Button>
+                        )}
+                        {esPendiente && puede('eliminar') && (
+                            <Button size="sm" variant="destructive" onClick={() => void handleAnular()}>
+                                <Ban className="w-4 h-4" />
+                                Anular
+                            </Button>
                         )}
                     </div>
                 }

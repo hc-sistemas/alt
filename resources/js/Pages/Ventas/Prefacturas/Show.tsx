@@ -8,6 +8,7 @@ import { Input } from '@/Components/ui/input'
 import { Badge } from '@/Components/ui/badge'
 import { formatMoneda, formatFecha } from '@/lib/utils'
 import { ArrowLeft, Plus, X, DollarSign, FileText } from 'lucide-react'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { PageProps } from '@/types'
 
 interface PrefacturaDetalle {
@@ -71,9 +72,10 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
 
 export default function Show() {
     const { prefactura } = usePage<Props>().props
+    const { puede } = usePermiso('ventas')
     const cfg = ESTADO_CONFIG[prefactura.estado] ?? ESTADO_CONFIG.pendiente
-    const puedeAbonar = prefactura.estado !== 'liquidada' && prefactura.estado !== 'anulada'
-    const puedeConvertir = prefactura.saldo_pendiente === 0 && prefactura.estado !== 'anulada'
+    const puedeAbonar = prefactura.estado !== 'liquidada' && prefactura.estado !== 'anulada' && puede('editar')
+    const puedeConvertir = prefactura.saldo_pendiente === 0 && prefactura.estado !== 'anulada' && puede('editar')
 
     const [modalAbono, setModalAbono] = useState(false)
     const [abonoValor, setAbonoValor] = useState('')
