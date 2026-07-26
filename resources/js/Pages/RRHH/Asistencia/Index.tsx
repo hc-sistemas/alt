@@ -5,6 +5,7 @@ import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
 import { cn } from '@/lib/utils'
 import { LogIn, LogOut, Clock, Calendar, AlertCircle, CheckCircle2, Users } from 'lucide-react'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { Colaborador, Asistencia, PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
 
@@ -122,6 +123,7 @@ function EstadoAsistencia({ a }: { a: Asistencia | null }) {
 export default function AsistenciaIndex() {
     const { colaborador, asistenciaHoy, historial, resumenDia, server_time, es_admin, flash } =
         usePage<Props>().props
+    const { puede } = usePermiso('rrhh')
 
     const [procesando, setProcesando] = useState(false)
 
@@ -137,8 +139,8 @@ export default function AsistenciaIndex() {
 
     const tieneEntrada   = !!(asistenciaHoy?.hora_entrada)
     const tieneSalida    = !!(asistenciaHoy?.hora_salida)
-    const puedeEntrada   = !!colaborador && !tieneEntrada
-    const puedeSalida    = !!colaborador && tieneEntrada && !tieneSalida
+    const puedeEntrada   = !!colaborador && !tieneEntrada && puede('crear')
+    const puedeSalida    = !!colaborador && tieneEntrada && !tieneSalida && puede('crear')
 
     function registrar(tipo: 'entrada' | 'salida') {
         setProcesando(true)

@@ -11,6 +11,7 @@ import {
     Plus, Pencil, ToggleLeft, ToggleRight, Search, X,
     User, Briefcase, DollarSign, CreditCard, Phone, Lock, Clock,
 } from 'lucide-react'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { Colaborador, PuestoTrabajo, Horario, PageProps, PaginatedData } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
 
@@ -534,6 +535,7 @@ function ColaboradorModal({ colaborador, puestos, horarios, usuarios, perfiles, 
 export default function ColaboradoresIndex() {
     const { colaboradores, puestos, horarios, usuarios, perfiles, departamentos, filtros } =
         usePage<Props>().props
+    const { puede } = usePermiso('rrhh')
 
     const [modal, setModal] = useState<{ type: 'nuevo' | 'editar'; colaborador?: Colaborador } | null>(null)
     const [buscar, setBuscar] = useState(filtros.buscar ?? '')
@@ -576,16 +578,19 @@ export default function ColaboradoresIndex() {
                 title="Colaboradores"
                 description="Gestión de la ficha laboral del personal"
                 breadcrumbs={[{ label: 'RRHH' }, { label: 'Colaboradores' }]}
+                actions={
+                    puede('crear') ? (
+                        <button onClick={() => setModal({ type: 'nuevo' })} className="btn-primary flex items-center gap-2">
+                            <Plus className="w-4 h-4" /> Nuevo
+                        </button>
+                    ) : undefined
+                }
             />
 
             <div className="p-6 space-y-4">
                 {/* Toolbar */}
-                <div className="flex items-center justify-between gap-3 mb-4 px-6">
+                <div className="flex items-center justify-between gap-3 mb-4">
                     <div className="flex flex-wrap items-center gap-3">
-                        <button onClick={() => setModal({ type: 'nuevo' })} className="btn-primary flex items-center gap-2">
-                            <Plus className="w-4 h-4" /> Nuevo Colaborador
-                        </button>
-
                         <div className="relative">
                             <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
                             <Input
@@ -682,23 +687,27 @@ export default function ColaboradoresIndex() {
                                     </td>
                                     <td className="px-3 py-2.5">
                                         <div className="flex items-center gap-1">
-                                            <button
-                                                onClick={() => setModal({ type: 'editar', colaborador: c })}
-                                                className="p-1.5 rounded-lg transition-colors hover:bg-blue-100 dark:hover:bg-blue-900/30"
-                                                title="Editar"
-                                            >
-                                                <Pencil className="w-3.5 h-3.5 text-blue-500" />
-                                            </button>
-                                            <button
-                                                onClick={() => toggleEstado(c)}
-                                                className="p-1.5 rounded-lg transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
-                                                title={c.estado ? 'Desactivar' : 'Activar'}
-                                            >
-                                                {c.estado
-                                                    ? <ToggleRight className="w-4 h-4 text-emerald-500" />
-                                                    : <ToggleLeft  className="w-4 h-4 text-gray-400" />
-                                                }
-                                            </button>
+                                            {puede('editar') && (
+                                                <button
+                                                    onClick={() => setModal({ type: 'editar', colaborador: c })}
+                                                    className="p-1.5 rounded-lg transition-colors hover:bg-blue-100 dark:hover:bg-blue-900/30"
+                                                    title="Editar"
+                                                >
+                                                    <Pencil className="w-3.5 h-3.5 text-blue-500" />
+                                                </button>
+                                            )}
+                                            {puede('editar') && (
+                                                <button
+                                                    onClick={() => toggleEstado(c)}
+                                                    className="p-1.5 rounded-lg transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
+                                                    title={c.estado ? 'Desactivar' : 'Activar'}
+                                                >
+                                                    {c.estado
+                                                        ? <ToggleRight className="w-4 h-4 text-emerald-500" />
+                                                        : <ToggleLeft  className="w-4 h-4 text-gray-400" />
+                                                    }
+                                                </button>
+                                            )}
                                         </div>
                                     </td>
                                 </tr>

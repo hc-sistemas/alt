@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import {
     Plus, Search, DollarSign, CheckCircle2, Trash2, Filter, X,
 } from 'lucide-react'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { PrestamoEmpleado, Colaborador, PageProps, PaginatedData } from '@/types'
 
 // ── tipos locales ──────────────────────────────────────────────────────────────
@@ -41,6 +42,7 @@ function badgeTipo(tipo: string): React.CSSProperties {
 
 export default function PrestamosIndex({ prestamos, colaboradores, filtros, anios, flash }: Props) {
     const { auth } = usePage<Props>().props
+    const { puede } = usePermiso('rrhh')
 
     // flash toasts
     const [flashMsg, setFlashMsg] = useState<{ ok?: string; err?: string }>({})
@@ -132,19 +134,25 @@ export default function PrestamosIndex({ prestamos, colaboradores, filtros, anio
                 </div>
             )}
 
-            <PageHeader title="Préstamos y Anticipos" subtitle="Control de desembolsos a colaboradores con asiento contable automático" />
+            <PageHeader
+                title="Préstamos y Anticipos"
+                description="Control de desembolsos a colaboradores con asiento contable automático"
+                actions={
+                    puede('crear') ? (
+                        <button
+                            onClick={() => setModalOpen(true)}
+                            style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 6, padding: '7px 14px', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}
+                        >
+                            <Plus size={15} /> Nuevo
+                        </button>
+                    ) : undefined
+                }
+            />
 
             <div style={{ padding: '0 24px 24px' }}>
 
-                {/* Toolbar */}
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 16 }}>
-                    {/* btn primario IZQUIERDA */}
-                    <button
-                        onClick={() => setModalOpen(true)}
-                        style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 6, padding: '7px 14px', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}
-                    >
-                        <Plus size={15} /> Nuevo Préstamo/Anticipo
-                    </button>
+                {/* Toolbar — filtros */}
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 16, marginTop: 16 }}>
 
                     <div style={{ flex: 1 }} />
 
@@ -219,7 +227,7 @@ export default function PrestamosIndex({ prestamos, colaboradores, filtros, anio
                                     </td>
                                     <td style={{ padding: '8px 12px' }}>
                                         <div style={{ display: 'flex', gap: 4 }}>
-                                            {p.estado === 'activo' && (
+                                            {p.estado === 'activo' && puede('editar') && (
                                                 <button
                                                     onClick={() => confirmarPagar(p.id)}
                                                     title="Marcar como pagado"
@@ -228,7 +236,7 @@ export default function PrestamosIndex({ prestamos, colaboradores, filtros, anio
                                                     <CheckCircle2 size={16} />
                                                 </button>
                                             )}
-                                            {p.estado === 'activo' && (
+                                            {p.estado === 'activo' && puede('eliminar') && (
                                                 <button
                                                     onClick={() => confirmarEliminar(p.id)}
                                                     title="Eliminar"

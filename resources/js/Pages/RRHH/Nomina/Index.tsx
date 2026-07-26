@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Head, router, usePage } from '@inertiajs/react'
 import AppLayout from '@/Layouts/AppLayout'
 import { cn } from '@/lib/utils'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { Nomina, PageProps, PaginatedData } from '@/types'
 import { Plus, ChevronLeft, ChevronRight, Trash2, Eye, Archive, FileText } from 'lucide-react'
 
@@ -137,6 +138,7 @@ interface Props extends PageProps {
 
 export default function NominaIndex() {
     const { nominas, filtros, anios, flash } = usePage<Props>().props
+    const { puede } = usePermiso('rrhh')
 
     const [showGenerar, setShowGenerar] = useState(false)
     const [filtro, setFiltro] = useState({
@@ -209,20 +211,23 @@ export default function NominaIndex() {
                 )}
 
                 {/* Header */}
-                <div className="mb-4">
-                    <div className="text-xs mb-0.5" style={{ color: 'var(--text-muted)' }}>RRHH</div>
-                    <h1 className="text-xl font-semibold" style={{ color: 'var(--text-main)' }}>Nómina</h1>
+                <div className="mb-4 flex items-center justify-between gap-3">
+                    <div>
+                        <div className="text-xs mb-0.5" style={{ color: 'var(--text-muted)' }}>RRHH</div>
+                        <h1 className="text-xl font-semibold" style={{ color: 'var(--text-main)' }}>Nómina</h1>
+                    </div>
+                    {puede('crear') && (
+                        <button
+                            onClick={() => setShowGenerar(true)}
+                            className="btn-primary flex items-center gap-1.5 whitespace-nowrap shrink-0"
+                        >
+                            <Plus size={15} /> Generar Nómina
+                        </button>
+                    )}
                 </div>
 
-                {/* Toolbar — btn-primary izquierda + filtros */}
+                {/* Toolbar — filtros */}
                 <div className="flex items-center gap-2 mb-5 flex-wrap">
-                    <button
-                        onClick={() => setShowGenerar(true)}
-                        className="btn-primary flex items-center gap-1.5 whitespace-nowrap"
-                    >
-                        <Plus size={15} /> Generar Nómina
-                    </button>
-
                     <select value={filtro.anio} onChange={e => setFiltro(f => ({ ...f, anio: e.target.value }))}
                         style={selectStyle}>
                         <option value="">Todos los años</option>
@@ -381,7 +386,7 @@ export default function NominaIndex() {
                                                 </a>
                                             )}
 
-                                            {n.estado === 'borrador' && (
+                                            {n.estado === 'borrador' && puede('eliminar') && (
                                                 <button
                                                     onClick={() => eliminar(n)}
                                                     className="flex items-center transition-colors hover:bg-red-50"

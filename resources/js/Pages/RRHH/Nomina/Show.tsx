@@ -3,6 +3,7 @@ import { Head, router, usePage } from '@inertiajs/react'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
 import DesgloseHorasExtraModal from '@/Components/shared/DesgloseHorasExtraModal'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { Nomina, NominaDetalle, PageProps } from '@/types'
 import { cn } from '@/lib/utils'
 import {
@@ -271,6 +272,7 @@ interface Props extends PageProps {
 
 export default function NominaShow() {
     const { nomina, flash } = usePage<Props>().props
+    const { puede } = usePermiso('rrhh')
 
     const [editando, setEditando] = useState<NominaDetalle | null>(null)
     const [showPagar, setShowPagar] = useState(false)
@@ -385,7 +387,7 @@ export default function NominaShow() {
                             Volver
                         </button>
 
-                        {nomina.estado === 'borrador' && (
+                        {nomina.estado === 'borrador' && puede('editar') && (
                             <button
                                 className="btn-primary flex items-center gap-1.5"
                                 onClick={procesar}
@@ -396,7 +398,7 @@ export default function NominaShow() {
                             </button>
                         )}
 
-                        {nomina.estado === 'procesado' && (
+                        {nomina.estado === 'procesado' && puede('editar') && (
                             <button
                                 className="btn-primary flex items-center gap-1.5"
                                 onClick={() => setShowPagar(true)}
@@ -513,7 +515,7 @@ export default function NominaShow() {
                                                 <FileText className="w-4 h-4 text-blue-600" />
                                             </button>
                                             {/* Editar manual — solo en borrador */}
-                                            {nomina.estado === 'borrador' && (
+                                            {nomina.estado === 'borrador' && puede('editar') && (
                                                 <button
                                                     onClick={() => setEditando(d)}
                                                     className="p-1.5 rounded hover:bg-amber-50 transition-colors"

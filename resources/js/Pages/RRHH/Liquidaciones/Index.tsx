@@ -8,6 +8,7 @@ import {
     FileText, CheckCircle2, AlertTriangle, Trash2, Eye, ChevronRight, ChevronLeft,
     Download, PenLine, X,
 } from 'lucide-react'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { Liquidacion, LiquidacionCalculo, Colaborador, PageProps, PaginatedData } from '@/types'
 
 // ── tipos locales ──────────────────────────────────────────────────────────────
@@ -85,10 +86,9 @@ const initWizard = (): WizardState => ({
 
 export default function LiquidacionesIndex({ liquidaciones, colaboradores, filtros, flash }: Props) {
     const { auth } = usePage<Props>().props
-    const isSuperAdmin = auth.user?.perfil_clave === 'super_admin'
-    const isContador   = auth.user?.perfil_clave === 'contador'
-    const canEdit      = isSuperAdmin || isContador
-    const canAprobar   = isSuperAdmin
+    const { puede } = usePermiso('rrhh')
+    const canEdit      = puede('editar')
+    const canAprobar   = puede('editar')
 
     // flash
     const [flashMsg, setFlashMsg] = useState<{ ok?: string; err?: string }>({})
@@ -262,16 +262,23 @@ export default function LiquidacionesIndex({ liquidaciones, colaboradores, filtr
                 </div>
             )}
 
-            <PageHeader title="Liquidaciones" subtitle="Finiquitos, cálculo de haberes y actas legales" />
+            <PageHeader
+                title="Liquidaciones"
+                description="Finiquitos, cálculo de haberes y actas legales"
+                actions={
+                    puede('crear') ? (
+                        <button onClick={abrirWizard}
+                            style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 6, padding: '7px 14px', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+                            <FileText size={15} /> Nueva
+                        </button>
+                    ) : undefined
+                }
+            />
 
             <div style={{ padding: '0 24px 24px' }}>
 
                 {/* Toolbar */}
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 16 }}>
-                    <button onClick={abrirWizard}
-                        style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 6, padding: '7px 14px', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
-                        <FileText size={15} /> Nueva Liquidación
-                    </button>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 16, marginTop: 16 }}>
                     <div style={{ flex: 1 }} />
                     <select value={filtroColab} onChange={e => setFiltroColab(e.target.value)} style={inputStyle}>
                         <option value="">Todos los colaboradores</option>
@@ -331,7 +338,7 @@ export default function LiquidacionesIndex({ liquidaciones, colaboradores, filtr
                                                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#4C1D95', padding: 4, borderRadius: 4 }}>
                                                 <Eye size={16} />
                                             </button>
-                                            {liq.estado === 'borrador' && (
+                                            {liq.estado === 'borrador' && puede('eliminar') && (
                                                 <button onClick={() => eliminarLiquidacion(liq.id)}
                                                     title="Eliminar borrador"
                                                     style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#DC2626', padding: 4, borderRadius: 4 }}>

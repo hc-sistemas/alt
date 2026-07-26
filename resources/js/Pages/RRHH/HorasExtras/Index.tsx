@@ -8,6 +8,7 @@ import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { cn, formatFecha } from '@/lib/utils'
 import { Check, X, Filter, Clock, Eye } from 'lucide-react'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { HorasExtrasAprobacion, Colaborador, PageProps, PaginatedData } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
 
@@ -233,6 +234,7 @@ function ModalRechazar({ extra, onClose }: { extra: HoraExtra; onClose: () => vo
 
 export default function HorasExtrasIndex() {
     const { extras, colaboradores, filtros } = usePage<Props>().props
+    const { puede } = usePermiso('rrhh')
 
     const [modal, setModal] = useState<{ tipo: 'aprobar' | 'rechazar' | 'detalle'; extra: HoraExtra } | null>(null)
     const [estado, setEstado]         = useState(filtros.estado ?? '')
@@ -379,7 +381,7 @@ export default function HorasExtrasIndex() {
                                             >
                                                 <Eye className="w-3 h-3" />
                                             </button>
-                                            {e.estado === 'pendiente' && (
+                                            {e.estado === 'pendiente' && puede('editar') && (
                                                 <>
                                                     <button
                                                         onClick={() => setModal({ tipo: 'aprobar', extra: e })}
