@@ -9,6 +9,7 @@ import { Badge } from '@/Components/ui/badge'
 import { formatFecha, formatMoneda } from '@/lib/utils'
 import { toastError } from '@/lib/toast'
 import { Save, Search, Plus, Check, X } from 'lucide-react'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { PageProps, TallerOrdenTrabajo } from '@/types'
 
 interface Tecnico {
@@ -77,6 +78,7 @@ async function consultarSaldoDisponible(ordenId: number, productoId: number): Pr
 
 export default function OrdenTrabajoShow() {
     const { orden, tecnicos, productos } = usePage<Props>().props
+    const { puede } = usePermiso('taller')
     const cfg = ESTADO_CONFIG[orden.estado] ?? { label: orden.estado, variant: 'secondary' as const }
 
     const [estado, setEstado] = useState(orden.estado)
@@ -334,25 +336,29 @@ export default function OrdenTrabajoShow() {
                             </select>
                         </div>
                     </div>
-                    <Button onClick={actualizarEstado} loading={actualizando}>
-                        <Save className="w-4 h-4" />
-                        Actualizar
-                    </Button>
+                    {puede('editar') && (
+                        <Button onClick={actualizarEstado} loading={actualizando}>
+                            <Save className="w-4 h-4" />
+                            Actualizar
+                        </Button>
+                    )}
                 </div>
 
                 {/* Diagnósticos */}
                 <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
                     <div className="px-4 py-3 flex items-center justify-between" style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
                         <h3 className="text-sm font-semibold" style={{ color: 'var(--text-main)' }}>Diagnósticos</h3>
-                        <Button
-                            size="sm"
-                            disabled={!puedeDiagnosticar}
-                            title={puedeDiagnosticar ? undefined : 'No disponible en el estado actual de la orden'}
-                            onClick={() => router.visit(route('taller.diagnosticos.create', orden.id))}
-                        >
-                            <Plus className="w-3.5 h-3.5" />
-                            Nuevo Diagnóstico
-                        </Button>
+                        {puede('crear') && (
+                            <Button
+                                size="sm"
+                                disabled={!puedeDiagnosticar}
+                                title={puedeDiagnosticar ? undefined : 'No disponible en el estado actual de la orden'}
+                                onClick={() => router.visit(route('taller.diagnosticos.create', orden.id))}
+                            >
+                                <Plus className="w-3.5 h-3.5" />
+                                Nuevo Diagnóstico
+                            </Button>
+                        )}
                     </div>
 
                     {(orden.diagnosticos ?? []).length === 0 ? (
@@ -393,7 +399,7 @@ export default function OrdenTrabajoShow() {
                                                         : d.cliente_aprueba ? 'Aprobado' : 'Rechazado'}
                                                 </td>
                                                 <td className="px-4 py-2.5">
-                                                    {d.estado === 'pendiente' && (
+                                                    {d.estado === 'pendiente' && puede('editar') && (
                                                         <div className="flex items-center gap-1">
                                                             <Button
                                                                 size="sm"
@@ -475,6 +481,7 @@ export default function OrdenTrabajoShow() {
                     )}
 
                     {/* Formulario agregar repuesto */}
+                    {puede('crear') && (
                     <div className="p-4 border-t space-y-3" style={{ borderColor: 'var(--border)' }}>
                         {!puedeAgregarRepuesto && (
                             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
@@ -588,6 +595,7 @@ export default function OrdenTrabajoShow() {
                             Agregar
                         </Button>
                     </div>
+                    )}
                 </div>
 
                 <div className="flex justify-between pt-4 border-t" style={{ borderColor: 'var(--border)' }}>

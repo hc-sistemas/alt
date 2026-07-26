@@ -9,6 +9,7 @@ import { Label } from '@/Components/ui/label'
 import { Badge } from '@/Components/ui/badge'
 import { formatMoneda } from '@/lib/utils'
 import { AlertTriangle, FileText, X } from 'lucide-react'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { PageProps, TallerOrdenTrabajo } from '@/types'
 
 interface Props extends PageProps {
@@ -34,6 +35,7 @@ const FORMAS_PAGO = [
 
 export default function LiquidacionShow() {
     const { orden, errors } = usePage<Props>().props
+    const { puede } = usePermiso('taller')
     const cfg = ESTADO_CONFIG[orden.estado] ?? { label: orden.estado, variant: 'secondary' as const }
 
     const [costoManoObra, setCostoManoObra] = useState(String(orden.costo_mano_obra ?? 0))
@@ -261,10 +263,12 @@ export default function LiquidacionShow() {
                     </div>
 
                     <div className="flex items-center gap-3">
-                        <Button onClick={confirmarLiquidacion} loading={enviando}>
-                            <FileText className="w-4 h-4" />
-                            Generar Factura
-                        </Button>
+                        {puede('editar') && (
+                            <Button onClick={confirmarLiquidacion} loading={enviando}>
+                                <FileText className="w-4 h-4" />
+                                Generar Factura
+                            </Button>
+                        )}
                         <Button variant="ghost" onClick={() => router.visit(route('taller.ordenes.show', orden.id))}>
                             <X className="w-4 h-4" />
                             Cancelar

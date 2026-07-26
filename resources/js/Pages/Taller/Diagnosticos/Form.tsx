@@ -6,6 +6,7 @@ import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { Save, X } from 'lucide-react'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { PageProps, TallerOrdenTrabajo } from '@/types'
 
 interface Props extends PageProps {
@@ -14,6 +15,7 @@ interface Props extends PageProps {
 
 export default function DiagnosticoForm() {
     const { orden } = usePage<Props>().props
+    const { puede } = usePermiso('taller')
 
     const [diagnostico, setDiagnostico] = useState('')
     const [tiempoEstimado, setTiempoEstimado] = useState('')
@@ -126,10 +128,12 @@ export default function DiagnosticoForm() {
                             Cancelar
                         </Button>
                     </Link>
-                    <Button type="submit" loading={guardando}>
-                        <Save className="w-4 h-4" />
-                        Guardar Diagnóstico
-                    </Button>
+                    {puede('crear') && (
+                        <Button type="submit" loading={guardando}>
+                            <Save className="w-4 h-4" />
+                            Guardar Diagnóstico
+                        </Button>
+                    )}
                 </div>
             </form>
         </AppLayout>
