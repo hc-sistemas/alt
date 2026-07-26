@@ -9,6 +9,7 @@ import { Plus, Pencil, Trash2, X, Save, ChevronRight, ChevronDown } from 'lucide
 import { toastExito, toastError } from '@/lib/toast'
 import { confirmarEliminar } from '@/lib/swal'
 import type { CategoriaProducto, PageProps } from '@/types'
+import { usePermiso } from '@/Hooks/usePermiso'
 
 interface Props extends PageProps {
     categorias: CategoriaProducto[]
@@ -19,6 +20,7 @@ const emptyForm = { nombre: '', categoria_padre_id: '' as string | number, estad
 
 export default function CategoriasIndex() {
     const { categorias, todasCategorias } = usePage<Props>().props
+    const { puede } = usePermiso('inventario')
     const [expandidos, setExpandidos] = useState<number[]>([])
     const [modalOpen, setModalOpen] = useState(false)
     const [editando, setEditando] = useState<CategoriaProducto | null>(null)
@@ -110,15 +112,17 @@ export default function CategoriasIndex() {
                 title="Categorías de Producto"
                 description="Árbol de categorías para clasificar productos"
                 breadcrumbs={[{ label: 'Inventario' }, { label: 'Configuración' }, { label: 'Categorías' }]}
+                actions={
+                    puede('crear') ? (
+                        <Button onClick={() => abrirCrear()}>
+                            <Plus className="w-4 h-4" />
+                            Nueva
+                        </Button>
+                    ) : undefined
+                }
             />
 
             <div className="p-6">
-                <div className="flex items-center gap-4 mb-4">
-                    <Button onClick={() => abrirCrear()}>
-                        <Plus className="w-4 h-4" />
-                        Nueva Categoría
-                    </Button>
-                </div>
 
                 <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
                     {categorias.length === 0 ? (
@@ -173,18 +177,24 @@ export default function CategoriasIndex() {
                                                 </td>
                                                 <td className="px-4 py-3">
                                                     <div className="flex items-center justify-end gap-1">
-                                                        <Button variant="ghost" size="icon" title="Agregar subcategoría"
-                                                            onClick={() => abrirCrear(cat.id)}>
-                                                            <Plus className="w-3.5 h-3.5" />
-                                                        </Button>
-                                                        <Button variant="ghost" size="icon" title="Editar"
-                                                            onClick={() => abrirEditar(cat)}>
-                                                            <Pencil className="w-3.5 h-3.5" />
-                                                        </Button>
-                                                        <Button variant="ghost" size="icon" title="Eliminar"
-                                                            onClick={() => eliminar(cat)}>
-                                                            <Trash2 className="w-3.5 h-3.5 text-red-400" />
-                                                        </Button>
+                                                        {puede('crear') && (
+                                                            <Button variant="ghost" size="icon" title="Agregar subcategoría"
+                                                                onClick={() => abrirCrear(cat.id)}>
+                                                                <Plus className="w-3.5 h-3.5" />
+                                                            </Button>
+                                                        )}
+                                                        {puede('editar') && (
+                                                            <Button variant="ghost" size="icon" title="Editar"
+                                                                onClick={() => abrirEditar(cat)}>
+                                                                <Pencil className="w-3.5 h-3.5" />
+                                                            </Button>
+                                                        )}
+                                                        {puede('eliminar') && (
+                                                            <Button variant="ghost" size="icon" title="Eliminar"
+                                                                onClick={() => eliminar(cat)}>
+                                                                <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                                                            </Button>
+                                                        )}
                                                     </div>
                                                 </td>
                                             </tr>
@@ -208,14 +218,18 @@ export default function CategoriasIndex() {
                                                     </td>
                                                     <td className="px-4 py-2.5">
                                                         <div className="flex items-center justify-end gap-1">
-                                                            <Button variant="ghost" size="icon" title="Editar"
-                                                                onClick={() => abrirEditar(hijo)}>
-                                                                <Pencil className="w-3.5 h-3.5" />
-                                                            </Button>
-                                                            <Button variant="ghost" size="icon" title="Eliminar"
-                                                                onClick={() => eliminar(hijo)}>
-                                                                <Trash2 className="w-3.5 h-3.5 text-red-400" />
-                                                            </Button>
+                                                            {puede('editar') && (
+                                                                <Button variant="ghost" size="icon" title="Editar"
+                                                                    onClick={() => abrirEditar(hijo)}>
+                                                                    <Pencil className="w-3.5 h-3.5" />
+                                                                </Button>
+                                                            )}
+                                                            {puede('eliminar') && (
+                                                                <Button variant="ghost" size="icon" title="Eliminar"
+                                                                    onClick={() => eliminar(hijo)}>
+                                                                    <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                                                                </Button>
+                                                            )}
                                                         </div>
                                                     </td>
                                                 </tr>
