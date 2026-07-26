@@ -10,6 +10,7 @@ import {
     ChevronLeft, ArrowLeftRight, Printer, Download,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { PageProps } from '@/types'
 import { notify, formatMoney, formatFecha, swalBase, injectSwalStyles } from '@/utils/contabilidad'
 import 'react-toastify/dist/ReactToastify.css'
@@ -74,8 +75,8 @@ interface Props extends PageProps {
 
 export default function AsientoShow() {
     const { asiento, flash, auth } = usePage<Props>().props
-    const perfil = auth.user?.perfil ?? ''
-    const puedeAnular = ['super_admin', 'admin', 'contador'].includes(perfil)
+    const { puede } = usePermiso('contabilidad')
+    const puedeAnular = puede('anular')
     const cuadrado = Math.abs(asiento.total_debe - asiento.total_haber) < 0.0001
 
     const [modalPdf, setModalPdf] = useState(false)

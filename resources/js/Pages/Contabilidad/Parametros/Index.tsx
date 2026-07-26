@@ -5,6 +5,7 @@ import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
 import { Settings, Search, CheckCircle, AlertCircle, Zap, Save } from 'lucide-react'
 import { notify, swalBase } from '@/utils/contabilidad'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { PlanCuenta, PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
 
@@ -39,6 +40,7 @@ const NOTAS_GRUPO: Record<string, string> = {
 
 export default function ParametrosIndex({ grupos, cuentas }: Props) {
     usePage<Props>()
+    const { puede } = usePermiso('contabilidad')
 
     const [valores, setValores] = useState<Record<string, number | null>>(() => {
         const init: Record<string, number | null> = {}
@@ -157,21 +159,25 @@ export default function ParametrosIndex({ grupos, cuentas }: Props) {
                     </div>
 
                     <div className="flex items-center gap-2 flex-wrap mb-6">
-                        <button onClick={guardar}
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl
-                                       font-semibold text-sm text-white whitespace-nowrap transition-all
-                                       hover:opacity-90 hover:-translate-y-0.5"
-                            style={{ background: 'var(--primary)' }}>
-                            <Save size={15} />
-                            Guardar cambios
-                        </button>
-                        <button onClick={autoconfigurar}
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl
-                                       font-semibold text-sm border whitespace-nowrap transition-all hover:opacity-80"
-                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)' }}>
-                            <Zap size={15} style={{ color: 'var(--primary)' }} />
-                            Autoconfigurar
-                        </button>
+                        {puede('editar') && (
+                            <button onClick={guardar}
+                                className="flex items-center gap-2 px-4 py-2 rounded-xl
+                                           font-semibold text-sm text-white whitespace-nowrap transition-all
+                                           hover:opacity-90 hover:-translate-y-0.5"
+                                style={{ background: 'var(--primary)' }}>
+                                <Save size={15} />
+                                Guardar cambios
+                            </button>
+                        )}
+                        {puede('editar') && (
+                            <button onClick={autoconfigurar}
+                                className="flex items-center gap-2 px-4 py-2 rounded-xl
+                                           font-semibold text-sm border whitespace-nowrap transition-all hover:opacity-80"
+                                style={{ borderColor: 'var(--border)', color: 'var(--text-main)' }}>
+                                <Zap size={15} style={{ color: 'var(--primary)' }} />
+                                Autoconfigurar
+                            </button>
+                        )}
                     </div>
                 </div>
 

@@ -15,6 +15,7 @@ import {
     TrendingUp, TrendingDown, DollarSign, Shield, BarChart3,
     Upload,
 } from 'lucide-react'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { PlanCuenta, PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
 
@@ -609,18 +610,22 @@ interface CuentaNodeProps {
     onEditar: (cuenta: PlanCuenta) => void
     onToggleEstado: (cuenta: PlanCuenta) => void
     onEliminar: (cuenta: PlanCuenta) => void
+    puedeCrear: boolean
+    puedeEditar: boolean
+    puedeEliminarPermiso: boolean
 }
 
 function CuentaNode({
     cuenta, busqueda, expandidos,
     onToggleExpand, onAgregar, onEditar, onToggleEstado, onEliminar,
+    puedeCrear, puedeEditar, puedeEliminarPermiso,
 }: CuentaNodeProps) {
     const hasHijos   = (cuenta.hijos?.length ?? 0) > 0
     const isExpanded = !!busqueda || expandidos.has(cuenta.id)
     const config     = TIPO_CONFIG[cuenta.tipo]
 
     const toggleBlocked = cuenta.estado && cuenta.total_asientos > 0
-    const puedeEliminar = cuenta.total_asientos === 0 && !hasHijos
+    const puedeEliminar = puedeEliminarPermiso && cuenta.total_asientos === 0 && !hasHijos
 
     const tooltipEliminar = !puedeEliminar
         ? hasHijos
@@ -714,47 +719,55 @@ function CuentaNode({
 
                 {/* Acciones */}
                 <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 ml-1 transition-opacity shrink-0">
-                    <button
-                        onClick={() => onAgregar(cuenta)}
-                        title="Agregar cuenta hija"
-                        className="hover:bg-amber-500/20 p-1 rounded transition-colors"
-                        style={{ color: 'var(--primary)' }}
-                    >
-                        <Plus className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                        onClick={() => onEditar(cuenta)}
-                        title="Editar cuenta"
-                        className="hover:bg-blue-500/20 p-1 rounded text-blue-500 dark:text-blue-400 transition-colors"
-                    >
-                        <Pencil className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                        onClick={() => !toggleBlocked && onToggleEstado(cuenta)}
-                        title={toggleBlocked
-                            ? `Tiene ${cuenta.total_asientos} asiento(s) registrado(s), no se puede desactivar`
-                            : cuenta.estado ? 'Desactivar cuenta' : 'Activar cuenta'}
-                        disabled={toggleBlocked}
-                        className={cn(
-                            'p-1 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed',
-                            cuenta.estado
-                                ? 'hover:bg-red-500/20 text-red-500 dark:text-red-400'
-                                : 'hover:bg-green-500/20 text-green-600 dark:text-green-400',
-                        )}
-                    >
-                        {cuenta.estado
-                            ? <ToggleRight className="w-3.5 h-3.5" />
-                            : <ToggleLeft className="w-3.5 h-3.5" />
-                        }
-                    </button>
-                    <button
-                        onClick={() => puedeEliminar && onEliminar(cuenta)}
-                        title={tooltipEliminar}
-                        disabled={!puedeEliminar}
-                        className="p-1 rounded transition-colors hover:bg-red-500/20 text-red-500 dark:text-red-400 disabled:opacity-25 disabled:cursor-not-allowed"
-                    >
-                        <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    {puedeCrear && (
+                        <button
+                            onClick={() => onAgregar(cuenta)}
+                            title="Agregar cuenta hija"
+                            className="hover:bg-amber-500/20 p-1 rounded transition-colors"
+                            style={{ color: 'var(--primary)' }}
+                        >
+                            <Plus className="w-3.5 h-3.5" />
+                        </button>
+                    )}
+                    {puedeEditar && (
+                        <button
+                            onClick={() => onEditar(cuenta)}
+                            title="Editar cuenta"
+                            className="hover:bg-blue-500/20 p-1 rounded text-blue-500 dark:text-blue-400 transition-colors"
+                        >
+                            <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                    )}
+                    {puedeEditar && (
+                        <button
+                            onClick={() => !toggleBlocked && onToggleEstado(cuenta)}
+                            title={toggleBlocked
+                                ? `Tiene ${cuenta.total_asientos} asiento(s) registrado(s), no se puede desactivar`
+                                : cuenta.estado ? 'Desactivar cuenta' : 'Activar cuenta'}
+                            disabled={toggleBlocked}
+                            className={cn(
+                                'p-1 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed',
+                                cuenta.estado
+                                    ? 'hover:bg-red-500/20 text-red-500 dark:text-red-400'
+                                    : 'hover:bg-green-500/20 text-green-600 dark:text-green-400',
+                            )}
+                        >
+                            {cuenta.estado
+                                ? <ToggleRight className="w-3.5 h-3.5" />
+                                : <ToggleLeft className="w-3.5 h-3.5" />
+                            }
+                        </button>
+                    )}
+                    {puedeEliminarPermiso && (
+                        <button
+                            onClick={() => puedeEliminar && onEliminar(cuenta)}
+                            title={tooltipEliminar}
+                            disabled={!puedeEliminar}
+                            className="p-1 rounded transition-colors hover:bg-red-500/20 text-red-500 dark:text-red-400 disabled:opacity-25 disabled:cursor-not-allowed"
+                        >
+                            <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -772,6 +785,9 @@ function CuentaNode({
                             onEditar={onEditar}
                             onToggleEstado={onToggleEstado}
                             onEliminar={onEliminar}
+                            puedeCrear={puedeCrear}
+                            puedeEditar={puedeEditar}
+                            puedeEliminarPermiso={puedeEliminarPermiso}
                         />
                     ))}
                 </div>
@@ -850,6 +866,7 @@ function ImportarExcelModal({ onClose }: { onClose: () => void }) {
 
 export default function PlanCuentasIndex() {
     const { cuentas, todasLasCuentas, flash } = usePage<Props>().props
+    const { puede } = usePermiso('contabilidad')
 
     const [busqueda, setBusqueda]   = useState('')
     const [expandidos, setExpandidos] = useState<Set<number>>(() => new Set(cuentas.map(c => c.id)))
@@ -922,16 +939,19 @@ export default function PlanCuentasIndex() {
                     { label: 'Contabilidad' },
                     { label: 'Plan de Cuentas' },
                 ]}
+                actions={
+                    puede('crear') ? (
+                        <Button size="sm" onClick={() => setModal({ open: true, padre: null })}>
+                            <Plus className="w-4 h-4" />
+                            Nueva
+                        </Button>
+                    ) : undefined
+                }
             />
 
-            {/* Toolbar: [Nueva Cuenta] [Expandir] [Colapsar] [Buscar] | [Excel] */}
+            {/* Toolbar: [Expandir] [Colapsar] [Buscar] | [Importar] [Excel] */}
             <div className="flex items-center justify-between gap-3 px-6 pb-4">
                 <div className="flex flex-wrap items-center gap-2">
-                    <Button size="sm" onClick={() => setModal({ open: true, padre: null })}>
-                        <Plus className="w-4 h-4" />
-                        Nueva cuenta
-                    </Button>
-
                     <Button variant="outline" size="sm" onClick={expandirTodo} title="Expandir todo">
                         <ChevronsUpDown className="w-3.5 h-3.5" />
                         Expandir
@@ -965,12 +985,14 @@ export default function PlanCuentasIndex() {
                 </div>
 
                 <div className="flex items-center gap-2">
-                    <button onClick={() => setModalImportar(true)}
-                        className="btn-primary flex items-center gap-2 whitespace-nowrap"
-                        style={{ background: '#059669' }}>
-                        <Upload className="w-3.5 h-3.5" />
-                        Importar Excel
-                    </button>
+                    {puede('crear') && (
+                        <button onClick={() => setModalImportar(true)}
+                            className="btn-primary flex items-center gap-2 whitespace-nowrap"
+                            style={{ background: '#059669' }}>
+                            <Upload className="w-3.5 h-3.5" />
+                            Importar Excel
+                        </button>
+                    )}
                     <a href={route('contabilidad.plan-cuentas.exportar')}
                        className="btn-excel flex items-center gap-2 whitespace-nowrap">
                         <Download className="w-3.5 h-3.5" />
@@ -1033,6 +1055,9 @@ export default function PlanCuentasIndex() {
                             onEditar={c => setModal({ open: true, cuenta: c })}
                             onToggleEstado={confirmarToggle}
                             onEliminar={confirmarEliminar}
+                            puedeCrear={puede('crear')}
+                            puedeEditar={puede('editar')}
+                            puedeEliminarPermiso={puede('eliminar')}
                         />
                     ))}
                 </div>

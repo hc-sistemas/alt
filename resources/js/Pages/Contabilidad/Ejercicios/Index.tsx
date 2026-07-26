@@ -10,6 +10,7 @@ import {
     Calendar, Lock, Plus, CheckCircle,
     AlertTriangle, XCircle, Unlock, ShieldCheck,
 } from 'lucide-react'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { EjercicioContable, PageProps } from '@/types'
 import { notify, MESES, swalBase, injectSwalStyles } from '@/utils/contabilidad'
 import 'react-toastify/dist/ReactToastify.css'
@@ -21,7 +22,8 @@ interface Props extends PageProps {
 
 export default function EjerciciosIndex() {
     const { ejercicios, periodoActivo, flash, auth } = usePage<Props>().props
-    const esSuperAdmin = auth.user?.perfil === 'super_admin'
+    const { puede } = usePermiso('contabilidad')
+    const esSuperAdmin = puede('editar')
 
     const [modalAbierto, setModalAbierto] = useState(false)
     const [modalCierreFiscal, setModalCierreFiscal] = useState(false)
@@ -164,44 +166,46 @@ conciliación bancaria completada..."
         <AppLayout title="Ejercicios Contables" suppressFlash>
             <div className="p-6 space-y-5">
                 <div className="mb-6">
-                    {/* Fila 1 — Título */}
-                    <div className="flex items-center gap-3 mb-4">
-                        <div className="p-2 rounded-xl"
-                             style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
-                            <Calendar size={24} style={{ color: 'var(--primary)' }} />
+                    {/* Fila 1 — Título + acciones */}
+                    <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 rounded-xl"
+                                 style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
+                                <Calendar size={24} style={{ color: 'var(--primary)' }} />
+                            </div>
+                            <div>
+                                <h1 className="text-xl font-bold"
+                                    style={{ color: 'var(--text-main)' }}>
+                                    Ejercicios Contables
+                                </h1>
+                                <p className="text-sm"
+                                   style={{ color: 'var(--text-muted)' }}>
+                                    Control de períodos contables mensuales
+                                </p>
+                            </div>
                         </div>
-                        <div>
-                            <h1 className="text-xl font-bold"
-                                style={{ color: 'var(--text-main)' }}>
-                                Ejercicios Contables
-                            </h1>
-                            <p className="text-sm"
-                               style={{ color: 'var(--text-muted)' }}>
-                                Control de períodos contables mensuales
-                            </p>
+                        <div className="flex items-center gap-2 flex-wrap shrink-0">
+                            {puede('crear') && (
+                                <button
+                                    onClick={() => setModalAbierto(true)}
+                                    className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5"
+                                    style={{ background: 'var(--primary)' }}
+                                >
+                                    <Plus size={15} />
+                                    Abrir Período
+                                </button>
+                            )}
+                            {esSuperAdmin && (
+                                <button
+                                    onClick={() => setModalCierreFiscal(true)}
+                                    className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5"
+                                    style={{ background: '#7C3AED' }}
+                                >
+                                    <ShieldCheck size={15} />
+                                    Cierre Fiscal Anual
+                                </button>
+                            )}
                         </div>
-                    </div>
-
-                    {/* Fila 2 — Botones debajo */}
-                    <div className="flex items-center gap-2 flex-wrap">
-                        <button
-                            onClick={() => setModalAbierto(true)}
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5"
-                            style={{ background: 'var(--primary)' }}
-                        >
-                            <Plus size={15} />
-                            Abrir Nuevo Período
-                        </button>
-                        {esSuperAdmin && (
-                            <button
-                                onClick={() => setModalCierreFiscal(true)}
-                                className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5"
-                                style={{ background: '#7C3AED' }}
-                            >
-                                <ShieldCheck size={15} />
-                                Cierre Fiscal Anual
-                            </button>
-                        )}
                     </div>
                 </div>
                 {/* Banner período activo */}
@@ -312,13 +316,15 @@ conciliación bancaria completada..."
                                         </td>
                                         <td className="px-4 py-3">
                                             {e.estado === 'abierto' ? (
-                                                <button
-                                                    onClick={() => confirmarCierre(e)}
-                                                    title="Cerrar período"
-                                                    className="p-1.5 rounded-lg transition-colors
-                                                               hover:bg-red-100 dark:hover:bg-red-900/30">
-                                                    <Lock size={15} className="text-red-500" />
-                                                </button>
+                                                puede('anular') && (
+                                                    <button
+                                                        onClick={() => confirmarCierre(e)}
+                                                        title="Cerrar período"
+                                                        className="p-1.5 rounded-lg transition-colors
+                                                                   hover:bg-red-100 dark:hover:bg-red-900/30">
+                                                        <Lock size={15} className="text-red-500" />
+                                                    </button>
+                                                )
                                             ) : (
                                                 <Lock size={15} className="text-gray-300 cursor-not-allowed"
                                                       title="Período cerrado permanentemente" />

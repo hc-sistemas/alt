@@ -11,6 +11,7 @@ import {
     AlertTriangle, User, X, FileText, Zap, Download,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { AsientoContable, CentroCosto, EjercicioContable, PlanCuenta, PageProps } from '@/types'
 import { notify, formatMoney, formatFecha, swalBase, injectSwalStyles } from '@/utils/contabilidad'
 import 'react-toastify/dist/ReactToastify.css'
@@ -54,9 +55,9 @@ const TIPO_BADGE = {
 export default function AsientosIndex() {
     const { asientos, ejercicios, cuentas, centros, periodoActivo, filtros, flash, auth }
         = usePage<Props>().props
-    const perfil = auth.user?.perfil ?? ''
-    const puedeCrear = ['super_admin', 'admin', 'contador'].includes(perfil)
-    const puedeAnular = perfil === 'super_admin'
+    const { puede } = usePermiso('contabilidad')
+    const puedeCrear = puede('crear')
+    const puedeAnular = puede('anular')
 
     // Filtros
     const [buscar, setBuscar] = useState(filtros.buscar ?? '')
@@ -225,44 +226,44 @@ export default function AsientosIndex() {
             <div className={cn('space-y-5', 'p-6')}>
 
                 <div className="mb-6">
-                    {/* Fila 1 — Solo título e ícono */}
-                    <div className="flex items-center gap-3 mb-4">
-                        <div className="p-2 rounded-xl"
-                             style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
-                            <BookOpen size={24} style={{ color: 'var(--primary)' }} />
+                    {/* Fila 1 — Título + acción principal */}
+                    <div className="flex items-center justify-between gap-3 mb-4">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 rounded-xl"
+                                 style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
+                                <BookOpen size={24} style={{ color: 'var(--primary)' }} />
+                            </div>
+                            <div>
+                                <h1 className="text-xl font-bold"
+                                    style={{ color: 'var(--text-main)' }}>
+                                    Asientos Contables
+                                </h1>
+                                <p className="text-sm"
+                                   style={{ color: 'var(--text-muted)' }}>
+                                    Registro de movimientos contables (partida doble)
+                                </p>
+                            </div>
                         </div>
-                        <div>
-                            <h1 className="text-xl font-bold"
-                                style={{ color: 'var(--text-main)' }}>
-                                Asientos Contables
-                            </h1>
-                            <p className="text-sm"
-                               style={{ color: 'var(--text-muted)' }}>
-                                Registro de movimientos contables (partida doble)
-                            </p>
-                        </div>
+                        {puedeCrear && (
+                            <button
+                                onClick={() => {
+                                    if (!periodoActivo) {
+                                        notify.error('No hay período activo.')
+                                        return
+                                    }
+                                    setModalAbierto(true)
+                                }}
+                                className="btn-primary flex items-center gap-2 whitespace-nowrap shrink-0"
+                            >
+                                <Plus size={15} />
+                                Nuevo Asiento
+                            </button>
+                        )}
                     </div>
 
                     {/* Toolbar */}
                     <div className="flex items-center justify-between gap-3 mb-6">
                         <div className="flex items-center gap-2 flex-wrap">
-                            {/* Nuevo asiento */}
-                            {puedeCrear && (
-                                <button
-                                    onClick={() => {
-                                        if (!periodoActivo) {
-                                            notify.error('No hay período activo.')
-                                            return
-                                        }
-                                        setModalAbierto(true)
-                                    }}
-                                    className="btn-primary flex items-center gap-2 whitespace-nowrap"
-                                >
-                                    <Plus size={15} />
-                                    Nuevo Asiento Manual
-                                </button>
-                            )}
-
                             {/* Buscar */}
                             <div className="input-with-icon">
                                 <Search size={14} className="input-icon" />
