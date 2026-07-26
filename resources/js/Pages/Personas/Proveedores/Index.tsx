@@ -84,6 +84,14 @@ export default function ProveedoresIndex() {
                 title="Proveedores"
                 description="Gestión de proveedores nacionales e internacionales"
                 breadcrumbs={[{ label: 'Personas' }, { label: 'Proveedores' }]}
+                actions={
+                    <Link href={route('personas.proveedores.create')}>
+                        <Button>
+                            <Plus className="w-4 h-4" />
+                            Nuevo
+                        </Button>
+                    </Link>
+                }
             />
 
             <div className="p-6">
@@ -106,13 +114,6 @@ export default function ProveedoresIndex() {
 
                 {/* Barra de acciones */}
                 <div className="flex items-center gap-4 mb-4 flex-wrap">
-                    <Link href={route('personas.proveedores.create')}>
-                        <Button>
-                            <Plus className="w-4 h-4" />
-                            Nuevo Proveedor
-                        </Button>
-                    </Link>
-
                     <div className="flex items-center gap-2">
                         <span className="text-sm whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>Buscar:</span>
                         <div className="relative">
