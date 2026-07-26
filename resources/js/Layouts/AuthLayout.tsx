@@ -30,17 +30,8 @@ export default function AuthLayout({ children }: Props) {
                 <div className="relative z-10 flex flex-col items-center justify-center w-full p-12 text-center">
                     {/* Logo */}
                     <div className="mb-8">
-                        <div className="w-24 h-24 rounded-full border-2 flex items-center justify-center mb-4 mx-auto"
-                            style={{ borderColor: '#F59E0B', background: 'rgba(245,158,11,0.1)' }}>
-                            <svg viewBox="0 0 100 100" className="w-14 h-14" fill="none">
-                                <circle cx="50" cy="50" r="40" stroke="#F59E0B" strokeWidth="3" />
-                                <path d="M30 60 L50 25 L70 60" stroke="#F59E0B" strokeWidth="4" strokeLinejoin="round" fill="none" />
-                                <path d="M35 60 L65 60" stroke="#F59E0B" strokeWidth="3" />
-                                <circle cx="50" cy="50" r="6" fill="#F59E0B" />
-                            </svg>
-                        </div>
-                        <h1 className="text-4xl font-bold text-white mb-1">ALTAMIRA</h1>
-                        <p className="text-xl font-light" style={{ color: '#F59E0B' }}>Light & Sound</p>
+                        <img src="/images/logo-altamira.png" alt="Altamira Light & Sound"
+                            className="w-full max-w-sm mx-auto" />
                     </div>
 
                     <div className="max-w-sm">
@@ -49,9 +40,6 @@ export default function AuthLayout({ children }: Props) {
                         </h2>
                         <p className="text-slate-400 text-base leading-relaxed mb-6">
                             Gestión integrada de ventas, inventario, contabilidad y más para tu empresa.
-                        </p>
-                        <p className="text-sm italic" style={{ color: '#F59E0B' }}>
-                            "Ahora las luces se ven Diferente"
                         </p>
                     </div>
 
@@ -89,8 +77,7 @@ export default function AuthLayout({ children }: Props) {
 
                 {/* Logo móvil */}
                 <div className="md:hidden mb-8 text-center">
-                    <h1 className="text-3xl font-bold" style={{ color: 'var(--text-main)' }}>ALTAMIRA</h1>
-                    <p className="text-sm" style={{ color: '#F59E0B' }}>Light & Sound</p>
+                    <img src="/images/logo-altamira.png" alt="Altamira Light & Sound" className="w-full max-w-xs mx-auto" />
                 </div>
 
                 <div className="w-full max-w-sm">

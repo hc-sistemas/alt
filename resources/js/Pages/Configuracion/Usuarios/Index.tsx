@@ -8,6 +8,7 @@ import { Badge } from '@/Components/ui/badge'
 import ConfirmModal from '@/Components/shared/ConfirmModal'
 import { Plus, Search, Pencil, History, FileSpreadsheet, Link2, X } from 'lucide-react'
 import { formatFecha } from '@/lib/utils'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { Usuario, Perfil, Colaborador, PaginatedData, PageProps } from '@/types'
 
 interface Props extends PageProps {
@@ -19,6 +20,7 @@ interface Props extends PageProps {
 
 export default function UsuariosIndex() {
     const { usuarios, perfiles, colaboradores, filters } = usePage<Props>().props
+    const { puede } = usePermiso('configuracion')
     const [confirmToggle, setConfirmToggle] = useState<Usuario | null>(null)
     const [procesando, setProcesando] = useState(false)
     const [vincularUsuario, setVincularUsuario] = useState<Usuario | null>(null)
@@ -90,34 +92,40 @@ export default function UsuariosIndex() {
                 description="Gestión de cuentas de acceso al sistema"
                 breadcrumbs={[{ label: 'Configuración' }, { label: 'Usuarios' }]}
                 actions={
-                    <Link href={route('configuracion.usuarios.create')}>
-                        <Button><Plus className="w-4 h-4" /> Nuevo Usuario</Button>
-                    </Link>
+                    puede('crear') ? (
+                        <Link href={route('configuracion.usuarios.create')}>
+                            <Button><Plus className="w-4 h-4" /> Nuevo</Button>
+                        </Link>
+                    ) : undefined
                 }
             />
 
             <div className="p-6">
                 {/* Filtros */}
                 <div className="flex items-center gap-3 mb-4 flex-wrap">
-                    <form onSubmit={buscar} className="flex gap-2 flex-1">
-                        <div className="relative flex-1 max-w-xs">
+                    <form onSubmit={buscar} className="flex shrink-0 ml-auto" role="group">
+                        <div className="relative">
                             <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
                             <Input
                                 name="search"
                                 defaultValue={filters.search}
-                                placeholder="Buscar nombre, email, username..."
-                                className="pl-9"
+                                placeholder="Nombre, email, username..."
+                                className="pl-9 w-52 rounded-r-none border-r-0"
                             />
                         </div>
-                        <Button type="submit" variant="outline" size="sm">Buscar</Button>
+                        <button type="submit" className="flex items-center justify-center w-9 h-9 rounded-r-md border text-sm font-medium shrink-0"
+                            style={{ background: 'var(--primary)', color: 'black', borderColor: 'var(--primary)' }}
+                            title="Buscar">
+                            <Search className="w-4 h-4" />
+                        </button>
                     </form>
-                    <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium ml-auto"
-                        style={{ background: '#16A34A', color: 'white', transition: 'background 0.2s' }}
+                    <button className="flex items-center justify-center w-9 h-9 rounded-md text-sm font-medium border shrink-0"
+                        style={{ background: '#16A34A', color: 'white', borderColor: '#16A34A', transition: 'background 0.2s' }}
                         onMouseEnter={e => (e.currentTarget.style.background = '#15803D')}
                         onMouseLeave={e => (e.currentTarget.style.background = '#16A34A')}
-                        onClick={exportarExcel}>
+                        onClick={exportarExcel}
+                        title="Excel">
                         <FileSpreadsheet className="w-4 h-4" />
-                        Excel
                     </button>
                 </div>
 
@@ -147,10 +155,12 @@ export default function UsuariosIndex() {
                                 <tr>
                                     <td colSpan={7} className="text-center py-12" style={{ color: 'var(--text-muted)' }}>
                                         <p className="text-sm">No hay usuarios registrados.</p>
-                                        <Link href={route('configuracion.usuarios.create')}
-                                            className="text-amber-500 hover:underline text-sm mt-1 inline-block">
-                                            Crear el primero
-                                        </Link>
+                                        {puede('crear') && (
+                                            <Link href={route('configuracion.usuarios.create')}
+                                                className="text-amber-500 hover:underline text-sm mt-1 inline-block">
+                                                Crear el primero
+                                            </Link>
+                                        )}
                                     </td>
                                 </tr>
                             ) : usuarios.data.map(usuario => {
@@ -197,10 +207,11 @@ export default function UsuariosIndex() {
                                         </td>
                                         <td className="px-4 py-3 text-center">
                                             <button
-                                                onClick={() => setConfirmToggle(usuario)}
+                                                onClick={() => puede('editar') && setConfirmToggle(usuario)}
+                                                disabled={!puede('editar')}
                                                 className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
                                                     usuario.estado ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'
-                                                }`}
+                                                } ${!puede('editar') ? 'opacity-50 cursor-not-allowed' : ''}`}
                                             >
                                                 <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform ${
                                                     usuario.estado ? 'translate-x-4' : 'translate-x-0.5'
@@ -209,21 +220,25 @@ export default function UsuariosIndex() {
                                         </td>
                                         <td className="px-4 py-3">
                                             <div className="flex items-center justify-end gap-1">
-                                                <button
-                                                    onClick={() => abrirVincular(usuario)}
-                                                    title={colabVinculado ? 'Cambiar colaborador vinculado' : 'Vincular colaborador'}
-                                                    className="p-1.5 rounded-md transition-colors"
-                                                    style={{ color: colabVinculado ? '#059669' : 'var(--text-muted)' }}
-                                                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.06)')}
-                                                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                                                >
-                                                    <Link2 className="w-4 h-4" />
-                                                </button>
-                                                <Link href={route('configuracion.usuarios.edit', usuario.id)}>
-                                                    <Button variant="ghost" size="icon" title="Editar">
-                                                        <Pencil className="w-4 h-4" />
-                                                    </Button>
-                                                </Link>
+                                                {puede('editar') && (
+                                                    <button
+                                                        onClick={() => abrirVincular(usuario)}
+                                                        title={colabVinculado ? 'Cambiar colaborador vinculado' : 'Vincular colaborador'}
+                                                        className="p-1.5 rounded-md transition-colors"
+                                                        style={{ color: colabVinculado ? '#059669' : 'var(--text-muted)' }}
+                                                        onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.06)')}
+                                                        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                                                    >
+                                                        <Link2 className="w-4 h-4" />
+                                                    </button>
+                                                )}
+                                                {puede('editar') && (
+                                                    <Link href={route('configuracion.usuarios.edit', usuario.id)}>
+                                                        <Button variant="ghost" size="icon" title="Editar">
+                                                            <Pencil className="w-4 h-4" />
+                                                        </Button>
+                                                    </Link>
+                                                )}
                                                 <Link href={route('configuracion.usuarios.show', usuario.id)}>
                                                     <Button variant="ghost" size="icon" title="Historial">
                                                         <History className="w-4 h-4" />

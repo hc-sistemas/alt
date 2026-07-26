@@ -6,6 +6,7 @@ import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { Save } from 'lucide-react'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { Usuario, Perfil, Empresa, CentroCosto, PageProps } from '@/types'
 
 interface Props extends PageProps {
@@ -17,6 +18,7 @@ interface Props extends PageProps {
 
 export default function UsuarioForm() {
     const { usuario, perfiles, empresas, centros_costo } = usePage<Props>().props
+    const { puede } = usePermiso('configuracion')
     const esEdicion = !!usuario
 
     const { data, setData, post, put, processing, errors } = useForm({
@@ -252,10 +254,12 @@ export default function UsuarioForm() {
 
                 {/* Acciones */}
                 <div className="flex gap-3 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
-                    <Button type="submit" loading={processing}>
-                        <Save className="w-4 h-4" />
-                        {esEdicion ? 'Guardar cambios' : 'Crear usuario'}
-                    </Button>
+                    {(esEdicion ? puede('editar') : puede('crear')) && (
+                        <Button type="submit" loading={processing}>
+                            <Save className="w-4 h-4" />
+                            {esEdicion ? 'Guardar cambios' : 'Crear usuario'}
+                        </Button>
+                    )}
                     <Button type="button" variant="outline"
                         onClick={() => window.history.back()}>
                         Cancelar

@@ -28,7 +28,7 @@ function saludo(): string {
 }
 
 export default function Dashboard() {
-    const { auth, stats, empresa_activa } = usePage<Props>().props
+    const { auth, stats } = usePage<Props>().props
     const hoy = new Date().toLocaleDateString('es-EC', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
 
     return (
@@ -46,16 +46,6 @@ export default function Dashboard() {
                     </div>
 
                     <div className="flex items-center gap-2">
-                        {empresa_activa && (
-                            <span className="px-3 py-1.5 rounded-full text-xs font-semibold border"
-                                style={{
-                                    background: 'rgba(245,158,11,0.1)',
-                                    borderColor: 'rgba(245,158,11,0.3)',
-                                    color: '#F59E0B'
-                                }}>
-                                {empresa_activa.nombre_comercial}
-                            </span>
-                        )}
                         <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs"
                             style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
                             <Calendar className="w-3.5 h-3.5" />
