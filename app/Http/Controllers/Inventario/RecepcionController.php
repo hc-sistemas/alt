@@ -168,8 +168,7 @@ class RecepcionController extends Controller
             return response()->json(['encontrado' => false, 'producto' => null]);
         }
 
-        $producto = Producto::where('empresa_id', $empresaId)
-            ->where('estado', true)
+        $producto = Producto::where('estado', true)
             ->where(fn($q) => $q->where('codigo', $codigo)->orWhere('codigo_externo', $codigo))
             ->first(['id', 'codigo', 'nombre', 'unidad']);
 

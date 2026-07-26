@@ -23,16 +23,19 @@ interface ListaPrecioRow {
     lista_pvd_descuento_max: number | null
     vigencia_desde: string | null
     vigencia_hasta: string | null
+    inventario?: Record<number, number>
 }
 
 interface Marca { id: number; nombre: string }
 interface Categoria { id: number; nombre: string }
+interface BodegaOpcion { id: number; nombre: string }
 
 interface Props extends PageProps {
     listas: PaginatedData<ListaPrecioRow>
     filters: { search?: string; marca_id?: string; categoria_id?: string }
     marcas: Marca[]
     categorias: Categoria[]
+    bodegas: BodegaOpcion[]
 }
 
 interface SinPaginarResponse {
@@ -89,7 +92,8 @@ function tienePromoGuardada(row: ListaPrecioRow): boolean {
 }
 
 export default function ListasPrecioIndex() {
-    const { listas, filters, marcas, categorias } = usePage<Props>().props
+    const { listas, filters, marcas, categorias, bodegas } = usePage<Props>().props
+    const totalColumnas = 9 + bodegas.length + 3
 
     const [search, setSearch]   = useState(filters.search ?? '')
     const [marcaId, setMarcaId] = useState(filters.marca_id ?? '')
@@ -417,6 +421,13 @@ export default function ListasPrecioIndex() {
                                         {h}
                                     </th>
                                 ))}
+                                {bodegas.map(b => (
+                                    <th key={b.id}
+                                        className="text-right px-2 py-3 font-medium text-xs uppercase tracking-wider whitespace-nowrap"
+                                        style={{ color: 'var(--text-muted)' }}>
+                                        Stock {b.nombre}
+                                    </th>
+                                ))}
                                 {['Desc. Promo %', 'Desde', 'Hasta'].map((h, i) => (
                                     <th key={h}
                                         className="text-left px-2 py-3 font-medium text-xs uppercase tracking-wider whitespace-nowrap text-amber-400"
@@ -429,7 +440,7 @@ export default function ListasPrecioIndex() {
                         <tbody>
                             {listas.data.length === 0 ? (
                                 <tr>
-                                    <td colSpan={12} className="text-center py-16" style={{ color: 'var(--text-muted)' }}>
+                                    <td colSpan={totalColumnas} className="text-center py-16" style={{ color: 'var(--text-muted)' }}>
                                         <p className="font-medium text-sm" style={{ color: 'var(--text-main)' }}>
                                             No hay productos
                                         </p>
@@ -527,11 +538,16 @@ export default function ListasPrecioIndex() {
                                                 </td>
                                             </>
                                         )}
+                                        {bodegas.map(b => (
+                                            <td key={b.id} className={tdMuted} style={{ color: 'var(--text-muted)' }}>
+                                                {Number(row.inventario?.[b.id] ?? 0).toFixed(2)}
+                                            </td>
+                                        ))}
                                         {promoGroupCells(row)}
                                     </tr>
                                     {promoOpen && (
                                         <tr style={{ borderColor: 'var(--border)' }}>
-                                            <td colSpan={12} className="px-4 py-3" style={{ background: 'var(--bg-card)', borderTop: '1px dashed var(--border)' }}>
+                                            <td colSpan={totalColumnas} className="px-4 py-3" style={{ background: 'var(--bg-card)', borderTop: '1px dashed var(--border)' }}>
                                                 <div className="flex items-end gap-3 flex-wrap">
                                                     <div>
                                                         <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>Desc. promo %</p>

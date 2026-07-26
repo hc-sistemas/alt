@@ -7,6 +7,7 @@ import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { Save, Info } from 'lucide-react'
 import { toastExito, toastError } from '@/lib/toast'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { Producto, PageProps } from '@/types'
 
 interface Props extends PageProps {
@@ -27,7 +28,7 @@ const TABS: { key: Tab; label: string }[] = [
 ]
 
 const TAB_FIELDS: Record<Tab, string[]> = {
-    general: ['codigo', 'nombre', 'tipo', 'unidad', 'descripcion'],
+    general: ['codigo', 'nombre', 'tipo', 'unidad', 'descripcion', 'marca_fabricante'],
     precios: ['pvp', 'pvd', 'costo', 'descuento_maximo', 'porcentaje_iva', 'porcentaje_ice'],
     inventario: ['stock_minimo', 'stock_maximo', 'peso'],
     contabilidad: ['cuenta_inventario', 'cuenta_costo_ventas', 'cuenta_ventas'],
@@ -35,6 +36,7 @@ const TAB_FIELDS: Record<Tab, string[]> = {
 
 export default function ProductoForm() {
     const { producto, marcas, categorias, cuentas } = usePage<Props>().props
+    const { puede } = usePermiso('inventario')
     const esEdicion = !!producto
 
     const [activeTab, setActiveTab] = useState<Tab>('general')
@@ -46,6 +48,7 @@ export default function ProductoForm() {
         tipo: producto?.tipo ?? 'producto',
         unidad: producto?.unidad ?? 'unidad',
         marca_id: producto?.marca_id?.toString() ?? '',
+        marca_fabricante: producto?.marca_fabricante ?? '',
         categoria_id: producto?.categoria_id?.toString() ?? '',
         requiere_serie: producto?.requiere_serie ?? false,
         pvp: producto?.pvp?.toString() ?? '0',
@@ -79,6 +82,7 @@ export default function ProductoForm() {
         const payload = {
             ...data,
             marca_id: data.marca_id || null,
+            marca_fabricante: data.marca_fabricante || null,
             categoria_id: data.categoria_id || null,
             stock_minimo: Math.round(Number(data.stock_minimo)),
             stock_maximo: data.stock_maximo ? Math.round(Number(data.stock_maximo)) : null,
@@ -198,7 +202,7 @@ export default function ProductoForm() {
                                     </select>
                                 </div>
                                 <div className="space-y-1.5">
-                                    <Label>Marca</Label>
+                                    <Label>Marca comercial</Label>
                                     <select
                                         value={data.marca_id}
                                         onChange={e => setData('marca_id', e.target.value)}
@@ -208,6 +212,15 @@ export default function ProductoForm() {
                                         <option value="">Sin marca</option>
                                         {marcas.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}
                                     </select>
+                                </div>
+                                <div className="space-y-1.5">
+                                    <Label>Marca del fabricante</Label>
+                                    <Input
+                                        value={data.marca_fabricante}
+                                        onChange={e => setData('marca_fabricante', e.target.value)}
+                                        placeholder="Ej: Pioneer"
+                                    />
+                                    {errors.marca_fabricante && <p className="text-xs text-red-400">{errors.marca_fabricante}</p>}
                                 </div>
                                 <div className="space-y-1.5">
                                     <Label>Categoría</Label>
@@ -442,10 +455,12 @@ export default function ProductoForm() {
 
                 {/* Acciones */}
                 <div className="flex gap-3 pt-6 mt-6 border-t" style={{ borderColor: 'var(--border)' }}>
-                    <Button type="submit" loading={processing}>
-                        <Save className="w-4 h-4" />
-                        {esEdicion ? 'Guardar cambios' : 'Crear producto'}
-                    </Button>
+                    {puede(esEdicion ? 'editar' : 'crear') && (
+                        <Button type="submit" loading={processing}>
+                            <Save className="w-4 h-4" />
+                            {esEdicion ? 'Guardar cambios' : 'Crear producto'}
+                        </Button>
+                    )}
                     <Button type="button" variant="outline"
                         onClick={() => router.visit(route('inventario.productos.index'))}>
                         Cancelar

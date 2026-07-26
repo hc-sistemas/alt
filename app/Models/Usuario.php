@@ -75,7 +75,10 @@ class Usuario extends Authenticatable
 
     public function tienePermisoModulo(string $modulo, string $accion = 'ver'): bool
     {
+        $empresaActivaId = session('empresa_activa_id');
+
         $permiso = $this->perfil?->permisos()
+            ->where('empresa_id', $empresaActivaId)
             ->whereHas('modulo', fn($q) => $q->where('clave', $modulo))
             ->first();
 

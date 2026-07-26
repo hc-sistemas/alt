@@ -677,9 +677,6 @@ class ConciliacionController extends Controller
             ->where('tipo', 'sistema')->where('conciliada', false)->get();
 
         $usadosIds = [];
-        $bancoIdsMatch = [];
-        $sistemaIdsMatch = [];
-        $movimientoIdsMatch = [];
 
         foreach ($partidasBanco as $pBanco) {
             $montoB = (float) $pBanco->monto;
@@ -698,24 +695,17 @@ class ConciliacionController extends Controller
                 $pSistema = $candidatos->first();
                 $usadosIds[] = $pSistema->id;
 
-                $bancoIdsMatch[] = $pBanco->id;
-                $sistemaIdsMatch[] = $pSistema->id;
-                if ($pSistema->movimiento_id) {
-                    $movimientoIdsMatch[] = $pSistema->movimiento_id;
-                }
+                DB::transaction(function () use ($pBanco, $pSistema) {
+                    $pBanco->update(['conciliada' => true]);
+                    $pSistema->update(['conciliada' => true]);
+                    if ($pSistema->movimiento_id) {
+                        MovimientoBancario::where('id', $pSistema->movimiento_id)
+                            ->update(['conciliado' => true]);
+                    }
+                });
 
                 $matched++;
             }
-        }
-
-        if ($matched > 0) {
-            DB::transaction(function () use ($bancoIdsMatch, $sistemaIdsMatch, $movimientoIdsMatch) {
-                PartidaTransito::whereIn('id', $bancoIdsMatch)->update(['conciliada' => true]);
-                PartidaTransito::whereIn('id', $sistemaIdsMatch)->update(['conciliada' => true]);
-                if (!empty($movimientoIdsMatch)) {
-                    MovimientoBancario::whereIn('id', $movimientoIdsMatch)->update(['conciliado' => true]);
-                }
-            });
         }
 
         return $matched;

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Head, usePage, router, Link } from '@inertiajs/react'
 import Swal from 'sweetalert2'
+import axios from '@/lib/axios'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
 import { Button } from '@/Components/ui/button'
@@ -117,11 +118,25 @@ export default function Index() {
         })
         if (!result.isConfirmed || !result.value) return
 
-        router.patch(
-            route('ventas.facturas.anular', factura.id),
-            { codigo_aprobacion: result.value as string },
-            { preserveState: true },
-        )
+        try {
+            const { data } = await axios.post<{ valido: boolean; aprobacion_id?: number; mensaje?: string }>(
+                route('ventas.aprobacion.validar'),
+                { tipo: 'anulacion_factura', codigo: result.value as string },
+            )
+
+            if (!data.valido || !data.aprobacion_id) {
+                void Swal.fire('Código incorrecto', data.mensaje ?? 'La aprobación no es válida.', 'error')
+                return
+            }
+
+            router.patch(
+                route('ventas.facturas.anular', factura.id),
+                { aprobacion_especial_id: data.aprobacion_id },
+                { preserveState: true },
+            )
+        } catch {
+            void Swal.fire('Error', 'No se pudo validar el código de aprobación.', 'error')
+        }
     }
 
     const hayFiltros = Object.values(filtro).some(v => v !== '')

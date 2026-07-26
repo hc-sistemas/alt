@@ -2,11 +2,11 @@ import { Head, Link, router, usePage } from '@inertiajs/react'
 import { useEffect, useRef, useState } from 'react'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
-import PdfPreviewModal from '@/Components/shared/PdfPreviewModal'
 import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
-import { Search, ArrowUpDown, Plus, Pencil, FileText, FileSpreadsheet } from 'lucide-react'
+import { Search, ArrowUpDown, Plus, Pencil, FileSpreadsheet } from 'lucide-react'
 import type { InventarioSaldo, PaginatedData, PageProps } from '@/types'
+import { usePermiso } from '@/Hooks/usePermiso'
 
 interface SaldoRow extends InventarioSaldo {
     producto_codigo?: string
@@ -22,11 +22,11 @@ interface Props extends PageProps {
 
 export default function KardexSaldos() {
     const { saldos, bodegas, filters } = usePage<Props>().props
+    const { puede } = usePermiso('inventario')
 
     const [search, setSearch]         = useState(filters.search ?? '')
     const [bodegaId, setBodegaId]     = useState(filters.bodega_id ?? '')
     const [soloCriticos, setSoloCriticos] = useState(filters.solo_criticos === '1')
-    const [pdfModal, setPdfModal]     = useState(false)
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const isFirstRender = useRef(true)
 
@@ -66,47 +66,42 @@ export default function KardexSaldos() {
     }
 
     return (
-        <AppLayout title="Saldos de Inventario">
-            <Head title="Saldos de Inventario" />
+        <AppLayout title="Inventario General">
+            <Head title="Inventario General" />
             <PageHeader
-                title="Saldos de Inventario"
+                title="Inventario General"
                 description="Stock actual por producto y bodega"
-                breadcrumbs={[{ label: 'Inventario' }, { label: 'Kárdex' }, { label: 'Saldos' }]}
+                breadcrumbs={[{ label: 'Inventario' }, { label: 'Kárdex' }, { label: 'Inventario General' }]}
+                actions={
+                    <div className="flex items-center gap-2">
+                        <Link href={route('inventario.kardex.index')}>
+                            <Button variant="outline">
+                                <ArrowUpDown className="w-4 h-4" />
+                                Ver Movimientos
+                            </Button>
+                        </Link>
+                        {puede('crear') && (
+                            <Link href={route('inventario.kardex.ajuste')}>
+                                <Button>
+                                    <Plus className="w-4 h-4" />
+                                    Registrar
+                                </Button>
+                            </Link>
+                        )}
+                    </div>
+                }
             />
 
             <div className="p-6">
                 <div className="flex items-center gap-3 mb-4 flex-wrap">
-                    <Link href={route('inventario.kardex.index')}>
-                        <Button variant="outline">
-                            <ArrowUpDown className="w-4 h-4" />
-                            Ver Movimientos
-                        </Button>
-                    </Link>
-                    <Link href={route('inventario.kardex.ajuste')}>
-                        <Button
-                            style={{ background: 'var(--primary)', color: 'white', transition: 'background 0.2s' }}
-                            onMouseEnter={e => (e.currentTarget.style.background = 'var(--primary-hover)')}
-                            onMouseLeave={e => (e.currentTarget.style.background = 'var(--primary)')}
-                        >
-                            <Plus className="w-4 h-4" />
-                            Registrar Ajuste
-                        </Button>
-                    </Link>
-
-                    <div className="relative">
-                        <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
-                        <Input value={search} onChange={e => setSearch(e.target.value)}
-                            placeholder="Código o nombre..." className="pl-9 w-52" />
-                    </div>
-
                     <select value={bodegaId} onChange={e => setBodegaId(e.target.value)}
-                        className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
+                        className="input-field shrink-0"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
                         <option value="">Todas las bodegas</option>
                         {bodegas.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
                     </select>
 
-                    <label className="flex items-center gap-2 cursor-pointer select-none text-sm"
+                    <label className="flex items-center gap-2 cursor-pointer select-none text-sm shrink-0"
                         style={{ color: 'var(--text-muted)' }}>
                         <input type="checkbox" checked={soloCriticos}
                             onChange={e => setSoloCriticos(e.target.checked)}
@@ -114,23 +109,30 @@ export default function KardexSaldos() {
                         Solo críticos
                     </label>
 
-                    <div className="flex items-center gap-2 ml-auto">
-                        <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium"
-                            style={{ background: '#DC2626', color: 'white', transition: 'background 0.2s' }}
-                            onMouseEnter={e => (e.currentTarget.style.background = '#B91C1C')}
-                            onMouseLeave={e => (e.currentTarget.style.background = '#DC2626')}
-                            onClick={() => setPdfModal(true)}>
-                            <FileText className="w-4 h-4" />
-                            PDF
-                        </button>
-                        <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium"
-                            style={{ background: '#16A34A', color: 'white', transition: 'background 0.2s' }}
-                            onMouseEnter={e => (e.currentTarget.style.background = '#15803D')}
-                            onMouseLeave={e => (e.currentTarget.style.background = '#16A34A')}
-                            onClick={exportarExcel}>
-                            <FileSpreadsheet className="w-4 h-4" />
-                            Excel
-                        </button>
+                    <div className="flex items-center gap-3 shrink-0 ml-auto">
+                        <div className="flex shrink-0" role="group">
+                            <div className="relative">
+                                <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+                                <Input value={search} onChange={e => setSearch(e.target.value)}
+                                    placeholder="Código o nombre..." className="pl-9 w-72 rounded-r-none border-r-0" />
+                            </div>
+                            <button className="flex items-center justify-center w-9 h-9 rounded-r-md border text-sm font-medium shrink-0"
+                                style={{ background: 'var(--primary)', color: 'black', borderColor: 'var(--primary)' }}
+                                title="Buscar">
+                                <Search className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        <div className="flex shrink-0" role="group">
+                            <button className="flex items-center justify-center w-9 h-9 rounded-md border text-sm font-medium"
+                                style={{ background: '#16A34A', color: 'white', borderColor: '#16A34A', transition: 'background 0.2s' }}
+                                onMouseEnter={e => (e.currentTarget.style.background = '#15803D')}
+                                onMouseLeave={e => (e.currentTarget.style.background = '#16A34A')}
+                                onClick={exportarExcel}
+                                title="Excel">
+                                <FileSpreadsheet className="w-4 h-4" />
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -198,14 +200,16 @@ export default function KardexSaldos() {
                                             {valorTotal.toFixed(2)}
                                         </td>
                                         <td className="px-3 py-2.5">
-                                            <Link href={route('inventario.kardex.ajuste', {
-                                                producto_id: saldo.producto_id,
-                                                bodega_id: saldo.bodega_id,
-                                            })}>
-                                                <Button variant="ghost" size="icon" title="Registrar ajuste">
-                                                    <Pencil className="w-3.5 h-3.5" />
-                                                </Button>
-                                            </Link>
+                                            {puede('crear') && (
+                                                <Link href={route('inventario.kardex.ajuste', {
+                                                    producto_id: saldo.producto_id,
+                                                    bodega_id: saldo.bodega_id,
+                                                })}>
+                                                    <Button variant="ghost" size="icon" title="Registrar ajuste">
+                                                        <Pencil className="w-3.5 h-3.5" />
+                                                    </Button>
+                                                </Link>
+                                            )}
                                         </td>
                                     </tr>
                                 )
@@ -237,13 +241,6 @@ export default function KardexSaldos() {
                     </div>
                 )}
             </div>
-            <PdfPreviewModal
-                abierto={pdfModal}
-                onCerrar={() => setPdfModal(false)}
-                url={pdfModal ? route('inventario.kardex.reporte.saldos') : ''}
-                titulo="Saldos de Inventario"
-                nombreDescarga="kardex_saldos.pdf"
-            />
         </AppLayout>
     )
 }

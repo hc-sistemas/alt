@@ -113,8 +113,7 @@ class FacturaController extends Controller
             ->orderBy('razon_social')
             ->get();
 
-        $productos = Producto::where('empresa_id', $empresaId)
-            ->where('estado', true)
+        $productos = Producto::where('estado', true)
             ->select('id', 'codigo', 'nombre', 'pvp', 'pvd', 'costo', 'porcentaje_iva')
             ->orderBy('nombre')
             ->get();
@@ -203,6 +202,7 @@ class FacturaController extends Controller
             'detalles.*.cantidad'     => 'required|numeric|min:0.01',
             'detalles.*.precio'       => 'required|numeric|min:0.01',
             'detalles.*.descuento_pct'=> 'nullable|numeric|min:0',
+            'detalles.*.aprobacion_id'=> 'nullable|integer',
             'formas_pago'             => 'required|array|min:1',
             'formas_pago.*.forma'     => 'required|string',
             'formas_pago.*.monto'     => 'required|numeric|min:0.01',
@@ -227,12 +227,58 @@ class FacturaController extends Controller
         $productoIds = collect($request->detalles)->pluck('producto_id')->unique()->all();
         $maximosPermitidos = $this->descuento->mapaMaximosPermitidos($productoIds, $empresaId);
 
+        // Costo real desde la tabla productos — nunca se confía en un valor
+        // de costo que venga del request, para que no se pueda manipular el
+        // payload y saltarse la validación de precio bajo costo.
+        $costosProductos = Producto::whereIn('id', $productoIds)->pluck('costo', 'id');
+
         // Se resuelve una sola vez (la aprobación es global para toda la
         // factura, no por línea) y se reutiliza para cada detalle que la
         // necesite.
         $aprobacionValida = null;
 
+        // Aprobaciones de precio bajo costo, en cambio, son por línea — cada
+        // una se valida y se acumula aquí para marcarlas consumidas luego.
+        $aprobacionesPrecioUsadas = [];
+
         foreach ($request->detalles as $detalle) {
+            $precio    = (float)($detalle['precio'] ?? 0);
+            $costoReal = (float) ($costosProductos[$detalle['producto_id']] ?? 0);
+
+            if ($precio < $costoReal) {
+                if (empty($detalle['aprobacion_id'])) {
+                    return back()->withErrors([
+                        'aprobacion_especial' => "El precio del producto {$detalle['codigo']} ({$precio}) es menor a su costo ({$costoReal}) y requiere aprobación especial.",
+                    ])->withInput();
+                }
+
+                if (in_array((int) $detalle['aprobacion_id'], $aprobacionesPrecioUsadas, true)) {
+                    return back()->withErrors([
+                        'aprobacion_especial' => "La aprobación especial de precio del producto {$detalle['codigo']} ya fue utilizada en otra línea.",
+                    ])->withInput();
+                }
+
+                // Mismo esquema de aprobación especial que castigo()/anular():
+                // debe existir, estar pedida por este mismo usuario, ser del
+                // tipo correcto y no haberse usado todavía.
+                $aprobacionPrecio = DB::table('aprobaciones_especiales')
+                    ->join('tipos_aprobacion', 'tipos_aprobacion.id', '=', 'aprobaciones_especiales.tipo_aprobacion_id')
+                    ->where('aprobaciones_especiales.id', $detalle['aprobacion_id'])
+                    ->where('aprobaciones_especiales.solicitado_por', $usuario->id)
+                    ->where('tipos_aprobacion.clave', 'precio_bajo_costo')
+                    ->whereNull('aprobaciones_especiales.registro_id')
+                    ->select('aprobaciones_especiales.id')
+                    ->first();
+
+                if (!$aprobacionPrecio) {
+                    return back()->withErrors([
+                        'aprobacion_especial' => "La aprobación especial de precio del producto {$detalle['codigo']} no es válida o ya fue utilizada.",
+                    ])->withInput();
+                }
+
+                $aprobacionesPrecioUsadas[] = (int) $aprobacionPrecio->id;
+            }
+
             $descPct = (float)($detalle['descuento_pct'] ?? 0);
             $maximoProducto = $maximosPermitidos[$detalle['producto_id']] ?? 0.0;
 
@@ -269,7 +315,6 @@ class FacturaController extends Controller
                 $tieneDescuentoEspecial = true;
             }
 
-            $precio     = (float)$detalle['precio'];
             $cantidad   = (float)$detalle['cantidad'];
             $descuento  = $precio * $cantidad * ($descPct / 100);
             $subtotalItem = ($precio * $cantidad) - $descuento;
@@ -298,7 +343,8 @@ class FacturaController extends Controller
         try {
             $factura = DB::transaction(function () use (
                 $request, $empresaId, $usuario, $subtotal0, $subtotal15,
-                $descTotal, $totalIva, $total, $tieneDescuentoEspecial, $aprobacionValida
+                $descTotal, $totalIva, $total, $tieneDescuentoEspecial, $aprobacionValida,
+                $aprobacionesPrecioUsadas
             ) {
                 $empresa = Empresa::findOrFail($empresaId);
                 $numero  = $this->secuencial->siguiente($empresaId, 'FAC');
@@ -431,6 +477,18 @@ class FacturaController extends Controller
                         ]);
                 }
 
+                if (!empty($aprobacionesPrecioUsadas)) {
+                    // Marca cada aprobación de precio bajo costo (una por
+                    // línea) como consumida — mismo patrón que arriba.
+                    DB::table('aprobaciones_especiales')
+                        ->whereIn('id', $aprobacionesPrecioUsadas)
+                        ->update([
+                            'tabla_referencia' => 'facturas',
+                            'registro_id'      => $factura->id,
+                            'updated_at'       => now(),
+                        ]);
+                }
+
                 return $factura;
             });
         } catch (\Throwable $e) {
@@ -471,7 +529,7 @@ class FacturaController extends Controller
     public function anular(Request $request, Factura $factura)
     {
         $request->validate([
-            'codigo_aprobacion' => 'required|string',
+            'aprobacion_especial_id' => 'required|integer',
         ]);
 
         $usuario = Auth::user();
@@ -493,7 +551,23 @@ class FacturaController extends Controller
             return back()->withErrors(['error' => 'La factura ya está anulada.']);
         }
 
-        DB::transaction(function () use ($request, $factura) {
+        // Mismo esquema de aprobación especial que Proformas/CxC: la
+        // aprobación debe existir, estar pedida por este mismo usuario, ser
+        // del tipo correcto y no haberse usado todavía.
+        $aprobacion = DB::table('aprobaciones_especiales')
+            ->join('tipos_aprobacion', 'tipos_aprobacion.id', '=', 'aprobaciones_especiales.tipo_aprobacion_id')
+            ->where('aprobaciones_especiales.id', $request->aprobacion_especial_id)
+            ->where('aprobaciones_especiales.solicitado_por', $usuario->id)
+            ->where('tipos_aprobacion.clave', 'anulacion_factura')
+            ->whereNull('aprobaciones_especiales.registro_id')
+            ->select('aprobaciones_especiales.id')
+            ->first();
+
+        if (!$aprobacion) {
+            return back()->withErrors(['aprobacion_especial' => 'La aprobación especial no es válida o ya fue utilizada.']);
+        }
+
+        DB::transaction(function () use ($factura, $aprobacion) {
             $movimientosStock = DB::table('inventario_movimientos')
                 ->where('doc_tipo', 'FACTURA')
                 ->where('doc_id', $factura->id)
@@ -516,19 +590,15 @@ class FacturaController extends Controller
                 'estado_sri' => 'anulada',
             ]);
 
-            $tipoAnulacion = DB::table('tipos_aprobacion')->where('clave', 'anulacion_factura')->first();
-
-            DB::table('aprobaciones_especiales')->insert([
-                'tipo_aprobacion_id' => $tipoAnulacion->id ?? null,
-                'aprobado_por'       => Auth::id(),
-                'solicitado_por'     => Auth::id(),
-                'empresa_id'         => $factura->empresa_id,
-                'tabla_referencia'   => 'facturas',
-                'registro_id'        => $factura->id,
-                'descripcion'        => "Anulación de factura {$factura->numero_completo}",
-                'created_at'         => now(),
-                'updated_at'         => now(),
-            ]);
+            // Marca la aprobación como consumida — mismo patrón que
+            // CuentaCobrarController::castigo().
+            DB::table('aprobaciones_especiales')
+                ->where('id', $aprobacion->id)
+                ->update([
+                    'tabla_referencia' => 'facturas',
+                    'registro_id'      => $factura->id,
+                    'updated_at'       => now(),
+                ]);
         });
 
         $this->auditoria->documento('anular', 'ventas', 'facturas', $factura->id, "Factura {$factura->numero_completo} anulada");

@@ -84,8 +84,7 @@ class CompraController extends Controller
             ->orderBy('nombre')
             ->get(['id', 'nombre', 'tipo']);
 
-        $productos = Producto::where('empresa_id', $empresaId)
-            ->where('estado', true)
+        $productos = Producto::where('estado', true)
             ->orderBy('codigo')
             ->get(['id', 'codigo', 'nombre', 'unidad', 'costo', 'porcentaje_iva', 'tipo', 'pvp']);
 
