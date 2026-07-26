@@ -304,3 +304,74 @@ Manuales/Index.tsx
 ```
 
 Estas últimas 12 (11 pendientes) no tienen dueño único por el reparto Dev1/Dev2 — decidir entre los dos quién las toma, o dividirlas por quien más las use.
+
+---
+
+## REPORTE FINAL — Sistema del profesor traído completo (2026-07-26)
+
+**Cambio de objetivo respecto a todo lo anterior en este documento:** ya no se trataba de decidir "qué piezas adoptar" (eso ya se había decidido y ejecutado el 2026-07-24, ver arriba). La instrucción para esta pasada fue traer el sistema de permisos del profesor **exactamente igual**, backend completo + las ~78 páginas frontend, **preservando todo el trabajo propio de la rama** (Importaciones: Revertir/Peso/Factor de Importación/Previsualización, seeder de volumen, fixes de Bancos/RRHH/Contabilidad/Carbon3, fix de `InventarioSaldo`).
+
+Al comparar la copia completa del profesor (`Descargas/alt_profesor_extraido/alt`) contra este repo, el alcance real resultó ser mucho mayor que "solo permisos": venía empaquetado con un cambio de arquitectura (catálogo de productos compartido entre empresas) y varias features/fixes independientes sin relación con permisos. En cada punto de conflicto no obvio se detuvo el trabajo y se preguntó explícitamente antes de decidir — ninguna decisión de scope se tomó unilateralmente. Decisiones tomadas por el usuario en esta pasada:
+
+- Traer también el catálogo compartido de productos entre empresas.
+- Revisar una por una las features/fixes independientes mezcladas (no aceptar/rechazar todo en bloque).
+- De esa revisión: sí traer Kardex batch-ajuste, stock por bodega en Listas de Precio, y la ruta JSON que faltaba en Traslados.
+- Sí fusionar la aprobación formal de precio bajo costo en Facturas.
+- Sí adoptar el patrón de transacción-por-par en `ConciliacionController::autoMatchPartidas()`.
+- Traer el revert del optimizador N+1 en `ReporteContableController` **a pesar de mi advertencia explícita de que era una regresión de rendimiento real** (usuario: "Traer de todas formas").
+- Traer el cambio de login usuario-o-email.
+- Traer los manuales PDF dinámicos; **no** traer el "legacy migration tooling" que venía en el mismo lote.
+
+Commits de esta pasada (10, todos en `feature/dev2-contabilidad-compras`, **sin push**):
+
+```
+b20a3f8 FASE 1 - backend completo del sistema del profesor
+6ba6360 FASE 2 - usePermiso() en Bancos y Compras (14 páginas)
+9be337b FASE 2 - usePermiso() en Contabilidad (5 páginas)
+fe77d44 FASE 2 - usePermiso() en RRHH (7 páginas)
+9cabb31 FASE 2 - usePermiso() en páginas de Ventas (10 archivos)
+a54f5a9 FASE 2 - usePermiso() en Inventario restante (10 páginas)
+e9b7c9d FASE 2 - usePermiso() en Taller (6 páginas)
+5a89a9d FASE 2 - reestructura de header en Personas (3 páginas)
+0826073 FASE 2 - usePermiso() y branding en Core (8 archivos)
+a1bdaa8 FASE 2 - barrido final, cierra huecos reales de permisos
+```
+
+### FASE 1 — Backend
+
+Merge completo de `routes/web.php` (middleware `permiso:modulo,accion` granular del profesor + las 4 rutas propias de Importaciones reinsertadas en su grupo correcto), migración nueva para `marca_fabricante`, y reescritura del catálogo compartido en `ProductoController.php`/`ListaPrecioController.php`/`KardexController.php`. Verificado con `route:list --json` diffeado programáticamente: cero rutas perdidas de ningún lado, y se encontraron y corrigieron 5 bugs preexistentes independientes por el camino (ver detalle completo en la sección de bugs de esta fase, más abajo) — ninguno era el objetivo, todos reportados de forma transparente en el momento.
+
+### FASE 2 — Frontend: qué se fusionó a mano (no se copió tal cual)
+
+La inmensa mayoría de las ~78 páginas se copiaron directamente del profesor tras diffearlas (triage por `git blame`: archivos de Darío o míos-pero-anteriores-a-esta-rama se copiaron con más confianza; archivos tocados por mí *en esta sesión* se revisaron línea por línea). Los siguientes son los que **requirieron fusión manual real** porque tenían lógica de negocio propia que el copy del profesor no tiene o revierte:
+
+| Archivo | Qué se preservó | Qué se adoptó del profesor |
+|---|---|---|
+| `app/Http/Controllers/Inventario/ProductoController.php` | `peso` en fillable/validación (Factor de Importación) | Catálogo compartido (`empresa_id` constante), fix real de `cantidad`→`stock_actual` en `destroy()` |
+| `app/Http/Controllers/Inventario/ListaPrecioController.php` | Promociones temporales, import/export Excel | Query sin filtro de empresa, `porcentaje_iva` en el SELECT, stock por bodega |
+| `app/Http/Controllers/Ventas/FacturaController.php` | Estructura completa del método `store()` | Aprobación formal para `precio_bajo_costo` por línea; fix del `anular()` (validaba `codigo_aprobacion` pero nunca lo usaba — no-op de autorización real) |
+| `app/Http/Controllers/Bancos/ConciliacionController.php` | Mi fix de tolerancia de fecha con `abs()` en el filtrado de candidatos | Transacción por par en vez de una transacción al final del batch |
+| `app/Http/Controllers/Contabilidad/ReporteContableController.php` | — (se revirtió a pedido explícito del usuario) | Patrón N+1 por cuenta, **documentado como regresión de rendimiento conocida y aceptada**, no un error mío |
+| `resources/js/Pages/Ventas/CxC/Index.tsx` | Llamada a `aprobacion.validar` vía `axios` (no `fetch()`+meta-tag, patrón identificado esta sesión como causa recurrente de bugs de CSRF); comparación `'super_admin'` en minúscula (el copy del profesor traía `'Super Admin'`, un valor obsoleto de antes del fix de superadmin de esta sesión que habría roto el botón Castigar) | Header con `actions`, filtros condensados, gates `puede('editar')`/`puede('anular')`, campo de motivo en el modal de castigo (ya soportado por el backend) |
+| `resources/js/Pages/Compras/Importaciones/Index.tsx` | **Todas** las features propias de esta sesión: Revertir liquidación (con `ConfirmModal`), Factor de Importación, tab de Resultado de Liquidación con edición de precios, Copiar como plantilla — el copy del profesor no tiene ninguna de estas (es de antes de que se construyeran) | `usePermiso('compras')` insertado a mano en cada botón/acción de fila, con el nivel exacto (`crear`/`editar`) que exige su ruta real en `routes/web.php` |
+| `resources/js/Pages/Inventario/ListasPrecio/Index.tsx` | Columnas de stock por bodega, edición inline de promociones, import/export Excel | Gates `puede('crear')`/`puede('editar')`, y el cambio de precios "PVP+IVA"/"PVD+IVA" (el backend ya traía `porcentaje_iva` desde FASE 1 específicamente para esto) |
+| `resources/js/Pages/Inventario/Productos/Form.tsx` | **No se tocó.** El campo `peso` (Factor de Importación) se queda; el copy del profesor no lo tiene porque es anterior a esa feature |
+
+Componentes compartidos actualizados como prerrequisito de lo anterior (aditivos, sin romper otros usos): `BuscadorProductoModal.tsx` (gana `forwardRef`+búsqueda con debounce, mismas props públicas), `PageHeader.tsx` (`description` acepta `ReactNode`).
+
+Un barrido final comparando **todas** las páginas `.tsx` del repo contra el copy del profesor (no solo la lista original de ~78) encontró 2 huecos reales que se habían quedado sin `usePermiso()` (`Importaciones/Index.tsx` y `ListasPrecio/Index.tsx`, arriba) y 4 páginas que ya tenían el hook pero no la reestructuración de header más reciente — todo cerrado en el commit `a1bdaa8`.
+
+### FASE 3 — Validación
+
+- `npm run build` y `npx tsc --noEmit`: limpio, mismo baseline de errores preexistentes de antes de esta pasada (ninguno nuevo). Corridos repetidamente después de cada batch, no solo al final.
+- `php artisan migrate`: sin pendientes, corrida limpia.
+- Permisos por empresa: confirmado a nivel de código que `VerificarPermiso.php` filtra por `empresa_activa_id` de sesión; confirmado que actualmente los datos sembrados dan el **mismo** acceso al Vendedor en ambas empresas (120 filas en `permisos`, 0 diferencias entre Matriz e Import) — el mecanismo es correcto pero no hay ningún permiso realmente configurado distinto todavía; sería necesario diferenciarlo a propósito desde Configuración > Permisos para verlo en acción.
+- Super Admin: confirmado que el usuario `admin@altamira.com` tiene `perfil.nombre = 'super_admin'`, coincidiendo con el bypass de `VerificarPermiso` y con todas las comparaciones de perfil corregidas esta sesión.
+- Castigo de Cartera: verificado el camino completo a nivel de código y datos reales (fila `castigo_cartera` en `tipos_aprobacion`, un aprobador válido con `codigo_aprobacion` y `puede_aprobar`, 129 cuentas por cobrar candidatas con +360 días de mora) — **no se ejecutó la mutación real** para no alterar datos compartidos de desarrollo.
+- Balance de Comprobación: confirmado con datos reales que Debe = Haber exactamente para Altamira Matriz (~$85.5M en volumen, diferencia $0.00).
+- Bancos/RRHH: smoke test de conteos (3241 movimientos bancarios, 1298 conciliados; 34 nóminas, 35 colaboradores activos) sin errores de esquema.
+- Catálogo compartido: confirmado que todos los productos comparten `empresa_id` (constante `CATALOGO_EMPRESA_ID`), y que la columna `stock_actual` (el fix del bug de `InventarioSaldo`) existe en el esquema real.
+
+**Limitación explícita:** no se hizo click-through real en navegador (no hay herramienta de automatización de navegador disponible en este entorno) — toda la validación de FASE 3 es a nivel de código, esquema y datos reales vía `tinker`/`php -l`/`tsc`/`build`. Recomiendo una pasada manual en navegador antes de dar por cerrado el trabajo, especialmente para Castigo de Cartera end-to-end y para configurar al menos un permiso realmente distinto entre Matriz e Import y confirmar el comportamiento visualmente.
+
+**No se hizo push.** Los 10 commits quedan en `feature/dev2-contabilidad-compras` para revisión.
