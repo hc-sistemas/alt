@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo } from 'react'
 import { router, usePage, useForm, Head } from '@inertiajs/react'
 import { toast, ToastContainer } from 'react-toastify'
 import AppLayout from '@/Layouts/AppLayout'
+import PageHeader from '@/Components/shared/PageHeader'
+import FilterToolbar from '@/Components/shared/FilterToolbar'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
@@ -257,58 +259,59 @@ export default function DatafastIndex() {
         <AppLayout title="Datafast" suppressFlash>
             <Head title="Datafast" />
 
-            <div className="px-6 pt-6 mb-2">
-                <div className="flex items-center justify-between gap-3 mb-4">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-xl" style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
-                            <CreditCard size={24} style={{ color: 'var(--primary)' }} />
-                        </div>
-                        <div>
-                            <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>Datafast</h1>
-                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Lotes de vouchers y liquidaciones</p>
-                        </div>
-                    </div>
-                    {puede('crear') && (
+            <PageHeader
+                title="Datafast"
+                description="Lotes de vouchers y liquidaciones"
+                breadcrumbs={[{ label: 'Bancos' }, { label: 'Datafast' }]}
+                actions={
+                    puede('crear') ? (
                         <button onClick={() => setShowLote(true)}
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5 shrink-0"
+                            className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-black whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5 shrink-0"
                             style={{ background: 'var(--primary)' }}>
                             <Plus size={15} /> Nuevo Lote
                         </button>
-                    )}
-                </div>
-                <div className="flex items-center gap-2 flex-wrap mb-6">
-                    <input type="text" placeholder="Buscar N° lote..."
-                        value={buscar} onChange={e => setBuscar(e.target.value)}
-                        onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
-                        className="input-field" style={{ width: '160px' }} />
+                    ) : undefined
+                }
+            />
 
+            <div className="px-6 pt-6 mb-2">
+                <FilterToolbar
+                    search={{
+                        value: buscar,
+                        onChange: setBuscar,
+                        onSearch: aplicarFiltros,
+                        placeholder: 'N° lote...',
+                    }}
+                >
                     <select value={bancoId} onChange={e => setBancoId(e.target.value)}
-                        className="input-field select-field" style={{ width: 'auto' }}>
+                        className="input-field shrink-0"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
                         <option value="">Todos los terminales</option>
                         {bancos.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
                     </select>
 
                     <select value={estado} onChange={e => setEstado(e.target.value)}
-                        className="input-field select-field" style={{ width: 'auto' }}>
+                        className="input-field shrink-0"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
                         <option value="">Todos los estados</option>
                         <option value="pendiente">Pendiente</option>
                         <option value="liquidado">Liquidado</option>
                     </select>
 
                     <input type="date" value={fechaDesde} onChange={e => setFechaDesde(e.target.value)}
-                        className="input-field" style={{ width: 'auto' }} />
+                        className="input-field shrink-0 w-36"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }} />
                     <input type="date" value={fechaHasta} onChange={e => setFechaHasta(e.target.value)}
-                        className="input-field" style={{ width: 'auto' }} />
+                        className="input-field shrink-0 w-36"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }} />
 
-                    <button onClick={aplicarFiltros} className="btn-secondary whitespace-nowrap">Filtrar</button>
                     {hayFiltros && (
-                        <button onClick={limpiar} className="btn-secondary flex items-center gap-1 whitespace-nowrap">
-                            <X size={13} /> Limpiar
+                        <button type="button" onClick={limpiar} className="text-sm underline shrink-0" style={{ color: 'var(--text-muted)' }}>
+                            Limpiar
                         </button>
                     )}
-                </div>
+                </FilterToolbar>
             </div>
-
 
             {/* Tabla */}
             <div className="px-6 pb-8">
@@ -371,7 +374,7 @@ export default function DatafastIndex() {
                             <div className="col-span-2 flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
                                 {l.estado === 'pendiente' && puede('editar') && (
                                     <button onClick={() => setLiquidarLote(l)}
-                                        className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium text-white"
+                                        className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium text-black"
                                         style={{ background: 'var(--primary)' }}>
                                         <CheckCircle className="w-3.5 h-3.5" /> Liquidar
                                     </button>

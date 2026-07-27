@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo } from 'react'
 import { router, usePage, useForm, Head } from '@inertiajs/react'
 import { toast, ToastContainer } from 'react-toastify'
 import AppLayout from '@/Layouts/AppLayout'
+import PageHeader from '@/Components/shared/PageHeader'
+import FilterToolbar from '@/Components/shared/FilterToolbar'
 import { cn } from '@/lib/utils'
 import {
     Plus, X, CheckCircle, XCircle,
@@ -364,63 +366,53 @@ export default function ChequesIndex() {
             <div className="p-4 md:p-6 space-y-5"
                  style={{ background: 'var(--bg-main)', minHeight: '100vh' }}>
 
-                {/* Header */}
-                <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-xl"
-                             style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
-                            <CreditCard size={24} style={{ color: 'var(--primary)' }} />
-                        </div>
-                        <div>
-                            <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>
-                                Cheques
-                            </h1>
-                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                                {filtrados.length} de {cheques.length} cheques
-                            </p>
-                        </div>
-                    </div>
-                    {puede('crear') && (
-                        <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-2 whitespace-nowrap shrink-0">
-                            <Plus className="w-4 h-4" /> Nuevo
+                <PageHeader
+                    title="Cheques"
+                    description={`${filtrados.length} de ${cheques.length} cheques`}
+                    breadcrumbs={[{ label: 'Bancos' }, { label: 'Cheques' }]}
+                    actions={
+                        puede('crear') ? (
+                            <button onClick={() => setShowModal(true)}
+                                className="flex items-center gap-2 whitespace-nowrap shrink-0 px-4 py-2 rounded-xl font-semibold text-sm text-black transition-all hover:opacity-90"
+                                style={{ background: 'var(--primary)' }}>
+                                <Plus className="w-4 h-4" /> Nuevo
+                            </button>
+                        ) : undefined
+                    }
+                />
+
+                <FilterToolbar
+                    search={{
+                        value: buscar,
+                        onChange: setBuscar,
+                        onSearch: () => {},
+                        placeholder: 'N°, beneficiario...',
+                    }}
+                >
+                    <select value={estado} onChange={e => setEstado(e.target.value)}
+                        className="input-field shrink-0"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
+                        <option value="">Todos los estados</option>
+                        <option value="emitido">Emitido</option>
+                        <option value="cobrado">Cobrado</option>
+                        <option value="protestado">Protestado</option>
+                        <option value="anulado">Anulado</option>
+                    </select>
+                    <select value={bancoId} onChange={e => setBancoId(e.target.value)}
+                        className="input-field shrink-0"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
+                        <option value="">Todos los bancos</option>
+                        {bancos.map(b => (
+                            <option key={b.id} value={b.id}>{b.nombre}</option>
+                        ))}
+                    </select>
+                    {(buscar || estado || bancoId) && (
+                        <button type="button" onClick={() => { setBuscar(''); setEstado(''); setBancoId('') }}
+                            className="text-sm underline shrink-0" style={{ color: 'var(--text-muted)' }}>
+                            Limpiar
                         </button>
                     )}
-                </div>
-
-                {/* Toolbar */}
-                <div className="flex items-center justify-between gap-3">
-                    <div className="flex flex-wrap gap-2 items-center">
-                        <div className="relative">
-                            <input type="text" placeholder="Buscar N°, beneficiario..."
-                                value={buscar} onChange={e => setBuscar(e.target.value)}
-                                className="input-field"
-                                style={{ width: '220px', paddingLeft: '0.875rem' }} />
-                        </div>
-                        <select value={estado} onChange={e => setEstado(e.target.value)}
-                            className="input-field select-field"
-                            style={{ width: 'auto' }}>
-                            <option value="">Todos los estados</option>
-                            <option value="emitido">Emitido</option>
-                            <option value="cobrado">Cobrado</option>
-                            <option value="protestado">Protestado</option>
-                            <option value="anulado">Anulado</option>
-                        </select>
-                        <select value={bancoId} onChange={e => setBancoId(e.target.value)}
-                            className="input-field select-field"
-                            style={{ width: 'auto' }}>
-                            <option value="">Todos los bancos</option>
-                            {bancos.map(b => (
-                                <option key={b.id} value={b.id}>{b.nombre}</option>
-                            ))}
-                        </select>
-                        {(buscar || estado || bancoId) && (
-                            <button onClick={() => { setBuscar(''); setEstado(''); setBancoId('') }}
-                                className="btn-secondary flex items-center gap-1 whitespace-nowrap">
-                                <X className="w-3 h-3" /> Limpiar
-                            </button>
-                        )}
-                    </div>
-                </div>
+                </FilterToolbar>
 
                 {/* Tabla */}
                 <div className="rounded-2xl border overflow-hidden"

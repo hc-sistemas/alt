@@ -3,6 +3,7 @@ import { router, usePage, useForm, Head } from '@inertiajs/react'
 import { toast, ToastContainer } from 'react-toastify'
 import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
+import PageHeader from '@/Components/shared/PageHeader'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
@@ -316,7 +317,7 @@ function BancoModal({ banco, cuentas, onClose }: ModalProps) {
                                             onClick={() => handleTipoChange(t)}
                                             className={cn(
                                                 'py-2 px-3 rounded-lg text-sm font-medium border transition-colors',
-                                                data.tipo === t ? 'text-white border-transparent' : 'hover:opacity-80'
+                                                data.tipo === t ? 'text-black border-transparent' : 'hover:opacity-80'
                                             )}
                                             style={data.tipo === t
                                                 ? { background: 'var(--primary)' }
@@ -510,26 +511,20 @@ export default function BancosCajasIndex() {
         <AppLayout title="Bancos y Cajas" suppressFlash>
             <Head title="Bancos y Cajas" />
 
-            <div className="px-6 pt-6 mb-2">
-                <div className="flex items-center justify-between gap-3 mb-4">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-xl" style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
-                            <Landmark size={24} style={{ color: 'var(--primary)' }} />
-                        </div>
-                        <div>
-                            <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>Bancos y Cajas</h1>
-                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Catálogo de cuentas bancarias y cajas</p>
-                        </div>
-                    </div>
-                    {puede('crear') && (
+            <PageHeader
+                title="Bancos y Cajas"
+                description="Catálogo de cuentas bancarias y cajas"
+                breadcrumbs={[{ label: 'Bancos' }, { label: 'Bancos y Cajas' }]}
+                actions={
+                    puede('crear') ? (
                         <button onClick={() => setModal({ open: true })}
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5 shrink-0"
+                            className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-black whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5 shrink-0"
                             style={{ background: 'var(--primary)' }}>
                             <Plus size={15} /> Nuevo
                         </button>
-                    )}
-                </div>
-            </div>
+                    ) : undefined
+                }
+            />
 
             {/* Stats */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 px-6 py-4">

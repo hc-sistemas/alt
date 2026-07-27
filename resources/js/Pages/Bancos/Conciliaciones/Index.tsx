@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { router, usePage, useForm, Head, Link } from '@inertiajs/react'
 import { toast, ToastContainer } from 'react-toastify'
 import AppLayout from '@/Layouts/AppLayout'
+import PageHeader from '@/Components/shared/PageHeader'
+import FilterToolbar from '@/Components/shared/FilterToolbar'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
@@ -141,7 +143,7 @@ function ConciliacionModal({ bancos, onClose }: { bancos: Props['bancos']; onClo
 
                     <div className="flex gap-2 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
                         <button type="submit" disabled={processing}
-                            className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50"
+                            className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-black disabled:opacity-50"
                             style={{ background: 'var(--primary)' }}>
                             <Plus className="w-4 h-4" /> Crear Conciliación
                         </button>
@@ -192,52 +194,52 @@ export default function ConciliacionesIndex() {
         <AppLayout title="Conciliación Bancaria" suppressFlash>
             <Head title="Conciliación Bancaria" />
 
-            <div className="px-6 pt-6 mb-2">
-                <div className="flex items-center justify-between gap-3 mb-4">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-xl" style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
-                            <GitMerge size={24} style={{ color: 'var(--primary)' }} />
-                        </div>
-                        <div>
-                            <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>Conciliación Bancaria</h1>
-                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Cuadre de saldos banco vs sistema</p>
-                        </div>
-                    </div>
-                    {puede('crear') && (
-                        <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-2 whitespace-nowrap shrink-0">
+            <PageHeader
+                title="Conciliación Bancaria"
+                description="Cuadre de saldos banco vs sistema"
+                breadcrumbs={[{ label: 'Bancos' }, { label: 'Conciliaciones' }]}
+                actions={
+                    puede('crear') ? (
+                        <button onClick={() => setShowModal(true)}
+                            className="flex items-center gap-2 whitespace-nowrap shrink-0 px-4 py-2 rounded-xl font-semibold text-sm text-black transition-all hover:opacity-90"
+                            style={{ background: 'var(--primary)' }}>
                             <Plus size={15} /> Nueva
                         </button>
+                    ) : undefined
+                }
+            />
+
+            <div className="px-6 pt-6 mb-2">
+                <FilterToolbar>
+                    <select value={bancoId} onChange={e => setBancoId(e.target.value)}
+                        className="input-field shrink-0"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
+                        <option value="">Todos los bancos</option>
+                        {bancos.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
+                    </select>
+
+                    <input type="date" value={fechaDesde} onChange={e => setFechaDesde(e.target.value)}
+                        className="input-field shrink-0 w-36"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }} />
+                    <input type="date" value={fechaHasta} onChange={e => setFechaHasta(e.target.value)}
+                        className="input-field shrink-0 w-36"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }} />
+
+                    <select value={estadoFiltro} onChange={e => setEstadoFiltro(e.target.value)}
+                        className="input-field shrink-0"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
+                        <option value="">Todos los estados</option>
+                        <option value="pendiente">Pendiente</option>
+                        <option value="conciliada">Conciliada</option>
+                    </select>
+
+                    <button type="button" onClick={aplicarFiltros} className="text-sm underline shrink-0" style={{ color: 'var(--primary)' }}>Filtrar</button>
+                    {hayFiltros && (
+                        <button type="button" onClick={limpiar} className="text-sm underline shrink-0" style={{ color: 'var(--text-muted)' }}>
+                            Limpiar
+                        </button>
                     )}
-                </div>
-                {/* Toolbar */}
-                <div className="flex items-center justify-between gap-3 mb-6 flex-wrap">
-                    <div className="flex flex-wrap items-center gap-2">
-                        <select value={bancoId} onChange={e => setBancoId(e.target.value)}
-                            className="input-field select-field" style={{ width: 'auto' }}>
-                            <option value="">Todos los bancos</option>
-                            {bancos.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
-                        </select>
-
-                        <input type="date" value={fechaDesde} onChange={e => setFechaDesde(e.target.value)}
-                            className="input-field" style={{ width: 'auto' }} />
-                        <input type="date" value={fechaHasta} onChange={e => setFechaHasta(e.target.value)}
-                            className="input-field" style={{ width: 'auto' }} />
-
-                        <select value={estadoFiltro} onChange={e => setEstadoFiltro(e.target.value)}
-                            className="input-field select-field" style={{ width: 'auto' }}>
-                            <option value="">Todos los estados</option>
-                            <option value="pendiente">Pendiente</option>
-                            <option value="conciliada">Conciliada</option>
-                        </select>
-
-                        <button onClick={aplicarFiltros} className="btn-secondary whitespace-nowrap">Filtrar</button>
-                        {hayFiltros && (
-                            <button onClick={limpiar} className="btn-secondary flex items-center gap-1 whitespace-nowrap">
-                                <X size={13} /> Limpiar
-                            </button>
-                        )}
-                    </div>
-                </div>
+                </FilterToolbar>
             </div>
 
             {/* Tabla */}

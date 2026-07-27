@@ -3,6 +3,7 @@ import { router, usePage, Head, Link } from '@inertiajs/react'
 import { toast, ToastContainer } from 'react-toastify'
 import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
+import PageHeader from '@/Components/shared/PageHeader'
 import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
 import {
@@ -393,69 +394,57 @@ export default function ConciliacionShow() {
         <AppLayout title="Detalle Conciliación" suppressFlash>
             <Head title={`Conciliación — ${conciliacion.banco_caja?.nombre}`} />
 
-            {/* ── Header ─────────────────────────────────────────────────── */}
-            <div className="px-6 pt-6 mb-5">
-                <Link href={route('bancos.conciliaciones.index')}
-                    className="inline-flex items-center gap-1.5 text-sm mb-4 hover:opacity-70 transition-opacity"
-                    style={{ color: 'var(--text-muted)' }}>
-                    <ChevronLeft className="w-4 h-4" /> Volver a conciliaciones
-                </Link>
+            <PageHeader
+                title={conciliacion.banco_caja?.nombre}
+                description={`Corte al ${conciliacion.fecha_corte}`}
+                breadcrumbs={[{ label: 'Bancos' }, { label: 'Conciliaciones' }, { label: conciliacion.banco_caja?.nombre }]}
+                actions={
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <Link href={route('bancos.conciliaciones.index')}
+                            className="inline-flex items-center gap-1.5 text-sm hover:opacity-70 transition-opacity shrink-0"
+                            style={{ color: 'var(--text-muted)' }}>
+                            <ChevronLeft className="w-4 h-4" /> Volver
+                        </Link>
 
-                <div className="flex items-start justify-between flex-wrap gap-4">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-xl"
-                            style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
-                            <GitMerge size={24} style={{ color: 'var(--primary)' }} />
-                        </div>
-                        <div>
-                            <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>
-                                {conciliacion.banco_caja?.nombre}
-                            </h1>
-                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                                Corte al {conciliacion.fecha_corte}
-                            </p>
-                        </div>
+                        {!isCerrada && (
+                            <>
+                                {/* Upload CSV */}
+                                {puede('crear') && (
+                                    <label className={cn(
+                                        'flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium cursor-pointer transition-opacity',
+                                        uploading && 'opacity-50 cursor-not-allowed'
+                                    )} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-main)' }}>
+                                        <Upload className="w-3.5 h-3.5" />
+                                        {uploading ? 'Cargando…' : 'Cargar CSV banco'}
+                                        <input ref={fileRef} type="file" accept=".csv,.txt" className="hidden"
+                                            onChange={handleUpload} disabled={uploading} />
+                                    </label>
+                                )}
+
+                                {/* Ajuste */}
+                                {tieneDif && puede('editar') && (
+                                    <button onClick={() => setShowAjuste(v => !v)}
+                                        className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-white"
+                                        style={{ background: '#7c3aed' }}>
+                                        <PlusCircle className="w-3.5 h-3.5" /> Asiento ajuste
+                                    </button>
+                                )}
+
+                                {/* Cerrar */}
+                                {puede('anular') && (
+                                    <button onClick={cerrarConciliacion}
+                                        disabled={resumen.pendientes > 0}
+                                        title={resumen.pendientes > 0 ? 'Hay partidas pendientes sin conciliar' : ''}
+                                        className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-white disabled:opacity-40"
+                                        style={{ background: '#1d4ed8' }}>
+                                        <Lock className="w-3.5 h-3.5" /> Cerrar conciliación
+                                    </button>
+                                )}
+                            </>
+                        )}
                     </div>
-
-                    {/* Acciones */}
-                    {!isCerrada && (
-                        <div className="flex items-center gap-2 flex-wrap">
-                            {/* Upload CSV */}
-                            {puede('crear') && (
-                                <label className={cn(
-                                    'flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium cursor-pointer transition-opacity',
-                                    uploading && 'opacity-50 cursor-not-allowed'
-                                )} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-main)' }}>
-                                    <Upload className="w-3.5 h-3.5" />
-                                    {uploading ? 'Cargando…' : 'Cargar CSV banco'}
-                                    <input ref={fileRef} type="file" accept=".csv,.txt" className="hidden"
-                                        onChange={handleUpload} disabled={uploading} />
-                                </label>
-                            )}
-
-                            {/* Ajuste */}
-                            {tieneDif && puede('editar') && (
-                                <button onClick={() => setShowAjuste(v => !v)}
-                                    className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-white"
-                                    style={{ background: '#7c3aed' }}>
-                                    <PlusCircle className="w-3.5 h-3.5" /> Asiento ajuste
-                                </button>
-                            )}
-
-                            {/* Cerrar */}
-                            {puede('anular') && (
-                                <button onClick={cerrarConciliacion}
-                                    disabled={resumen.pendientes > 0}
-                                    title={resumen.pendientes > 0 ? 'Hay partidas pendientes sin conciliar' : ''}
-                                    className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-white disabled:opacity-40"
-                                    style={{ background: '#1d4ed8' }}>
-                                    <Lock className="w-3.5 h-3.5" /> Cerrar conciliación
-                                </button>
-                            )}
-                        </div>
-                    )}
-                </div>
-            </div>
+                }
+            />
 
             {/* ── Panel ajuste ─────────────────────────────────────────────── */}
             {showAjuste && (
@@ -540,7 +529,10 @@ export default function ConciliacionShow() {
                     </div>
                     <button onClick={cruzarPartidas}
                         disabled={!puedenCruzarse}
-                        className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white disabled:opacity-40 transition-opacity"
+                        className={cn(
+                            'flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium disabled:opacity-40 transition-opacity',
+                            puedenCruzarse ? 'text-black' : 'text-white',
+                        )}
                         style={{ background: puedenCruzarse ? 'var(--primary)' : 'gray' }}>
                         <ArrowLeftRight className="w-4 h-4" /> Cruzar partidas
                     </button>

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { usePage, Head } from '@inertiajs/react'
 import AppLayout from '@/Layouts/AppLayout'
+import PageHeader from '@/Components/shared/PageHeader'
 import { FileText, TrendingUp, Wallet, Landmark, X } from 'lucide-react'
 import type { PageProps } from '@/types'
 
@@ -122,24 +123,14 @@ export default function BancosReportesIndex() {
         <AppLayout title="Reportes de Bancos" suppressFlash>
             <Head title="Reportes de Bancos" />
 
+            <PageHeader
+                title="Reportes de Bancos"
+                description="Estado de cuenta, movimientos y caja"
+                breadcrumbs={[{ label: 'Bancos' }, { label: 'Reportes' }]}
+            />
+
             <div className="p-4 md:p-6 space-y-6"
                  style={{ background: 'var(--bg-main)', minHeight: '100vh' }}>
-
-                {/* Header */}
-                <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-xl"
-                         style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
-                        <FileText size={24} style={{ color: 'var(--primary)' }} />
-                    </div>
-                    <div>
-                        <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>
-                            Reportes de Bancos
-                        </h1>
-                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                            Estado de cuenta, movimientos y caja
-                        </p>
-                    </div>
-                </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
 
