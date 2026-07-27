@@ -288,8 +288,9 @@ export default function AsientosIndex() {
                         value: buscar,
                         onChange: setBuscar,
                         onSearch: aplicarFiltros,
-                        placeholder: 'Número, concepto, referencia...',
+                        placeholder: 'Número, concepto...',
                     }}
+                    searchWidth="w-32"
                     onExport={exportarExcel}
                     exportDisabled={!haBuscado}
                     extraActions={

@@ -11,6 +11,8 @@ interface SearchConfig {
 interface Props {
     children?: React.ReactNode
     search?: SearchConfig
+    /** Clase Tailwind de ancho para el input de búsqueda. Default 'w-52' (comportamiento previo, sin cambios para páginas existentes). */
+    searchWidth?: string
     onExport?: () => void
     /** Alternativa a onExport para exportaciones vía enlace directo (querystring), en vez de un handler JS. */
     exportHref?: string
@@ -24,7 +26,7 @@ interface Props {
 // solo estandariza el contenedor + el grupo de búsqueda (input con lupa a
 // la izquierda + botón cuadrado dorado) + el botón cuadrado verde de
 // exportar, que se repiten idénticos en casi todos los módulos.
-export default function FilterToolbar({ children, search, onExport, exportHref, exportDisabled, extraActions }: Props) {
+export default function FilterToolbar({ children, search, searchWidth, onExport, exportHref, exportDisabled, extraActions }: Props) {
     return (
         <div className="flex items-center gap-3 mb-4 flex-wrap">
             {children}
@@ -38,7 +40,7 @@ export default function FilterToolbar({ children, search, onExport, exportHref, 
                             onChange={e => search.onChange(e.target.value)}
                             onKeyDown={e => e.key === 'Enter' && search.onSearch()}
                             placeholder={search.placeholder ?? 'Buscar...'}
-                            className="pl-9 w-52 rounded-r-none border-r-0"
+                            className={`pl-9 ${searchWidth ?? 'w-52'} rounded-r-none border-r-0`}
                         />
                     </div>
                     <button
