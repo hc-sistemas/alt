@@ -369,9 +369,17 @@ class RecepcionController extends Controller
                             tipo:       $compra->gasto_no_deducible ? 'gasto' : 'inventario',
                             fecha:      $compra->fecha_emision?->toDateString(),
                         );
-                        $compra->update(['asiento_id' => $asiento->id]);
+                        $compra->update(['asiento_id' => $asiento->id, 'asiento_error' => null]);
                     } catch (\Throwable $e) {
                         \Log::warning("Asiento compra {$compra->num_documento}: {$e->getMessage()}");
+                        $compra->update(['asiento_error' => $e->getMessage()]);
+                        $this->asientoService->notificarAsientoFallido(
+                            empresaId:  (int) $empresaId,
+                            tabla:      'compras',
+                            registroId: $compra->id,
+                            referencia: "Compra {$compra->num_documento}",
+                            mensaje:    $e->getMessage(),
+                        );
                     }
                 }
             }

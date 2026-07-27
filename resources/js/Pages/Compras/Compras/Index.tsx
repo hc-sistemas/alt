@@ -12,7 +12,7 @@ import { formatFecha } from '@/utils/contabilidad'
 import {
     Plus, Search, X, FileText, Download, ChevronLeft, ChevronRight, ChevronDown,
     Eye, ShoppingCart, Trash2, CreditCard,
-    Barcode, CheckCircle, XCircle, RefreshCw, Upload,
+    Barcode, CheckCircle, XCircle, RefreshCw, Upload, AlertTriangle,
 } from 'lucide-react'
 import type { Compra, Importacion, Proveedor, CentroCosto, PlanCuenta, Bodega, PageProps, PaginatedData, Producto, EtiquetaDetalleData, EtiquetaGrupoProducto } from '@/types'
 import { usePermiso } from '@/Hooks/usePermiso'
@@ -2047,8 +2047,13 @@ export default function ComprasIndex() {
                             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                         >
                             <div className="col-span-2 min-w-0">
-                                <p className="font-mono text-xs font-medium truncate" style={{ color: 'var(--text-main)' }}>
+                                <p className="font-mono text-xs font-medium truncate flex items-center gap-1" style={{ color: 'var(--text-main)' }}>
                                     {c.num_documento}
+                                    {!c.asiento_id && c.asiento_error && (
+                                        <span title={`Sin asiento contable: ${c.asiento_error}`} className="shrink-0 cursor-help">
+                                            <AlertTriangle size={12} className="text-orange-500" />
+                                        </span>
+                                    )}
                                 </p>
                             </div>
                             <div className="col-span-1 text-center">

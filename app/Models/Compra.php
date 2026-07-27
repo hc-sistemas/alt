@@ -19,7 +19,7 @@ class Compra extends Model
         'subtotal_0', 'subtotal_iva', 'total_iva', 'total_ice', 'total',
         'retencion_ir', 'retencion_iva',
         'iva_asumido', 'gasto_no_deducible', 'sustento_tributario',
-        'asiento_id', 'tiene_pago', 'concepto', 'estado', 'created_by',
+        'asiento_id', 'asiento_error', 'tiene_pago', 'concepto', 'estado', 'created_by',
         'metodo_envio', 'divisa', 'tipo_cambio',
         'num_orden_compra', 'num_contrato', 'vigencia_desde', 'vigencia_hasta',
     ];

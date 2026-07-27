@@ -327,3 +327,20 @@ Vendedor:
 | `PHP version >= 8.2.0 required` | PATH apunta a PHP 8.1 | Usar terminal de Laragon o ruta completa a PHP 8.2 |
 | `empresa_id NOT NULL en log_sesiones` | log_sesiones no tiene esa columna | No insertar empresa_id en log_sesiones |
 | `updated_at en perfiles` | perfiles no tiene timestamps | Agregar `public $timestamps = false` |
+
+---
+
+## Decisiones de diseño intencionales (no son bugs)
+
+### Compra sin asiento contable si el período está cerrado
+
+**Comportamiento:** en `CompraController::store()` y en el flujo de confirmación de recepción (`RecepcionController`), la generación del asiento contable automático (`AsientoService::compraRegistrada()`) está envuelta en un `try/catch` que **no bloquea la operación**. Si el asiento falla — típicamente porque la `fecha_emision` de la Compra cae dentro de un período contable ya cerrado (ver `Ejercicios Contables` y `AsientoService::crear()`) — la Compra se guarda igual, con `asiento_id = null`.
+
+**Por qué es intencional:** no se quiere que un problema de configuración/candado contable bloquee por completo la operación comercial (recibir mercadería, registrar la factura del proveedor). Esta decisión fue confirmada explícitamente por el cliente/usuario del sistema (2026-07-26) — **no cambiar esta lógica** sin que te lo pidan explícitamente.
+
+**Cómo queda visible (para que no sea un huérfano silencioso):**
+1. La columna `compras.asiento_error` (texto, nullable) guarda el mensaje de la excepción cuando esto ocurre. Se limpia (`null`) si el asiento se genera exitosamente después.
+2. `AsientoService::notificarAsientoFallido()` inserta una notificación (tabla `notificaciones`, campanita del Topbar) para cada usuario con perfil `super_admin` o `contador` con acceso a la empresa, y una entrada en `log_documentos` (acción `asiento_fallido`) para auditoría.
+3. La UI muestra un badge naranja "Sin asiento contable" (con el motivo en tooltip) tanto en `Compras/Compras/Index.tsx` (icono junto al número de documento) como en `Compras/Compras/Show.tsx` (badge junto al estado + línea de detalle).
+
+**Alcance real de esta excepción — NO se extiende a Pagos ni a Nómina:** `CuentaPagarController::pagar()` (pago a proveedor) y `NominaController::procesar()` **no** tienen este patrón de "guardar igual si falla" — ahí la generación del asiento ocurre dentro de un único `DB::transaction()` sin `catch` silencioso, así que si el período está cerrado la operación completa se revierte y el usuario ve un error inmediato (no queda un pago o una nómina huérfana sin asiento). Si en el futuro se decide extender el patrón "guardar sin asiento" a Pagos o Nómina, es una decisión de diseño nueva — no asumir que ya funciona igual que Compras.

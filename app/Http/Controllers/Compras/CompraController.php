@@ -423,9 +423,17 @@ class CompraController extends Controller
                     centroCostoId: $compra->centro_costo_id,
                     fecha:         $compra->fecha_emision?->toDateString(),
                 );
-                $compra->update(['asiento_id' => $asiento->id]);
+                $compra->update(['asiento_id' => $asiento->id, 'asiento_error' => null]);
             } catch (\Throwable $e) {
                 \Log::warning("Asiento compra {$compra->num_documento}: {$e->getMessage()}");
+                $compra->update(['asiento_error' => $e->getMessage()]);
+                $this->asientoService->notificarAsientoFallido(
+                    empresaId:  $empresaId,
+                    tabla:      'compras',
+                    registroId: $compra->id,
+                    referencia: "Compra {$compra->num_documento}",
+                    mensaje:    $e->getMessage(),
+                );
             }
         });
 

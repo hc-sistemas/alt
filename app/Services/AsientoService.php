@@ -295,6 +295,55 @@ class AsientoService
     }
 
     // ══════════════════════════════════════════════════════════
+    // VISIBILIDAD DE DOCUMENTOS SIN ASIENTO (ej. período cerrado)
+    //
+    // Decisión de diseño intencional (ver CLAUDE.md): cuando un documento
+    // como una Compra genera su asiento automático DESPUÉS de guardarse
+    // (dentro de un try/catch que "no bloquea si falla"), un fallo no debe
+    // quedar solo en storage/logs — el Contador/Super Admin de la empresa
+    // deben enterarse sin tener que buscar documentos huérfanos a mano.
+    // ══════════════════════════════════════════════════════════
+    public function notificarAsientoFallido(
+        int    $empresaId,
+        string $tabla,
+        int    $registroId,
+        string $referencia,
+        string $mensaje,
+    ): void {
+        DB::table('log_documentos')->insert([
+            'usuario_id'  => Auth::id(),
+            'username'    => Auth::user()?->email ?? 'sistema',
+            'accion'      => 'asiento_fallido',
+            'modulo'      => 'contabilidad',
+            'tabla'       => $tabla,
+            'registro_id' => $registroId,
+            'descripcion' => "{$referencia}: no se generó asiento contable — {$mensaje}",
+            'ip_address'  => Request::ip(),
+            'empresa_id'  => $empresaId,
+            'fecha'       => now(),
+        ]);
+
+        $destinatarios = \App\Models\Usuario::whereHas(
+                'empresas', fn($q) => $q->where('empresas.id', $empresaId)
+            )
+            ->whereHas('perfil', fn($q) => $q->whereIn('nombre', ['super_admin', 'contador']))
+            ->where('estado', true)
+            ->get(['id']);
+
+        foreach ($destinatarios as $usuario) {
+            \App\Models\Notificacion::create([
+                'usuario_id' => $usuario->id,
+                'tipo'       => 'asiento_fallido',
+                'titulo'     => 'Documento sin asiento contable',
+                'mensaje'    => "{$referencia} no generó asiento contable: {$mensaje}",
+                'icono'      => 'alert-triangle',
+                'url'        => null,
+                'leida'      => false,
+            ]);
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════
     // MÉTODOS PARA DEV 1 — Ventas
     // ══════════════════════════════════════════════════════════
 

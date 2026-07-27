@@ -567,6 +567,7 @@ export interface Compra {
     gasto_no_deducible: boolean
     sustento_tributario: number | null
     asiento_id: number | null
+    asiento_error: string | null
     tiene_pago: boolean
     concepto: string | null
     estado: 'pendiente' | 'activa' | 'anulada'

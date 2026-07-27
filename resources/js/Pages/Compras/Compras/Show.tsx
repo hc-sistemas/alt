@@ -5,7 +5,7 @@ import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
 import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
-import { ChevronLeft, Ban, ShoppingCart, ExternalLink, X, Printer, XCircle, Download, PackageCheck, CreditCard } from 'lucide-react'
+import { ChevronLeft, Ban, ShoppingCart, ExternalLink, X, Printer, XCircle, Download, PackageCheck, CreditCard, AlertTriangle } from 'lucide-react'
 import { formatFecha } from '@/utils/contabilidad'
 import type {
     Compra, Proveedor, CentroCosto, AsientoContable,
@@ -169,10 +169,23 @@ export default function CompraShow() {
                                 {compra.estado === 'anulada' && (
                                     <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400">Anulada</span>
                                 )}
+                                {!compra.asiento_id && compra.asiento_error && (
+                                    <span
+                                        title={compra.asiento_error}
+                                        className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400 cursor-help">
+                                        <AlertTriangle size={11} /> Sin asiento contable
+                                    </span>
+                                )}
                             </div>
                             <p className="text-sm mt-0.5" style={{ color: 'var(--text-muted)' }}>
                                 {compra.tipo_documento} · Emitida {formatFecha(compra.fecha_emision)}
                             </p>
+                            {!compra.asiento_id && compra.asiento_error && (
+                                <p className="text-xs mt-1 flex items-center gap-1.5" style={{ color: '#c2410c' }}>
+                                    <AlertTriangle size={12} className="shrink-0" />
+                                    {compra.asiento_error}
+                                </p>
+                            )}
                         </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
