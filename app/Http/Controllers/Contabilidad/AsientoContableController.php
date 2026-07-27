@@ -239,8 +239,25 @@ class AsientoContableController extends Controller
                 'Aplica al menos un filtro (período, fechas, tipo o estado) antes de exportar a Excel.');
         }
 
+        // CORRECCIÓN 7: un filtro "técnicamente aplicado" (ej. un rango de
+        // fechas muy amplio) puede seguir generando decenas de miles de líneas
+        // de detalle. Aunque el estilado ya se optimizó (duplicateStyle() en
+        // vez de applyFromArray() por celda), medido empíricamente el archivo
+        // completo (query + estilos + escritura real del .xlsx) toma ~3.27ms
+        // por línea de detalle — por encima de MAX_FILAS_DETALLE (3,000) ya no
+        // entra en un tiempo de respuesta razonable (~10s). Se rechaza antes
+        // de intentar construirlo, en vez de dejar que el request cuelgue.
+        $asientosExport = new AsientosExport((int)$empresaId, $filtros);
+        $totalDetalles  = $asientosExport->sheets()[1]->contarDetalles();
+        if ($totalDetalles > \App\Exports\AsientosDetalleSheet::MAX_FILAS_DETALLE) {
+            return back()->with('error',
+                "El filtro actual generaría {$totalDetalles} líneas de detalle — demasiadas para exportar de una vez " .
+                '(máximo ' . \App\Exports\AsientosDetalleSheet::MAX_FILAS_DETALLE . '). ' .
+                'Acota el rango de fechas o selecciona un período específico.');
+        }
+
         return Excel::download(
-            new AsientosExport((int)$empresaId, $filtros),
+            $asientosExport,
             'asientos-' . now()->format('Y-m-d') . '.xlsx',
             \Maatwebsite\Excel\Excel::XLSX
         );
