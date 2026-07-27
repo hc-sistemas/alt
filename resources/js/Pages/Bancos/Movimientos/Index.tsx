@@ -3,12 +3,14 @@ import { router, usePage, useForm, Head } from '@inertiajs/react'
 import { toast, ToastContainer } from 'react-toastify'
 import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
+import PageHeader from '@/Components/shared/PageHeader'
+import FilterToolbar from '@/Components/shared/FilterToolbar'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { cn, formatFecha } from '@/lib/utils'
 import {
-    Plus, X, ArrowUpCircle, ArrowDownCircle, Search,
-    Ban, DollarSign, Clock, FileSpreadsheet,
+    Plus, X, ArrowUpCircle, ArrowDownCircle,
+    Ban, DollarSign, Clock,
 } from 'lucide-react'
 import { usePermiso } from '@/Hooks/usePermiso'
 import type { MovimientoBancario, BancoCaja, PlanCuenta, PageProps } from '@/types'
@@ -414,78 +416,66 @@ export default function MovimientosIndex() {
     }
 
     const inp = { background: 'var(--bg-card)', color: 'var(--text-main)', borderColor: 'var(--border)' }
+    const exportUrl = route('bancos.movimientos.export-excel') + '?' + new URLSearchParams(
+        Object.fromEntries(Object.entries(filtro).filter(([, v]) => v)) as Record<string, string>
+    ).toString()
 
     return (
         <AppLayout title="Movimientos Bancarios" suppressFlash>
             <Head title="Movimientos Bancarios" />
 
-            <div className="px-6 pt-6 mb-2">
-                <div className="flex items-center justify-between gap-3 mb-4">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-xl" style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
-                            <DollarSign size={24} style={{ color: 'var(--primary)' }} />
-                        </div>
-                        <div>
-                            <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>Movimientos Bancarios</h1>
-                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Ingresos y egresos de bancos y cajas</p>
-                        </div>
-                    </div>
-                    {puede('crear') && (
+            <PageHeader
+                title="Movimientos Bancarios"
+                description="Ingresos y egresos de bancos y cajas"
+                breadcrumbs={[{ label: 'Bancos' }, { label: 'Movimientos' }]}
+                actions={
+                    puede('crear') ? (
                         <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-2 whitespace-nowrap shrink-0">
                             <Plus size={15} /> Nuevo
                         </button>
-                    )}
-                </div>
+                    ) : undefined
+                }
+            />
+
+            <div className="px-6 pt-6 mb-2">
                 {/* Toolbar */}
-                <div className="flex items-center justify-between gap-3 mb-6">
-                    <div className="flex items-center gap-2 flex-wrap">
-                        <div className="input-with-icon">
-                            <Search size={14} className="input-icon" />
-                            <input type="text" value={filtro.buscar ?? ''}
-                                onChange={e => setFiltro(f => ({ ...f, buscar: e.target.value }))}
-                                placeholder="Descripción, beneficiario…"
-                                className="input-field w-48" />
-                        </div>
+                <FilterToolbar
+                    search={{
+                        value: filtro.buscar ?? '',
+                        onChange: v => setFiltro(f => ({ ...f, buscar: v })),
+                        onSearch: buscar,
+                        placeholder: 'Descripción, beneficiario...',
+                    }}
+                    exportHref={exportUrl}
+                >
+                    <select value={filtro.banco_caja_id ?? ''} onChange={e => setFiltro(f => ({ ...f, banco_caja_id: e.target.value }))}
+                        className="input-field shrink-0"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
+                        <option value="">Todos los bancos</option>
+                        {bancos.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
+                    </select>
 
-                        <select value={filtro.banco_caja_id ?? ''} onChange={e => setFiltro(f => ({ ...f, banco_caja_id: e.target.value }))}
-                            className="input-field select-field" style={{ width: 'auto' }}>
-                            <option value="">Todos los bancos</option>
-                            {bancos.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
-                        </select>
+                    <select value={filtro.tipo ?? ''} onChange={e => setFiltro(f => ({ ...f, tipo: e.target.value }))}
+                        className="input-field shrink-0"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
+                        <option value="">Todos los tipos</option>
+                        <option value="ingreso">Ingreso</option>
+                        <option value="egreso">Egreso</option>
+                    </select>
 
-                        <select value={filtro.tipo ?? ''} onChange={e => setFiltro(f => ({ ...f, tipo: e.target.value }))}
-                            className="input-field select-field" style={{ width: 'auto' }}>
-                            <option value="">Todos</option>
-                            <option value="ingreso">Ingreso</option>
-                            <option value="egreso">Egreso</option>
-                        </select>
+                    <input type="date" value={filtro.fecha_desde ?? ''}
+                        onChange={e => setFiltro(f => ({ ...f, fecha_desde: e.target.value }))}
+                        className="input-field shrink-0 w-36"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }} />
+                    <input type="date" value={filtro.fecha_hasta ?? ''}
+                        onChange={e => setFiltro(f => ({ ...f, fecha_hasta: e.target.value }))}
+                        className="input-field shrink-0 w-36"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }} />
 
-                        <input type="date" value={filtro.fecha_desde ?? ''}
-                            onChange={e => setFiltro(f => ({ ...f, fecha_desde: e.target.value }))}
-                            className="input-field" style={{ width: 'auto' }} />
-                        <input type="date" value={filtro.fecha_hasta ?? ''}
-                            onChange={e => setFiltro(f => ({ ...f, fecha_hasta: e.target.value }))}
-                            className="input-field" style={{ width: 'auto' }} />
-
-                        <button onClick={buscar} className="btn-secondary whitespace-nowrap">
-                            Filtrar
-                        </button>
-                        <button onClick={limpiar} className="btn-secondary whitespace-nowrap">
-                            Limpiar
-                        </button>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                        <a href={route('bancos.movimientos.export-excel') + '?' + new URLSearchParams(
-                                Object.fromEntries(Object.entries(filtro).filter(([,v]) => v)) as Record<string, string>
-                            ).toString()}
-                           className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-sm font-medium text-white whitespace-nowrap transition-opacity hover:opacity-90"
-                           style={{ background: '#16a34a' }}>
-                            <FileSpreadsheet size={15} /> Excel
-                        </a>
-
-                    </div>
-                </div>
+                    <button type="button" onClick={limpiar} className="text-sm underline shrink-0" style={{ color: 'var(--text-muted)' }}>
+                        Limpiar
+                    </button>
+                </FilterToolbar>
             </div>
 
             {/* Stats */}

@@ -4,13 +4,14 @@ import { toast, ToastContainer } from 'react-toastify'
 import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
+import FilterToolbar from '@/Components/shared/FilterToolbar'
 import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
 import {
-    Plus, Pencil, ToggleLeft, ToggleRight, Search, X,
-    FileText, Download, Users, ShoppingCart,
+    Plus, Pencil, ToggleLeft, ToggleRight, X,
+    FileText, Download, ShoppingCart,
 } from 'lucide-react'
 import type { Proveedor, PageProps } from '@/types'
 import { usePermiso } from '@/Hooks/usePermiso'
@@ -359,50 +360,40 @@ export default function ProveedoresIndex() {
         <AppLayout title="Proveedores" suppressFlash>
             <Head title="Proveedores" />
 
-            <div className="px-6 pt-6 mb-2">
-                <div className="flex items-center justify-between gap-3 mb-4">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-xl"
-                             style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
-                            <Users size={24} style={{ color: 'var(--primary)' }} />
-                        </div>
-                        <div>
-                            <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>
-                                Proveedores
-                            </h1>
-                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                                Gestión de proveedores nacionales e internacionales
-                            </p>
-                        </div>
-                    </div>
-                    {puede('crear') && (
+            <PageHeader
+                title="Proveedores"
+                description="Gestión de proveedores nacionales e internacionales"
+                breadcrumbs={[{ label: 'Compras' }, { label: 'Proveedores' }]}
+                actions={
+                    puede('crear') ? (
                         <button onClick={() => setModal({ open: true })} className="btn-primary flex items-center gap-2 whitespace-nowrap shrink-0">
-                            <Plus size={15} /> Nuevo Proveedor
+                            <Plus size={15} /> Nuevo
                         </button>
-                    )}
-                </div>
-                {/* Toolbar */}
-                <div className="flex items-center justify-between gap-3 mb-6">
-                    <div className="input-with-icon">
-                        <Search size={14} className="input-icon" />
-                        <input type="text" value={busqueda}
-                            onChange={e => setBusqueda(e.target.value)}
-                            placeholder="Buscar por nombre, RUC, email…"
-                            className="input-field w-52" />
-                    </div>
+                    ) : undefined
+                }
+            />
 
-                    <div className="flex items-center gap-2">
+            <div className="px-6 pt-6 mb-2">
+                {/* Toolbar */}
+                <FilterToolbar
+                    search={{
+                        value: busqueda,
+                        onChange: setBusqueda,
+                        onSearch: () => {},
+                        placeholder: 'Nombre, RUC, email...',
+                    }}
+                    exportHref={route('compras.proveedores.excel')}
+                    extraActions={
                         <button
+                            type="button"
                             onClick={() => abrirPdf(route('compras.proveedores.pdf'))}
-                            className="btn-pdf flex items-center gap-2 whitespace-nowrap">
-                            <FileText size={15} /> PDF
+                            className="flex items-center justify-center w-9 h-9 rounded-md border text-sm font-medium shrink-0"
+                            style={{ background: '#EF4444', color: 'white', borderColor: '#EF4444' }}
+                            title="PDF">
+                            <FileText className="w-4 h-4" />
                         </button>
-                        <a href={route('compras.proveedores.excel')}
-                           className="btn-excel flex items-center gap-2 whitespace-nowrap">
-                            <Download size={15} /> Excel
-                        </a>
-                    </div>
-                </div>
+                    }
+                />
             </div>
 
             {/* Tabla */}
