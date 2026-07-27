@@ -143,14 +143,6 @@ export default function AsientosIndex() {
         }, { preserveState: false })
     }
 
-    const limpiarFiltros = () => {
-        setBuscar(''); setTipo(''); setEstado('')
-        setEjercicioId(''); setFechaDesde(''); setFechaHasta('')
-        router.get(route('contabilidad.asientos.index'))
-    }
-
-    const hayFiltros = !!(buscar || tipo || estado || ejercicioId || fechaDesde || fechaHasta)
-
     // Con miles de asientos reales en producción, un PDF/Excel sin ningún filtro
     // intenta procesar el histórico completo (~11 mil registros) y no termina en
     // tiempo razonable — a diferencia del listado paginado, aquí exigimos al
@@ -329,20 +321,18 @@ export default function AsientosIndex() {
                     (a diferencia del bug de `.input-field` con las cascade layers, que no aplica
                     a este componente).
 
-                    Suma de anchos en el estado MÁS ANCHO posible (los 9 elementos, incluyendo
-                    "Limpiar" ahora como ícono en vez de texto):
+                    Suma de anchos en el estado MÁS ANCHO posible (8 elementos — sin botón de
+                    "Limpiar", eliminado por completo):
                       Tipo 145 + Estado 125 + Período 175 + Desde 136 + Hasta 136
-                      + Limpiar 36 + buscador (130+36) + Excel 36 + PDF 36 = 991px
-                      + gaps (gap-3 = 12px × 8 espacios entre 9 elementos) = 96px
-                      = 1087px
+                      + buscador (130+36) + Excel 36 + PDF 36 = 955px
+                      + gaps (gap-3 = 12px × 7 espacios entre 8 elementos) = 84px
+                      = 1039px
 
-                    Cabe en el presupuesto de ~1098px disponible a 1366px con sidebar abierto
-                    (1366 - 220 sidebar - 48 padding), pero con apenas ~11px de margen — muy
-                    ajustado para depender solo de valores en px calculados a mano (ya van varias
-                    rondas de esto). Por eso, además, el contenedor de abajo fuerza un ancho
-                    mínimo de 1100px y solo permite scroll horizontal (nunca salto de línea
-                    desordenado) si el viewport real es más angosto que eso — resiliente a futuros
-                    cambios sin tener que volver a recalcular píxeles cada vez.
+                    Cabe con margen cómodo en el presupuesto de ~1098px disponible a 1366px con
+                    sidebar abierto (1366 - 220 sidebar - 48 padding). El contenedor de abajo
+                    igual fuerza un ancho mínimo de 1100px y solo permite scroll horizontal (nunca
+                    salto de línea desordenado) si el viewport real es más angosto que eso —
+                    resiliente a futuros cambios sin tener que volver a recalcular píxeles cada vez.
                 */}
                 <div className="overflow-x-auto">
                 <div style={{ minWidth: '1100px' }}>
@@ -425,13 +415,6 @@ export default function AsientosIndex() {
                             className="input-field text-xs"
                             style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '136px' }} />
                     </div>
-                    {hayFiltros && (
-                        <button type="button" onClick={limpiarFiltros} title="Limpiar filtros"
-                            className="flex items-center justify-center w-9 h-9 rounded-md border text-sm font-medium shrink-0"
-                            style={{ borderColor: 'var(--border)', color: 'var(--text-muted)', background: 'var(--bg-card)' }}>
-                            <X className="w-4 h-4" />
-                        </button>
-                    )}
                 </FilterToolbar>
                 </div>
                 </div>
