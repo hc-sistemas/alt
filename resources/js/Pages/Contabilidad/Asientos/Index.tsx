@@ -75,8 +75,35 @@ export default function AsientosIndex() {
     // Modal PDF
     const [modalPdf, setModalPdf] = useState(false)
     const [urlPdf,   setUrlPdf]   = useState('')
+    const [cargandoPdf, setCargandoPdf] = useState(false)
 
-    const abrirPdf = (url: string) => { setUrlPdf(url); setModalPdf(true) }
+    // Se trae el PDF como blob (fetch) en vez de apuntar el <iframe> directo a la
+    // URL del backend: aunque el backend ya responde con Content-Disposition:
+    // inline, algunos navegadores igual fuerzan la descarga en una navegación de
+    // iframe según su propia configuración de manejo de PDF. Un blob: URL siempre
+    // se muestra embebido, sin depender de esa configuración.
+    const abrirPdf = async (url: string) => {
+        setModalPdf(true)
+        setCargandoPdf(true)
+        setUrlPdf('')
+        try {
+            const res = await fetch(url)
+            if (!res.ok) throw new Error('No se pudo generar el PDF.')
+            const blob = await res.blob()
+            setUrlPdf(URL.createObjectURL(blob))
+        } catch {
+            notify.error('No se pudo generar el PDF. Intenta de nuevo.')
+            setModalPdf(false)
+        } finally {
+            setCargandoPdf(false)
+        }
+    }
+
+    const cerrarModalPdf = () => {
+        if (urlPdf) URL.revokeObjectURL(urlPdf)
+        setModalPdf(false)
+        setUrlPdf('')
+    }
 
     // Modal nuevo asiento
     const [modalAbierto, setModalAbierto] = useState(false)
@@ -295,12 +322,15 @@ export default function AsientosIndex() {
             <div className={cn('space-y-5', 'p-6')}>
 
                 {/*
-                    searchWidth="w-[200px]": utilidad Tailwind de valor arbitrario (compila a
-                    `width: 200px` literal, no la escala fija w-44/w-48/etc.) — mismo efecto que
+                    searchWidth="w-[130px]": utilidad Tailwind de valor arbitrario (compila a
+                    `width: 130px` literal, no la escala fija w-44/w-48/etc.) — mismo efecto que
                     un style inline, sin tocar FilterToolbar.tsx. El <Input> ahí se combina con
                     `cn()` (twMerge), que sí resuelve bien conflictos entre utilidades Tailwind
                     (a diferencia del bug de `.input-field` con las cascade layers, que no aplica
-                    a este componente).
+                    a este componente). Ancho recalculado más angosto que la ronda anterior (200px)
+                    porque los botones PDF/Excel solo se habilitan cuando hay un filtro real
+                    aplicado — y en ese escenario el botón "Limpiar" también está visible, sumando
+                    ~67px extra a la fila que el cálculo anterior no contemplaba.
                 */}
                 <FilterToolbar
                     search={{
@@ -309,7 +339,7 @@ export default function AsientosIndex() {
                         onSearch: aplicarFiltros,
                         placeholder: 'Buscar...',
                     }}
-                    searchWidth="w-[200px]"
+                    searchWidth="w-[130px]"
                     onExport={exportarExcel}
                     exportDisabled={!haBuscado || !hayFiltrosExportables}
                     extraActions={
@@ -836,7 +866,7 @@ export default function AsientosIndex() {
 
             {/* ── Modal PDF ── */}
             {modalPdf && (
-                <div className="modal-overlay" style={{ background: 'rgba(0,0,0,0.85)' }} onClick={() => setModalPdf(false)}>
+                <div className="modal-overlay" style={{ background: 'rgba(0,0,0,0.85)' }} onClick={cerrarModalPdf}>
                     <div className="modal-card max-w-5xl flex flex-col" style={{ height: '90vh' }} onClick={e => e.stopPropagation()}>
                         <div className="modal-header shrink-0">
                             <h2>
@@ -844,17 +874,25 @@ export default function AsientosIndex() {
                                 Reporte de Asientos Contables
                             </h2>
                             <div className="flex items-center gap-2">
-                                <a href={urlPdf} download target="_blank"
-                                   className="btn-primary text-xs py-1.5 px-3"
-                                   style={{ background: '#ef4444', boxShadow: 'none', textDecoration: 'none' }}>
-                                    <Download size={13} /> Descargar
-                                </a>
-                                <button onClick={() => setModalPdf(false)} className="btn-secondary text-xs py-1.5 px-3">
+                                {urlPdf && (
+                                    <a href={urlPdf} download={`reporte-asientos-${new Date().toISOString().slice(0, 10)}.pdf`}
+                                       className="btn-primary text-xs py-1.5 px-3"
+                                       style={{ background: '#ef4444', boxShadow: 'none', textDecoration: 'none' }}>
+                                        <Download size={13} /> Descargar
+                                    </a>
+                                )}
+                                <button onClick={cerrarModalPdf} className="btn-secondary text-xs py-1.5 px-3">
                                     ✕ Cerrar
                                 </button>
                             </div>
                         </div>
-                        <iframe src={urlPdf} className="flex-1 w-full border-0" title="Reporte PDF Asientos" />
+                        {cargandoPdf ? (
+                            <div className="flex-1 flex items-center justify-center text-sm" style={{ color: 'var(--text-muted)' }}>
+                                Generando PDF…
+                            </div>
+                        ) : (
+                            <iframe src={urlPdf} className="flex-1 w-full border-0" title="Reporte PDF Asientos" />
+                        )}
                     </div>
                 </div>
             )}
