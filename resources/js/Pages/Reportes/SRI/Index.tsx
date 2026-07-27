@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { usePage } from '@inertiajs/react'
 import { FileText, FileDown, Download, ClipboardList, Calculator, Percent } from 'lucide-react'
 import AppLayout from '@/Layouts/AppLayout'
+import PageHeader from '@/Components/shared/PageHeader'
 import type { PageProps } from '@/types'
 
 interface Periodo {
@@ -63,27 +64,14 @@ export default function SriIndex() {
 
     return (
         <AppLayout>
+            <PageHeader
+                title="Reportes SRI"
+                description={`ATS, Formulario 103 (Retenciones IR) y Formulario 104 (IVA) · ${empresa.ruc}`}
+                breadcrumbs={[{ label: 'Reportes' }, { label: 'SRI' }]}
+            />
+
             <div className="p-4 md:p-6 space-y-6"
                  style={{ background: 'var(--bg-main)', minHeight: '100vh' }}>
-
-                {/* HEADER */}
-                <div className="mb-6">
-                    <div className="flex items-center gap-3 mb-2">
-                        <div className="p-2 rounded-xl" style={{
-                            background: 'color-mix(in srgb, var(--primary) 15%, transparent)',
-                        }}>
-                            <FileText size={24} style={{ color: 'var(--primary)' }} />
-                        </div>
-                        <div>
-                            <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>
-                                Reportes SRI
-                            </h1>
-                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                                ATS, Formulario 103 (Retenciones IR) y Formulario 104 (IVA) · {empresa.ruc}
-                            </p>
-                        </div>
-                    </div>
-                </div>
 
                 {/* GRID 2 COLUMNAS — 4 tarjetas */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
