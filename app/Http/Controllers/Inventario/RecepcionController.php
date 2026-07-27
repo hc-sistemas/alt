@@ -367,6 +367,7 @@ class RecepcionController extends Controller
                             subtotal:   $compra->subtotal_0 + $compra->subtotal_iva,
                             iva:        $compra->total_iva,
                             tipo:       $compra->gasto_no_deducible ? 'gasto' : 'inventario',
+                            fecha:      $compra->fecha_emision?->toDateString(),
                         );
                         $compra->update(['asiento_id' => $asiento->id]);
                     } catch (\Throwable $e) {

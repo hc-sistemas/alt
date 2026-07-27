@@ -13,6 +13,7 @@ import {
 import { usePermiso } from '@/Hooks/usePermiso'
 import type { EjercicioContable, PageProps } from '@/types'
 import { notify, MESES, swalBase, injectSwalStyles } from '@/utils/contabilidad'
+import { formatFecha } from '@/lib/utils'
 import 'react-toastify/dist/ReactToastify.css'
 
 interface Props extends PageProps {
@@ -178,17 +179,26 @@ conciliación bancaria completada..."
                                     style={{ color: 'var(--text-main)' }}>
                                     Ejercicios Contables
                                 </h1>
-                                <p className="text-sm"
-                                   style={{ color: 'var(--text-muted)' }}>
-                                    Control de períodos contables mensuales
-                                </p>
+                                {periodoActivo ? (
+                                    <p className="flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400">
+                                        <CheckCircle size={12} className="shrink-0" />
+                                        Período activo: {periodoActivo.periodo_label}
+                                        {' '}· Abierto desde {periodoActivo.fecha_apertura ? formatFecha(periodoActivo.fecha_apertura) : '—'}
+                                        {' '}· {periodoActivo.total_asientos} asiento(s)
+                                    </p>
+                                ) : (
+                                    <p className="flex items-center gap-1.5 text-xs text-red-600 dark:text-red-400">
+                                        <AlertTriangle size={12} className="shrink-0" />
+                                        Sin período contable activo — abre un período para registrar asientos.
+                                    </p>
+                                )}
                             </div>
                         </div>
                         <div className="flex items-center gap-2 flex-wrap shrink-0">
                             {puede('crear') && (
                                 <button
                                     onClick={() => setModalAbierto(true)}
-                                    className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5"
+                                    className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-black whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5"
                                     style={{ background: 'var(--primary)' }}
                                 >
                                     <Plus size={15} />
@@ -198,8 +208,8 @@ conciliación bancaria completada..."
                             {esSuperAdmin && (
                                 <button
                                     onClick={() => setModalCierreFiscal(true)}
-                                    className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5"
-                                    style={{ background: '#7C3AED' }}
+                                    className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm whitespace-nowrap border transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
+                                    style={{ background: 'rgba(124,58,237,0.08)', borderColor: 'rgba(124,58,237,0.3)', color: '#7C3AED' }}
                                 >
                                     <ShieldCheck size={15} />
                                     Cierre Fiscal Anual
@@ -208,41 +218,6 @@ conciliación bancaria completada..."
                         </div>
                     </div>
                 </div>
-                {/* Banner período activo */}
-                {periodoActivo ? (
-                    <div className="flex items-center gap-3 p-4 rounded-xl border"
-                         style={{
-                             background: 'color-mix(in srgb, #10b981 8%, var(--bg-card))',
-                             borderColor: '#10b981',
-                         }}>
-                        <CheckCircle size={18} className="text-green-500 shrink-0" />
-                        <div>
-                            <p className="font-semibold text-sm text-green-700 dark:text-green-400">
-                                Período activo: {periodoActivo.periodo_label}
-                            </p>
-                            <p className="text-xs text-green-600 dark:text-green-500 mt-0.5">
-                                Abierto desde {periodoActivo.fecha_apertura} ·
-                                {' '}{periodoActivo.total_asientos} asiento(s) registrado(s)
-                            </p>
-                        </div>
-                    </div>
-                ) : (
-                    <div className="flex items-center gap-3 p-4 rounded-xl border"
-                         style={{
-                             background: 'color-mix(in srgb, #ef4444 8%, var(--bg-card))',
-                             borderColor: '#ef4444',
-                         }}>
-                        <AlertTriangle size={18} className="text-red-500 shrink-0" />
-                        <div>
-                            <p className="font-semibold text-sm text-red-700 dark:text-red-400">
-                                Sin período contable activo
-                            </p>
-                            <p className="text-xs text-red-600 dark:text-red-500 mt-0.5">
-                                Abre un período para poder registrar asientos.
-                            </p>
-                        </div>
-                    </div>
-                )}
 
                 {/* Tabla */}
                 <div className="rounded-xl border overflow-hidden"

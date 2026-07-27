@@ -153,6 +153,7 @@ class CuentaPagarController extends Controller
                 $request->referencia ?? "Pago #{$movimiento->id}",
                 $monto,
                 $cuentaPagar->compra?->centro_costo_id,
+                $request->fecha_pago,
             );
         });
 

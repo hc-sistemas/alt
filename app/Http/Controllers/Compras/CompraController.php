@@ -421,6 +421,7 @@ class CompraController extends Controller
                     retencionIVA:  $compra->gasto_no_deducible ? 0.0 : $retIVA,
                     tipo:          $tipoAsiento,
                     centroCostoId: $compra->centro_costo_id,
+                    fecha:         $compra->fecha_emision?->toDateString(),
                 );
                 $compra->update(['asiento_id' => $asiento->id]);
             } catch (\Throwable $e) {

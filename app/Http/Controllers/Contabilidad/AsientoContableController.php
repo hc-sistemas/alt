@@ -190,6 +190,12 @@ class AsientoContableController extends Controller
             return back()->with('error', 'El asiento ya está anulado. No es necesario eliminarlo.');
         }
 
+        $asiento->loadMissing('ejercicio');
+        if ($asiento->ejercicio && $asiento->ejercicio->estaCerrado()) {
+            return back()->with('error',
+                "El período {$asiento->ejercicio->periodo_label} está cerrado. No se puede eliminar el asiento.");
+        }
+
         // Comparación directa (no diffInHours) para no depender del signo: en Carbon 3
         // diffInHours() es firmado por defecto y now()->diffInHours($pasado) da negativo,
         // lo que nunca superaba el umbral de 24 y dejaba el candado inoperante.

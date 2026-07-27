@@ -504,6 +504,7 @@ class AsientoService
             documentoId:   $nomina->id,
             documentoRef:  "NOM-{$nomina->anio}-{$nomina->mes}",
             esAutomatico:  true,
+            fecha:         $nomina->fecha_emision?->toDateString(),
         );
     }
 
@@ -536,6 +537,7 @@ class AsientoService
             documentoId:   $prestamo->id,
             documentoRef:  $ref,
             esAutomatico:  true,
+            fecha:         $prestamo->fecha?->toDateString(),
         );
     }
 
@@ -572,6 +574,7 @@ class AsientoService
             documentoId:   $liq->id,
             documentoRef:  $ref,
             esAutomatico:  true,
+            fecha:         $liq->fecha_salida?->toDateString(),
         );
     }
 
@@ -620,6 +623,7 @@ class AsientoService
         float  $retencionIVA  = 0,
         string $tipo          = 'inventario',
         ?int   $centroCostoId = null,
+        ?string $fecha        = null,
     ): AsientoContable {
         $cc = $centroCostoId;
 
@@ -637,6 +641,7 @@ class AsientoService
                 ],
                 documentoTipo: 'COMPRA', documentoId: $compraId,
                 documentoRef: $referencia, esAutomatico: true,
+                fecha: $fecha,
             );
         }
 
@@ -670,6 +675,7 @@ class AsientoService
             empresaId: $empresaId, concepto: "Compra {$referencia}",
             partidas: $partidas, documentoTipo: 'COMPRA',
             documentoId: $compraId, documentoRef: $referencia, esAutomatico: true,
+            fecha: $fecha,
         );
     }
 
@@ -679,6 +685,7 @@ class AsientoService
         string $referencia,
         float  $monto,
         ?int   $centroCostoId = null,
+        ?string $fecha        = null,
     ): AsientoContable {
         $cc = $centroCostoId;
         return $this->crear(
@@ -693,6 +700,7 @@ class AsientoService
             ],
             documentoTipo: 'BANCO', documentoId: $documentoId,
             documentoRef: $referencia, esAutomatico: true,
+            fecha: $fecha,
         );
     }
 
