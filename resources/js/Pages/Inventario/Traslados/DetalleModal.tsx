@@ -299,7 +299,7 @@ export default function TrasladoDetalleModal({ trasladoId, onClose, onChanged }:
 
             {/* Sub-modal de rechazo */}
             {modalAnular && (
-                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+                <div className="fixed inset-0 z-60 flex items-center justify-center p-4">
                     <div className="absolute inset-0 bg-black/60" onClick={() => setModalAnular(false)} />
                     <div className="relative w-full max-w-md rounded-xl shadow-2xl p-6 space-y-4"
                         style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
