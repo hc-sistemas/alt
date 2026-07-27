@@ -319,34 +319,40 @@ export default function AsientosIndex() {
                     */}
                     <select value={tipo} onChange={e => setTipo(e.target.value)}
                         className="input-field shrink-0 text-xs"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '112px' }}>
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '170px' }}>
                         <option value="">Todos los tipos</option>
                         <option value="manual">Manuales</option>
                         <option value="automatico">Automáticos</option>
                     </select>
                     <select value={estado} onChange={e => setEstado(e.target.value)}
                         className="input-field shrink-0 text-xs"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '112px' }}>
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '190px' }}>
                         <option value="">Todos los estados</option>
                         <option value="activo">Activos</option>
                         <option value="anulado">Anulados</option>
                     </select>
                     <select value={ejercicioId} onChange={e => setEjercicioId(e.target.value)}
                         className="input-field shrink-0 text-xs"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '144px' }}>
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '205px' }}>
                         <option value="">Todos los períodos</option>
                         {ejercicios.map(e => (
                             <option key={e.id} value={e.id}>{e.periodo_label}</option>
                         ))}
                     </select>
-                    <input type="date" value={fechaDesde}
-                        onChange={e => setFechaDesde(e.target.value)}
-                        className="input-field shrink-0 text-xs"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '136px' }} />
-                    <input type="date" value={fechaHasta}
-                        onChange={e => setFechaHasta(e.target.value)}
-                        className="input-field shrink-0 text-xs"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '136px' }} />
+                    <div className="flex flex-col gap-0.5 shrink-0">
+                        <span className="text-[11px] leading-none" style={{ color: 'var(--text-muted)' }}>Desde</span>
+                        <input type="date" value={fechaDesde}
+                            onChange={e => setFechaDesde(e.target.value)}
+                            className="input-field text-xs"
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '136px' }} />
+                    </div>
+                    <div className="flex flex-col gap-0.5 shrink-0">
+                        <span className="text-[11px] leading-none" style={{ color: 'var(--text-muted)' }}>Hasta</span>
+                        <input type="date" value={fechaHasta}
+                            onChange={e => setFechaHasta(e.target.value)}
+                            className="input-field text-xs"
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '136px' }} />
+                    </div>
                     {hayFiltros && (
                         <button type="button" onClick={limpiarFiltros} className="text-sm underline shrink-0" style={{ color: 'var(--text-muted)' }}>
                             Limpiar
