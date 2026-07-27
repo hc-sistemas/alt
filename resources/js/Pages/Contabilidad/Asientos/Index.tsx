@@ -283,14 +283,22 @@ export default function AsientosIndex() {
 
             <div className={cn('space-y-5', 'p-6')}>
 
+                {/*
+                    searchWidth="w-[200px]": utilidad Tailwind de valor arbitrario (compila a
+                    `width: 200px` literal, no la escala fija w-44/w-48/etc.) — mismo efecto que
+                    un style inline, sin tocar FilterToolbar.tsx. El <Input> ahí se combina con
+                    `cn()` (twMerge), que sí resuelve bien conflictos entre utilidades Tailwind
+                    (a diferencia del bug de `.input-field` con las cascade layers, que no aplica
+                    a este componente).
+                */}
                 <FilterToolbar
                     search={{
                         value: buscar,
                         onChange: setBuscar,
                         onSearch: aplicarFiltros,
-                        placeholder: 'Número, concepto...',
+                        placeholder: 'Buscar...',
                     }}
-                    searchWidth="w-32"
+                    searchWidth="w-[200px]"
                     onExport={exportarExcel}
                     exportDisabled={!haBuscado}
                     extraActions={
