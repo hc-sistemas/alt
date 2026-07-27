@@ -3,6 +3,7 @@ import { router, usePage, useForm, Head } from '@inertiajs/react'
 import { toast, ToastContainer } from 'react-toastify'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
+import FilterToolbar from '@/Components/shared/FilterToolbar'
 import DesgloseHorasExtraModal from '@/Components/shared/DesgloseHorasExtraModal'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
@@ -269,7 +270,25 @@ export default function HorasExtrasIndex() {
 
             <div className="p-6 space-y-4">
                 {/* Filtros */}
-                <div className="flex flex-wrap items-end gap-3">
+                <FilterToolbar
+                    extraActions={
+                        <>
+                            <button onClick={filtrar} className="btn-primary flex items-center gap-2 px-4 py-2" style={{ color: '#000' }}>
+                                <Filter className="w-4 h-4" /> Filtrar
+                            </button>
+
+                            {(estado || colabId || fechaDesde || fechaHasta) && (
+                                <button onClick={limpiar} className="flex items-center gap-1 text-xs" style={{ color: 'var(--text-muted)' }}>
+                                    <X className="w-3 h-3" /> Limpiar
+                                </button>
+                            )}
+
+                            <span className="ml-auto text-xs" style={{ color: 'var(--text-muted)' }}>
+                                {extras.total} solicitud{extras.total !== 1 ? 'es' : ''}
+                            </span>
+                        </>
+                    }
+                >
                     <div>
                         <Label className="input-label">Estado</Label>
                         <select className="input-field w-36"
@@ -305,21 +324,7 @@ export default function HorasExtrasIndex() {
                         <Input type="date" className="input-field w-40"
                             value={fechaHasta} onChange={e => setFechaHasta(e.target.value)} />
                     </div>
-
-                    <button onClick={filtrar} className="btn-primary flex items-center gap-2 px-4 py-2">
-                        <Filter className="w-4 h-4" /> Filtrar
-                    </button>
-
-                    {(estado || colabId || fechaDesde || fechaHasta) && (
-                        <button onClick={limpiar} className="flex items-center gap-1 text-xs" style={{ color: 'var(--text-muted)' }}>
-                            <X className="w-3 h-3" /> Limpiar
-                        </button>
-                    )}
-
-                    <span className="ml-auto text-xs" style={{ color: 'var(--text-muted)' }}>
-                        {extras.total} solicitud{extras.total !== 1 ? 'es' : ''}
-                    </span>
-                </div>
+                </FilterToolbar>
 
                 {/* Tabla */}
                 <div className="rounded-xl border overflow-x-auto" style={{ borderColor: 'var(--border)' }}>

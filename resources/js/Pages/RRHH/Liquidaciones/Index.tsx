@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { router, usePage, Head } from '@inertiajs/react'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
+import FilterToolbar from '@/Components/shared/FilterToolbar'
 import { Input } from '@/Components/ui/input'
 import { cn } from '@/lib/utils'
 import {
@@ -265,10 +266,11 @@ export default function LiquidacionesIndex({ liquidaciones, colaboradores, filtr
             <PageHeader
                 title="Liquidaciones"
                 description="Finiquitos, cálculo de haberes y actas legales"
+                breadcrumbs={[{ label: 'RRHH' }, { label: 'Liquidaciones' }]}
                 actions={
                     puede('crear') ? (
                         <button onClick={abrirWizard}
-                            style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 6, padding: '7px 14px', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+                            style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--primary)', color: '#000', border: 'none', borderRadius: 6, padding: '7px 14px', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
                             <FileText size={15} /> Nueva
                         </button>
                     ) : undefined
@@ -278,22 +280,28 @@ export default function LiquidacionesIndex({ liquidaciones, colaboradores, filtr
             <div style={{ padding: '0 24px 24px' }}>
 
                 {/* Toolbar */}
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 16, marginTop: 16 }}>
-                    <div style={{ flex: 1 }} />
-                    <select value={filtroColab} onChange={e => setFiltroColab(e.target.value)} style={inputStyle}>
-                        <option value="">Todos los colaboradores</option>
-                        {colaboradores.map(c => <option key={c.id} value={c.id}>{c.apellidos} {c.nombres}</option>)}
-                    </select>
-                    <select value={filtroEst} onChange={e => setFiltroEst(e.target.value)} style={inputStyle}>
-                        <option value="">Estado: todos</option>
-                        <option value="borrador">Borrador</option>
-                        <option value="aprobada">Aprobada</option>
-                    </select>
-                    <button onClick={aplicarFiltros}
-                        style={{ ...inputStyle, cursor: 'pointer', background: 'var(--primary)', color: '#fff', border: 'none', padding: '6px 12px' }}>
-                        Filtrar
-                    </button>
-                    <button onClick={resetFiltros} style={{ ...inputStyle, cursor: 'pointer' }}>Limpiar</button>
+                <div style={{ marginTop: 16 }}>
+                    <FilterToolbar
+                        extraActions={
+                            <>
+                                <button onClick={aplicarFiltros}
+                                    style={{ ...inputStyle, cursor: 'pointer', background: 'var(--primary)', color: '#000', border: 'none', padding: '6px 12px' }}>
+                                    Filtrar
+                                </button>
+                                <button onClick={resetFiltros} style={{ ...inputStyle, cursor: 'pointer' }}>Limpiar</button>
+                            </>
+                        }
+                    >
+                        <select value={filtroColab} onChange={e => setFiltroColab(e.target.value)} style={inputStyle}>
+                            <option value="">Todos los colaboradores</option>
+                            {colaboradores.map(c => <option key={c.id} value={c.id}>{c.apellidos} {c.nombres}</option>)}
+                        </select>
+                        <select value={filtroEst} onChange={e => setFiltroEst(e.target.value)} style={inputStyle}>
+                            <option value="">Estado: todos</option>
+                            <option value="borrador">Borrador</option>
+                            <option value="aprobada">Aprobada</option>
+                        </select>
+                    </FilterToolbar>
                 </div>
 
                 {/* Tabla */}

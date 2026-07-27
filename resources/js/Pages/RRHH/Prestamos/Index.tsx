@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { router, usePage, Head } from '@inertiajs/react'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
+import FilterToolbar from '@/Components/shared/FilterToolbar'
 import { Input } from '@/Components/ui/input'
 import { cn } from '@/lib/utils'
 import {
@@ -137,11 +138,12 @@ export default function PrestamosIndex({ prestamos, colaboradores, filtros, anio
             <PageHeader
                 title="Préstamos y Anticipos"
                 description="Control de desembolsos a colaboradores con asiento contable automático"
+                breadcrumbs={[{ label: 'RRHH' }, { label: 'Préstamos y Anticipos' }]}
                 actions={
                     puede('crear') ? (
                         <button
                             onClick={() => setModalOpen(true)}
-                            style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 6, padding: '7px 14px', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}
+                            style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--primary)', color: '#000', border: 'none', borderRadius: 6, padding: '7px 14px', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}
                         >
                             <Plus size={15} /> Nuevo
                         </button>
@@ -152,35 +154,38 @@ export default function PrestamosIndex({ prestamos, colaboradores, filtros, anio
             <div style={{ padding: '0 24px 24px' }}>
 
                 {/* Toolbar — filtros */}
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 16, marginTop: 16 }}>
-
-                    <div style={{ flex: 1 }} />
-
-                    {/* filtros */}
-                    <select value={filtroColab} onChange={e => setFiltroColab(e.target.value)} style={inputStyle}>
-                        <option value="">Todos los colaboradores</option>
-                        {colaboradores.map(c => <option key={c.id} value={c.id}>{colabLabel(c)}</option>)}
-                    </select>
-                    <select value={filtroTipo} onChange={e => setFiltroTipo(e.target.value)} style={inputStyle}>
-                        <option value="">Tipo: todos</option>
-                        <option value="prestamo">Préstamo</option>
-                        <option value="anticipo">Anticipo</option>
-                    </select>
-                    <select value={filtroEst} onChange={e => setFiltroEst(e.target.value)} style={inputStyle}>
-                        <option value="">Estado: todos</option>
-                        <option value="activo">Activo</option>
-                        <option value="pagado">Pagado</option>
-                    </select>
-                    <select value={filtroAnio} onChange={e => setFiltroAnio(e.target.value)} style={inputStyle}>
-                        <option value="">Año</option>
-                        {anios.map(a => <option key={a} value={a}>{a}</option>)}
-                    </select>
-                    <button onClick={aplicarFiltros} style={{ ...inputStyle, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, background: 'var(--primary)', color: '#fff', border: 'none', padding: '6px 12px' }}>
-                        <Filter size={13} /> Filtrar
-                    </button>
-                    <button onClick={resetFiltros} style={{ ...inputStyle, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <X size={13} /> Limpiar
-                    </button>
+                <div style={{ marginTop: 16 }}>
+                    <FilterToolbar
+                        extraActions={
+                            <>
+                                <button onClick={aplicarFiltros} style={{ ...inputStyle, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, background: 'var(--primary)', color: '#000', border: 'none', padding: '6px 12px' }}>
+                                    <Filter size={13} /> Filtrar
+                                </button>
+                                <button onClick={resetFiltros} style={{ ...inputStyle, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                    <X size={13} /> Limpiar
+                                </button>
+                            </>
+                        }
+                    >
+                        <select value={filtroColab} onChange={e => setFiltroColab(e.target.value)} style={inputStyle}>
+                            <option value="">Todos los colaboradores</option>
+                            {colaboradores.map(c => <option key={c.id} value={c.id}>{colabLabel(c)}</option>)}
+                        </select>
+                        <select value={filtroTipo} onChange={e => setFiltroTipo(e.target.value)} style={inputStyle}>
+                            <option value="">Tipo: todos</option>
+                            <option value="prestamo">Préstamo</option>
+                            <option value="anticipo">Anticipo</option>
+                        </select>
+                        <select value={filtroEst} onChange={e => setFiltroEst(e.target.value)} style={inputStyle}>
+                            <option value="">Estado: todos</option>
+                            <option value="activo">Activo</option>
+                            <option value="pagado">Pagado</option>
+                        </select>
+                        <select value={filtroAnio} onChange={e => setFiltroAnio(e.target.value)} style={inputStyle}>
+                            <option value="">Año</option>
+                            {anios.map(a => <option key={a} value={a}>{a}</option>)}
+                        </select>
+                    </FilterToolbar>
                 </div>
 
                 {/* Tabla */}

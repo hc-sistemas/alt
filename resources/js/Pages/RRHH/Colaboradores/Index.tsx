@@ -4,11 +4,12 @@ import { toast, ToastContainer } from 'react-toastify'
 import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
+import FilterToolbar from '@/Components/shared/FilterToolbar'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
 import {
-    Plus, Pencil, ToggleLeft, ToggleRight, Search, X,
+    Plus, Pencil, ToggleLeft, ToggleRight, X,
     User, Briefcase, DollarSign, CreditCard, Phone, Lock, Clock,
 } from 'lucide-react'
 import { usePermiso } from '@/Hooks/usePermiso'
@@ -370,7 +371,7 @@ function ColaboradorModal({ colaborador, puestos, horarios, usuarios, perfiles, 
                                                     type="button"
                                                     disabled={creandoHorario}
                                                     onClick={crearHorario}
-                                                    className="btn-primary text-xs px-3 py-1.5"
+                                                    className="btn-primary text-xs px-3 py-1.5" style={{ color: '#000' }}
                                                 >
                                                     {creandoHorario ? 'Creando…' : 'Crear y asignar'}
                                                 </button>
@@ -519,7 +520,7 @@ function ColaboradorModal({ colaborador, puestos, horarios, usuarios, perfiles, 
                             <button type="button" onClick={onClose} className="btn-secondary">
                                 Cancelar
                             </button>
-                            <button type="submit" disabled={processing} className="btn-primary">
+                            <button type="submit" disabled={processing} className="btn-primary" style={{ color: '#000' }}>
                                 {processing ? 'Guardando…' : isEditar ? 'Actualizar' : 'Crear Colaborador'}
                             </button>
                         </div>
@@ -580,7 +581,7 @@ export default function ColaboradoresIndex() {
                 breadcrumbs={[{ label: 'RRHH' }, { label: 'Colaboradores' }]}
                 actions={
                     puede('crear') ? (
-                        <button onClick={() => setModal({ type: 'nuevo' })} className="btn-primary flex items-center gap-2">
+                        <button onClick={() => setModal({ type: 'nuevo' })} className="btn-primary flex items-center gap-2" style={{ color: '#000' }}>
                             <Plus className="w-4 h-4" /> Nuevo
                         </button>
                     ) : undefined
@@ -588,52 +589,44 @@ export default function ColaboradoresIndex() {
             />
 
             <div className="p-6 space-y-4">
-                {/* Toolbar */}
-                <div className="flex items-center justify-between gap-3 mb-4">
-                    <div className="flex flex-wrap items-center gap-3">
-                        <div className="relative">
-                            <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
-                            <Input
-                                value={buscar}
-                                onChange={e => setBuscar(e.target.value)}
-                                onKeyDown={e => e.key === 'Enter' && filtrar()}
-                                placeholder="Nombre, cédula, cargo…"
-                                className="pl-9 w-56"
-                            />
-                        </div>
+                <FilterToolbar
+                    search={{
+                        value: buscar,
+                        onChange: setBuscar,
+                        onSearch: filtrar,
+                        placeholder: 'Nombre, cédula, cargo...',
+                    }}
+                >
+                    <select
+                        value={departamento}
+                        onChange={e => { setDepartamento(e.target.value); }}
+                        className="input-field shrink-0"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}
+                    >
+                        <option value="">Todos los depto.</option>
+                        {departamentos.map(d => <option key={d} value={d}>{d}</option>)}
+                    </select>
 
-                        <select
-                            value={departamento}
-                            onChange={e => { setDepartamento(e.target.value); }}
-                            className="input-field w-44"
-                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}
-                        >
-                            <option value="">Todos los depto.</option>
-                            {departamentos.map(d => <option key={d} value={d}>{d}</option>)}
-                        </select>
+                    <select
+                        value={estado}
+                        onChange={e => setEstado(e.target.value)}
+                        className="input-field shrink-0"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}
+                    >
+                        <option value="">Todos</option>
+                        <option value="activo">Activos</option>
+                        <option value="inactivo">Inactivos</option>
+                    </select>
 
-                        <select
-                            value={estado}
-                            onChange={e => setEstado(e.target.value)}
-                            className="input-field w-36"
-                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}
-                        >
-                            <option value="">Todos</option>
-                            <option value="activo">Activos</option>
-                            <option value="inactivo">Inactivos</option>
-                        </select>
-
-                        <button onClick={filtrar} className="btn-secondary whitespace-nowrap">Buscar</button>
-
-                        {(buscar || departamento || estado) && (
-                            <button
-                                onClick={() => { setBuscar(''); setDepartamento(''); setEstado(''); router.get(route('rrhh.colaboradores.index')); }}
-                                className="btn-secondary flex items-center gap-1 whitespace-nowrap">
-                                <X className="w-3 h-3" /> Limpiar
-                            </button>
-                        )}
-                    </div>
-                </div>
+                    {(buscar || departamento || estado) && (
+                        <button
+                            type="button"
+                            onClick={() => { setBuscar(''); setDepartamento(''); setEstado(''); router.get(route('rrhh.colaboradores.index')); }}
+                            className="text-sm underline shrink-0" style={{ color: 'var(--text-muted)' }}>
+                            Limpiar
+                        </button>
+                    )}
+                </FilterToolbar>
 
                 {/* Tabla */}
                 <div className="rounded-xl border overflow-x-auto" style={{ borderColor: 'var(--border)' }}>
