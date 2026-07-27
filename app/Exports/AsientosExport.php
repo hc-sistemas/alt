@@ -201,9 +201,16 @@ class AsientosDetalleSheet implements
     public function collection()
     {
         $query = AsientoContable::with(['detalles.cuenta'])
-            ->where('empresa_id', $this->empresaId)
-            ->where('estado', 1);
+            ->where('empresa_id', $this->empresaId);
 
+        if (!empty($this->filtros['estado'])) {
+            $query->where('estado', $this->filtros['estado'] === 'activo' ? 1 : 0);
+        } else {
+            $query->where('estado', 1);
+        }
+        if (!empty($this->filtros['tipo'])) {
+            $query->where('es_automatico', $this->filtros['tipo'] === 'automatico');
+        }
         if (!empty($this->filtros['ejercicio_id'])) {
             $query->where('ejercicio_id', $this->filtros['ejercicio_id']);
         }
