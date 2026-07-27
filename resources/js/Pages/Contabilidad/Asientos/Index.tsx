@@ -272,6 +272,7 @@ export default function AsientosIndex() {
                                 setModalAbierto(true)
                             }}
                             className="btn-primary flex items-center gap-2 whitespace-nowrap shrink-0"
+                            style={{ color: '#000' }}
                         >
                             <Plus size={15} />
                             Nuevo Asiento
@@ -307,23 +308,32 @@ export default function AsientosIndex() {
                         </button>
                     }
                 >
+                    {/*
+                        Ancho vía `style.width` inline a propósito, NO clases Tailwind (w-28/w-32):
+                        `.input-field` (app.css) declara `width:100%` fuera de cualquier @layer, y
+                        las utilidades de Tailwind v4 viven dentro de su @layer utilities interno —
+                        por reglas de CSS Cascade Layers, lo no-layereado siempre gana sobre lo
+                        layereado sin importar especificidad ni orden, así que un w-28/w-32 de
+                        Tailwind nunca puede ganarle a `.input-field`. Solo un estilo inline
+                        (fuera de la cascada) lo puede sobreescribir de forma confiable.
+                    */}
                     <select value={tipo} onChange={e => setTipo(e.target.value)}
-                        className="input-field shrink-0 w-28 text-xs"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '112px' }}>
                         <option value="">Todos los tipos</option>
                         <option value="manual">Manuales</option>
                         <option value="automatico">Automáticos</option>
                     </select>
                     <select value={estado} onChange={e => setEstado(e.target.value)}
-                        className="input-field shrink-0 w-28 text-xs"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '112px' }}>
                         <option value="">Todos los estados</option>
                         <option value="activo">Activos</option>
                         <option value="anulado">Anulados</option>
                     </select>
                     <select value={ejercicioId} onChange={e => setEjercicioId(e.target.value)}
-                        className="input-field shrink-0 w-32 text-xs"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '144px' }}>
                         <option value="">Todos los períodos</option>
                         {ejercicios.map(e => (
                             <option key={e.id} value={e.id}>{e.periodo_label}</option>
@@ -331,12 +341,12 @@ export default function AsientosIndex() {
                     </select>
                     <input type="date" value={fechaDesde}
                         onChange={e => setFechaDesde(e.target.value)}
-                        className="input-field shrink-0 w-32 text-xs"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }} />
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '136px' }} />
                     <input type="date" value={fechaHasta}
                         onChange={e => setFechaHasta(e.target.value)}
-                        className="input-field shrink-0 w-32 text-xs"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }} />
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '136px' }} />
                     {hayFiltros && (
                         <button type="button" onClick={limpiarFiltros} className="text-sm underline shrink-0" style={{ color: 'var(--text-muted)' }}>
                             Limpiar
