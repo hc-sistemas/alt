@@ -320,22 +320,22 @@ export default function AsientosIndex() {
                     */}
                     <select value={tipo} onChange={e => setTipo(e.target.value)}
                         className="input-field shrink-0 text-xs"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '170px' }}>
-                        <option value="">Todos los tipos</option>
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '145px' }}>
+                        <option value="">Tipo</option>
                         <option value="manual">Manuales</option>
                         <option value="automatico">Automáticos</option>
                     </select>
                     <select value={estado} onChange={e => setEstado(e.target.value)}
                         className="input-field shrink-0 text-xs"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '190px' }}>
-                        <option value="">Todos los estados</option>
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '125px' }}>
+                        <option value="">Estado</option>
                         <option value="activo">Activos</option>
                         <option value="anulado">Anulados</option>
                     </select>
                     <select value={ejercicioId} onChange={e => setEjercicioId(e.target.value)}
                         className="input-field shrink-0 text-xs"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '205px' }}>
-                        <option value="">Todos los períodos</option>
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '175px' }}>
+                        <option value="">Período</option>
                         {ejercicios.map(e => (
                             <option key={e.id} value={e.id}>{e.periodo_label}</option>
                         ))}
