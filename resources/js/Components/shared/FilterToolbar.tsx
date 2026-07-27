@@ -17,6 +17,8 @@ interface Props {
     /** Alternativa a onExport para exportaciones vía enlace directo (querystring), en vez de un handler JS. */
     exportHref?: string
     exportDisabled?: boolean
+    /** Título/tooltip del botón de exportar. Default 'Excel' (comportamiento previo). Útil para explicar por qué está deshabilitado. */
+    exportTitle?: string
     /** Botones adicionales (ej. PDF) que se renderizan al final, después del de exportar. */
     extraActions?: React.ReactNode
 }
@@ -26,7 +28,7 @@ interface Props {
 // solo estandariza el contenedor + el grupo de búsqueda (input con lupa a
 // la izquierda + botón cuadrado dorado) + el botón cuadrado verde de
 // exportar, que se repiten idénticos en casi todos los módulos.
-export default function FilterToolbar({ children, search, searchWidth, onExport, exportHref, exportDisabled, extraActions }: Props) {
+export default function FilterToolbar({ children, search, searchWidth, onExport, exportHref, exportDisabled, exportTitle, extraActions }: Props) {
     return (
         <div className="flex items-center gap-3 mb-4 flex-wrap">
             {children}
@@ -58,13 +60,13 @@ export default function FilterToolbar({ children, search, searchWidth, onExport,
             {onExport && (
                 <button
                     type="button"
-                    className={`flex items-center justify-center w-9 h-9 rounded-md text-sm font-medium border shrink-0 ${!search ? 'ml-auto' : ''}`}
+                    className={`flex items-center justify-center w-9 h-9 rounded-md text-sm font-medium border shrink-0 disabled:opacity-40 disabled:cursor-not-allowed ${!search ? 'ml-auto' : ''}`}
                     style={{ background: '#16A34A', color: 'white', borderColor: '#16A34A', transition: 'background 0.2s' }}
-                    onMouseEnter={e => (e.currentTarget.style.background = '#15803D')}
+                    onMouseEnter={e => { if (!exportDisabled) e.currentTarget.style.background = '#15803D' }}
                     onMouseLeave={e => (e.currentTarget.style.background = '#16A34A')}
                     onClick={onExport}
                     disabled={exportDisabled}
-                    title="Excel"
+                    title={exportTitle ?? 'Excel'}
                 >
                     <FileSpreadsheet className="w-4 h-4" />
                 </button>

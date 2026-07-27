@@ -10,7 +10,7 @@ import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import {
     BookOpen, Plus, Eye, XCircle, CheckCircle,
-    AlertTriangle, User, X, FileText, Zap, Download, Search,
+    AlertTriangle, User, X, FileText, Zap, Download, Search, Info,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { usePermiso } from '@/Hooks/usePermiso'
@@ -149,6 +149,15 @@ export default function AsientosIndex() {
     // menos un filtro real (no cuenta `buscar`, que ninguno de los dos endpoints
     // recibe) antes de permitir exportar.
     const hayFiltrosExportables = !!(tipo || estado || ejercicioId || fechaDesde || fechaHasta)
+
+    // Explica por qué Excel/PDF están deshabilitados — antes solo se veía el
+    // `disabled` nativo (sin opacity ni tooltip claro en el botón de Excel),
+    // lo que hacía parecer que los botones estaban simplemente rotos.
+    const razonExportDeshabilitado = (): string | null => {
+        if (!haBuscado) return 'Primero busca (ícono de lupa) para habilitar la exportación'
+        if (!hayFiltrosExportables) return 'Selecciona al menos un filtro (Tipo, Estado, Período o Fecha) antes de exportar'
+        return null
+    }
 
     const exportarExcel = () => {
         if (!hayFiltrosExportables) {
@@ -346,6 +355,7 @@ export default function AsientosIndex() {
                     searchWidth="w-[130px]"
                     onExport={exportarExcel}
                     exportDisabled={!haBuscado || !hayFiltrosExportables}
+                    exportTitle={razonExportDeshabilitado() ?? 'Exportar a Excel'}
                     extraActions={
                         <button
                             onClick={() => {
@@ -363,8 +373,8 @@ export default function AsientosIndex() {
                                 )
                             }}
                             disabled={!haBuscado || !hayFiltrosExportables}
-                            title="PDF"
-                            className="flex items-center justify-center w-9 h-9 rounded-md border text-sm font-medium shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                            title={razonExportDeshabilitado() ?? 'Ver reporte en PDF'}
+                            className="flex items-center justify-center w-9 h-9 rounded-md border text-sm font-medium shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
                             style={{ background: '#ef4444', color: 'white', borderColor: '#ef4444' }}>
                             <FileText className="w-4 h-4" />
                         </button>
@@ -418,6 +428,17 @@ export default function AsientosIndex() {
                 </FilterToolbar>
                 </div>
                 </div>
+
+                {/* Por qué Excel/PDF están deshabilitados aunque la tabla ya cargó — el
+                    caso confuso: se buscó y hay resultados, pero exportar sigue
+                    deshabilitado porque no hay Tipo/Estado/Período/Fecha seleccionado
+                    (el buscador de texto libre no cuenta para esto). */}
+                {haBuscado && !hayFiltrosExportables && (
+                    <div className="flex items-center gap-1.5 -mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
+                        <Info className="w-3.5 h-3.5 shrink-0" />
+                        <span>{razonExportDeshabilitado()}</span>
+                    </div>
+                )}
 
                 {/* Estado inicial: aún no se ha buscado (carga bajo demanda) */}
                 {!haBuscado && (
