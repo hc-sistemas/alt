@@ -2,8 +2,10 @@ import { useState, useEffect, useMemo } from 'react'
 import { router, usePage, Head } from '@inertiajs/react'
 import { toast, ToastContainer } from 'react-toastify'
 import AppLayout from '@/Layouts/AppLayout'
+import PageHeader from '@/Components/shared/PageHeader'
+import FilterToolbar from '@/Components/shared/FilterToolbar'
 import {
-    RotateCcw, Plus, Search, X, CheckCircle, XCircle, Clock, PackageX,
+    RotateCcw, Plus, X, CheckCircle, XCircle, Clock, PackageX,
 } from 'lucide-react'
 import type { PageProps } from '@/types'
 import { usePermiso } from '@/Hooks/usePermiso'
@@ -235,7 +237,7 @@ function NuevaDevolucionModal({ proveedores, compras, onClose }: {
                                     </span>
                                     <button type="button" onClick={usarDetallesCompra}
                                         className="text-xs px-2 py-1 rounded-lg font-medium"
-                                        style={{ background: 'var(--primary)', color: '#fff' }}>
+                                        style={{ background: 'var(--primary)', color: '#000' }}>
                                         Usar seleccionados ↓
                                     </button>
                                 </div>
@@ -356,7 +358,7 @@ function NuevaDevolucionModal({ proveedores, compras, onClose }: {
                     <div className="modal-footer" style={{ justifyContent: 'space-between' }}>
                         <button type="submit" disabled={processing || !proveedorId || !motivo.trim()}
                             className="btn-primary flex items-center gap-2"
-                            style={{ opacity: (!proveedorId || !motivo.trim() || processing) ? 0.6 : 1 }}>
+                            style={{ color: '#000', opacity: (!proveedorId || !motivo.trim() || processing) ? 0.6 : 1 }}>
                             <RotateCcw size={15} />
                             {processing ? 'Guardando...' : 'Registrar Devolución'}
                         </button>
@@ -422,70 +424,61 @@ export default function DevolucionesIndex() {
         <AppLayout title="Devoluciones de Compra" suppressFlash>
             <Head title="Devoluciones de Compra" />
 
-            <div className="p-4 md:p-6 space-y-5" style={{ background: 'var(--bg-main)', minHeight: '100vh' }}>
-
-                {/* Header */}
-                <div className="flex items-center justify-between gap-3 flex-wrap">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-xl"
-                            style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
-                            <RotateCcw size={24} style={{ color: 'var(--primary)' }} />
-                        </div>
-                        <div>
-                            <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>
-                                Devoluciones de Compra
-                            </h1>
-                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                                {filtradas.length} devolución(es)
-                            </p>
-                        </div>
-                    </div>
-                    {puede('crear') && (
+            <PageHeader
+                title="Devoluciones de Compra"
+                description={`${filtradas.length} devolución(es)`}
+                breadcrumbs={[{ label: 'Compras' }, { label: 'Devoluciones' }]}
+                actions={
+                    puede('crear') ? (
                         <button onClick={() => setShowModal(true)}
-                            className="btn-primary flex items-center gap-2 whitespace-nowrap shrink-0">
+                            className="flex items-center gap-2 whitespace-nowrap shrink-0 px-4 py-2 rounded-xl font-semibold text-sm text-black transition-all hover:opacity-90"
+                            style={{ background: 'var(--primary)' }}>
                             <Plus size={15} /> Nueva Devolución
                         </button>
+                    ) : undefined
+                }
+            />
+
+            <div className="p-4 md:p-6 space-y-5" style={{ background: 'var(--bg-main)', minHeight: '100vh' }}>
+
+                <FilterToolbar
+                    search={{
+                        value: buscar,
+                        onChange: setBuscar,
+                        onSearch: () => {},
+                        placeholder: 'Proveedor, N° doc...',
+                    }}
+                >
+                    <select value={estado} onChange={e => setEstado(e.target.value)}
+                        className="input-field shrink-0"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
+                        <option value="">Todos los estados</option>
+                        <option value="pendiente">Pendiente</option>
+                        <option value="procesada">Procesada</option>
+                        <option value="anulada">Anulada</option>
+                    </select>
+
+                    <select value={proveedorId} onChange={e => setProveedorId(e.target.value)}
+                        className="input-field shrink-0"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
+                        <option value="">Todos los proveedores</option>
+                        {proveedores.map(p => <option key={p.id} value={p.id}>{p.razon_social}</option>)}
+                    </select>
+
+                    <input type="date" value={fechaDesde} onChange={e => setFechaDesde(e.target.value)}
+                        className="input-field shrink-0 w-36"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }} />
+                    <input type="date" value={fechaHasta} onChange={e => setFechaHasta(e.target.value)}
+                        className="input-field shrink-0 w-36"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }} />
+
+                    <button type="button" onClick={aplicarFiltros} className="text-sm underline shrink-0" style={{ color: 'var(--primary)' }}>Filtrar</button>
+                    {hayFiltros && (
+                        <button type="button" onClick={limpiar} className="text-sm underline shrink-0" style={{ color: 'var(--text-muted)' }}>
+                            Limpiar
+                        </button>
                     )}
-                </div>
-
-                {/* Toolbar */}
-                <div className="flex items-center justify-between gap-3 flex-wrap">
-                    <div className="flex flex-wrap items-center gap-2">
-                        <div className="relative">
-                            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none"
-                                style={{ color: 'var(--text-muted)' }} />
-                            <input type="text" placeholder="Buscar proveedor, N°doc..."
-                                value={buscar} onChange={e => setBuscar(e.target.value)}
-                                className="input-field" style={{ paddingLeft: '2rem', width: '200px' }} />
-                        </div>
-
-                        <select value={estado} onChange={e => setEstado(e.target.value)}
-                            className="input-field select-field" style={{ width: 'auto' }}>
-                            <option value="">Todos los estados</option>
-                            <option value="pendiente">Pendiente</option>
-                            <option value="procesada">Procesada</option>
-                            <option value="anulada">Anulada</option>
-                        </select>
-
-                        <select value={proveedorId} onChange={e => setProveedorId(e.target.value)}
-                            className="input-field select-field" style={{ width: 'auto' }}>
-                            <option value="">Todos los proveedores</option>
-                            {proveedores.map(p => <option key={p.id} value={p.id}>{p.razon_social}</option>)}
-                        </select>
-
-                        <input type="date" value={fechaDesde} onChange={e => setFechaDesde(e.target.value)}
-                            className="input-field" style={{ width: 'auto' }} />
-                        <input type="date" value={fechaHasta} onChange={e => setFechaHasta(e.target.value)}
-                            className="input-field" style={{ width: 'auto' }} />
-
-                        <button onClick={aplicarFiltros} className="btn-secondary whitespace-nowrap">Filtrar</button>
-                        {hayFiltros && (
-                            <button onClick={limpiar} className="btn-secondary flex items-center gap-1 whitespace-nowrap">
-                                <X size={13} /> Limpiar
-                            </button>
-                        )}
-                    </div>
-                </div>
+                </FilterToolbar>
 
                 {/* Tabla */}
                 <div className="rounded-2xl border overflow-hidden"

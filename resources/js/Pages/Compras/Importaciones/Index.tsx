@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { router, usePage, useForm, Head } from '@inertiajs/react'
 import { toast, ToastContainer } from 'react-toastify'
 import AppLayout from '@/Layouts/AppLayout'
+import PageHeader from '@/Components/shared/PageHeader'
 import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
@@ -1281,30 +1282,20 @@ export default function ImportacionesIndex() {
         <AppLayout title="Importaciones" suppressFlash>
             <Head title="Importaciones" />
 
-            <div className="px-6 pt-6 mb-2">
-                <div className="flex items-center gap-3 mb-4">
-                    <div className="p-2 rounded-xl"
-                         style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
-                        <Package size={24} style={{ color: 'var(--primary)' }} />
-                    </div>
-                    <div>
-                        <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>
-                            Importaciones COMEX
-                        </h1>
-                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                            Seguimiento de importaciones internacionales y liquidación de costos
-                        </p>
-                    </div>
-                </div>
-                <div className="flex items-center justify-between gap-3 mb-6">
-                    {puede('crear') && (
+            <PageHeader
+                title="Importaciones COMEX"
+                description="Seguimiento de importaciones internacionales y liquidación de costos"
+                breadcrumbs={[{ label: 'Compras' }, { label: 'Importaciones' }]}
+                actions={
+                    puede('crear') ? (
                         <button onClick={() => setModal({ type: 'crear' })}
-                            className="btn-primary flex items-center gap-2 whitespace-nowrap">
+                            className="flex items-center gap-2 whitespace-nowrap px-4 py-2 rounded-xl font-semibold text-sm text-black transition-all hover:opacity-90"
+                            style={{ background: 'var(--primary)' }}>
                             <Plus size={15} /> Nueva Importación
                         </button>
-                    )}
-                </div>
-            </div>
+                    ) : undefined
+                }
+            />
 
             {/* Tabla */}
             <div className="px-6 pb-8">

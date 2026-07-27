@@ -4,13 +4,14 @@ import { toast, ToastContainer } from 'react-toastify'
 import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
+import FilterToolbar from '@/Components/shared/FilterToolbar'
 import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
 import { formatFecha } from '@/utils/contabilidad'
 import {
-    Plus, Search, X, FileText, Download, ChevronLeft, ChevronRight, ChevronDown,
+    Plus, X, FileText, Download, ChevronLeft, ChevronRight, ChevronDown,
     Eye, ShoppingCart, Trash2, CreditCard,
     Barcode, CheckCircle, XCircle, RefreshCw, Upload, AlertTriangle,
 } from 'lucide-react'
@@ -1925,25 +1926,16 @@ export default function ComprasIndex() {
         <AppLayout title="Facturas de Compra" suppressFlash>
             <Head title="Facturas de Compra" />
 
-            <div className="px-6 pt-6 mb-2">
-                <div className="flex items-center justify-between gap-3 mb-4">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-xl"
-                             style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
-                            <ShoppingCart size={24} style={{ color: 'var(--primary)' }} />
-                        </div>
-                        <div>
-                            <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>
-                                Facturas de Compra
-                            </h1>
-                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                                Registro y gestión de facturas, liquidaciones y documentos de compra
-                            </p>
-                        </div>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
+            <PageHeader
+                title="Facturas de Compra"
+                description="Registro y gestión de facturas, liquidaciones y documentos de compra"
+                breadcrumbs={[{ label: 'Compras' }, { label: 'Facturas' }]}
+                actions={
+                    <div className="flex items-center gap-2 flex-wrap shrink-0">
                         {puede('crear') && (
-                            <button onClick={() => setModal({ type: 'nueva' })} className="btn-primary flex items-center gap-2 whitespace-nowrap">
+                            <button onClick={() => setModal({ type: 'nueva' })}
+                                className="flex items-center gap-2 whitespace-nowrap px-4 py-2 rounded-xl font-semibold text-sm text-black transition-all hover:opacity-90"
+                                style={{ background: 'var(--primary)' }}>
                                 <Plus size={15} /> Nueva Factura
                             </button>
                         )}
@@ -1955,57 +1947,50 @@ export default function ComprasIndex() {
                             </button>
                         )}
                     </div>
-                </div>
-                {/* Toolbar */}
-                <div className="flex items-center justify-between gap-3 mb-6">
-                    <div className="flex items-center gap-2 flex-wrap">
+                }
+            />
 
-                        <div className="input-with-icon">
-                            <Search size={14} className="input-icon" />
-                            <input type="text" value={buscar}
-                                onChange={e => setBuscar(e.target.value)}
-                                onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
-                                placeholder="Buscar N° doc, proveedor…"
-                                className="input-field w-52" />
-                        </div>
-
-                        <select value={estado} onChange={e => setEstado(e.target.value)}
-                            className="input-field select-field" style={{ width: 'auto' }}>
-                            <option value="">Todos los estados</option>
-                            <option value="pendiente">Pendiente</option>
-                            <option value="activa">Activa</option>
-                            <option value="anulada">Anulada</option>
-                        </select>
-
-                        <input type="date" value={fechaDesde} onChange={e => setFechaDesde(e.target.value)}
-                            className="input-field" style={{ width: 'auto' }} />
-                        <input type="date" value={fechaHasta} onChange={e => setFechaHasta(e.target.value)}
-                            className="input-field" style={{ width: 'auto' }} />
-
-                        <button onClick={aplicarFiltros} className="btn-secondary whitespace-nowrap">
-                            Filtrar
-                        </button>
-                        {hayFiltros && (
-                            <button onClick={limpiar} className="btn-secondary whitespace-nowrap">
-                                Limpiar
-                            </button>
-                        )}
-                    </div>
-
-                    <div className="flex items-center gap-2">
+            <div className="px-6 pt-6 mb-2">
+                <FilterToolbar
+                    search={{
+                        value: buscar,
+                        onChange: setBuscar,
+                        onSearch: aplicarFiltros,
+                        placeholder: 'N° doc, proveedor...',
+                    }}
+                    onExport={() => window.location.href = `${route('compras.facturas.excel')}?estado=${estado}&fecha_desde=${fechaDesde}&fecha_hasta=${fechaHasta}`}
+                    extraActions={
                         <button
                             onClick={() => abrirPdf(
                                 `${route('compras.facturas.pdf')}?estado=${estado}&fecha_desde=${fechaDesde}&fecha_hasta=${fechaHasta}`
                             )}
-                            className="btn-pdf flex items-center gap-2 whitespace-nowrap">
-                            <FileText size={15} /> PDF
+                            title="PDF"
+                            className="flex items-center justify-center w-9 h-9 rounded-md border text-sm font-medium shrink-0"
+                            style={{ background: '#ef4444', color: 'white', borderColor: '#ef4444' }}>
+                            <FileText className="w-4 h-4" />
                         </button>
-                        <a href={`${route('compras.facturas.excel')}?estado=${estado}&fecha_desde=${fechaDesde}&fecha_hasta=${fechaHasta}`}
-                           className="btn-excel flex items-center gap-2 whitespace-nowrap">
-                            <Download size={15} /> Excel
-                        </a>
-                    </div>
-                </div>
+                    }
+                >
+                    <select value={estado} onChange={e => setEstado(e.target.value)}
+                        className="input-field shrink-0"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
+                        <option value="">Todos los estados</option>
+                        <option value="pendiente">Pendiente</option>
+                        <option value="activa">Activa</option>
+                        <option value="anulada">Anulada</option>
+                    </select>
+                    <input type="date" value={fechaDesde} onChange={e => setFechaDesde(e.target.value)}
+                        className="input-field shrink-0 w-36"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }} />
+                    <input type="date" value={fechaHasta} onChange={e => setFechaHasta(e.target.value)}
+                        className="input-field shrink-0 w-36"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }} />
+                    {hayFiltros && (
+                        <button type="button" onClick={limpiar} className="text-sm underline shrink-0" style={{ color: 'var(--text-muted)' }}>
+                            Limpiar
+                        </button>
+                    )}
+                </FilterToolbar>
             </div>
 
             {/* Tabla */}

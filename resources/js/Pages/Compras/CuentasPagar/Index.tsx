@@ -3,11 +3,13 @@ import { router, usePage, Head } from '@inertiajs/react'
 import { toast, ToastContainer } from 'react-toastify'
 import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
+import PageHeader from '@/Components/shared/PageHeader'
+import FilterToolbar from '@/Components/shared/FilterToolbar'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { Button } from '@/Components/ui/button'
 import { cn } from '@/lib/utils'
-import { DollarSign, Search, X, FileText, Download, CreditCard, XCircle } from 'lucide-react'
+import { X, FileText, Download, CreditCard, XCircle } from 'lucide-react'
 import type { PageProps, Proveedor, BancoCaja } from '@/types'
 import { usePermiso } from '@/Hooks/usePermiso'
 import 'react-toastify/dist/ReactToastify.css'
@@ -389,99 +391,82 @@ export default function CuentasPagarIndex() {
         <AppLayout title="Cuentas por Pagar" suppressFlash>
             <Head title="Cuentas por Pagar" />
 
-            {/* Header */}
+            <PageHeader
+                title="Cuentas por Pagar"
+                description="Obligaciones pendientes con proveedores ordenadas por vencimiento"
+                breadcrumbs={[{ label: 'Compras' }, { label: 'Cuentas por Pagar' }]}
+            />
+
             <div className="px-6 pt-6 mb-2">
-                <div className="flex items-center gap-3 mb-4">
-                    <div className="p-2 rounded-xl"
-                         style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
-                        <DollarSign size={24} style={{ color: 'var(--primary)' }} />
-                    </div>
-                    <div>
-                        <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>
-                            Cuentas por Pagar
-                        </h1>
-                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                            Obligaciones pendientes con proveedores ordenadas por vencimiento
-                        </p>
-                    </div>
-                </div>
-
-                {/* Toolbar */}
-                <div className="flex items-center justify-between gap-3 mb-6">
-                    <div className="flex items-center gap-2 flex-wrap">
-                        <div className="input-with-icon">
-                            <Search size={14} className="input-icon" />
-                            <input type="text" value={buscar}
-                                onChange={e => setBuscar(e.target.value)}
-                                placeholder="Buscar proveedor o documento…"
-                                className="input-field w-52" />
-                        </div>
-
-                        <select value={estado} onChange={e => setEstado(e.target.value)}
-                            className="input-field select-field" style={{ width: 'auto' }}>
-                            <option value="">Todas (pendiente + parcial)</option>
-                            <option value="pendiente">Pendiente</option>
-                            <option value="parcial">Parcial</option>
-                            <option value="pagada">Pagada / Anulada</option>
-                        </select>
-
-                        {/* Filtro período */}
-                        <div className="flex items-center gap-1 border rounded-lg p-0.5"
-                             style={{ borderColor: 'var(--border)', background: 'var(--bg-main)' }}>
-                            {[
-                                { val: '',        label: 'Todos' },
-                                { val: 'vencidas', label: 'Vencidas' },
-                                { val: 'hoy',     label: 'Hoy' },
-                                { val: 'semana',  label: 'Semana' },
-                                { val: 'mes',     label: 'Mes' },
-                                { val: 'anio',    label: 'Año' },
-                            ].map(({ val, label }) => (
-                                <button key={val}
-                                    onClick={() => { setPeriodo(val); setTimeout(aplicarFiltros, 0) }}
-                                    className={cn('px-2 py-1 rounded text-xs font-semibold transition-colors whitespace-nowrap',
-                                        periodo === val
-                                            ? 'text-white'
-                                            : 'hover:opacity-80'
-                                    )}
-                                    style={periodo === val
-                                        ? { background: 'var(--primary)', color: '#fff' }
-                                        : { color: 'var(--text-muted)' }}
-                                >
-                                    {label}
-                                </button>
-                            ))}
-                        </div>
-
-                        <select value={proveedorId} onChange={e => setProveedorId(e.target.value)}
-                            className="input-field select-field" style={{ width: 'auto' }}>
-                            <option value="">Todos los proveedores</option>
-                            {proveedores.map(p => (
-                                <option key={p.id} value={p.id}>{p.razon_social}</option>
-                            ))}
-                        </select>
-
-                        <button onClick={aplicarFiltros} className="btn-secondary whitespace-nowrap">
-                            Filtrar
-                        </button>
-                        {hayFiltros && (
-                            <button onClick={limpiar} className="btn-secondary whitespace-nowrap">
-                                Limpiar
-                            </button>
-                        )}
-                    </div>
-
-                    <div className="flex items-center gap-2">
+                <FilterToolbar
+                    search={{
+                        value: buscar,
+                        onChange: setBuscar,
+                        onSearch: aplicarFiltros,
+                        placeholder: 'Proveedor o documento...',
+                    }}
+                    exportHref={excelUrl}
+                    extraActions={
                         <button
                             onClick={() => abrirPdf(pdfUrl)}
-                            className="btn-pdf flex items-center gap-2 whitespace-nowrap">
-                            <FileText size={15} /> PDF
+                            title="PDF"
+                            className="flex items-center justify-center w-9 h-9 rounded-md border text-sm font-medium shrink-0"
+                            style={{ background: '#ef4444', color: 'white', borderColor: '#ef4444' }}>
+                            <FileText className="w-4 h-4" />
                         </button>
-                        <a href={excelUrl}
-                           className="btn-excel flex items-center gap-2 whitespace-nowrap">
-                            <Download size={15} /> Excel
-                        </a>
+                    }
+                >
+                    <select value={estado} onChange={e => setEstado(e.target.value)}
+                        className="input-field shrink-0"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
+                        <option value="">Todas (pendiente + parcial)</option>
+                        <option value="pendiente">Pendiente</option>
+                        <option value="parcial">Parcial</option>
+                        <option value="pagada">Pagada / Anulada</option>
+                    </select>
+
+                    {/* Filtro período */}
+                    <div className="flex items-center gap-1 border rounded-lg p-0.5 shrink-0"
+                         style={{ borderColor: 'var(--border)', background: 'var(--bg-main)' }}>
+                        {[
+                            { val: '',        label: 'Todos' },
+                            { val: 'vencidas', label: 'Vencidas' },
+                            { val: 'hoy',     label: 'Hoy' },
+                            { val: 'semana',  label: 'Semana' },
+                            { val: 'mes',     label: 'Mes' },
+                            { val: 'anio',    label: 'Año' },
+                        ].map(({ val, label }) => (
+                            <button key={val}
+                                onClick={() => { setPeriodo(val); setTimeout(aplicarFiltros, 0) }}
+                                className={cn('px-2 py-1 rounded text-xs font-semibold transition-colors whitespace-nowrap',
+                                    periodo === val
+                                        ? 'text-black'
+                                        : 'hover:opacity-80'
+                                )}
+                                style={periodo === val
+                                    ? { background: 'var(--primary)' }
+                                    : { color: 'var(--text-muted)' }}
+                            >
+                                {label}
+                            </button>
+                        ))}
                     </div>
-                </div>
+
+                    <select value={proveedorId} onChange={e => setProveedorId(e.target.value)}
+                        className="input-field shrink-0"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
+                        <option value="">Todos los proveedores</option>
+                        {proveedores.map(p => (
+                            <option key={p.id} value={p.id}>{p.razon_social}</option>
+                        ))}
+                    </select>
+
+                    {hayFiltros && (
+                        <button type="button" onClick={limpiar} className="text-sm underline shrink-0" style={{ color: 'var(--text-muted)' }}>
+                            Limpiar
+                        </button>
+                    )}
+                </FilterToolbar>
             </div>
 
             {/* Tabla */}

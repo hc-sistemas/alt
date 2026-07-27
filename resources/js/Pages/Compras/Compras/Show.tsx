@@ -5,7 +5,8 @@ import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
 import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
-import { ChevronLeft, Ban, ShoppingCart, ExternalLink, X, Printer, XCircle, Download, PackageCheck, CreditCard, AlertTriangle } from 'lucide-react'
+import PageHeader from '@/Components/shared/PageHeader'
+import { ChevronLeft, Ban, ExternalLink, X, Printer, XCircle, Download, PackageCheck, CreditCard, AlertTriangle } from 'lucide-react'
 import { formatFecha } from '@/utils/contabilidad'
 import type {
     Compra, Proveedor, CentroCosto, AsientoContable,
@@ -146,49 +147,32 @@ export default function CompraShow() {
         <AppLayout title={`Compra ${compra.num_documento}`} suppressFlash>
             <Head title={`Compra ${compra.num_documento}`} />
 
-            <div className="px-6 pt-6 pb-8 max-w-5xl">
-
-                {/* ── Header ── */}
-                <div className="flex items-start justify-between gap-4 mb-6">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-xl"
-                            style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
-                            <ShoppingCart size={24} style={{ color: 'var(--primary)' }} />
-                        </div>
-                        <div>
-                            <div className="flex items-center gap-2 flex-wrap">
-                                <h1 className="text-xl font-bold font-mono" style={{ color: 'var(--text-main)' }}>
-                                    {compra.num_documento}
-                                </h1>
-                                {compra.estado === 'pendiente' && (
-                                    <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">Pendiente</span>
-                                )}
-                                {compra.estado === 'activa' && (
-                                    <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">Activa</span>
-                                )}
-                                {compra.estado === 'anulada' && (
-                                    <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400">Anulada</span>
-                                )}
-                                {!compra.asiento_id && compra.asiento_error && (
-                                    <span
-                                        title={compra.asiento_error}
-                                        className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400 cursor-help">
-                                        <AlertTriangle size={11} /> Sin asiento contable
-                                    </span>
-                                )}
-                            </div>
-                            <p className="text-sm mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                                {compra.tipo_documento} · Emitida {formatFecha(compra.fecha_emision)}
-                            </p>
-                            {!compra.asiento_id && compra.asiento_error && (
-                                <p className="text-xs mt-1 flex items-center gap-1.5" style={{ color: '#c2410c' }}>
-                                    <AlertTriangle size={12} className="shrink-0" />
-                                    {compra.asiento_error}
-                                </p>
-                            )}
-                        </div>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
+            <PageHeader
+                title={compra.num_documento}
+                breadcrumbs={[{ label: 'Compras' }, { label: 'Facturas' }]}
+                description={
+                    <>
+                        {compra.tipo_documento} · Emitida {formatFecha(compra.fecha_emision)}
+                        {compra.estado === 'pendiente' && (
+                            <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">Pendiente</span>
+                        )}
+                        {compra.estado === 'activa' && (
+                            <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">Activa</span>
+                        )}
+                        {compra.estado === 'anulada' && (
+                            <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400">Anulada</span>
+                        )}
+                        {!compra.asiento_id && compra.asiento_error && (
+                            <span
+                                title={compra.asiento_error}
+                                className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400 cursor-help">
+                                <AlertTriangle size={11} /> Sin asiento contable
+                            </span>
+                        )}
+                    </>
+                }
+                actions={
+                    <div className="flex items-center gap-2 flex-wrap shrink-0">
                         <Link href={route('compras.facturas.index')}
                             className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border transition-all hover:opacity-80"
                             style={{ borderColor: 'var(--border)', color: 'var(--text-main)' }}>
@@ -216,7 +200,7 @@ export default function CompraShow() {
                         )}
                         {compra.estado === 'activa' && compra.tiene_pago && puede('anular') && (
                             <button onClick={confirmarAnularPago}
-                                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90"
+                                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-black transition-all hover:opacity-90"
                                 style={{ background: '#f59e0b' }}>
                                 <CreditCard size={15} /> Anular Pago
                             </button>
@@ -229,8 +213,10 @@ export default function CompraShow() {
                             </button>
                         )}
                     </div>
-                </div>
+                }
+            />
 
+            <div className="px-6 pt-6 pb-8 max-w-5xl">
                 {/* ── Info panel ── */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                     {/* Proveedor */}

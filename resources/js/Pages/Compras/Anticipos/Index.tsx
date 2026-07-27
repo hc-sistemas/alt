@@ -3,12 +3,14 @@ import { router, usePage, Head } from '@inertiajs/react'
 import { toast, ToastContainer } from 'react-toastify'
 import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
+import PageHeader from '@/Components/shared/PageHeader'
+import FilterToolbar from '@/Components/shared/FilterToolbar'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { Button } from '@/Components/ui/button'
 import { cn } from '@/lib/utils'
 import {
-    CreditCard, Plus, Search, CheckCircle,
+    CreditCard, Plus, CheckCircle,
     Clock, AlertTriangle, X, ArrowLeftRight
 } from 'lucide-react'
 import type { PageProps, Proveedor, BancoCaja } from '@/types'
@@ -415,65 +417,51 @@ export default function AnticiposIndex() {
         <AppLayout title="Anticipos Proveedores" suppressFlash>
             <Head title="Anticipos Proveedores" />
 
-            <div className="px-6 pt-6 mb-2">
-                {/* Header */}
-                <div className="flex items-center justify-between gap-3 mb-4">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-xl"
-                             style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
-                            <CreditCard size={24} style={{ color: 'var(--primary)' }} />
-                        </div>
-                        <div>
-                            <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>
-                                Anticipos a Proveedores
-                            </h1>
-                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                                Pagos adelantados antes de recibir la factura formal
-                            </p>
-                        </div>
-                    </div>
-                    {puede('crear') && (
-                        <button onClick={() => setModalNuevo(true)} className="btn-primary flex items-center gap-2 whitespace-nowrap shrink-0">
+            <PageHeader
+                title="Anticipos a Proveedores"
+                description="Pagos adelantados antes de recibir la factura formal"
+                breadcrumbs={[{ label: 'Compras' }, { label: 'Anticipos' }]}
+                actions={
+                    puede('crear') ? (
+                        <button onClick={() => setModalNuevo(true)}
+                            className="flex items-center gap-2 whitespace-nowrap shrink-0 px-4 py-2 rounded-xl font-semibold text-sm text-black transition-all hover:opacity-90"
+                            style={{ background: 'var(--primary)' }}>
                             <Plus size={15} /> Nuevo Anticipo
                         </button>
-                    )}
-                </div>
+                    ) : undefined
+                }
+            />
 
-                {/* Toolbar */}
-                <div className="flex items-center justify-between gap-3 mb-6">
-                    <div className="flex items-center gap-2 flex-wrap">
-                        <div className="input-with-icon">
-                            <Search size={14} className="input-icon" />
-                            <input type="text" value={buscar}
-                                onChange={e => setBuscar(e.target.value)}
-                                onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
-                                placeholder="Proveedor o transferencia…"
-                                className="input-field w-52" />
-                        </div>
+            <div className="px-6 pt-6 mb-2">
+                <FilterToolbar
+                    search={{
+                        value: buscar,
+                        onChange: setBuscar,
+                        onSearch: aplicarFiltros,
+                        placeholder: 'Proveedor o transferencia...',
+                    }}
+                >
+                    <select value={estado} onChange={e => setEstado(e.target.value)}
+                        className="input-field shrink-0"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
+                        <option value="">Todos</option>
+                        <option value="pendiente">Pendientes</option>
+                        <option value="cruzado">Cruzados</option>
+                    </select>
 
-                        <select value={estado} onChange={e => setEstado(e.target.value)}
-                            className="input-field select-field" style={{ width: 'auto' }}>
-                            <option value="">Todos</option>
-                            <option value="pendiente">Pendientes</option>
-                            <option value="cruzado">Cruzados</option>
-                        </select>
+                    <select value={proveedorId} onChange={e => setProveedorId(e.target.value)}
+                        className="input-field shrink-0"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
+                        <option value="">Todos los proveedores</option>
+                        {proveedores.map(p => (
+                            <option key={p.id} value={p.id}>{p.razon_social}</option>
+                        ))}
+                    </select>
 
-                        <select value={proveedorId} onChange={e => setProveedorId(e.target.value)}
-                            className="input-field select-field" style={{ width: 'auto' }}>
-                            <option value="">Todos los proveedores</option>
-                            {proveedores.map(p => (
-                                <option key={p.id} value={p.id}>{p.razon_social}</option>
-                            ))}
-                        </select>
-
-                        <button onClick={aplicarFiltros} className="btn-secondary whitespace-nowrap">
-                            Filtrar
-                        </button>
-                        <button onClick={limpiar} className="btn-secondary whitespace-nowrap">
-                            Limpiar
-                        </button>
-                    </div>
-                </div>
+                    <button type="button" onClick={limpiar} className="text-sm underline shrink-0" style={{ color: 'var(--text-muted)' }}>
+                        Limpiar
+                    </button>
+                </FilterToolbar>
             </div>
 
             {/* Tabla */}
