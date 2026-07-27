@@ -3,6 +3,7 @@ import { router, usePage } from '@inertiajs/react'
 import { ToastContainer } from 'react-toastify'
 import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
+import PageHeader from '@/Components/shared/PageHeader'
 import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
@@ -165,60 +166,51 @@ conciliación bancaria completada..."
 
     return (
         <AppLayout title="Ejercicios Contables" suppressFlash>
-            <div className="p-6 space-y-5">
-                <div className="mb-6">
-                    {/* Fila 1 — Título + acciones */}
-                    <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
-                        <div className="flex items-center gap-3">
-                            <div className="p-2 rounded-xl"
-                                 style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
-                                <Calendar size={24} style={{ color: 'var(--primary)' }} />
-                            </div>
-                            <div>
-                                <h1 className="text-xl font-bold"
-                                    style={{ color: 'var(--text-main)' }}>
-                                    Ejercicios Contables
-                                </h1>
-                                {periodoActivo ? (
-                                    <p className="flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400">
-                                        <CheckCircle size={12} className="shrink-0" />
-                                        Período activo: {periodoActivo.periodo_label}
-                                        {' '}· Abierto desde {periodoActivo.fecha_apertura ? formatFecha(periodoActivo.fecha_apertura) : '—'}
-                                        {' '}· {periodoActivo.total_asientos} asiento(s)
-                                    </p>
-                                ) : (
-                                    <p className="flex items-center gap-1.5 text-xs text-red-600 dark:text-red-400">
-                                        <AlertTriangle size={12} className="shrink-0" />
-                                        Sin período contable activo — abre un período para registrar asientos.
-                                    </p>
-                                )}
-                            </div>
-                        </div>
-                        <div className="flex items-center gap-2 flex-wrap shrink-0">
-                            {puede('crear') && (
-                                <button
-                                    onClick={() => setModalAbierto(true)}
-                                    className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-black whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5"
-                                    style={{ background: 'var(--primary)' }}
-                                >
-                                    <Plus size={15} />
-                                    Abrir Período
-                                </button>
-                            )}
-                            {esSuperAdmin && (
-                                <button
-                                    onClick={() => setModalCierreFiscal(true)}
-                                    className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm whitespace-nowrap border transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
-                                    style={{ background: 'rgba(124,58,237,0.08)', borderColor: 'rgba(124,58,237,0.3)', color: '#7C3AED' }}
-                                >
-                                    <ShieldCheck size={15} />
-                                    Cierre Fiscal Anual
-                                </button>
-                            )}
-                        </div>
+            <PageHeader
+                title="Ejercicios Contables"
+                breadcrumbs={[{ label: 'Contabilidad' }, { label: 'Ejercicios Contables' }]}
+                description={
+                    periodoActivo ? (
+                        <span className="flex items-center gap-1.5 text-green-600 dark:text-green-400">
+                            <CheckCircle size={12} className="shrink-0" />
+                            Período activo: {periodoActivo.periodo_label}
+                            {' '}· Abierto desde {periodoActivo.fecha_apertura ? formatFecha(periodoActivo.fecha_apertura) : '—'}
+                            {' '}· {periodoActivo.total_asientos} asiento(s)
+                        </span>
+                    ) : (
+                        <span className="flex items-center gap-1.5 text-red-600 dark:text-red-400">
+                            <AlertTriangle size={12} className="shrink-0" />
+                            Sin período contable activo — abre un período para registrar asientos.
+                        </span>
+                    )
+                }
+                actions={
+                    <div className="flex items-center gap-2 flex-wrap shrink-0">
+                        {puede('crear') && (
+                            <button
+                                onClick={() => setModalAbierto(true)}
+                                className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-black whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5"
+                                style={{ background: 'var(--primary)' }}
+                            >
+                                <Plus size={15} />
+                                Abrir Período
+                            </button>
+                        )}
+                        {esSuperAdmin && (
+                            <button
+                                onClick={() => setModalCierreFiscal(true)}
+                                className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm whitespace-nowrap border transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
+                                style={{ background: 'rgba(124,58,237,0.08)', borderColor: 'rgba(124,58,237,0.3)', color: '#7C3AED' }}
+                            >
+                                <ShieldCheck size={15} />
+                                Cierre Fiscal Anual
+                            </button>
+                        )}
                     </div>
-                </div>
+                }
+            />
 
+            <div className="p-6 space-y-5">
                 {/* Tabla */}
                 <div className="rounded-xl border overflow-hidden"
                      style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>

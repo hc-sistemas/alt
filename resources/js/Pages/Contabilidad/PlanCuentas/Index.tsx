@@ -4,13 +4,14 @@ import { toast, ToastContainer } from 'react-toastify'
 import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
+import FilterToolbar from '@/Components/shared/FilterToolbar'
 import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
 import {
     ChevronRight, ChevronDown, Plus, Pencil, Trash2,
-    ToggleLeft, ToggleRight, Download, Search, X,
+    ToggleLeft, ToggleRight, Search, X,
     ChevronsUpDown, ChevronsDownUp, BookOpen,
     TrendingUp, TrendingDown, DollarSign, Shield, BarChart3,
     Upload,
@@ -949,56 +950,36 @@ export default function PlanCuentasIndex() {
                 }
             />
 
-            {/* Toolbar: [Expandir] [Colapsar] [Buscar] | [Importar] [Excel] */}
-            <div className="flex items-center justify-between gap-3 px-6 pb-4">
-                <div className="flex flex-wrap items-center gap-2">
-                    <Button variant="outline" size="sm" onClick={expandirTodo} title="Expandir todo">
+            {/* Toolbar: [Expandir] [Colapsar] [Buscar] | [Excel] [Importar] */}
+            <div className="px-6 pb-4">
+                <FilterToolbar
+                    search={{
+                        value: busqueda,
+                        onChange: setBusqueda,
+                        onSearch: () => {},
+                        placeholder: 'Buscar por código o nombre...',
+                    }}
+                    exportHref={route('contabilidad.plan-cuentas.exportar')}
+                    extraActions={
+                        puede('crear') ? (
+                            <button onClick={() => setModalImportar(true)}
+                                title="Importar Excel"
+                                className="flex items-center justify-center w-9 h-9 rounded-md border text-sm font-medium shrink-0"
+                                style={{ background: '#059669', color: 'white', borderColor: '#059669' }}>
+                                <Upload className="w-4 h-4" />
+                            </button>
+                        ) : undefined
+                    }
+                >
+                    <Button variant="outline" size="sm" onClick={expandirTodo} title="Expandir todo" className="shrink-0">
                         <ChevronsUpDown className="w-3.5 h-3.5" />
                         Expandir
                     </Button>
-                    <Button variant="outline" size="sm" onClick={colapsarTodo} title="Colapsar todo">
+                    <Button variant="outline" size="sm" onClick={colapsarTodo} title="Colapsar todo" className="shrink-0">
                         <ChevronsDownUp className="w-3.5 h-3.5" />
                         Colapsar
                     </Button>
-
-                    <div className="relative min-w-48 max-w-sm">
-                        <Search
-                            className="absolute top-1/2 left-2.5 w-4 h-4 -translate-y-1/2 pointer-events-none"
-                            style={{ color: 'var(--text-muted)' }}
-                        />
-                        <Input
-                            className="pl-8 pr-8"
-                            placeholder="Buscar por código o nombre…"
-                            value={busqueda}
-                            onChange={e => setBusqueda(e.target.value)}
-                        />
-                        {busqueda && (
-                            <button
-                                onClick={() => setBusqueda('')}
-                                className="absolute top-1/2 right-2.5 -translate-y-1/2 hover:opacity-70 transition-opacity"
-                                style={{ color: 'var(--text-muted)' }}
-                            >
-                                <X className="w-3.5 h-3.5" />
-                            </button>
-                        )}
-                    </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                    {puede('crear') && (
-                        <button onClick={() => setModalImportar(true)}
-                            className="btn-primary flex items-center gap-2 whitespace-nowrap"
-                            style={{ background: '#059669' }}>
-                            <Upload className="w-3.5 h-3.5" />
-                            Importar Excel
-                        </button>
-                    )}
-                    <a href={route('contabilidad.plan-cuentas.exportar')}
-                       className="btn-excel flex items-center gap-2 whitespace-nowrap">
-                        <Download className="w-3.5 h-3.5" />
-                        Excel
-                    </a>
-                </div>
+                </FilterToolbar>
             </div>
 
             {/* Árbol */}

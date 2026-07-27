@@ -3,11 +3,13 @@ import { router, usePage, Link } from '@inertiajs/react'
 import { ToastContainer } from 'react-toastify'
 import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
+import PageHeader from '@/Components/shared/PageHeader'
+import FilterToolbar from '@/Components/shared/FilterToolbar'
 import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import {
-    BookOpen, Plus, Search, Eye, XCircle, CheckCircle,
+    BookOpen, Plus, Eye, XCircle, CheckCircle,
     AlertTriangle, User, X, FileText, Zap, Download,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -114,6 +116,19 @@ export default function AsientosIndex() {
         setBuscar(''); setTipo(''); setEstado('')
         setEjercicioId(''); setFechaDesde(''); setFechaHasta('')
         router.get(route('contabilidad.asientos.index'))
+    }
+
+    const hayFiltros = !!(buscar || tipo || estado || ejercicioId || fechaDesde || fechaHasta)
+
+    const exportarExcel = () => {
+        const params = new URLSearchParams({
+            ejercicio_id: ejercicioId,
+            fecha_desde:  fechaDesde,
+            fecha_hasta:  fechaHasta,
+            tipo:         tipo,
+            estado:       estado,
+        })
+        window.location.href = route('contabilidad.asientos.exportar-excel') + '?' + params
     }
 
     const actualizarPartida = (idx: number, campo: keyof Partida, valor: string) => {
@@ -223,163 +238,105 @@ export default function AsientosIndex() {
 
     return (
         <AppLayout title="Asientos Contables" suppressFlash>
-            <div className={cn('space-y-5', 'p-6')}>
-
-                <div className="mb-6">
-                    {/* Fila 1 — Título + acción principal */}
-                    <div className="flex items-center justify-between gap-3 mb-4">
-                        <div className="flex items-center gap-3">
-                            <div className="p-2 rounded-xl"
-                                 style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
-                                <BookOpen size={24} style={{ color: 'var(--primary)' }} />
-                            </div>
-                            <div>
-                                <h1 className="text-xl font-bold"
-                                    style={{ color: 'var(--text-main)' }}>
-                                    Asientos Contables
-                                </h1>
-                                <p className="text-sm"
-                                   style={{ color: 'var(--text-muted)' }}>
-                                    Registro de movimientos contables (partida doble)
-                                </p>
-                            </div>
-                        </div>
-                        {puedeCrear && (
-                            <button
-                                onClick={() => {
-                                    if (!periodoActivo) {
-                                        notify.error('No hay período activo.')
-                                        return
-                                    }
-                                    setModalAbierto(true)
-                                }}
-                                className="btn-primary flex items-center gap-2 whitespace-nowrap shrink-0"
-                            >
-                                <Plus size={15} />
-                                Nuevo Asiento
-                            </button>
-                        )}
-                    </div>
-
-                    {/* Toolbar */}
-                    <div className="flex items-center justify-between gap-3 mb-6">
-                        <div className="flex items-center gap-2 flex-wrap">
-                            {/* Buscar */}
-                            <div className="input-with-icon">
-                                <Search size={14} className="input-icon" />
-                                <input type="text" value={buscar}
-                                    onChange={e => setBuscar(e.target.value)}
-                                    onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
-                                    placeholder="Número, concepto, referencia…"
-                                    className="input-field w-52" />
-                            </div>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                            {/* PDF */}
-                            <button
-                                onClick={() => abrirPdf(
-                                    `${route('contabilidad.asientos.reporte-pdf')}` +
-                                    `?ejercicio_id=${ejercicioId}` +
-                                    `&fecha_desde=${fechaDesde}` +
-                                    `&fecha_hasta=${fechaHasta}`
-                                )}
-                                className="btn-pdf flex items-center gap-2 whitespace-nowrap">
-                                <FileText size={15} />
-                                PDF
-                            </button>
-
-                            {/* Excel */}
-                            <button
-                                onClick={() => {
-                                    const params = new URLSearchParams({
-                                        ejercicio_id: ejercicioId,
-                                        fecha_desde:  fechaDesde,
-                                        fecha_hasta:  fechaHasta,
-                                        tipo:         tipo,
-                                        estado:       estado,
-                                    })
-                                    window.location.href =
-                                        route('contabilidad.asientos.exportar-excel') + '?' + params
-                                }}
-                                className="btn-excel flex items-center gap-2 whitespace-nowrap">
-                                <Download size={15} />
-                                Excel
-                            </button>
-                        </div>
-                    </div>
-                </div>
-                {/* Banner período */}
-                {periodoActivo ? (
-                    <div className={cn('flex', 'items-center', 'gap-2', 'px-4', 'py-2', 'border', 'rounded-xl', 'text-sm')}
-                        style={{
-                            background: 'color-mix(in srgb, #10b981 8%, var(--bg-card))',
-                            borderColor: '#10b981', color: '#059669'
-                        }}>
-                        <CheckCircle size={14} />
-                        <span className="font-semibold">
-                            Período activo: <strong>{periodoActivo.periodo_label}</strong>
+            <PageHeader
+                title="Asientos Contables"
+                breadcrumbs={[{ label: 'Contabilidad' }, { label: 'Asientos Contables' }]}
+                description={
+                    periodoActivo ? (
+                        <span className="flex items-center gap-1.5 text-green-600 dark:text-green-400">
+                            <CheckCircle size={12} className="shrink-0" />
+                            Período activo: {periodoActivo.periodo_label}
                             {periodoActivo.fecha_apertura && (
                                 <> · Abierto desde {formatFecha(periodoActivo.fecha_apertura)}</>
                             )}
                         </span>
-                    </div>
-                ) : (
-                    <div className={cn('flex', 'items-center', 'gap-2', 'px-4', 'py-2', 'border', 'rounded-xl', 'text-sm')}
-                        style={{
-                            background: 'color-mix(in srgb, #ef4444 8%, var(--bg-card))',
-                            borderColor: '#ef4444', color: '#dc2626'
-                        }}>
-                        <AlertTriangle size={14} />
-                        <span className="font-semibold">Sin período activo — no se pueden crear asientos</span>
-                    </div>
-                )}
+                    ) : (
+                        <span className="flex items-center gap-1.5 text-red-600 dark:text-red-400">
+                            <AlertTriangle size={12} className="shrink-0" />
+                            Sin período activo — no se pueden crear asientos.
+                        </span>
+                    )
+                }
+                actions={
+                    puedeCrear ? (
+                        <button
+                            onClick={() => {
+                                if (!periodoActivo) {
+                                    notify.error('No hay período activo.')
+                                    return
+                                }
+                                setModalAbierto(true)
+                            }}
+                            className="btn-primary flex items-center gap-2 whitespace-nowrap shrink-0"
+                        >
+                            <Plus size={15} />
+                            Nuevo Asiento
+                        </button>
+                    ) : undefined
+                }
+            />
 
-                {/* Filtros */}
-                <div className={cn('space-y-3', 'p-4', 'border', 'rounded-xl')}
-                    style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
-                    <div className={cn('gap-3', 'grid', 'grid-cols-1', 'md:grid-cols-2', 'lg:grid-cols-4')}>
-                        <select value={tipo} onChange={e => setTipo(e.target.value)}
-                            className="input-field select-field">
-                            <option value="">Todos los tipos</option>
-                            <option value="manual">Manuales</option>
-                            <option value="automatico">Automáticos</option>
-                        </select>
-                        <select value={estado} onChange={e => setEstado(e.target.value)}
-                            className="input-field select-field">
-                            <option value="">Todos los estados</option>
-                            <option value="activo">Activos</option>
-                            <option value="anulado">Anulados</option>
-                        </select>
-                        <select value={ejercicioId} onChange={e => setEjercicioId(e.target.value)}
-                            className="input-field select-field">
-                            <option value="">Todos los períodos</option>
-                            {ejercicios.map(e => (
-                                <option key={e.id} value={e.id}>{e.periodo_label}</option>
-                            ))}
-                        </select>
-                        <div className={cn('flex', 'gap-2')}>
-                            <Button onClick={aplicarFiltros} className="flex-1">Filtrar</Button>
-                            <Button variant="outline" onClick={limpiarFiltros} className="px-3">
-                                <X size={14} />
-                            </Button>
-                        </div>
-                    </div>
-                    <div className={cn('flex', 'flex-wrap', 'gap-3')}>
-                        <div className={cn('flex', 'items-center', 'gap-2')}>
-                            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Desde:</span>
-                            <input type="date" value={fechaDesde}
-                                onChange={e => setFechaDesde(e.target.value)}
-                                className="input-field" style={{ width: 'auto' }} />
-                        </div>
-                        <div className={cn('flex', 'items-center', 'gap-2')}>
-                            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Hasta:</span>
-                            <input type="date" value={fechaHasta}
-                                onChange={e => setFechaHasta(e.target.value)}
-                                className="input-field" style={{ width: 'auto' }} />
-                        </div>
-                    </div>
-                </div>
+            <div className={cn('space-y-5', 'p-6')}>
+
+                <FilterToolbar
+                    search={{
+                        value: buscar,
+                        onChange: setBuscar,
+                        onSearch: aplicarFiltros,
+                        placeholder: 'Número, concepto, referencia...',
+                    }}
+                    onExport={exportarExcel}
+                    extraActions={
+                        <button
+                            onClick={() => abrirPdf(
+                                `${route('contabilidad.asientos.reporte-pdf')}` +
+                                `?ejercicio_id=${ejercicioId}` +
+                                `&fecha_desde=${fechaDesde}` +
+                                `&fecha_hasta=${fechaHasta}`
+                            )}
+                            title="PDF"
+                            className="flex items-center justify-center w-9 h-9 rounded-md border text-sm font-medium shrink-0"
+                            style={{ background: '#ef4444', color: 'white', borderColor: '#ef4444' }}>
+                            <FileText className="w-4 h-4" />
+                        </button>
+                    }
+                >
+                    <select value={tipo} onChange={e => setTipo(e.target.value)}
+                        className="input-field shrink-0"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
+                        <option value="">Todos los tipos</option>
+                        <option value="manual">Manuales</option>
+                        <option value="automatico">Automáticos</option>
+                    </select>
+                    <select value={estado} onChange={e => setEstado(e.target.value)}
+                        className="input-field shrink-0"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
+                        <option value="">Todos los estados</option>
+                        <option value="activo">Activos</option>
+                        <option value="anulado">Anulados</option>
+                    </select>
+                    <select value={ejercicioId} onChange={e => setEjercicioId(e.target.value)}
+                        className="input-field shrink-0"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
+                        <option value="">Todos los períodos</option>
+                        {ejercicios.map(e => (
+                            <option key={e.id} value={e.id}>{e.periodo_label}</option>
+                        ))}
+                    </select>
+                    <input type="date" value={fechaDesde}
+                        onChange={e => setFechaDesde(e.target.value)}
+                        className="input-field shrink-0 w-36"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }} />
+                    <input type="date" value={fechaHasta}
+                        onChange={e => setFechaHasta(e.target.value)}
+                        className="input-field shrink-0 w-36"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }} />
+                    {hayFiltros && (
+                        <button type="button" onClick={limpiarFiltros} className="text-sm underline shrink-0" style={{ color: 'var(--text-muted)' }}>
+                            Limpiar
+                        </button>
+                    )}
+                </FilterToolbar>
 
                 {/* Tabla */}
                 <div className={cn('border', 'rounded-xl', 'overflow-hidden')}

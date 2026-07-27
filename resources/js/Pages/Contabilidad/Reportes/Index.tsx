@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import AppLayout from '@/Layouts/AppLayout'
+import PageHeader from '@/Components/shared/PageHeader'
 import {
     BookOpen, TrendingUp, FileText,
     Search, Download, Scale, BarChart3, LineChart, Waves,
@@ -138,30 +139,14 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
 
     return (
         <AppLayout>
+            <PageHeader
+                title="Reportes Contables"
+                description="Libro Diario, Mayor, Balance de Comprobación, Balance General y Estado de Resultados"
+                breadcrumbs={[{ label: 'Contabilidad' }, { label: 'Reportes' }]}
+            />
+
             <div className="p-4 md:p-6 space-y-6"
                  style={{ background: 'var(--bg-main)', minHeight: '100vh' }}>
-
-                {/* HEADER */}
-                <div className="mb-6">
-                    <div className="flex items-center gap-3 mb-2">
-                        <div className="p-2 rounded-xl" style={{
-                            background: 'color-mix(in srgb, var(--primary) 15%, transparent)'
-                        }}>
-                            <FileText size={24}
-                                style={{ color: 'var(--primary)' }} />
-                        </div>
-                        <div>
-                            <h1 className="text-xl font-bold"
-                                style={{ color: 'var(--text-main)' }}>
-                                Reportes Contables
-                            </h1>
-                            <p className="text-sm"
-                               style={{ color: 'var(--text-muted)' }}>
-                                Libro Diario, Mayor, Balance de Comprobación, Balance General y Estado de Resultados
-                            </p>
-                        </div>
-                    </div>
-                </div>
 
                 {/* GRID 2 COLUMNAS — TODOS LOS REPORTES */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

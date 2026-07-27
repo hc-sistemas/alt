@@ -3,7 +3,8 @@ import { router, usePage } from '@inertiajs/react'
 import { toast, ToastContainer } from 'react-toastify'
 import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
-import { Settings, Search, CheckCircle, AlertCircle, Zap, Save } from 'lucide-react'
+import PageHeader from '@/Components/shared/PageHeader'
+import { Search, CheckCircle, AlertCircle, Zap, Save } from 'lucide-react'
 import { notify, swalBase } from '@/utils/contabilidad'
 import { usePermiso } from '@/Hooks/usePermiso'
 import type { PlanCuenta, PageProps } from '@/types'
@@ -138,31 +139,16 @@ export default function ParametrosIndex({ grupos, cuentas }: Props) {
 
     return (
         <AppLayout suppressFlash>
-            <div className="p-4 md:p-6 space-y-6"
-                 style={{ background: 'var(--bg-main)', minHeight: '100vh' }}>
-
-                {/* HEADER */}
-                <div className="mb-6">
-                    <div className="flex items-center gap-3 mb-4">
-                        <div className="p-2 rounded-xl"
-                             style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
-                            <Settings size={24} style={{ color: 'var(--primary)' }} />
-                        </div>
-                        <div>
-                            <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>
-                                Parámetros Contables
-                            </h1>
-                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                                Mapeo de eventos operativos a cuentas del Plan de Cuentas
-                            </p>
-                        </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 flex-wrap mb-6">
+            <PageHeader
+                title="Parámetros Contables"
+                description="Mapeo de eventos operativos a cuentas del Plan de Cuentas"
+                breadcrumbs={[{ label: 'Contabilidad' }, { label: 'Parámetros Contables' }]}
+                actions={
+                    <div className="flex items-center gap-2 flex-wrap">
                         {puede('editar') && (
                             <button onClick={guardar}
                                 className="flex items-center gap-2 px-4 py-2 rounded-xl
-                                           font-semibold text-sm text-white whitespace-nowrap transition-all
+                                           font-semibold text-sm text-black whitespace-nowrap transition-all
                                            hover:opacity-90 hover:-translate-y-0.5"
                                 style={{ background: 'var(--primary)' }}>
                                 <Save size={15} />
@@ -179,7 +165,11 @@ export default function ParametrosIndex({ grupos, cuentas }: Props) {
                             </button>
                         )}
                     </div>
-                </div>
+                }
+            />
+
+            <div className="p-4 md:p-6 space-y-6"
+                 style={{ background: 'var(--bg-main)', minHeight: '100vh' }}>
 
                 {/* Banner pendientes */}
                 {totalPendientes > 0 && (
