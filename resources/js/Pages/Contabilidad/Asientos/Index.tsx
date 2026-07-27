@@ -10,7 +10,7 @@ import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import {
     BookOpen, Plus, Eye, XCircle, CheckCircle,
-    AlertTriangle, User, X, FileText, Zap, Download,
+    AlertTriangle, User, X, FileText, Zap, Download, Search,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { usePermiso } from '@/Hooks/usePermiso'
@@ -39,7 +39,7 @@ interface PaginatedAsiento {
 }
 
 interface Props extends PageProps {
-    asientos:      PaginatedAsiento
+    asientos:      PaginatedAsiento | null
     ejercicios:    EjercicioContable[]
     cuentas:       PlanCuenta[]
     centros:       CentroCosto[]
@@ -68,6 +68,9 @@ export default function AsientosIndex() {
     const [ejercicioId, setEjercicioId] = useState(filtros.ejercicio_id ?? '')
     const [fechaDesde, setFechaDesde] = useState(filtros.fecha_desde ?? '')
     const [fechaHasta, setFechaHasta] = useState(filtros.fecha_hasta ?? '')
+
+    // Carga bajo demanda: `asientos` viene null hasta que se dispare una búsqueda explícita
+    const haBuscado = asientos !== null
 
     // Modal PDF
     const [modalPdf, setModalPdf] = useState(false)
@@ -109,7 +112,8 @@ export default function AsientosIndex() {
         router.get(route('contabilidad.asientos.index'), {
             buscar, tipo, estado, ejercicio_id: ejercicioId,
             fecha_desde: fechaDesde, fecha_hasta: fechaHasta,
-        }, { preserveState: true, replace: true })
+            buscado: '1',
+        }, { preserveState: false })
     }
 
     const limpiarFiltros = () => {
@@ -286,6 +290,7 @@ export default function AsientosIndex() {
                         placeholder: 'Número, concepto, referencia...',
                     }}
                     onExport={exportarExcel}
+                    exportDisabled={!haBuscado}
                     extraActions={
                         <button
                             onClick={() => abrirPdf(
@@ -294,30 +299,31 @@ export default function AsientosIndex() {
                                 `&fecha_desde=${fechaDesde}` +
                                 `&fecha_hasta=${fechaHasta}`
                             )}
+                            disabled={!haBuscado}
                             title="PDF"
-                            className="flex items-center justify-center w-9 h-9 rounded-md border text-sm font-medium shrink-0"
+                            className="flex items-center justify-center w-9 h-9 rounded-md border text-sm font-medium shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                             style={{ background: '#ef4444', color: 'white', borderColor: '#ef4444' }}>
                             <FileText className="w-4 h-4" />
                         </button>
                     }
                 >
                     <select value={tipo} onChange={e => setTipo(e.target.value)}
-                        className="input-field shrink-0"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
+                        className="input-field shrink-0 w-28 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
                         <option value="">Todos los tipos</option>
                         <option value="manual">Manuales</option>
                         <option value="automatico">Automáticos</option>
                     </select>
                     <select value={estado} onChange={e => setEstado(e.target.value)}
-                        className="input-field shrink-0"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
+                        className="input-field shrink-0 w-28 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
                         <option value="">Todos los estados</option>
                         <option value="activo">Activos</option>
                         <option value="anulado">Anulados</option>
                     </select>
                     <select value={ejercicioId} onChange={e => setEjercicioId(e.target.value)}
-                        className="input-field shrink-0"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
+                        className="input-field shrink-0 w-32 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
                         <option value="">Todos los períodos</option>
                         {ejercicios.map(e => (
                             <option key={e.id} value={e.id}>{e.periodo_label}</option>
@@ -325,11 +331,11 @@ export default function AsientosIndex() {
                     </select>
                     <input type="date" value={fechaDesde}
                         onChange={e => setFechaDesde(e.target.value)}
-                        className="input-field shrink-0 w-36"
+                        className="input-field shrink-0 w-32 text-xs"
                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }} />
                     <input type="date" value={fechaHasta}
                         onChange={e => setFechaHasta(e.target.value)}
-                        className="input-field shrink-0 w-36"
+                        className="input-field shrink-0 w-32 text-xs"
                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }} />
                     {hayFiltros && (
                         <button type="button" onClick={limpiarFiltros} className="text-sm underline shrink-0" style={{ color: 'var(--text-muted)' }}>
@@ -338,7 +344,18 @@ export default function AsientosIndex() {
                     )}
                 </FilterToolbar>
 
+                {/* Estado inicial: aún no se ha buscado (carga bajo demanda) */}
+                {!haBuscado && (
+                    <div className="text-center py-16">
+                        <Search className="w-12 h-12 mx-auto mb-4 opacity-30" style={{ color: 'var(--text-muted)' }} />
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                            Ajusta los filtros y presiona Buscar para consultar los asientos.
+                        </p>
+                    </div>
+                )}
+
                 {/* Tabla */}
+                {haBuscado && asientos && (
                 <div className={cn('border', 'rounded-xl', 'overflow-hidden')}
                     style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
                     <div className="overflow-x-auto">
@@ -491,6 +508,7 @@ export default function AsientosIndex() {
                         </div>
                     )}
                 </div>
+                )}
             </div>
 
             {/* MODAL NUEVO ASIENTO MANUAL */}

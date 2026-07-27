@@ -25,34 +25,42 @@ class AsientoContableController extends Controller
     {
         $empresaId = session('empresa_activa_id');
 
-        $query = AsientoContable::with(['ejercicio','creadoPor'])
-            ->where('empresa_id', $empresaId);
+        // Carga bajo demanda: con miles de asientos en producción, la query pesada
+        // solo se ejecuta cuando el usuario dispara una búsqueda explícita (botón
+        // lupa en el FilterToolbar), nunca en la carga inicial de la página.
+        $asientos = null;
 
-        if ($request->filled('buscar')) {
-            $q = $request->buscar;
-            $query->where(fn($qb) =>
-                $qb->where('numero',         'ilike', "%{$q}%")
-                   ->orWhere('concepto',     'ilike', "%{$q}%")
-                   ->orWhere('documento_ref','ilike', "%{$q}%")
-            );
-        }
-        if ($request->filled('tipo')) {
-            $query->where('es_automatico', $request->tipo === 'automatico');
-        }
-        if ($request->filled('estado')) {
-            $query->where('estado', $request->estado === 'activo' ? 1 : 0);
-        }
-        if ($request->filled('ejercicio_id')) {
-            $query->where('ejercicio_id', $request->ejercicio_id);
-        }
-        if ($request->filled('fecha_desde')) {
-            $query->where('fecha', '>=', $request->fecha_desde);
-        }
-        if ($request->filled('fecha_hasta')) {
-            $query->where('fecha', '<=', $request->fecha_hasta);
+        if ($request->boolean('buscado')) {
+            $query = AsientoContable::with(['ejercicio','creadoPor'])
+                ->where('empresa_id', $empresaId);
+
+            if ($request->filled('buscar')) {
+                $q = $request->buscar;
+                $query->where(fn($qb) =>
+                    $qb->where('numero',         'ilike', "%{$q}%")
+                       ->orWhere('concepto',     'ilike', "%{$q}%")
+                       ->orWhere('documento_ref','ilike', "%{$q}%")
+                );
+            }
+            if ($request->filled('tipo')) {
+                $query->where('es_automatico', $request->tipo === 'automatico');
+            }
+            if ($request->filled('estado')) {
+                $query->where('estado', $request->estado === 'activo' ? 1 : 0);
+            }
+            if ($request->filled('ejercicio_id')) {
+                $query->where('ejercicio_id', $request->ejercicio_id);
+            }
+            if ($request->filled('fecha_desde')) {
+                $query->where('fecha', '>=', $request->fecha_desde);
+            }
+            if ($request->filled('fecha_hasta')) {
+                $query->where('fecha', '<=', $request->fecha_hasta);
+            }
+
+            $asientos = $query->orderByDesc('created_at')->paginate(25)->withQueryString();
         }
 
-        $asientos   = $query->orderByDesc('created_at')->paginate(25)->withQueryString();
         $ejercicios = EjercicioContable::where('empresa_id', $empresaId)
                         ->orderByDesc('anio')->orderByDesc('mes')->get();
 
