@@ -124,7 +124,18 @@ export default function AsientosIndex() {
 
     const hayFiltros = !!(buscar || tipo || estado || ejercicioId || fechaDesde || fechaHasta)
 
+    // Con miles de asientos reales en producción, un PDF/Excel sin ningún filtro
+    // intenta procesar el histórico completo (~11 mil registros) y no termina en
+    // tiempo razonable — a diferencia del listado paginado, aquí exigimos al
+    // menos un filtro real (no cuenta `buscar`, que ninguno de los dos endpoints
+    // recibe) antes de permitir exportar.
+    const hayFiltrosExportables = !!(tipo || estado || ejercicioId || fechaDesde || fechaHasta)
+
     const exportarExcel = () => {
+        if (!hayFiltrosExportables) {
+            notify.error('Aplica al menos un filtro (período, fechas, tipo o estado) antes de exportar a Excel.')
+            return
+        }
         const params = new URLSearchParams({
             ejercicio_id: ejercicioId,
             fecha_desde:  fechaDesde,
@@ -300,16 +311,24 @@ export default function AsientosIndex() {
                     }}
                     searchWidth="w-[200px]"
                     onExport={exportarExcel}
-                    exportDisabled={!haBuscado}
+                    exportDisabled={!haBuscado || !hayFiltrosExportables}
                     extraActions={
                         <button
-                            onClick={() => abrirPdf(
-                                `${route('contabilidad.asientos.reporte-pdf')}` +
-                                `?ejercicio_id=${ejercicioId}` +
-                                `&fecha_desde=${fechaDesde}` +
-                                `&fecha_hasta=${fechaHasta}`
-                            )}
-                            disabled={!haBuscado}
+                            onClick={() => {
+                                if (!hayFiltrosExportables) {
+                                    notify.error('Aplica al menos un filtro (período, fechas, tipo o estado) antes de generar el PDF.')
+                                    return
+                                }
+                                abrirPdf(
+                                    `${route('contabilidad.asientos.reporte-pdf')}` +
+                                    `?ejercicio_id=${ejercicioId}` +
+                                    `&fecha_desde=${fechaDesde}` +
+                                    `&fecha_hasta=${fechaHasta}` +
+                                    `&tipo=${tipo}` +
+                                    `&estado=${estado}`
+                                )
+                            }}
+                            disabled={!haBuscado || !hayFiltrosExportables}
                             title="PDF"
                             className="flex items-center justify-center w-9 h-9 rounded-md border text-sm font-medium shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                             style={{ background: '#ef4444', color: 'white', borderColor: '#ef4444' }}>

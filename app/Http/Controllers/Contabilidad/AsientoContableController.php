@@ -221,21 +221,45 @@ class AsientoContableController extends Controller
     }
 
     // CORRECCIÓN 5: exportar a Excel
-    public function exportarExcel(Request $request): \Symfony\Component\HttpFoundation\BinaryFileResponse
+    public function exportarExcel(Request $request): \Symfony\Component\HttpFoundation\BinaryFileResponse|RedirectResponse
     {
         $empresaId = session('empresa_activa_id');
+
+        // CORRECCIÓN 6: reenviar TODOS los filtros (antes se perdían tipo/estado
+        // aunque el frontend ya los enviaba y AsientosExport ya sabía filtrarlos).
+        $filtros = $request->only([
+            'ejercicio_id', 'fecha_desde', 'fecha_hasta', 'tipo', 'estado',
+        ]);
+
+        // Con miles de asientos reales, exportar sin ningún filtro intenta generar
+        // el histórico completo (~11 mil registros) y no termina en un tiempo
+        // razonable — exigir al menos un filtro antes de generar el archivo.
+        if (empty(array_filter($filtros))) {
+            return back()->with('error',
+                'Aplica al menos un filtro (período, fechas, tipo o estado) antes de exportar a Excel.');
+        }
+
         return Excel::download(
-            new AsientosExport((int)$empresaId, $request->only([
-                'ejercicio_id','fecha_desde','fecha_hasta'
-            ])),
+            new AsientosExport((int)$empresaId, $filtros),
             'asientos-' . now()->format('Y-m-d') . '.xlsx',
             \Maatwebsite\Excel\Excel::XLSX
         );
     }
 
-    public function reportePdf(Request $request): \Illuminate\Http\Response
+    public function reportePdf(Request $request): \Symfony\Component\HttpFoundation\Response
     {
         $empresaId = session('empresa_activa_id');
+
+        $filtros = $request->only([
+            'ejercicio_id', 'fecha_desde', 'fecha_hasta', 'tipo', 'estado',
+        ]);
+
+        // Mismo candado que exportarExcel(): dompdf tampoco puede procesar el
+        // histórico completo en un tiempo razonable sin al menos un filtro.
+        if (empty(array_filter($filtros))) {
+            return back()->with('error',
+                'Aplica al menos un filtro (período, fechas, tipo o estado) antes de generar el PDF.');
+        }
 
         $query = AsientoContable::with(['ejercicio', 'creadoPor', 'detalles.cuenta'])
             ->where('empresa_id', $empresaId);
@@ -248,6 +272,12 @@ class AsientoContableController extends Controller
         }
         if ($request->filled('fecha_hasta')) {
             $query->where('fecha', '<=', $request->fecha_hasta);
+        }
+        if ($request->filled('tipo')) {
+            $query->where('es_automatico', $request->tipo === 'automatico');
+        }
+        if ($request->filled('estado')) {
+            $query->where('estado', $request->estado === 'activo' ? 1 : 0);
         }
 
         $asientos = $query->orderByDesc('fecha')->get();
