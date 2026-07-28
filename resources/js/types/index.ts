@@ -535,6 +535,7 @@ export interface CompraDetalle {
     cuenta?: PlanCuenta
     descripcion: string
     cantidad: number
+    peso: number | null
     precio_unitario: number
     descuento: number
     subtotal: number

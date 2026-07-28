@@ -63,6 +63,7 @@ interface DetalleEdicion {
     cuenta_id: number | null
     descripcion: string
     cantidad: number
+    peso: number | null
     precio_unitario: number
     descuento: number
     porcentaje_iva: number
@@ -74,6 +75,11 @@ interface DetalleItem {
     codigo: string
     descripcion: string
     cantidad: number | string
+    /** Peso real (kg) de esta línea — opcional, no bloquea el guardado si está
+     *  vacío. Alimenta el método de prorrateo "Peso" en Importaciones como
+     *  override del estimado (cantidad × peso unitario del producto) cuando
+     *  el usuario ingresa el peso real facturado/medido de esa línea. */
+    peso: string
     precio_unitario: number | string
     descuento: number | string
     descuento_pct: string
@@ -150,7 +156,7 @@ const TIPO_DOC_LABELS: Record<string, string> = {
 
 // ─── Fila detalle editable ────────────────────────────────────────────────────
 
-const DETALLE_COLS = '130px 1fr 70px 90px 80px 70px 80px 70px 80px 36px'
+const DETALLE_COLS = '130px 1fr 70px 70px 90px 80px 70px 80px 70px 80px 36px'
 
 interface DetalleRowProps {
     detalle: DetalleItem
@@ -251,6 +257,24 @@ function DetalleRow({ detalle, idx, cuentas, onChange, onRemove, onAbrirModal, t
                 <p className="text-center mt-0.5 truncate" style={{ fontSize: '9px', color: 'var(--text-muted)' }} title={detalle.unidad || undefined}>
                     {detalle.unidad || '—'}
                 </p>
+            </div>
+
+            {/* ── Peso (kg) — opcional, alimenta el prorrateo "Peso" en Importaciones ── */}
+            <div className="px-1 py-1.5">
+                <input
+                    type="text" inputMode="decimal"
+                    value={detalle.peso}
+                    onChange={e => {
+                        const raw = e.target.value
+                        if (raw === '' || /^\d*\.?\d*$/.test(raw)) {
+                            onChange(idx, 'peso', raw)
+                        }
+                    }}
+                    placeholder="Opcional"
+                    title="Peso real de esta línea (kg) — opcional"
+                    className="w-full px-2 py-1 border rounded text-xs text-center focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    style={inputStyle}
+                />
             </div>
 
             {/* ── P. Unitario ── */}
@@ -412,6 +436,7 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
                     codigo:          prod?.codigo ?? '',
                     descripcion:     d.descripcion,
                     cantidad:        d.cantidad,
+                    peso:            d.peso != null ? String(d.peso) : '',
                     precio_unitario: String(d.precio_unitario),
                     descuento:       d.descuento,
                     descuento_pct:   pct,
@@ -423,7 +448,7 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
             })
             : [{
                 producto_id: null, codigo: '',
-                descripcion: '', cantidad: 1, precio_unitario: '',
+                descripcion: '', cantidad: 1, peso: '', precio_unitario: '',
                 descuento: 0, descuento_pct: '0', porcentaje_iva: isExt ? 0 : 15,
                 cuenta_id: '', es_activo_fijo: false, unidad: '',
             }],
@@ -515,7 +540,7 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
         ...prev,
         detalles: [...prev.detalles, {
             producto_id: null, codigo: '',
-            descripcion: '', cantidad: 1, precio_unitario: '',
+            descripcion: '', cantidad: 1, peso: '', precio_unitario: '',
             descuento: 0, descuento_pct: '0',
             porcentaje_iva: prev.tipo_documento === 'EXT' ? 0 : 15,
             cuenta_id: '', es_activo_fijo: false, unidad: '',
@@ -1000,6 +1025,7 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
                                         <div className="px-1 py-2">Código</div>
                                         <div className="px-2 py-2">Descripción</div>
                                         <div className="px-1 py-2 text-right">Cant.</div>
+                                        <div className="px-1 py-2 text-right">Peso (kg)</div>
                                         <div className="px-1 py-2 text-right">P. Unit.</div>
                                         <div className="px-1 py-2 text-center">Desc.</div>
                                         <div className="px-1 py-2 text-center">IVA%</div>

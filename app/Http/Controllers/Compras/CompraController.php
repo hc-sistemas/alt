@@ -180,6 +180,7 @@ class CompraController extends Controller
             'detalles.*.cantidad'        => 'required|numeric|min:0.0001',
             'detalles.*.precio_unitario' => 'required|numeric|min:0',
             'detalles.*.porcentaje_iva'  => 'numeric|min:0|max:100',
+            'detalles.*.peso'            => 'nullable|numeric|min:0',
         ]);
 
         $existe = Compra::where('empresa_id', $empresaId)
@@ -274,7 +275,7 @@ class CompraController extends Controller
                 foreach ($detalles as $d) {
                     CompraDetalle::create(array_merge(
                         collect($d)->only([
-                            'producto_id', 'cuenta_id', 'descripcion', 'cantidad',
+                            'producto_id', 'cuenta_id', 'descripcion', 'cantidad', 'peso',
                             'precio_unitario', 'descuento', 'subtotal',
                             'porcentaje_iva', 'valor_iva', 'total', 'es_activo_fijo',
                         ])->toArray(),
@@ -590,6 +591,7 @@ class CompraController extends Controller
                 'cuenta_id'       => $d->cuenta_id,
                 'descripcion'     => $d->descripcion,
                 'cantidad'        => (float) $d->cantidad,
+                'peso'            => $d->peso !== null ? (float) $d->peso : null,
                 'precio_unitario' => (float) $d->precio_unitario,
                 'descuento'       => (float) $d->descuento,
                 'porcentaje_iva'  => (float) $d->porcentaje_iva,
@@ -1246,6 +1248,7 @@ class CompraController extends Controller
             'detalles.*.cantidad'        => 'required|numeric|min:0.0001',
             'detalles.*.precio_unitario' => 'required|numeric|min:0',
             'detalles.*.porcentaje_iva'  => 'numeric|min:0|max:100',
+            'detalles.*.peso'            => 'nullable|numeric|min:0',
         ]);
 
         $ejCerradoNuevo = $this->ejercicioCerradoParaFecha($empresaId, $request->fecha_emision);
@@ -1362,7 +1365,7 @@ class CompraController extends Controller
                 foreach ($detalles as $d) {
                     CompraDetalle::create(array_merge(
                         collect($d)->only([
-                            'producto_id', 'cuenta_id', 'descripcion', 'cantidad',
+                            'producto_id', 'cuenta_id', 'descripcion', 'cantidad', 'peso',
                             'precio_unitario', 'descuento', 'subtotal',
                             'porcentaje_iva', 'valor_iva', 'total', 'es_activo_fijo',
                         ])->toArray(),

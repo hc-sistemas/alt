@@ -177,8 +177,17 @@ class ImportacionController extends Controller
         } else {
             // Base de prorrateo por línea de detalle, según el método elegido — se usa
             // tanto para repartir el costo extra ENTRE facturas como DENTRO de cada factura.
+            //
+            // Método "peso": si el usuario ingresó un peso real para esa línea
+            // (compra_detalles.peso — el peso real facturado/medido, opcional, ver
+            // migración 2026_07_28_100001), se usa tal cual (ya es el peso TOTAL de
+            // la línea). Si no, se cae al estimado histórico: cantidad × peso
+            // unitario del producto en su ficha (productos.peso) — comportamiento
+            // idéntico al de antes para cualquier línea sin este campo nuevo.
             $baseDetalle = fn($d) => match ($metodo) {
-                'peso'   => (float) $d->cantidad * (float) ($d->producto?->peso ?? 0),
+                'peso'   => (float) ($d->peso ?? 0) > 0
+                    ? (float) $d->peso
+                    : (float) $d->cantidad * (float) ($d->producto?->peso ?? 0),
                 'precio' => (float) $d->cantidad * (float) $d->precio_unitario,
                 default  => (float) $d->cantidad,
             };
