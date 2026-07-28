@@ -2140,12 +2140,6 @@ export default function ComprasIndex() {
         }, { preserveState: true, replace: true })
     }
 
-    function limpiar() {
-        setBuscar(''); setEstado(''); setFechaDesde(''); setFechaHasta('')
-        router.get(route('compras.facturas.index'), {}, { preserveState: false })
-    }
-
-    const hayFiltros = buscar || estado || fechaDesde || fechaHasta
     const inputStyle = { background: 'var(--bg-card)', color: 'var(--text-main)', borderColor: 'var(--border)' }
 
     return (
@@ -2187,9 +2181,10 @@ export default function ComprasIndex() {
                     fix que en Asientos Contables.
 
                     Presupuesto (1 solo select aquí, no 3 como en Asientos, así que hay bastante
-                    margen sin necesidad de acortar labels ni tocar el buscador/Limpiar):
-                      Estado 200 + Desde 136 + Hasta 136 + Limpiar ~55 + buscador (208+36)
-                      + Excel 36 + PDF 36 = 843px + gaps (12px×6=72) = ~915px
+                    margen; sin botón de "Limpiar" — eliminado por completo, mismo criterio que
+                    quedó en Asientos Contables):
+                      Estado 200 + Desde 136 + Hasta 136 + buscador (208+36)
+                      + Excel 36 + PDF 36 = 788px + gaps (12px×5=60) = ~848px
                     Cabe cómodo en el presupuesto de ~1100px con sidebar abierto. Igual se
                     envuelve en overflow-x-auto + minWidth como red de seguridad ante cambios
                     futuros, mismo patrón que Asientos.
@@ -2236,11 +2231,6 @@ export default function ComprasIndex() {
                             className="input-field text-xs"
                             style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '136px' }} />
                     </div>
-                    {hayFiltros && (
-                        <button type="button" onClick={limpiar} className="text-sm underline shrink-0" style={{ color: 'var(--text-muted)' }}>
-                            Limpiar
-                        </button>
-                    )}
                 </FilterToolbar>
                 </div>
                 </div>
