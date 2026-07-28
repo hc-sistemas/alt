@@ -226,17 +226,30 @@ function DetalleRow({ detalle, idx, cuentas, onChange, onRemove, onAbrirModal, t
                 backend YA acepta decimales (CompraController::store(), 'detalles.*.cantidad'
                 => 'required|numeric|min:0.0001') — necesario para productos por peso (kg) u
                 otras unidades fraccionables (metro, hora). El cálculo de subtotal (calcDetalle,
-                arriba) ya funciona igual con decimales, no dependía de que fuera entero. */}
+                arriba) ya funciona igual con decimales, no dependía de que fuera entero.
+
+                type="text" en vez de type="number": los inputs number nativos aplican
+                agrupación de miles dependiente de la configuración regional del SO/navegador
+                (p.ej. Windows/Chrome en español-Ecuador puede mostrar "2,070" al escribir
+                "2.07"), lo que corrompe el valor mientras se edita. Con texto + regex se
+                controla el formato explícitamente: solo dígitos y un único punto decimal,
+                nunca comas ni separadores de miles. */}
             <div className="px-1 py-1.5">
                 <input
-                    type="number" min="0.0001" step="0.01"
+                    type="text" inputMode="decimal"
                     value={detalle.cantidad}
-                    onChange={e => onChange(idx, 'cantidad', e.target.value)}
+                    onChange={e => {
+                        const raw = e.target.value
+                        if (raw === '' || /^\d*\.?\d*$/.test(raw)) {
+                            onChange(idx, 'cantidad', raw)
+                        }
+                    }}
+                    placeholder="0.00"
                     className="w-full px-2 py-1 border rounded text-xs text-center focus:outline-none focus:ring-1 focus:ring-amber-500"
                     style={inputStyle}
                 />
-                <p className="text-center mt-0.5 truncate" style={{ fontSize: '9px', color: 'var(--text-muted)' }} title={detalle.unidad}>
-                    {detalle.unidad}
+                <p className="text-center mt-0.5 truncate" style={{ fontSize: '9px', color: 'var(--text-muted)' }} title={detalle.unidad || undefined}>
+                    {detalle.unidad || '—'}
                 </p>
             </div>
 
@@ -405,14 +418,14 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
                     porcentaje_iva:  d.porcentaje_iva,
                     cuenta_id:       d.cuenta_id ?? '',
                     es_activo_fijo:  d.es_activo_fijo,
-                    unidad:          'unidad',
+                    unidad:          prod?.unidad ?? '',
                 }
             })
             : [{
                 producto_id: null, codigo: '',
                 descripcion: '', cantidad: 1, precio_unitario: '',
                 descuento: 0, descuento_pct: '0', porcentaje_iva: isExt ? 0 : 15,
-                cuenta_id: '', es_activo_fijo: false, unidad: 'unidad',
+                cuenta_id: '', es_activo_fijo: false, unidad: '',
             }],
         importacion_id:   editando?.importacion_id ?? initialValues?.importacion_id ?? '',
         metodo_envio:     editando?.metodo_envio ?? initialValues?.metodo_envio ?? 'FOB',
@@ -492,7 +505,7 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
             descripcion: '', cantidad: 1, precio_unitario: '',
             descuento: 0, descuento_pct: '0',
             porcentaje_iva: prev.tipo_documento === 'EXT' ? 0 : 15,
-            cuenta_id: '', es_activo_fijo: false, unidad: 'unidad',
+            cuenta_id: '', es_activo_fijo: false, unidad: '',
         }],
     }))
 
@@ -501,7 +514,7 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
             ...prev,
             detalles: prev.detalles.map((d, i) => {
                 if (i !== idx) return d
-                if (!p) return { ...d, producto_id: null, unidad: 'unidad' }
+                if (!p) return { ...d, producto_id: null, unidad: '' }
                 return {
                     ...d,
                     producto_id:     p.id,
@@ -521,19 +534,29 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
     }))
 
     // ── Modal búsqueda de producto ──────────────────────────
+    // Carga bajo demanda: no se muestra ni filtra nada del catálogo hasta que
+    // el usuario escriba al menos 2 caracteres (mismo patrón que Productos de
+    // Inventario / Asientos Contables) — con debounce para no recalcular en
+    // cada pulsación mientras el usuario sigue escribiendo.
     const [modalProductos,   setModalProductos]   = useState(false)
     const [idxDetalleActivo, setIdxDetalleActivo] = useState(0)
     const [busquedaProducto, setBusquedaProducto] = useState('')
+    const [busquedaDebounced, setBusquedaDebounced] = useState('')
+
+    useEffect(() => {
+        const t = setTimeout(() => setBusquedaDebounced(busquedaProducto), 250)
+        return () => clearTimeout(t)
+    }, [busquedaProducto])
 
     const productosFiltrados = useMemo(() => {
-        const q = busquedaProducto.toLowerCase().trim()
-        if (!q) return productos.slice(0, 20)
+        const q = busquedaDebounced.toLowerCase().trim()
+        if (q.length < 2) return []
         return productos.filter(p =>
             p.codigo.toLowerCase().includes(q) ||
             p.nombre.toLowerCase().includes(q) ||
             p.tipo.toLowerCase().includes(q)
         ).slice(0, 30)
-    }, [busquedaProducto, productos])
+    }, [busquedaDebounced, productos])
 
     const abrirModalProductos = (idx: number) => {
         setIdxDetalleActivo(idx)
@@ -1165,16 +1188,32 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
                                 className="input-field"
                             />
                         </div>
-                        <p style={{ fontSize: '12px', color: 'var(--text-muted)',
-                                    marginTop: '6px' }}>
-                            {productosFiltrados.length} producto(s) encontrado(s)
-                            {busquedaProducto && ` para "${busquedaProducto}"`}
-                        </p>
+                        {busquedaProducto.trim().length >= 2 && (
+                            <p style={{ fontSize: '12px', color: 'var(--text-muted)',
+                                        marginTop: '6px' }}>
+                                {productosFiltrados.length} producto(s) encontrado(s) para "{busquedaProducto}"
+                            </p>
+                        )}
                     </div>
 
                     {/* Lista */}
                     <div style={{ overflowY: 'auto', flex: 1 }}>
-                        {productosFiltrados.length === 0 ? (
+                        {busquedaProducto.trim().length < 2 ? (
+                            <div style={{ textAlign: 'center', padding: '40px 20px',
+                                          color: 'var(--text-muted)' }}>
+                                <svg width="40" height="40" viewBox="0 0 24 24"
+                                     fill="none" stroke="currentColor" strokeWidth="1.5"
+                                     style={{ margin: '0 auto 12px', display: 'block',
+                                              opacity: 0.3 }}>
+                                    <circle cx="11" cy="11" r="8"/>
+                                    <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                                </svg>
+                                <p style={{ fontWeight: 600 }}>Escribe para buscar</p>
+                                <p style={{ fontSize: '12px', marginTop: '4px' }}>
+                                    Ingresa al menos 2 caracteres (código, nombre o tipo)
+                                </p>
+                            </div>
+                        ) : productosFiltrados.length === 0 ? (
                             <div style={{ textAlign: 'center', padding: '40px 20px',
                                           color: 'var(--text-muted)' }}>
                                 <svg width="40" height="40" viewBox="0 0 24 24"
