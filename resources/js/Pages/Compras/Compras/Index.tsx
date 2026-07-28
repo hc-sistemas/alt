@@ -68,6 +68,10 @@ interface DetalleItem {
     porcentaje_iva: number | string
     cuenta_id: string | number
     es_activo_fijo: boolean
+    /** Unidad del producto seleccionado ('unidad', 'kg', etc. — ver Productos/Form.tsx)
+     *  solo para mostrar junto a Cantidad; no afecta el cálculo (cantidad × precio_unitario
+     *  funciona igual sin importar la unidad, solo cambia qué representa "cantidad"). */
+    unidad: string
 }
 
 // ─── Notify ───────────────────────────────────────────────────────────────────
@@ -205,19 +209,23 @@ function DetalleRow({ detalle, idx, cuentas, onChange, onRemove, onAbrirModal, t
                 />
             </div>
 
-            {/* ── Cantidad ── */}
+            {/* ── Cantidad ──
+                Antes forzaba enteros (step=1, bloqueaba '.'/',' con Math.floor) aunque el
+                backend YA acepta decimales (CompraController::store(), 'detalles.*.cantidad'
+                => 'required|numeric|min:0.0001') — necesario para productos por peso (kg) u
+                otras unidades fraccionables (metro, hora). El cálculo de subtotal (calcDetalle,
+                arriba) ya funciona igual con decimales, no dependía de que fuera entero. */}
             <div className="px-1 py-1.5">
                 <input
-                    type="number" min="1" step="1" pattern="[0-9]*"
+                    type="number" min="0.0001" step="0.01"
                     value={detalle.cantidad}
-                    onChange={e => {
-                        const val = Math.floor(Math.abs(parseInt(e.target.value) || 1))
-                        onChange(idx, 'cantidad', String(val))
-                    }}
-                    onKeyDown={e => { if (e.key === '.' || e.key === ',') e.preventDefault() }}
+                    onChange={e => onChange(idx, 'cantidad', e.target.value)}
                     className="w-full px-2 py-1 border rounded text-xs text-center focus:outline-none focus:ring-1 focus:ring-amber-500"
                     style={inputStyle}
                 />
+                <p className="text-center mt-0.5 truncate" style={{ fontSize: '9px', color: 'var(--text-muted)' }} title={detalle.unidad}>
+                    {detalle.unidad}
+                </p>
             </div>
 
             {/* ── P. Unitario ── */}
@@ -371,7 +379,7 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
             producto_id: null, codigo: '',
             descripcion: '', cantidad: 1, precio_unitario: '',
             descuento: 0, descuento_pct: '0', porcentaje_iva: isExt ? 0 : 15,
-            cuenta_id: '', es_activo_fijo: false,
+            cuenta_id: '', es_activo_fijo: false, unidad: 'unidad',
         }],
         importacion_id:   initialValues?.importacion_id ?? '',
         metodo_envio:     initialValues?.metodo_envio ?? 'FOB',
@@ -451,7 +459,7 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
             descripcion: '', cantidad: 1, precio_unitario: '',
             descuento: 0, descuento_pct: '0',
             porcentaje_iva: prev.tipo_documento === 'EXT' ? 0 : 15,
-            cuenta_id: '', es_activo_fijo: false,
+            cuenta_id: '', es_activo_fijo: false, unidad: 'unidad',
         }],
     }))
 
@@ -460,7 +468,7 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
             ...prev,
             detalles: prev.detalles.map((d, i) => {
                 if (i !== idx) return d
-                if (!p) return { ...d, producto_id: null }
+                if (!p) return { ...d, producto_id: null, unidad: 'unidad' }
                 return {
                     ...d,
                     producto_id:     p.id,
@@ -468,6 +476,7 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
                     descripcion:     p.nombre,
                     precio_unitario: String(p.costo),
                     porcentaje_iva:  prev.tipo_documento === 'EXT' ? 0 : Number(p.porcentaje_iva),
+                    unidad:          p.unidad || 'unidad',
                 }
             }),
         }))

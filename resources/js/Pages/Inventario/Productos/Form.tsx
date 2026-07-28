@@ -196,8 +196,8 @@ export default function ProductoForm() {
                                         className="flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
                                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}
                                     >
-                                        {['unidad', 'par', 'caja', 'metro', 'hora', 'kit'].map(u => (
-                                            <option key={u} value={u}>{u.charAt(0).toUpperCase() + u.slice(1)}</option>
+                                        {['unidad', 'par', 'caja', 'metro', 'hora', 'kit', 'kg'].map(u => (
+                                            <option key={u} value={u}>{u === 'kg' ? 'Kilogramo (kg)' : u.charAt(0).toUpperCase() + u.slice(1)}</option>
                                         ))}
                                     </select>
                                 </div>
