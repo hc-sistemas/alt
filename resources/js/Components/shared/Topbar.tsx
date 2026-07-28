@@ -264,22 +264,41 @@ export default function Topbar({ onMobileMenu, pageTitle }: Props) {
                                                 }
                                             </div>
 
-                                            {/* Contenido */}
-                                            <div className="flex-1 min-w-0">
-                                                <p className="text-xs font-semibold leading-snug truncate"
-                                                    style={{ color: 'var(--text-main)' }}>
-                                                    {n.titulo}
-                                                </p>
-                                                {n.mensaje && (
-                                                    <p className="text-xs mt-0.5 leading-snug line-clamp-2"
-                                                        style={{ color: 'var(--text-muted)' }}>
-                                                        {n.mensaje}
+                                            {/* Contenido — clickeable cuando trae `url` (ej. link de descarga) */}
+                                            {n.url ? (
+                                                <a href={n.url} onClick={() => !n.leida && marcarLeida(n.id)}
+                                                    className="flex-1 min-w-0">
+                                                    <p className="text-xs font-semibold leading-snug truncate underline"
+                                                        style={{ color: 'var(--text-main)' }}>
+                                                        {n.titulo}
                                                     </p>
-                                                )}
-                                                <p className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
-                                                    {formatFechaNotif(n.created_at)}
-                                                </p>
-                                            </div>
+                                                    {n.mensaje && (
+                                                        <p className="text-xs mt-0.5 leading-snug line-clamp-2"
+                                                            style={{ color: 'var(--text-muted)' }}>
+                                                            {n.mensaje}
+                                                        </p>
+                                                    )}
+                                                    <p className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                                                        {formatFechaNotif(n.created_at)}
+                                                    </p>
+                                                </a>
+                                            ) : (
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-xs font-semibold leading-snug truncate"
+                                                        style={{ color: 'var(--text-main)' }}>
+                                                        {n.titulo}
+                                                    </p>
+                                                    {n.mensaje && (
+                                                        <p className="text-xs mt-0.5 leading-snug line-clamp-2"
+                                                            style={{ color: 'var(--text-muted)' }}>
+                                                            {n.mensaje}
+                                                        </p>
+                                                    )}
+                                                    <p className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                                                        {formatFechaNotif(n.created_at)}
+                                                    </p>
+                                                </div>
+                                            )}
 
                                             {/* Acción marcar leída */}
                                             {!n.leida && (

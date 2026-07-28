@@ -244,6 +244,9 @@ Route::middleware('auth')->group(function () {
             Route::get('/',                    [AsientoContableController::class, 'index'])        ->name('index');
             Route::get('/exportar-excel',      [AsientoContableController::class, 'exportarExcel'])->name('exportar-excel');
             Route::get('/reporte-pdf',         [AsientoContableController::class, 'reportePdf'])   ->name('reporte-pdf');
+            Route::get('/contar-exportables',  [AsientoContableController::class, 'contarExportables'])->name('contar-exportables');
+            Route::post('/exportar-segundo-plano', [AsientoContableController::class, 'exportarSegundoPlano'])->name('exportar-segundo-plano');
+            Route::get('/exportaciones/{archivo}/descargar', [AsientoContableController::class, 'descargarExportacion'])->name('exportacion.descargar');
             Route::get('/libro-diario',        [AsientoContableController::class, 'libroDiario'])  ->name('libro-diario');
             Route::get('/mayor-cuenta',        [AsientoContableController::class, 'mayorCuenta'])  ->name('mayor-cuenta');
             Route::get('/{asiento}',           [AsientoContableController::class, 'show'])         ->name('show');

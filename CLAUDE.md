@@ -268,10 +268,40 @@ DB_USERNAME=postgres
 DB_PASSWORD=gbyte              # contraseña local
 
 SESSION_DRIVER=file            # NO usar database — la tabla sessions no existe en el schema legacy
-QUEUE_CONNECTION=sync          # o redis si está disponible
+QUEUE_CONNECTION=database      # requiere un worker corriendo — ver sección "Colas" más abajo
 
 APP_URL=http://127.0.0.1:8000  # ajustar según entorno
 ```
+
+---
+
+## Colas (queue:work) — requerido para exportación en segundo plano de Asientos
+
+`QUEUE_CONNECTION=database` (la tabla `jobs` ya está migrada). A diferencia de
+los 4 Jobs de alertas (`AlertaVencimientoCxP`, `AlertaVouchersNoLiquidados`,
+`AlertaAtrasosRecurrentes`, `RecordatorioCierreNomina`), que solo se disparan
+vía `Schedule::job()` en `routes/console.php` y por eso no necesitan un worker
+persistente para funcionar en desarrollo (el scheduler los ejecuta inline en
+su propio tick), **`App\Jobs\ExportarAsientosJob`** (exportación de Asientos
+Contables cuando el reporte es demasiado grande para generarse al instante —
+ver `AsientoContableController::exportarSegundoPlano()`) se dispara desde una
+acción real del usuario y **se queda esperando en la tabla `jobs` para
+siempre si no hay un worker corriendo**.
+
+```bash
+# Requerido para que la exportación en segundo plano de Asientos funcione:
+php artisan queue:work
+
+# En producción, correr esto bajo Supervisor (o systemd) para que se
+# reinicie solo si el proceso muere. No hay Procfile ni supervisor.conf en
+# este repo todavía — agregarlo es responsabilidad del deploy.
+```
+
+El Job de limpieza `LimpiarExportacionesAsientosJob` (borra archivos de
+`storage/app/private/exportaciones-asientos/` con más de 48h) SÍ está
+programado vía `Schedule::job()->dailyAt('03:00')`, así que ese no necesita
+un worker aparte — pero el propio `schedule:run` sí necesita correr (cron o
+`php artisan schedule:work` en desarrollo).
 
 ---
 

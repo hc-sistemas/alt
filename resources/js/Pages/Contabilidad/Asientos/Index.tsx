@@ -10,7 +10,7 @@ import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import {
     BookOpen, Plus, Eye, XCircle, CheckCircle,
-    AlertTriangle, User, X, FileText, Zap, Download, Search, Info,
+    AlertTriangle, User, X, FileText, Zap, Download, Search, Loader2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { usePermiso } from '@/Hooks/usePermiso'
@@ -143,36 +143,113 @@ export default function AsientosIndex() {
         }, { preserveState: false })
     }
 
-    // Con miles de asientos reales en producción, un PDF/Excel sin ningún filtro
-    // intenta procesar el histórico completo (~11 mil registros) y no termina en
-    // tiempo razonable — a diferencia del listado paginado, aquí exigimos al
-    // menos un filtro real (no cuenta `buscar`, que ninguno de los dos endpoints
-    // recibe) antes de permitir exportar.
-    const hayFiltrosExportables = !!(tipo || estado || ejercicioId || fechaDesde || fechaHasta)
+    // ── Exportación (Excel/PDF): camino rápido vs. segundo plano ────────────
+    // Ya no se exige seleccionar un filtro para poder exportar — en vez de eso,
+    // antes de generar nada se consulta contar-exportables (query liviana, sin
+    // cargar modelos) para decidir: si el resultado entra bajo el límite
+    // calibrado (AsientosDetalleSheet::MAX_FILAS_DETALLE), se descarga al
+    // instante como hasta ahora; si lo excede (típicamente sin filtro, o un
+    // rango muy amplio), se ofrece procesarlo en segundo plano (ExportarAsientosJob)
+    // y se avisa por notificación cuando esté listo.
+    const [verificandoExport, setVerificandoExport] = useState<'excel' | 'pdf' | null>(null)
+    const [exportandoFondo, setExportandoFondo] = useState<{ formato: 'excel' | 'pdf'; desde: number } | null>(null)
 
-    // Explica por qué Excel/PDF están deshabilitados — antes solo se veía el
-    // `disabled` nativo (sin opacity ni tooltip claro en el botón de Excel),
-    // lo que hacía parecer que los botones estaban simplemente rotos.
-    const razonExportDeshabilitado = (): string | null => {
-        if (!haBuscado) return 'Primero busca (ícono de lupa) para habilitar la exportación'
-        if (!hayFiltrosExportables) return 'Selecciona al menos un filtro (Tipo, Estado, Período o Fecha) antes de exportar'
-        return null
-    }
+    const paramsFiltrosActuales = () => ({
+        ejercicio_id: ejercicioId,
+        fecha_desde:  fechaDesde,
+        fecha_hasta:  fechaHasta,
+        tipo:         tipo,
+        estado:       estado,
+    })
 
-    const exportarExcel = () => {
-        if (!hayFiltrosExportables) {
-            notify.error('Aplica al menos un filtro (período, fechas, tipo o estado) antes de exportar a Excel.')
-            return
-        }
-        const params = new URLSearchParams({
-            ejercicio_id: ejercicioId,
-            fecha_desde:  fechaDesde,
-            fecha_hasta:  fechaHasta,
-            tipo:         tipo,
-            estado:       estado,
-        })
+    const exportarExcelInstantaneo = () => {
+        const params = new URLSearchParams(paramsFiltrosActuales())
         window.location.href = route('contabilidad.asientos.exportar-excel') + '?' + params
     }
+
+    const construirUrlPdf = () => {
+        const params = new URLSearchParams(paramsFiltrosActuales())
+        return `${route('contabilidad.asientos.reporte-pdf')}?${params}`
+    }
+
+    const confirmarExportacionSegundoPlano = (formato: 'excel' | 'pdf') => {
+        router.post(route('contabilidad.asientos.exportar-segundo-plano'), {
+            formato, ...paramsFiltrosActuales(),
+        }, {
+            preserveScroll: true,
+            preserveState: true,
+            onSuccess: () => setExportandoFondo({ formato, desde: Date.now() }),
+        })
+    }
+
+    const iniciarExportacion = async (formato: 'excel' | 'pdf') => {
+        setVerificandoExport(formato)
+        try {
+            const params = new URLSearchParams(paramsFiltrosActuales())
+            const res = await fetch(route('contabilidad.asientos.contar-exportables') + '?' + params)
+            if (!res.ok) throw new Error()
+            const data = await res.json() as { total: number; limite: number; excede: boolean }
+
+            if (!data.excede) {
+                if (formato === 'excel') exportarExcelInstantaneo()
+                else abrirPdf(construirUrlPdf())
+                return
+            }
+
+            injectSwalStyles()
+            const { isConfirmed } = await Swal.fire({
+                ...swalBase,
+                title: 'Reporte grande',
+                html: `
+                    <div style="text-align:left;color:#374151;font-size:0.875rem;line-height:1.5">
+                        <p>Este reporte generaría <strong>${data.total.toLocaleString('es-EC')}</strong> líneas de
+                        detalle — muy grande para generarse al instante (límite: ${data.limite.toLocaleString('es-EC')}).</p>
+                        <p style="margin-top:8px">Se procesará en segundo plano y te avisaremos por notificación
+                        (campanita) cuando esté listo para descargar.</p>
+                    </div>
+                `,
+                icon: 'info',
+                showCancelButton: true,
+                confirmButtonColor: '#F59E0B',
+                confirmButtonText: 'Procesar en segundo plano',
+                cancelButtonText: 'Cancelar',
+                reverseButtons: true,
+            })
+
+            if (isConfirmed) confirmarExportacionSegundoPlano(formato)
+        } catch {
+            notify.error('No se pudo verificar el tamaño del reporte. Intenta de nuevo.')
+        } finally {
+            setVerificandoExport(null)
+        }
+    }
+
+    // Sin websockets/polling en el backend — se consulta el mismo endpoint que
+    // ya usa la campana de notificaciones (notificaciones.index) cada 15s,
+    // mientras haya una exportación en curso, hasta encontrarla o 10 minutos.
+    useEffect(() => {
+        if (!exportandoFondo) return
+        const intervalo = setInterval(async () => {
+            if (Date.now() - exportandoFondo.desde > 10 * 60 * 1000) {
+                setExportandoFondo(null)
+                return
+            }
+            try {
+                const res = await fetch(route('notificaciones.index'))
+                if (!res.ok) return
+                const data = await res.json() as { notificaciones: { tipo: string; created_at: string }[] }
+                const lista = data.notificaciones.some(n =>
+                    (n.tipo === 'exportacion_asientos' || n.tipo === 'exportacion_asientos_error') &&
+                    new Date(n.created_at).getTime() >= exportandoFondo.desde
+                )
+                if (lista) {
+                    notify.success('Tu exportación terminó de procesarse — revisa la campana de notificaciones para descargarla.')
+                    setExportandoFondo(null)
+                }
+            } catch { /* red momentáneamente caída — se reintenta en el próximo tick */ }
+        }, 15000)
+        return () => clearInterval(intervalo)
+    }, [exportandoFondo])
 
     const actualizarPartida = (idx: number, campo: keyof Partida, valor: string) => {
         setPartidas(p => p.map((row, i) => i === idx ? { ...row, [campo]: valor } : row))
@@ -353,27 +430,14 @@ export default function AsientosIndex() {
                         placeholder: 'Buscar...',
                     }}
                     searchWidth="w-[130px]"
-                    onExport={exportarExcel}
-                    exportDisabled={!haBuscado || !hayFiltrosExportables}
-                    exportTitle={razonExportDeshabilitado() ?? 'Exportar a Excel'}
+                    onExport={() => iniciarExportacion('excel')}
+                    exportDisabled={verificandoExport !== null}
+                    exportTitle={verificandoExport === 'excel' ? 'Verificando tamaño…' : 'Exportar a Excel'}
                     extraActions={
                         <button
-                            onClick={() => {
-                                if (!hayFiltrosExportables) {
-                                    notify.error('Aplica al menos un filtro (período, fechas, tipo o estado) antes de generar el PDF.')
-                                    return
-                                }
-                                abrirPdf(
-                                    `${route('contabilidad.asientos.reporte-pdf')}` +
-                                    `?ejercicio_id=${ejercicioId}` +
-                                    `&fecha_desde=${fechaDesde}` +
-                                    `&fecha_hasta=${fechaHasta}` +
-                                    `&tipo=${tipo}` +
-                                    `&estado=${estado}`
-                                )
-                            }}
-                            disabled={!haBuscado || !hayFiltrosExportables}
-                            title={razonExportDeshabilitado() ?? 'Ver reporte en PDF'}
+                            onClick={() => iniciarExportacion('pdf')}
+                            disabled={verificandoExport !== null}
+                            title={verificandoExport === 'pdf' ? 'Verificando tamaño…' : 'Ver reporte en PDF'}
                             className="flex items-center justify-center w-9 h-9 rounded-md border text-sm font-medium shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
                             style={{ background: '#ef4444', color: 'white', borderColor: '#ef4444' }}>
                             <FileText className="w-4 h-4" />
@@ -429,14 +493,18 @@ export default function AsientosIndex() {
                 </div>
                 </div>
 
-                {/* Por qué Excel/PDF están deshabilitados aunque la tabla ya cargó — el
-                    caso confuso: se buscó y hay resultados, pero exportar sigue
-                    deshabilitado porque no hay Tipo/Estado/Período/Fecha seleccionado
-                    (el buscador de texto libre no cuenta para esto). */}
-                {haBuscado && !hayFiltrosExportables && (
-                    <div className="flex items-center gap-1.5 -mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
-                        <Info className="w-3.5 h-3.5 shrink-0" />
-                        <span>{razonExportDeshabilitado()}</span>
+                {/* Indicador visible mientras la exportación en segundo plano está en
+                    curso — desaparece solo cuando la notificación de "listo para
+                    descargar" llega (polling cada 15s, ver el useEffect de arriba) o
+                    tras 10 minutos sin novedades. */}
+                {exportandoFondo && (
+                    <div className="flex items-center gap-2 text-xs rounded-lg px-3 py-2 -mt-2 mb-2"
+                        style={{ background: 'color-mix(in srgb, var(--primary) 12%, var(--bg-main))', color: 'var(--text-main)' }}>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" style={{ color: 'var(--primary)' }} />
+                        <span>
+                            Tu {exportandoFondo.formato === 'excel' ? 'Excel' : 'PDF'} se está procesando en segundo
+                            plano — te avisaremos por notificación cuando esté listo.
+                        </span>
                     </div>
                 )}
 

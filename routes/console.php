@@ -3,6 +3,7 @@
 use App\Jobs\AlertaAtrasosRecurrentes;
 use App\Jobs\AlertaVencimientoCxP;
 use App\Jobs\AlertaVouchersNoLiquidados;
+use App\Jobs\LimpiarExportacionesAsientosJob;
 use App\Jobs\RecordatorioCierreNomina;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -23,3 +24,7 @@ Schedule::job(new AlertaAtrasosRecurrentes)->dailyAt('09:00');
 
 // Recordatorio cierre de nómina — día 28 de cada mes a las 09:00
 Schedule::job(new RecordatorioCierreNomina)->monthlyOn(28, '09:00');
+
+// Borra exportaciones de Asientos Contables (Excel/PDF generados en segundo
+// plano) con más de 48h — diario a las 03:00
+Schedule::job(new LimpiarExportacionesAsientosJob)->dailyAt('03:00');

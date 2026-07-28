@@ -9,11 +9,14 @@ use App\Models\Empresa;
 use App\Models\PlanCuenta;
 use App\Services\AsientoService;
 use App\Exports\AsientosExport;
+use App\Jobs\ExportarAsientosJob;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Maatwebsite\Excel\Facades\Excel;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -263,6 +266,63 @@ class AsientoContableController extends Controller
         );
     }
 
+    // Chequeo liviano (sin generar nada) para que el frontend decida, ANTES de
+    // pedir la descarga, si el filtro actual entra en el camino rápido
+    // (síncrono) o necesita el camino de segundo plano (Job en cola).
+    public function contarExportables(Request $request): JsonResponse
+    {
+        $empresaId = session('empresa_activa_id');
+        $filtros   = $request->only(['ejercicio_id', 'fecha_desde', 'fecha_hasta', 'tipo', 'estado']);
+
+        $total = (new AsientosExport((int)$empresaId, $filtros))
+            ->sheets()[1]->contarDetalles();
+
+        return response()->json([
+            'total'  => $total,
+            'limite' => \App\Exports\AsientosDetalleSheet::MAX_FILAS_DETALLE,
+            'excede' => $total > \App\Exports\AsientosDetalleSheet::MAX_FILAS_DETALLE,
+        ]);
+    }
+
+    // Camino de segundo plano: sin límite de filas (ExportarAsientosJob no
+    // aplica MAX_FILAS_DETALLE), genera el archivo completo en el worker de
+    // colas y avisa por notificación cuando está listo — ver CLAUDE.md para
+    // el requisito de QUEUE_CONNECTION + `php artisan queue:work`.
+    public function exportarSegundoPlano(Request $request): RedirectResponse
+    {
+        $request->validate(['formato' => 'required|in:excel,pdf']);
+
+        $empresaId = session('empresa_activa_id');
+        $filtros   = $request->only(['ejercicio_id', 'fecha_desde', 'fecha_hasta', 'tipo', 'estado']);
+
+        ExportarAsientosJob::dispatch((int)$empresaId, (int)Auth::id(), $filtros, $request->string('formato')->toString());
+
+        return back()->with('success',
+            'Tu exportación se está procesando en segundo plano. Te avisaremos por notificación cuando esté lista para descargar.');
+    }
+
+    // Sirve el archivo generado por ExportarAsientosJob. Autorización simple:
+    // el nombre de archivo lleva el usuario_id como prefijo (ver el Job), y
+    // basename() descarta cualquier intento de path traversal en la ruta.
+    public function descargarExportacion(string $archivo): \Symfony\Component\HttpFoundation\Response
+    {
+        $archivo = basename($archivo);
+
+        if (!str_starts_with($archivo, Auth::id() . '_')) {
+            abort(403, 'No tienes acceso a este archivo.');
+        }
+
+        $ruta = ExportarAsientosJob::CARPETA . "/{$archivo}";
+        if (!Storage::disk('local')->exists($ruta)) {
+            abort(404, 'El archivo expiró o ya no está disponible (las exportaciones se conservan 48 horas). Genera la exportación nuevamente.');
+        }
+
+        $extension     = pathinfo($archivo, PATHINFO_EXTENSION);
+        $nombreDescarga = 'asientos-' . now()->format('Y-m-d') . ".{$extension}";
+
+        return Storage::disk('local')->download($ruta, $nombreDescarga);
+    }
+
     public function reportePdf(Request $request): \Symfony\Component\HttpFoundation\Response
     {
         $empresaId = session('empresa_activa_id');
@@ -278,7 +338,13 @@ class AsientoContableController extends Controller
                 'Aplica al menos un filtro (período, fechas, tipo o estado) antes de generar el PDF.');
         }
 
-        $query = AsientoContable::with(['ejercicio', 'creadoPor', 'detalles.cuenta'])
+        // pdf.asientos-reporte solo usa $asiento->ejercicio (un renglón por
+        // asiento, no por línea de detalle) — eager-cargar creadoPor/
+        // detalles.cuenta aquí no se usa nunca en la vista y solo infla memoria
+        // sin necesidad (encontrado al probar ExportarAsientosJob con ~1,100
+        // asientos: dompdf agotó los 512MB del límite de memoria de PHP
+        // procesando relaciones que la vista ni toca).
+        $query = AsientoContable::with(['ejercicio'])
             ->where('empresa_id', $empresaId);
 
         if ($request->filled('ejercicio_id')) {
