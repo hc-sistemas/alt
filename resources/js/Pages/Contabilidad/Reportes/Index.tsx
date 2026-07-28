@@ -141,7 +141,6 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
         <AppLayout>
             <PageHeader
                 title="Reportes Contables"
-                description="Libro Diario, Mayor, Balance de Comprobación, Balance General y Estado de Resultados"
                 breadcrumbs={[{ label: 'Contabilidad' }, { label: 'Reportes' }]}
             />
 
@@ -443,8 +442,8 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
                         </div>
                     </div>
 
-                    {/* ── ESTADO DE RESULTADOS — col-span-2 ── */}
-                    <div className="md:col-span-2 rounded-2xl border overflow-hidden"
+                    {/* ── ESTADO DE RESULTADOS ── */}
+                    <div className="rounded-2xl border overflow-hidden"
                          style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
                         <div className="px-5 py-4 border-b flex items-center gap-3"
                              style={{ borderColor: 'var(--border)', borderLeft: '4px solid #059669' }}>
@@ -455,16 +454,16 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
                             </div>
                         </div>
                         <div className="p-5 space-y-3">
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                <div>
-                                    <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>Período contable</label>
-                                    <select value={erEjercicio} onChange={e => setErEjercicio(e.target.value)} className="input-field select-field">
-                                        <option value="">Todos los períodos</option>
-                                        {ejercicios.map(e => (
-                                            <option key={e.id} value={e.id}>{meses[e.mes]} {e.anio}{e.estado === 'abierto' ? ' (Abierto)' : ''}</option>
-                                        ))}
-                                    </select>
-                                </div>
+                            <div>
+                                <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>Período contable</label>
+                                <select value={erEjercicio} onChange={e => setErEjercicio(e.target.value)} className="input-field select-field">
+                                    <option value="">Todos los períodos</option>
+                                    {ejercicios.map(e => (
+                                        <option key={e.id} value={e.id}>{meses[e.mes]} {e.anio}{e.estado === 'abierto' ? ' (Abierto)' : ''}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
                                 <div>
                                     <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>Desde</label>
                                     <input type="date" value={erFechaDesde} onChange={e => setErFechaDesde(e.target.value)} className="input-field" />
@@ -482,8 +481,8 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
                         </div>
                     </div>
 
-                    {/* ── FLUJO DE CAJA — col-span-2 ── */}
-                    <div className="md:col-span-2 rounded-2xl border overflow-hidden"
+                    {/* ── FLUJO DE CAJA ── */}
+                    <div className="rounded-2xl border overflow-hidden"
                          style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
                         <div className="px-5 py-4 border-b flex items-center gap-3"
                              style={{ borderColor: 'var(--border)', borderLeft: '4px solid #dc2626' }}>
