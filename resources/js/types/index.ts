@@ -551,6 +551,7 @@ export interface Compra {
     proveedor?: Proveedor
     centro_costo_id: number | null
     importacion_id: number | null
+    bodega_id: number | null
     tipo_documento: string
     num_documento: string
     num_autorizacion: string | null
@@ -565,6 +566,8 @@ export interface Compra {
     total: number
     iva_asumido: boolean
     gasto_no_deducible: boolean
+    retencion_ir: number
+    retencion_iva: number
     sustento_tributario: number | null
     asiento_id: number | null
     asiento_error: string | null

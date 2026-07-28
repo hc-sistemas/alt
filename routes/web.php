@@ -289,6 +289,7 @@ Route::middleware('auth')->group(function () {
             Route::get('/{compra}/etiquetas-reimprimir',            [CompraController::class, 'reimprimirEtiquetasPdf'])  ->name('etiquetas-reimprimir');
             Route::get('/{compra}/etiquetas-listado',               [CompraController::class, 'etiquetasListado'])         ->name('etiquetas-listado');
             Route::get('/{compra}/verificar-anulacion',             [CompraController::class, 'verificarAnulacion'])       ->name('verificar-anulacion');
+            Route::get('/{compra}/verificar-edicion',               [CompraController::class, 'verificarEdicion'])         ->name('verificar-edicion');
 
             Route::middleware('permiso:compras,crear')->group(function () {
                 Route::post('/',                 [CompraController::class, 'store']) ->name('store');
@@ -299,6 +300,11 @@ Route::middleware('auth')->group(function () {
 
             Route::middleware('permiso:compras,editar')->group(function () {
                 Route::post('/{compra}/activar',          [CompraController::class, 'activar'])           ->name('activar');
+                Route::put('/{compra}',                   [CompraController::class, 'update'])            ->name('update');
+            });
+
+            Route::middleware('permiso:compras,eliminar')->group(function () {
+                Route::delete('/{compra}',                [CompraController::class, 'destroy'])           ->name('destroy');
             });
 
             Route::middleware('permiso:compras,anular')->group(function () {

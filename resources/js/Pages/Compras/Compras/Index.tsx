@@ -12,7 +12,7 @@ import { cn } from '@/lib/utils'
 import { formatFecha } from '@/utils/contabilidad'
 import {
     Plus, X, FileText, Download, ChevronLeft, ChevronRight, ChevronDown,
-    Eye, ShoppingCart, Trash2, CreditCard,
+    Eye, ShoppingCart, Trash2, CreditCard, Pencil,
     Barcode, CheckCircle, XCircle, RefreshCw, Upload, AlertTriangle,
 } from 'lucide-react'
 import type { Compra, Importacion, Proveedor, CentroCosto, PlanCuenta, Bodega, PageProps, PaginatedData, Producto, EtiquetaDetalleData, EtiquetaGrupoProducto } from '@/types'
@@ -55,6 +55,18 @@ interface Props extends PageProps {
     importacionesActivas: ImportacionResumen[]
     prefillExterior: PrefillExterior | null
     filtros: Filtros
+}
+
+interface DetalleEdicion {
+    id: number
+    producto_id: number | null
+    cuenta_id: number | null
+    descripcion: string
+    cantidad: number
+    precio_unitario: number
+    descuento: number
+    porcentaje_iva: number
+    es_activo_fijo: boolean
 }
 
 interface DetalleItem {
@@ -328,15 +340,17 @@ interface NuevaCompraModalProps {
     centroMatrizId: number | null
     bodegaDefaultId: number | null
     initialValues?: Partial<PrefillExterior>
+    editando?: Compra
+    detallesEdicion?: DetalleEdicion[]
     onClose: () => void
 }
 
-function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, importacionesActivas, centroMatrizId, bodegaDefaultId, initialValues, onClose }: NuevaCompraModalProps) {
+function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, importacionesActivas, centroMatrizId, bodegaDefaultId, initialValues, editando, detallesEdicion, onClose }: NuevaCompraModalProps) {
     const [tab, setTab] = useState<'datos' | 'detalle' | 'centro'>('datos')
 
-    const isExt = initialValues?.tipo_documento === 'EXT'
+    const isExt = (editando?.tipo_documento ?? initialValues?.tipo_documento) === 'EXT'
 
-    const { data, setData, post, processing, errors } = useForm<{
+    const { data, setData, post, put, processing, errors } = useForm<{
         proveedor_id: string | number
         tipo_documento: string
         num_documento: string
@@ -361,34 +375,53 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
         vigencia_desde: string
         vigencia_hasta: string
     }>({
-        proveedor_id:        initialValues?.proveedor_id ?? '',
-        tipo_documento:      initialValues?.tipo_documento ?? 'FAC',
-        num_documento:       initialValues?.num_documento ?? '',
-        num_autorizacion:    '',
-        fecha_emision:       initialValues?.fecha_emision ?? new Date().toISOString().slice(0, 10),
-        dias_credito:        initialValues?.dias_credito ?? 0,
-        iva_asumido:         false,
-        gasto_no_deducible:  false,
-        retencion_ir:        0,
-        retencion_iva:       0,
-        sustento_tributario: initialValues?.sustento_tributario ?? '01',
-        concepto:            initialValues?.concepto ?? '',
-        centro_costo_id:     centroMatrizId ? String(centroMatrizId) : '',
-        bodega_id:           bodegaDefaultId ? String(bodegaDefaultId) : '',
-        detalles: [{
-            producto_id: null, codigo: '',
-            descripcion: '', cantidad: 1, precio_unitario: '',
-            descuento: 0, descuento_pct: '0', porcentaje_iva: isExt ? 0 : 15,
-            cuenta_id: '', es_activo_fijo: false, unidad: 'unidad',
-        }],
-        importacion_id:   initialValues?.importacion_id ?? '',
-        metodo_envio:     initialValues?.metodo_envio ?? 'FOB',
-        divisa:           initialValues?.divisa ?? 'USD',
-        tipo_cambio:      '',
-        num_orden_compra: '',
-        num_contrato:     '',
-        vigencia_desde:   '',
-        vigencia_hasta:   '',
+        proveedor_id:        editando?.proveedor_id ?? initialValues?.proveedor_id ?? '',
+        tipo_documento:      editando?.tipo_documento ?? initialValues?.tipo_documento ?? 'FAC',
+        num_documento:       editando?.num_documento ?? initialValues?.num_documento ?? '',
+        num_autorizacion:    editando?.num_autorizacion ?? '',
+        fecha_emision:       editando?.fecha_emision ?? initialValues?.fecha_emision ?? new Date().toISOString().slice(0, 10),
+        dias_credito:        editando?.dias_credito ?? initialValues?.dias_credito ?? 0,
+        iva_asumido:         editando?.iva_asumido ?? false,
+        gasto_no_deducible:  editando?.gasto_no_deducible ?? false,
+        retencion_ir:        editando?.retencion_ir ?? 0,
+        retencion_iva:       editando?.retencion_iva ?? 0,
+        sustento_tributario: editando?.sustento_tributario != null ? String(editando.sustento_tributario) : (initialValues?.sustento_tributario ?? '01'),
+        concepto:            editando?.concepto ?? initialValues?.concepto ?? '',
+        centro_costo_id:     editando?.centro_costo_id ? String(editando.centro_costo_id) : (centroMatrizId ? String(centroMatrizId) : ''),
+        bodega_id:           editando?.bodega_id ? String(editando.bodega_id) : (bodegaDefaultId ? String(bodegaDefaultId) : ''),
+        detalles: detallesEdicion && detallesEdicion.length > 0
+            ? detallesEdicion.map(d => {
+                const base = d.cantidad * d.precio_unitario
+                const pct  = base > 0 ? String(parseFloat(((d.descuento / base) * 100).toFixed(2))) : '0'
+                const prod = d.producto_id ? productos.find(p => p.id === d.producto_id) : null
+                return {
+                    producto_id:     d.producto_id,
+                    codigo:          prod?.codigo ?? '',
+                    descripcion:     d.descripcion,
+                    cantidad:        d.cantidad,
+                    precio_unitario: String(d.precio_unitario),
+                    descuento:       d.descuento,
+                    descuento_pct:   pct,
+                    porcentaje_iva:  d.porcentaje_iva,
+                    cuenta_id:       d.cuenta_id ?? '',
+                    es_activo_fijo:  d.es_activo_fijo,
+                    unidad:          'unidad',
+                }
+            })
+            : [{
+                producto_id: null, codigo: '',
+                descripcion: '', cantidad: 1, precio_unitario: '',
+                descuento: 0, descuento_pct: '0', porcentaje_iva: isExt ? 0 : 15,
+                cuenta_id: '', es_activo_fijo: false, unidad: 'unidad',
+            }],
+        importacion_id:   editando?.importacion_id ?? initialValues?.importacion_id ?? '',
+        metodo_envio:     editando?.metodo_envio ?? initialValues?.metodo_envio ?? 'FOB',
+        divisa:           editando?.divisa ?? initialValues?.divisa ?? 'USD',
+        tipo_cambio:      editando?.tipo_cambio ?? '',
+        num_orden_compra: editando?.num_orden_compra ?? '',
+        num_contrato:     editando?.num_contrato ?? '',
+        vigencia_desde:   editando?.vigencia_desde ?? '',
+        vigencia_hasta:   editando?.vigencia_hasta ?? '',
     })
 
     const totales = useMemo(
@@ -514,8 +547,45 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
         setBusquedaProducto('')
     }
 
-    function submit(e: React.FormEvent) {
+    function enviarActualizacion() {
+        put(route('compras.facturas.update', editando!.id), {
+            onSuccess: (page) => {
+                const flash = (page as any).props?.flash
+                if (flash?.error) {
+                    notify.error(flash.error)
+                } else {
+                    notify.ok(`Compra ${data.num_documento} actualizada`)
+                }
+                onClose()
+            },
+            onError: (errs) => notify.error('Error: ' + Object.values(errs).join(', ')),
+        })
+    }
+
+    async function submit(e: React.FormEvent) {
         e.preventDefault()
+
+        if (editando) {
+            if (editando.estado === 'activa') {
+                const result = await Swal.fire({
+                    ...swalBase,
+                    icon: 'warning',
+                    title: 'Editar factura activa',
+                    html: `<p style="color:#374151;font-size:13px;line-height:1.6">
+                               Esta factura ya generó movimientos contables y de inventario.
+                               Editar revertirá y regenerará esos efectos con los datos corregidos.
+                           </p>`,
+                    confirmButtonText: 'Sí, editar y regenerar',
+                    cancelButtonText:  'Cancelar',
+                    confirmButtonColor: '#f59e0b',
+                    cancelButtonColor:  '#6b7280',
+                })
+                if (!result.isConfirmed) return
+            }
+            enviarActualizacion()
+            return
+        }
+
         post(route('compras.facturas.store'), {
             onSuccess: (page) => {
                 const flash = (page as any).props?.flash
@@ -544,7 +614,7 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
 
                 {/* Header */}
                 <div className="modal-header shrink-0">
-                    <h2>Nueva factura de compra</h2>
+                    <h2>{editando ? `Editar factura ${editando.num_documento}` : 'Nueva factura de compra'}</h2>
                     <button className="modal-close" onClick={onClose}>
                         <X className="w-4 h-4" />
                     </button>
@@ -1043,7 +1113,7 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
                         <div className="flex gap-2">
                             <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
                             <Button type="submit" disabled={processing}>
-                                <Plus className="w-4 h-4" /> Registrar compra
+                                <Plus className="w-4 h-4" /> {editando ? 'Guardar cambios' : 'Registrar compra'}
                             </Button>
                         </div>
                     </div>
@@ -1450,6 +1520,12 @@ type EscenarioAnulacion =
     | { escenario: 'C';       mensaje: string; productos_vendidos: Array<{ nombre: string; cantidad_salida: number }> }
     | { escenario: 'ANULADA'; mensaje: string }
 
+interface VerificacionEdicion {
+    puede: boolean
+    motivo: string | null
+    es_activa?: boolean
+}
+
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 // ─── Modal Cargar XML SRI ─────────────────────────────────────────────────────
@@ -1535,6 +1611,7 @@ function CargarXmlModal({ onParsed, onClose }: {
 type ModalState =
     | { type: 'none' }
     | { type: 'nueva' }
+    | { type: 'editar'; compra: Compra; detalles: DetalleEdicion[] }
     | { type: 'etiquetas'; compra: Compra }
     | { type: 'reimprimir-etiquetas'; compra: Compra }
 
@@ -1909,10 +1986,111 @@ export default function ComprasIndex() {
         })
     }
 
+    async function verificarEdicionCompra(c: Compra): Promise<VerificacionEdicion | null> {
+        try {
+            const res = await fetch(route('compras.facturas.verificar-edicion', c.id), {
+                headers: { Accept: 'application/json' },
+            })
+            return await res.json() as VerificacionEdicion
+        } catch {
+            notify.error('Error al verificar el estado de la compra.')
+            return null
+        }
+    }
+
+    function mostrarBloqueoEdicion(titulo: string, motivo: string) {
+        void Swal.fire({
+            icon: 'error',
+            title: titulo,
+            html: `<p style="color:#374151;font-size:13px">${motivo}</p>`,
+            confirmButtonText: 'Entendido',
+            confirmButtonColor: '#ef4444',
+            showCancelButton: false,
+            customClass: { popup: 'swal-pop', title: 'swal-title', confirmButton: 'swal-confirm' },
+            didOpen: injectSwalCss,
+        })
+    }
+
+    async function iniciarEdicion(c: Compra) {
+        const verif = await verificarEdicionCompra(c)
+        if (!verif) return
+        if (!verif.puede) {
+            mostrarBloqueoEdicion('No se puede editar', verif.motivo ?? 'No se puede editar esta factura.')
+            return
+        }
+
+        try {
+            const res  = await fetch(route('compras.facturas.detalles', c.id), { headers: { Accept: 'application/json' } })
+            const json = await res.json() as { detalles?: DetalleEdicion[] }
+            setModal({ type: 'editar', compra: c, detalles: json.detalles ?? [] })
+        } catch {
+            notify.error('Error al cargar el detalle de la compra.')
+        }
+    }
+
+    async function iniciarEliminacion(c: Compra) {
+        const verif = await verificarEdicionCompra(c)
+        if (!verif) return
+        if (!verif.puede) {
+            mostrarBloqueoEdicion('No se puede eliminar', verif.motivo ?? 'No se puede eliminar esta factura.')
+            return
+        }
+
+        const result = await Swal.fire({
+            ...swalBase,
+            icon: 'warning',
+            title: 'Eliminar factura',
+            html: `<p style="color:#6b7280;font-size:14px;margin-bottom:10px">
+                       <strong>${c.num_documento}</strong> — $${Number(c.total).toFixed(2)}
+                   </p>
+                   <p style="color:#374151;font-size:13px;line-height:1.6">
+                       ${verif.es_activa
+                            ? verif.motivo
+                            : 'Esta factura está pendiente de recepción; se eliminará directamente.'}
+                   </p>`,
+            confirmButtonText: 'Sí, eliminar',
+            cancelButtonText:  'Cancelar',
+            confirmButtonColor: '#ef4444',
+            cancelButtonColor:  '#6b7280',
+        })
+        if (!result.isConfirmed) return
+
+        router.delete(route('compras.facturas.destroy', c.id), {
+            onSuccess: () => {
+                notify.ok(`Factura ${c.num_documento} eliminada correctamente.`)
+                setComprasData(prev => prev.filter(x => x.id !== c.id))
+            },
+            onError: (e) => notify.error(Object.values(e)[0] ?? 'Error al eliminar'),
+        })
+    }
+
     useEffect(() => {
         if (flash?.success) notify.ok(flash.success)
         if (flash?.error)   notify.error(flash.error)
     }, [flash?.success, flash?.error])
+
+    // Abrir edición automáticamente al llegar desde Show.tsx con ?editar=<id>
+    useEffect(() => {
+        const editarId = new URLSearchParams(window.location.search).get('editar')
+        if (!editarId) return
+
+        const url = new URL(window.location.href)
+        url.searchParams.delete('editar')
+        window.history.replaceState({}, '', url.toString())
+
+        void (async () => {
+            try {
+                const res = await fetch(route('compras.facturas.show', editarId), {
+                    headers: { Accept: 'application/json', 'X-Inertia': 'true' },
+                })
+                const json = await res.json() as { props?: { compra?: Compra } }
+                const c = json?.props?.compra
+                if (c) await iniciarEdicion(c)
+            } catch {
+                notify.error('No se pudo cargar la factura para editar.')
+            }
+        })()
+    }, [])
 
     function aplicarFiltros() {
         router.get(route('compras.facturas.index'), {
@@ -2154,6 +2332,23 @@ export default function ComprasIndex() {
                                             className="h-7 w-7 flex items-center justify-center rounded hover:bg-blue-500/20 text-blue-500 dark:text-blue-400 transition-colors">
                                             <Eye className="w-4 h-4" />
                                         </Link>
+                                        {puede('editar') && (
+                                            <button
+                                                onClick={() => iniciarEdicion(c)}
+                                                title="Editar factura"
+                                                className="h-7 w-7 flex items-center justify-center rounded hover:bg-amber-500/20 transition-colors"
+                                                style={{ color: 'var(--primary)' }}>
+                                                <Pencil className="w-4 h-4" />
+                                            </button>
+                                        )}
+                                        {puede('eliminar') && (
+                                            <button
+                                                onClick={() => iniciarEliminacion(c)}
+                                                title="Eliminar factura"
+                                                className="h-7 w-7 flex items-center justify-center rounded hover:bg-red-500/20 text-red-500 dark:text-red-400 transition-colors">
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        )}
                                         {puede('anular') && (
                                             <button
                                                 onClick={() => iniciarAnulacion(c)}
@@ -2187,6 +2382,29 @@ export default function ComprasIndex() {
                                                 className="h-7 w-7 flex items-center justify-center rounded hover:bg-amber-500/20 transition-colors"
                                                 style={{ color: '#f59e0b' }}>
                                                 <CreditCard className="w-4 h-4" />
+                                            </button>
+                                        )}
+                                        {puede('editar') && (
+                                            <button
+                                                onClick={() => !c.tiene_pago && iniciarEdicion(c)}
+                                                disabled={c.tiene_pago}
+                                                title={c.tiene_pago
+                                                    ? 'No se puede editar: tiene un pago registrado. Anule el pago primero.'
+                                                    : 'Editar factura (revertirá y regenerará asiento/inventario/CxP)'}
+                                                className="h-7 w-7 flex items-center justify-center rounded hover:bg-amber-500/20 transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                                                style={{ color: 'var(--primary)' }}>
+                                                <Pencil className="w-4 h-4" />
+                                            </button>
+                                        )}
+                                        {puede('eliminar') && (
+                                            <button
+                                                onClick={() => !c.tiene_pago && iniciarEliminacion(c)}
+                                                disabled={c.tiene_pago}
+                                                title={c.tiene_pago
+                                                    ? 'No se puede eliminar: tiene un pago registrado. Anule el pago primero.'
+                                                    : 'Eliminar factura (revertirá asiento/inventario/CxP)'}
+                                                className="h-7 w-7 flex items-center justify-center rounded hover:bg-red-500/20 text-red-500 dark:text-red-400 transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent">
+                                                <Trash2 className="w-4 h-4" />
                                             </button>
                                         )}
                                         {puede('anular') && (
@@ -2271,6 +2489,22 @@ export default function ComprasIndex() {
                     bodegaDefaultId={bodegas.find(b => b.tipo === 'general')?.id ?? bodegas[0]?.id ?? null}
                     initialValues={xmlPrefill ?? prefillExterior ?? undefined}
                     onClose={() => { setModal({ type: 'none' }); setXmlPrefill(null) }}
+                />
+            )}
+            {modal.type === 'editar' && (
+                <NuevaCompraModal
+                    key={`editar-${modal.compra.id}`}
+                    proveedores={proveedores}
+                    centros={centros}
+                    cuentas={cuentas}
+                    bodegas={bodegas}
+                    productos={productos}
+                    importacionesActivas={importacionesActivas}
+                    centroMatrizId={centros.find(c => c.codigo === 'MATRIZ')?.id ?? centros[0]?.id ?? null}
+                    bodegaDefaultId={bodegas.find(b => b.tipo === 'general')?.id ?? bodegas[0]?.id ?? null}
+                    editando={modal.compra}
+                    detallesEdicion={modal.detalles}
+                    onClose={() => setModal({ type: 'none' })}
                 />
             )}
             {modal.type === 'etiquetas' && (

@@ -6,7 +6,7 @@ import AppLayout from '@/Layouts/AppLayout'
 import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
 import PageHeader from '@/Components/shared/PageHeader'
-import { ChevronLeft, Ban, ExternalLink, X, Printer, XCircle, Download, PackageCheck, CreditCard, AlertTriangle } from 'lucide-react'
+import { ChevronLeft, Ban, ExternalLink, X, Printer, XCircle, Download, PackageCheck, CreditCard, AlertTriangle, Pencil, Trash2 } from 'lucide-react'
 import { formatFecha } from '@/utils/contabilidad'
 import type {
     Compra, Proveedor, CentroCosto, AsientoContable,
@@ -137,6 +137,53 @@ export default function CompraShow() {
         })
     }
 
+    function irAEditar() {
+        router.visit(route('compras.facturas.index') + '?editar=' + compra.id)
+    }
+
+    async function confirmarEliminar() {
+        let verif: { puede: boolean; motivo: string | null; es_activa?: boolean } | null = null
+        try {
+            const res = await fetch(route('compras.facturas.verificar-edicion', compra.id), { headers: { Accept: 'application/json' } })
+            verif = await res.json()
+        } catch {
+            notify.error('Error al verificar el estado de la compra.')
+            return
+        }
+        if (!verif || !verif.puede) {
+            void Swal.fire({
+                icon: 'error',
+                title: 'No se puede eliminar',
+                html: `<p style="color:#374151;font-size:13px">${verif?.motivo ?? 'No se puede eliminar esta factura.'}</p>`,
+                confirmButtonText: 'Entendido',
+                confirmButtonColor: '#ef4444',
+                showCancelButton: false,
+            })
+            return
+        }
+
+        const result = await Swal.fire({
+            showCancelButton: true, reverseButtons: true, focusCancel: true,
+            icon: 'warning',
+            title: 'Eliminar factura',
+            html: `<p style="color:#374151;font-size:13px;line-height:1.6">
+                       ${verif.es_activa
+                            ? verif.motivo
+                            : 'Esta factura está pendiente de recepción; se eliminará directamente.'}
+                   </p>`,
+            confirmButtonText: 'Sí, eliminar',
+            cancelButtonText:  'Cancelar',
+            confirmButtonColor: '#ef4444',
+            cancelButtonColor:  '#6b7280',
+        })
+        if (!result.isConfirmed) return
+
+        router.delete(route('compras.facturas.destroy', compra.id), {
+            onSuccess: () => router.visit(route('compras.facturas.index')),
+            onError:   (e) => notify.error(Object.values(e)[0] ?? 'Error al eliminar'),
+        })
+    }
+
     const detalles    = compra.detalles ?? []
     const subtotal0   = n(compra.subtotal_0)
     const subtotalIva = n(compra.subtotal_iva)
@@ -203,6 +250,30 @@ export default function CompraShow() {
                                 className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-black transition-all hover:opacity-90"
                                 style={{ background: '#f59e0b' }}>
                                 <CreditCard size={15} /> Anular Pago
+                            </button>
+                        )}
+                        {compra.estado !== 'anulada' && puede('editar') && (
+                            <button
+                                onClick={() => !compra.tiene_pago && irAEditar()}
+                                disabled={compra.tiene_pago}
+                                title={compra.tiene_pago
+                                    ? 'No se puede editar: tiene un pago registrado. Anule el pago primero.'
+                                    : 'Editar factura'}
+                                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-black transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+                                style={{ background: 'var(--primary)' }}>
+                                <Pencil size={15} /> Editar
+                            </button>
+                        )}
+                        {compra.estado !== 'anulada' && puede('eliminar') && (
+                            <button
+                                onClick={() => !compra.tiene_pago && confirmarEliminar()}
+                                disabled={compra.tiene_pago}
+                                title={compra.tiene_pago
+                                    ? 'No se puede eliminar: tiene un pago registrado. Anule el pago primero.'
+                                    : 'Eliminar factura'}
+                                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+                                style={{ background: '#ef4444' }}>
+                                <Trash2 size={15} /> Eliminar
                             </button>
                         )}
                         {compra.estado === 'activa' && puede('anular') && (
