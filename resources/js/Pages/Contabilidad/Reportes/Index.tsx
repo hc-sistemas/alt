@@ -530,44 +530,6 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
                     </div>
 
                 </div>
-
-                {/* INFO REPORTES */}
-                <div className="rounded-2xl border p-5"
-                     style={{ background: 'var(--bg-card)',
-                              borderColor: 'var(--border)' }}>
-                    <h3 className="font-semibold text-sm mb-3"
-                        style={{ color: 'var(--text-main)' }}>
-                        ℹ️ Sobre los reportes
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <p className="text-xs font-semibold mb-1"
-                               style={{ color: 'var(--text-main)' }}>
-                                Libro Diario
-                            </p>
-                            <p className="text-xs"
-                               style={{ color: 'var(--text-muted)' }}>
-                                Registro cronológico de todos los asientos
-                                contables activos. Incluye el detalle de
-                                partidas (debe/haber) de cada asiento.
-                                Útil para auditorías y revisiones del período.
-                            </p>
-                        </div>
-                        <div>
-                            <p className="text-xs font-semibold mb-1"
-                               style={{ color: 'var(--text-main)' }}>
-                                Mayor Contable
-                            </p>
-                            <p className="text-xs"
-                               style={{ color: 'var(--text-muted)' }}>
-                                Movimientos de una cuenta específica con
-                                saldo acumulado. Permite ver el saldo
-                                deudor o acreedor de cualquier cuenta
-                                del Plan de Cuentas en un rango de fechas.
-                            </p>
-                        </div>
-                    </div>
-                </div>
             </div>
 
             {/* MODAL PDF */}
