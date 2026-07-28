@@ -2182,15 +2182,16 @@ export default function ComprasIndex() {
 
                     Presupuesto (1 solo select aquí, no 3 como en Asientos, así que hay bastante
                     margen; sin botón de "Limpiar" — eliminado por completo, mismo criterio que
-                    quedó en Asientos Contables):
-                      Estado 200 + Desde 136 + Hasta 136 + buscador (208+36)
-                      + Excel 36 + PDF 36 = 788px + gaps (12px×5=60) = ~848px
+                    quedó en Asientos Contables; searchWidth="w-[130px]" para el mismo buscador
+                    compacto que Asientos, en vez del w-52 default):
+                      Estado 200 + Desde 136 + Hasta 136 + buscador (130+36)
+                      + Excel 36 + PDF 36 = 710px + gaps (12px×5=60) = ~770px
                     Cabe cómodo en el presupuesto de ~1100px con sidebar abierto. Igual se
                     envuelve en overflow-x-auto + minWidth como red de seguridad ante cambios
                     futuros, mismo patrón que Asientos.
                 */}
                 <div className="overflow-x-auto">
-                <div style={{ minWidth: '950px' }}>
+                <div style={{ minWidth: '900px' }}>
                 <FilterToolbar
                     search={{
                         value: buscar,
@@ -2198,6 +2199,7 @@ export default function ComprasIndex() {
                         onSearch: aplicarFiltros,
                         placeholder: 'N° doc, proveedor...',
                     }}
+                    searchWidth="w-[130px]"
                     onExport={() => window.location.href = `${route('compras.facturas.excel')}?estado=${estado}&fecha_desde=${fechaDesde}&fecha_hasta=${fechaHasta}`}
                     extraActions={
                         <button
@@ -2212,7 +2214,7 @@ export default function ComprasIndex() {
                     }
                 >
                     <select value={estado} onChange={e => setEstado(e.target.value)}
-                        className="input-field shrink-0"
+                        className="input-field shrink-0 text-xs"
                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '200px' }}>
                         <option value="">Todos los estados</option>
                         <option value="pendiente">Pendiente</option>
