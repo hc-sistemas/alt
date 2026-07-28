@@ -55,6 +55,26 @@ export default function ParametrosIndex({ grupos, cuentas }: Props) {
     const [codigoActivo, setCodigoActivo] = useState<string | null>(null)
     const [busqueda, setBusqueda]         = useState('')
 
+    // Buscador simple por nombre/código de parámetro — no un FilterToolbar
+    // completo (esto no es un listado con filtros, es un formulario de
+    // mapeo por categoría), solo para no tener que scrollear entre las 8
+    // categorías (Ventas, Compras, Inventario, Bancos, Nómina, SRI,
+    // Contabilidad, Gastos Operativos) buscando un parámetro puntual.
+    const [busquedaParametros, setBusquedaParametros] = useState('')
+
+    const gruposFiltrados = useMemo(() => {
+        const q = busquedaParametros.toLowerCase().trim()
+        if (!q) return grupos
+        const resultado: Record<string, Parametro[]> = {}
+        Object.entries(grupos).forEach(([nombreGrupo, params]) => {
+            const coincidencias = params.filter(p =>
+                p.descripcion.toLowerCase().includes(q) || p.codigo.toLowerCase().includes(q)
+            )
+            if (coincidencias.length > 0) resultado[nombreGrupo] = coincidencias
+        })
+        return resultado
+    }, [grupos, busquedaParametros])
+
     const cuentasFiltradas = useMemo(() => {
         const q = busqueda.toLowerCase().trim()
         if (!q) return cuentas.slice(0, 30)
@@ -141,7 +161,6 @@ export default function ParametrosIndex({ grupos, cuentas }: Props) {
         <AppLayout suppressFlash>
             <PageHeader
                 title="Parámetros Contables"
-                description="Mapeo de eventos operativos a cuentas del Plan de Cuentas"
                 breadcrumbs={[{ label: 'Contabilidad' }, { label: 'Parámetros Contables' }]}
                 actions={
                     <div className="flex items-center gap-2 flex-wrap">
@@ -158,9 +177,13 @@ export default function ParametrosIndex({ grupos, cuentas }: Props) {
                         {puede('editar') && (
                             <button onClick={autoconfigurar}
                                 className="flex items-center gap-2 px-4 py-2 rounded-xl
-                                           font-semibold text-sm border whitespace-nowrap transition-all hover:opacity-80"
-                                style={{ borderColor: 'var(--border)', color: 'var(--text-main)' }}>
-                                <Zap size={15} style={{ color: 'var(--primary)' }} />
+                                           font-semibold text-sm border whitespace-nowrap transition-colors hover:opacity-80"
+                                style={{
+                                    background:  'color-mix(in srgb, var(--primary) 8%, transparent)',
+                                    borderColor: 'color-mix(in srgb, var(--primary) 30%, transparent)',
+                                    color:       'var(--primary)',
+                                }}>
+                                <Zap size={15} />
                                 Autoconfigurar
                             </button>
                         )}
@@ -191,8 +214,25 @@ export default function ParametrosIndex({ grupos, cuentas }: Props) {
                     </div>
                 )}
 
+                {/* Buscador simple — no reemplaza el diseño de tarjetas por categoría,
+                    solo filtra qué parámetros se muestran dentro de cada una */}
+                <div className="input-with-icon max-w-sm">
+                    <Search size={14} className="input-icon" />
+                    <input type="text" value={busquedaParametros}
+                        onChange={e => setBusquedaParametros(e.target.value)}
+                        placeholder="Buscar parámetro por nombre o código..."
+                        className="input-field"
+                    />
+                </div>
+
+                {Object.keys(gruposFiltrados).length === 0 && (
+                    <div className="py-12 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
+                        Sin resultados para "{busquedaParametros}"
+                    </div>
+                )}
+
                 {/* GRUPOS */}
-                {Object.entries(grupos).map(([nombreGrupo, params]) => (
+                {Object.entries(gruposFiltrados).map(([nombreGrupo, params]) => (
                     <div key={nombreGrupo} className="rounded-2xl overflow-hidden border"
                          style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
 
@@ -207,7 +247,8 @@ export default function ParametrosIndex({ grupos, cuentas }: Props) {
                             </span>
                             <span className="text-xs px-2 py-0.5 rounded-full ml-auto"
                                   style={{ background: 'var(--bg-main)', color: 'var(--text-muted)' }}>
-                                {params.filter(p => valores[p.codigo]).length}/{params.length}
+                                {grupos[nombreGrupo].filter(p => valores[p.codigo]).length}/{grupos[nombreGrupo].length}
+                                {busquedaParametros && ` · ${params.length} encontrado(s)`}
                             </span>
                         </div>
 
