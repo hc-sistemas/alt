@@ -222,8 +222,16 @@ export default function ParametrosIndex({ grupos, cuentas }: Props) {
                     lupa a la derecha), aunque aquí no hace falta un handler de "buscar"
                     real: el filtrado ya es instantáneo (gruposFiltrados reacciona en
                     vivo a cada tecla) — el botón está solo por consistencia visual con
-                    el resto del sistema y quita el foco del input al presionarlo. */}
-                <div className="flex shrink-0" role="group">
+                    el resto del sistema y quita el foco del input al presionarlo.
+
+                    justify-end (no ml-auto): a diferencia del search group interno de
+                    FilterToolbar (que sí usa ml-auto porque es un flex ITEM dentro de
+                    OTRO contenedor flex con más hermanos), este div es un contenedor de
+                    bloque de nivel superior en esta página — por sí solo ya ocupa el
+                    100% del ancho, así que ml-auto no tendría espacio hacia el cual
+                    empujar. justify-end sí funciona porque actúa sobre cómo se acomodan
+                    SUS PROPIOS hijos dentro de ese ancho completo. */}
+                <div className="flex justify-end" role="group">
                     <div className="relative">
                         <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
                         <Input
