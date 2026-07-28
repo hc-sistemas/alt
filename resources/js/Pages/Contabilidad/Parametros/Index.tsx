@@ -1,9 +1,10 @@
-import { useState, useMemo } from 'react'
+import { useRef, useState, useMemo } from 'react'
 import { router, usePage } from '@inertiajs/react'
 import { toast, ToastContainer } from 'react-toastify'
 import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
+import { Input } from '@/Components/ui/input'
 import { Search, CheckCircle, AlertCircle, Zap, Save } from 'lucide-react'
 import { notify, swalBase } from '@/utils/contabilidad'
 import { usePermiso } from '@/Hooks/usePermiso'
@@ -61,6 +62,7 @@ export default function ParametrosIndex({ grupos, cuentas }: Props) {
     // categorías (Ventas, Compras, Inventario, Bancos, Nómina, SRI,
     // Contabilidad, Gastos Operativos) buscando un parámetro puntual.
     const [busquedaParametros, setBusquedaParametros] = useState('')
+    const inputBusquedaRef = useRef<HTMLInputElement>(null)
 
     const gruposFiltrados = useMemo(() => {
         const q = busquedaParametros.toLowerCase().trim()
@@ -215,14 +217,33 @@ export default function ParametrosIndex({ grupos, cuentas }: Props) {
                 )}
 
                 {/* Buscador simple — no reemplaza el diseño de tarjetas por categoría,
-                    solo filtra qué parámetros se muestran dentro de cada una */}
-                <div className="input-with-icon max-w-sm">
-                    <Search size={14} className="input-icon" />
-                    <input type="text" value={busquedaParametros}
-                        onChange={e => setBusquedaParametros(e.target.value)}
-                        placeholder="Buscar parámetro por nombre o código..."
-                        className="input-field"
-                    />
+                    solo filtra qué parámetros se muestran dentro de cada una. Mismo
+                    patrón visual que FilterToolbar (input compacto + botón cuadrado de
+                    lupa a la derecha), aunque aquí no hace falta un handler de "buscar"
+                    real: el filtrado ya es instantáneo (gruposFiltrados reacciona en
+                    vivo a cada tecla) — el botón está solo por consistencia visual con
+                    el resto del sistema y quita el foco del input al presionarlo. */}
+                <div className="flex shrink-0" role="group">
+                    <div className="relative">
+                        <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+                        <Input
+                            ref={inputBusquedaRef}
+                            value={busquedaParametros}
+                            onChange={e => setBusquedaParametros(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && e.currentTarget.blur()}
+                            placeholder="Buscar parámetro..."
+                            className="pl-9 w-52 rounded-r-none border-r-0"
+                        />
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => inputBusquedaRef.current?.blur()}
+                        className="flex items-center justify-center w-9 h-9 rounded-r-md border text-sm font-medium shrink-0"
+                        style={{ background: 'var(--primary)', color: 'black', borderColor: 'var(--primary)' }}
+                        title="Buscar"
+                    >
+                        <Search className="w-4 h-4" />
+                    </button>
                 </div>
 
                 {Object.keys(gruposFiltrados).length === 0 && (
