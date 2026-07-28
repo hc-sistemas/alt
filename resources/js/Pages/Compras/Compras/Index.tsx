@@ -442,6 +442,19 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
         [data.detalles, data.gasto_no_deducible]
     )
 
+    // N° Documento Interno: solo lectura, autogenerado. En "Nueva Factura" se
+    // consulta una VISTA PREVIA (no reserva el número — eso ocurre recién al
+    // guardar, en store()); en edición, se muestra el número real ya asignado.
+    const [numeroInternoPreview, setNumeroInternoPreview] = useState('')
+    useEffect(() => {
+        if (editando) return
+        fetch(route('compras.facturas.proximo-numero-interno'), { headers: { Accept: 'application/json' } })
+            .then(r => r.json())
+            .then((json: { numero?: string }) => setNumeroInternoPreview(json.numero ?? ''))
+            .catch(() => setNumeroInternoPreview(''))
+    }, [editando])
+    const numeroInterno = editando ? (editando.num_documento_interno ?? '—') : numeroInternoPreview
+
     const proveedorSel = proveedores.find(p => Number(p.id) === Number(data.proveedor_id))
 
     useEffect(() => {
@@ -670,6 +683,17 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
                         {tab === 'datos' && (
                             <div className="space-y-4 max-w-2xl">
 
+                                {/* N° Documento Interno — autogenerado, solo lectura. Distinto de
+                                    "# Documento" (la factura real del proveedor, más abajo). */}
+                                <div className="space-y-1.5">
+                                    <Label>N° Documento Interno</Label>
+                                    <Input value={numeroInterno || 'Generando…'} disabled readOnly />
+                                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                        Correlativo interno de Altamira para esta transacción — se asigna
+                                        automáticamente al guardar.
+                                    </p>
+                                </div>
+
                                 {/* Proveedor — para EXT mostrar solo internacionales */}
                                 <div className="space-y-1.5">
                                     <Label>
@@ -718,7 +742,7 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
                                         </select>
                                     </div>
                                     <div className="col-span-2 space-y-1.5">
-                                        <Label>N° Documento <span className="text-red-400">*</span></Label>
+                                        <Label># Documento <span className="text-red-400">*</span></Label>
                                         <Input value={data.num_documento}
                                             onChange={e => setData('num_documento', e.target.value)}
                                             error={errors.num_documento}

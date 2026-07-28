@@ -21,6 +21,7 @@ use App\Models\Retencion;
 use App\Models\RetencionDetalle;
 use App\Services\AsientoService;
 use App\Services\Contracts\InventarioServiceInterface;
+use App\Services\SecuencialService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -142,6 +143,16 @@ class CompraController extends Controller
         ]);
     }
 
+    // ── Vista previa del N° Documento Interno (solo lectura) para el modal
+    //    "Nueva Factura" — NO reserva el número, solo lo consulta. El número
+    //    real se genera y reserva en store() al guardar de verdad. ──────────
+    public function proximoNumeroInterno(): JsonResponse
+    {
+        $empresaId = session('empresa_activa_id');
+        $numero = $this->secuencialService->proximoInterno($empresaId, 'COMPRA', 'FC');
+        return response()->json(['numero' => $numero]);
+    }
+
     public function store(Request $request): RedirectResponse
     {
         $empresaId = session('empresa_activa_id');
@@ -220,15 +231,21 @@ class CompraController extends Controller
                     default => $request->sustento_tributario ? (int) $request->sustento_tributario : null,
                 };
 
+                // N° Documento Interno: correlativo propio de Altamira, autogenerado y
+                // de solo lectura — distinto de num_documento (la factura real del
+                // proveedor, digitada por el usuario, que NO se toca aquí).
+                $numDocumentoInterno = $this->secuencialService->siguienteInterno($empresaId, 'COMPRA', 'FC');
+
                 $compra = Compra::create([
-                    'empresa_id'          => $empresaId,
-                    'proveedor_id'        => $request->proveedor_id,
-                    'centro_costo_id'     => $request->centro_costo_id,
-                    'importacion_id'      => in_array($tipo, ['EXT', 'LIQ']) ? $request->importacion_id : null,
-                    'bodega_id'           => $request->bodega_id,
-                    'tipo_documento'      => $tipo,
-                    'num_documento'       => $request->num_documento,
-                    'num_autorizacion'    => in_array($tipo, ['EXT', 'TIK']) ? null : $request->num_autorizacion,
+                    'empresa_id'            => $empresaId,
+                    'proveedor_id'          => $request->proveedor_id,
+                    'centro_costo_id'       => $request->centro_costo_id,
+                    'importacion_id'        => in_array($tipo, ['EXT', 'LIQ']) ? $request->importacion_id : null,
+                    'bodega_id'             => $request->bodega_id,
+                    'tipo_documento'        => $tipo,
+                    'num_documento'         => $request->num_documento,
+                    'num_documento_interno' => $numDocumentoInterno,
+                    'num_autorizacion'      => in_array($tipo, ['EXT', 'TIK']) ? null : $request->num_autorizacion,
                     'fecha_emision'       => $request->fecha_emision,
                     'fecha_registro'      => now()->toDateString(),
                     'fecha_vencimiento'   => $fechaVenc,

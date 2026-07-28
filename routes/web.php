@@ -282,6 +282,7 @@ Route::middleware('auth')->group(function () {
             Route::get('/',                  [CompraController::class, 'index']) ->name('index');
             Route::get('/pdf',               [CompraController::class, 'pdf'])   ->name('pdf');
             Route::get('/excel',             [CompraController::class, 'excel']) ->name('excel');
+            Route::get('/proximo-numero-interno', [CompraController::class, 'proximoNumeroInterno']) ->name('proximo-numero-interno');
             Route::get('/{compra}',                    [CompraController::class, 'show'])              ->name('show');
             Route::get('/{compra}/pdf',               [CompraController::class, 'pdfIndividual'])    ->name('pdf-individual');
             Route::get('/{compra}/detalles',                        [CompraController::class, 'detallesCompra'])          ->name('detalles');
