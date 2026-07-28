@@ -555,7 +555,6 @@ export interface Compra {
     bodega_id: number | null
     tipo_documento: string
     num_documento: string
-    num_documento_interno: string | null
     num_autorizacion: string | null
     fecha_emision: string
     fecha_registro: string

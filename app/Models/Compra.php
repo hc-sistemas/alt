@@ -14,7 +14,7 @@ class Compra extends Model
 
     protected $fillable = [
         'empresa_id', 'centro_costo_id', 'proveedor_id', 'importacion_id',
-        'bodega_id', 'tipo_documento', 'num_documento', 'num_documento_interno', 'num_autorizacion',
+        'bodega_id', 'tipo_documento', 'num_documento', 'num_autorizacion',
         'fecha_emision', 'fecha_registro', 'fecha_vencimiento', 'dias_credito',
         'subtotal_0', 'subtotal_iva', 'total_iva', 'total_ice', 'total',
         'retencion_ir', 'retencion_iva',
