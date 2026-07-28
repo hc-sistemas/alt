@@ -156,7 +156,8 @@ const TIPO_DOC_LABELS: Record<string, string> = {
 
 // ─── Fila detalle editable ────────────────────────────────────────────────────
 
-const DETALLE_COLS = '130px 1fr 70px 70px 90px 80px 70px 80px 70px 80px 36px'
+const DETALLE_COLS = '130px 1fr 70px 85px 90px 80px 70px 80px 70px 80px 36px'
+const ROW_INPUT_HEIGHT = '32px'
 
 interface DetalleRowProps {
     detalle: DetalleItem
@@ -170,7 +171,7 @@ interface DetalleRowProps {
 
 function DetalleRow({ detalle, idx, cuentas, onChange, onRemove, onAbrirModal, tipoDocumento }: DetalleRowProps) {
     const { subtotal, iva, total } = calcDetalle(detalle)
-    const inputStyle = { background: 'var(--bg-card)', color: 'var(--text-main)', borderColor: 'var(--border)' }
+    const inputStyle = { background: 'var(--bg-card)', color: 'var(--text-main)', borderColor: 'var(--border)', height: ROW_INPUT_HEIGHT }
 
     return (
         <div className="border-b text-xs"
@@ -179,19 +180,19 @@ function DetalleRow({ detalle, idx, cuentas, onChange, onRemove, onAbrirModal, t
             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
 
             {/* ── Código ── */}
-            <div className="px-1 py-1.5">
+            <div className="px-2 py-2">
                 <button
                     type="button"
                     onClick={() => onAbrirModal(idx)}
                     title={detalle.codigo ? `${detalle.codigo} — clic para cambiar` : 'Clic para buscar producto'}
-                    className="w-full flex items-center justify-between gap-1 px-2 py-1 border rounded text-xs transition-all"
+                    className="w-full flex items-center justify-between gap-1 px-2 border rounded text-xs transition-all"
                     style={{
                         background: detalle.producto_id
                             ? 'color-mix(in srgb, #10b981 10%, var(--bg-main))'
                             : 'var(--bg-main)',
                         borderColor: detalle.producto_id ? '#10b981' : 'var(--border)',
                         cursor: 'pointer',
-                        minHeight: '28px',
+                        height: ROW_INPUT_HEIGHT,
                     }}>
                     <span style={{
                         fontFamily: detalle.codigo ? 'monospace' : 'inherit',
@@ -217,9 +218,9 @@ function DetalleRow({ detalle, idx, cuentas, onChange, onRemove, onAbrirModal, t
             </div>
 
             {/* ── Descripción ── */}
-            <div className="px-2 py-1.5">
+            <div className="px-2 py-2">
                 <input
-                    className="w-full px-2 py-1 border rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    className="w-full px-2 border rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500"
                     style={inputStyle}
                     value={detalle.descripcion}
                     onChange={e => onChange(idx, 'descripcion', e.target.value)}
@@ -240,7 +241,7 @@ function DetalleRow({ detalle, idx, cuentas, onChange, onRemove, onAbrirModal, t
                 "2.07"), lo que corrompe el valor mientras se edita. Con texto + regex se
                 controla el formato explícitamente: solo dígitos y un único punto decimal,
                 nunca comas ni separadores de miles. */}
-            <div className="px-1 py-1.5">
+            <div className="px-1 py-2">
                 <input
                     type="text" inputMode="decimal"
                     value={detalle.cantidad}
@@ -251,16 +252,19 @@ function DetalleRow({ detalle, idx, cuentas, onChange, onRemove, onAbrirModal, t
                         }
                     }}
                     placeholder="0.00"
-                    className="w-full px-2 py-1 border rounded text-xs text-center focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    className="w-full px-1.5 border rounded text-xs text-center focus:outline-none focus:ring-1 focus:ring-amber-500"
                     style={inputStyle}
                 />
-                <p className="text-center mt-0.5 truncate" style={{ fontSize: '9px', color: 'var(--text-muted)' }} title={detalle.unidad || undefined}>
+                <p className="text-center mt-1 truncate" style={{ fontSize: '9px', color: 'var(--text-muted)' }} title={detalle.unidad || undefined}>
                     {detalle.unidad || '—'}
                 </p>
             </div>
 
-            {/* ── Peso (kg) — opcional, alimenta el prorrateo "Peso" en Importaciones ── */}
-            <div className="px-1 py-1.5">
+            {/* ── Peso (kg) — opcional, alimenta el prorrateo "Peso" en Importaciones.
+                Columna ensanchada a 85px (antes 70px) porque a 70px el placeholder
+                "Opcional" se truncaba visualmente ("Opdona"); el texto del placeholder
+                se mantiene completo a propósito — el ancho es lo que se ajustó. ── */}
+            <div className="px-1 py-2">
                 <input
                     type="text" inputMode="decimal"
                     value={detalle.peso}
@@ -272,15 +276,15 @@ function DetalleRow({ detalle, idx, cuentas, onChange, onRemove, onAbrirModal, t
                     }}
                     placeholder="Opcional"
                     title="Peso real de esta línea (kg) — opcional"
-                    className="w-full px-2 py-1 border rounded text-xs text-center focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    className="w-full px-1.5 border rounded text-xs text-center focus:outline-none focus:ring-1 focus:ring-amber-500"
                     style={inputStyle}
                 />
             </div>
 
             {/* ── P. Unitario ── */}
-            <div className="px-1 py-1.5">
+            <div className="px-1 py-2">
                 <input type="number" step="0.0001" min={0}
-                    className="w-full px-2 py-1 border rounded text-xs text-right focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    className="w-full px-2 border rounded text-xs text-right focus:outline-none focus:ring-1 focus:ring-amber-500"
                     style={inputStyle}
                     value={detalle.precio_unitario}
                     onChange={e => onChange(idx, 'precio_unitario', e.target.value)}
@@ -288,7 +292,7 @@ function DetalleRow({ detalle, idx, cuentas, onChange, onRemove, onAbrirModal, t
             </div>
 
             {/* ── Descuento ── */}
-            <div className="px-1 py-1 flex flex-col gap-0.5 items-center">
+            <div className="px-1 py-2 flex flex-col gap-1 items-center">
                 <select
                     value={detalle.descuento_pct ?? '0'}
                     onChange={e => {
@@ -299,8 +303,8 @@ function DetalleRow({ detalle, idx, cuentas, onChange, onRemove, onAbrirModal, t
                         onChange(idx, 'descuento_pct', String(pct))
                         onChange(idx, 'descuento',     String(monto))
                     }}
-                    className="w-full rounded px-1 py-1 text-xs border text-center focus:outline-none focus:ring-1 focus:ring-amber-500"
-                    style={{ borderColor: 'var(--border)', background: 'var(--bg-main)', color: 'var(--text-main)' }}
+                    className="w-full rounded px-1 text-xs border text-center focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    style={{ borderColor: 'var(--border)', background: 'var(--bg-main)', color: 'var(--text-main)', height: ROW_INPUT_HEIGHT }}
                 >
                     <option value="0">0%</option>
                     <option value="5">5%</option>
@@ -317,16 +321,16 @@ function DetalleRow({ detalle, idx, cuentas, onChange, onRemove, onAbrirModal, t
             </div>
 
             {/* ── IVA % ── */}
-            <div className="px-1 py-1.5">
+            <div className="px-1 py-2">
                 {tipoDocumento === 'EXT' ? (
-                    <div className="w-full px-1 py-1 border rounded text-xs text-center cursor-not-allowed opacity-60"
+                    <div className="w-full px-1 border rounded text-xs text-center cursor-not-allowed opacity-60 flex items-center justify-center"
                         style={{ ...inputStyle, background: 'var(--bg-main)' }}
                         title="Facturas del exterior no generan IVA local">
                         0%
                     </div>
                 ) : (
                     <select
-                        className="w-full px-1 py-1 border rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500"
+                        className="w-full px-1 border rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500"
                         style={inputStyle}
                         value={detalle.porcentaje_iva}
                         onChange={e => onChange(idx, 'porcentaje_iva', e.target.value)}>
@@ -337,19 +341,19 @@ function DetalleRow({ detalle, idx, cuentas, onChange, onRemove, onAbrirModal, t
             </div>
 
             {/* ── Subtotal ── */}
-            <div className="px-2 py-1.5 text-right font-medium tabular-nums"
+            <div className="px-2 py-2 text-right font-medium tabular-nums"
                 style={{ color: 'var(--text-main)' }}>
                 {subtotal.toFixed(2)}
             </div>
 
             {/* ── IVA ── */}
-            <div className="px-2 py-1.5 text-right tabular-nums"
+            <div className="px-2 py-2 text-right tabular-nums"
                 style={{ color: 'var(--text-muted)' }}>
                 {iva.toFixed(2)}
             </div>
 
             {/* ── Total ── */}
-            <div className="px-2 py-1.5 text-right font-bold tabular-nums"
+            <div className="px-2 py-2 text-right font-bold tabular-nums"
                 style={{ color: 'var(--primary)' }}>
                 {total.toFixed(2)}
             </div>
@@ -658,7 +662,7 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
     return (
         <>
         <div className="modal-overlay" onClick={onClose}>
-            <div className="modal-card max-w-4xl max-h-[90vh]" onClick={e => e.stopPropagation()}>
+            <div className="modal-card max-w-5xl max-h-[90vh]" onClick={e => e.stopPropagation()}>
 
                 {/* Header */}
                 <div className="modal-header shrink-0">
@@ -987,10 +991,11 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
 
                         {/* ── Tab 2: Detalle ── */}
                         {tab === 'detalle' && (
-                            <div className="space-y-4">
-                                <div className="rounded-lg border overflow-x-auto" style={{ borderColor: 'var(--border)' }}>
-                                    {/* Header */}
-                                    <div className="border-b text-[10px] font-semibold uppercase tracking-wider"
+                            <div className="space-y-5">
+                                <div className="rounded-lg border overflow-x-auto" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
+                                    {/* Header — mismo padding horizontal/vertical que las filas (DetalleRow)
+                                        para que encabezado y columnas queden perfectamente alineados. */}
+                                    <div className="border-b text-xs font-semibold uppercase tracking-wide"
                                         style={{
                                             display: 'grid', gridTemplateColumns: DETALLE_COLS,
                                             alignItems: 'center',
@@ -998,16 +1003,16 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
                                             background: 'rgba(245,158,11,0.05)',
                                             color: 'var(--text-muted)',
                                         }}>
-                                        <div className="px-1 py-2">Código</div>
-                                        <div className="px-2 py-2">Descripción</div>
-                                        <div className="px-1 py-2 text-right">Cant.</div>
-                                        <div className="px-1 py-2 text-right">Peso (kg)</div>
-                                        <div className="px-1 py-2 text-right">P. Unit.</div>
-                                        <div className="px-1 py-2 text-center">Desc.</div>
-                                        <div className="px-1 py-2 text-center">IVA%</div>
-                                        <div className="px-2 py-2 text-right">Subtotal</div>
-                                        <div className="px-2 py-2 text-right">IVA</div>
-                                        <div className="px-2 py-2 text-right">Total</div>
+                                        <div className="px-2 py-2.5">Código</div>
+                                        <div className="px-2 py-2.5">Descripción</div>
+                                        <div className="px-1 py-2.5 text-right">Cant.</div>
+                                        <div className="px-1 py-2.5 text-right">Peso (kg)</div>
+                                        <div className="px-1 py-2.5 text-right">P. Unit.</div>
+                                        <div className="px-1 py-2.5 text-center">Desc.</div>
+                                        <div className="px-1 py-2.5 text-center">IVA%</div>
+                                        <div className="px-2 py-2.5 text-right">Subtotal</div>
+                                        <div className="px-2 py-2.5 text-right">IVA</div>
+                                        <div className="px-2 py-2.5 text-right">Total</div>
                                         <div />
                                     </div>
                                     {/* Rows */}
@@ -1030,39 +1035,47 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
                                 </button>
 
                                 {/* Totales */}
-                                <div className="ml-auto max-w-xs rounded-xl border p-4 space-y-2"
+                                <div className="ml-auto max-w-sm rounded-xl border overflow-hidden"
                                     style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
-                                    <div className="flex justify-between text-sm">
-                                        <span style={{ color: 'var(--text-muted)' }}>Subtotal 0%</span>
-                                        <span className="font-medium" style={{ color: 'var(--text-main)' }}>
-                                            ${totales.subtotal0.toFixed(2)}
-                                        </span>
-                                    </div>
-                                    <div className="flex justify-between text-sm">
-                                        <span style={{ color: 'var(--text-muted)' }}>Subtotal gravado</span>
-                                        <span className="font-medium" style={{ color: 'var(--text-main)' }}>
-                                            ${totales.subtotalIva.toFixed(2)}
-                                        </span>
-                                    </div>
-                                    <div className="flex justify-between text-sm">
-                                        <span style={{ color: 'var(--text-muted)' }}>
-                                            IVA {data.gasto_no_deducible ? '(no deducible)' : ''}
-                                        </span>
-                                        <span className={cn('font-medium', data.gasto_no_deducible && 'line-through opacity-50')}
-                                            style={{ color: 'var(--text-main)' }}>
-                                            ${totales.totalIva.toFixed(2)}
-                                        </span>
-                                    </div>
-                                    <div className="flex justify-between text-sm font-bold border-t pt-2"
-                                        style={{ borderColor: 'var(--border)', color: 'var(--primary)' }}>
-                                        <span>TOTAL</span>
-                                        <span>${totales.total.toFixed(2)}</span>
-                                    </div>
-                                    {Number(data.dias_credito) > 0 && (
-                                        <p className="text-xs text-center" style={{ color: 'var(--text-muted)' }}>
-                                            CxP: ${totales.total.toFixed(2)} a {data.dias_credito} días
+                                    <div className="px-4 py-2.5 border-b"
+                                        style={{ borderColor: 'var(--border)', background: 'var(--bg-main)' }}>
+                                        <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+                                            Resumen
                                         </p>
-                                    )}
+                                    </div>
+                                    <div className="p-4 space-y-2.5">
+                                        <div className="flex justify-between text-sm">
+                                            <span style={{ color: 'var(--text-muted)' }}>Subtotal 0%</span>
+                                            <span className="font-medium tabular-nums" style={{ color: 'var(--text-main)' }}>
+                                                ${totales.subtotal0.toFixed(2)}
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between text-sm">
+                                            <span style={{ color: 'var(--text-muted)' }}>Subtotal gravado</span>
+                                            <span className="font-medium tabular-nums" style={{ color: 'var(--text-main)' }}>
+                                                ${totales.subtotalIva.toFixed(2)}
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between text-sm">
+                                            <span style={{ color: 'var(--text-muted)' }}>
+                                                IVA {data.gasto_no_deducible ? '(no deducible)' : ''}
+                                            </span>
+                                            <span className={cn('font-medium tabular-nums', data.gasto_no_deducible && 'line-through opacity-50')}
+                                                style={{ color: 'var(--text-main)' }}>
+                                                ${totales.totalIva.toFixed(2)}
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between text-base font-bold border-t pt-3 mt-1 tabular-nums"
+                                            style={{ borderColor: 'var(--border)', color: 'var(--primary)' }}>
+                                            <span>TOTAL</span>
+                                            <span>${totales.total.toFixed(2)}</span>
+                                        </div>
+                                        {Number(data.dias_credito) > 0 && (
+                                            <p className="text-xs text-center pt-1" style={{ color: 'var(--text-muted)' }}>
+                                                CxP: ${totales.total.toFixed(2)} a {data.dias_credito} días
+                                            </p>
+                                        )}
+                                    </div>
                                 </div>
 
                                 {errors.detalles && (
