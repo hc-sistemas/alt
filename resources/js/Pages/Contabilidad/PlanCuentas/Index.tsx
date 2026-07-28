@@ -935,14 +935,13 @@ export default function PlanCuentasIndex() {
 
             <PageHeader
                 title="Plan de Cuentas"
-                description="Estructura contable oficial de Altamira Light & Sound"
                 breadcrumbs={[
                     { label: 'Contabilidad' },
                     { label: 'Plan de Cuentas' },
                 ]}
                 actions={
                     puede('crear') ? (
-                        <Button size="sm" onClick={() => setModal({ open: true, padre: null })}>
+                        <Button size="sm" onClick={() => setModal({ open: true, padre: null })} style={{ color: '#000' }}>
                             <Plus className="w-4 h-4" />
                             Nueva
                         </Button>
