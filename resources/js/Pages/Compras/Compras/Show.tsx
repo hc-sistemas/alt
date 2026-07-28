@@ -105,11 +105,42 @@ export default function CompraShow() {
     const [showAnular, setShowAnular] = useState(false)
     const [modalPdf,   setModalPdf]   = useState(false)
     const [urlPdf,     setUrlPdf]     = useState('')
+    const [cargandoPdf, setCargandoPdf] = useState(false)
 
     useEffect(() => {
         if (flash?.success) notify.ok(flash.success)
         if (flash?.error)   notify.error(flash.error)
     }, [flash?.success, flash?.error])
+
+    // Se trae el PDF como blob (fetch) en vez de apuntar el <iframe> directo a la
+    // URL del backend — mismo patrón que Asientos Contables / el listado de
+    // Facturas de Compra: un blob: URL siempre se muestra embebido, sin
+    // depender de si el navegador decide forzar la descarga en el iframe.
+    const abrirPdf = async (url: string) => {
+        setModalPdf(true)
+        setCargandoPdf(true)
+        setUrlPdf('')
+        try {
+            const res = await fetch(url, { headers: { Accept: 'application/pdf' } })
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ message: null })) as { message?: string | null }
+                throw new Error(err.message ?? 'No se pudo generar el PDF.')
+            }
+            const blob = await res.blob()
+            setUrlPdf(URL.createObjectURL(blob))
+        } catch (e) {
+            notify.error(e instanceof Error ? e.message : 'No se pudo generar el PDF. Intenta de nuevo.')
+            setModalPdf(false)
+        } finally {
+            setCargandoPdf(false)
+        }
+    }
+
+    const cerrarModalPdf = () => {
+        if (urlPdf) URL.revokeObjectURL(urlPdf)
+        setModalPdf(false)
+        setUrlPdf('')
+    }
 
     const confirmarAnulacion = () => setShowAnular(true)
 
@@ -226,7 +257,7 @@ export default function CompraShow() {
                             <ChevronLeft size={15} /> Volver
                         </Link>
                         <button
-                            onClick={() => { setUrlPdf(route('compras.facturas.pdf-individual', compra.id)); setModalPdf(true) }}
+                            onClick={() => abrirPdf(route('compras.facturas.pdf-individual', compra.id))}
                             className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90"
                             style={{ background: '#ef4444' }}>
                             <Printer size={15} /> PDF
@@ -528,7 +559,7 @@ export default function CompraShow() {
             {modalPdf && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
                      style={{ background: 'rgba(0,0,0,0.85)' }}
-                     onClick={() => setModalPdf(false)}>
+                     onClick={cerrarModalPdf}>
                     <div className="w-full max-w-4xl rounded-2xl overflow-hidden shadow-2xl flex flex-col"
                          style={{ background: 'var(--bg-card)', height: '90vh' }}
                          onClick={e => e.stopPropagation()}>
@@ -540,19 +571,27 @@ export default function CompraShow() {
                                 Compra {compra.num_documento}
                             </h3>
                             <div className="flex items-center gap-2">
-                                <a href={urlPdf} download target="_blank"
-                                   className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-all hover:opacity-90"
-                                   style={{ background: '#ef4444' }}>
-                                    <Download size={13} /> Descargar
-                                </a>
-                                <button onClick={() => setModalPdf(false)}
+                                {urlPdf && (
+                                    <a href={urlPdf} download={`compra-${compra.num_documento}.pdf`}
+                                       className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-all hover:opacity-90"
+                                       style={{ background: '#ef4444' }}>
+                                        <Download size={13} /> Descargar
+                                    </a>
+                                )}
+                                <button onClick={cerrarModalPdf}
                                     className="px-3 py-1.5 rounded-lg text-xs font-semibold border hover:opacity-80"
                                     style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
                                     ✕ Cerrar
                                 </button>
                             </div>
                         </div>
-                        <iframe src={urlPdf} className="flex-1 w-full border-0" title="PDF Compra" />
+                        {cargandoPdf ? (
+                            <div className="flex-1 flex items-center justify-center text-sm" style={{ color: 'var(--text-muted)' }}>
+                                Generando PDF…
+                            </div>
+                        ) : (
+                            <iframe src={urlPdf} className="flex-1 w-full border-0" title="PDF Compra" />
+                        )}
                     </div>
                 </div>
             )}

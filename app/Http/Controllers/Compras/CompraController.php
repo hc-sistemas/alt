@@ -1429,13 +1429,32 @@ class CompraController extends Controller
         return back()->with('success', "Factura {$numero} eliminada correctamente.");
     }
 
-    public function pdf(Request $request): \Illuminate\Http\Response
+    // DomPDF agota memory_limit (512MB) renderizando tablas grandes — confirmado
+    // que ~1200 filas ya crashean en Cellmap::resolve_border() con un 500 sin
+    // ningún log (el fatal error por memoria ocurre durante el shutdown, antes de
+    // que el logger pueda escribir). Con miles de compras reales en producción,
+    // un reporte sin filtro (o con un rango muy amplio) intentaba renderizar el
+    // histórico completo y crasheaba en silencio — el iframe del modal quedaba en
+    // blanco sin ningún feedback. 800 filas quedó calibrado con margen cómodo
+    // (600 filas ~10s y ~2.2MB de HTML, sin problema).
+    private const MAX_FILAS_PDF = 800;
+
+    public function pdf(Request $request): \Illuminate\Http\Response|JsonResponse
     {
         $empresaId = session('empresa_activa_id');
         $query     = Compra::with('proveedor')->where('empresa_id', $empresaId);
         if ($request->filled('estado'))      { $query->where('estado', $request->estado); }
         if ($request->filled('fecha_desde')) { $query->where('fecha_emision', '>=', $request->fecha_desde); }
         if ($request->filled('fecha_hasta')) { $query->where('fecha_emision', '<=', $request->fecha_hasta); }
+
+        $total = (clone $query)->count();
+        if ($total > self::MAX_FILAS_PDF) {
+            return response()->json([
+                'message' => "Hay {$total} facturas con estos filtros — demasiadas para generar un PDF de una vez " .
+                    '(máximo ' . self::MAX_FILAS_PDF . '). Aplica un filtro de estado o un rango de fechas más específico.',
+            ], 422);
+        }
+
         $compras = $query->orderByDesc('fecha_emision')->get();
         $empresa = Empresa::find($empresaId);
         $pdf = Pdf::loadView('pdf.compras', compact('compras', 'empresa'))->setPaper('a4', 'landscape');

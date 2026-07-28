@@ -1928,7 +1928,44 @@ export default function ComprasIndex() {
     const [fechaHasta, setFechaHasta] = useState(filtros.fecha_hasta ?? '')
     const [modalPdf, setModalPdf] = useState(false)
     const [urlPdf,   setUrlPdf]   = useState('')
-    const abrirPdf = (url: string) => { setUrlPdf(url); setModalPdf(true) }
+    const [cargandoPdf, setCargandoPdf] = useState(false)
+
+    // Se trae el PDF como blob (fetch) en vez de apuntar el <iframe> directo a la
+    // URL del backend: aunque el backend ya responde con Content-Disposition:
+    // inline, algunos navegadores igual fuerzan la descarga o dejan el iframe en
+    // blanco según su propia configuración de manejo de PDF. Un blob: URL siempre
+    // se muestra embebido — mismo patrón que Asientos Contables.
+    // Si `url` ya es un blob: (algunos llamadores, como EtiquetasModal, generan el
+    // PDF vía POST con body y ya convierten a blob ellos mismos), se usa directo.
+    const abrirPdf = async (url: string) => {
+        setModalPdf(true)
+        if (url.startsWith('blob:')) {
+            setUrlPdf(url)
+            return
+        }
+        setCargandoPdf(true)
+        setUrlPdf('')
+        try {
+            const res = await fetch(url, { headers: { Accept: 'application/pdf' } })
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ message: null })) as { message?: string | null }
+                throw new Error(err.message ?? 'No se pudo generar el PDF.')
+            }
+            const blob = await res.blob()
+            setUrlPdf(URL.createObjectURL(blob))
+        } catch (e) {
+            notify.error(e instanceof Error ? e.message : 'No se pudo generar el PDF. Intenta de nuevo.')
+            setModalPdf(false)
+        } finally {
+            setCargandoPdf(false)
+        }
+    }
+
+    const cerrarModalPdf = () => {
+        if (urlPdf) URL.revokeObjectURL(urlPdf)
+        setModalPdf(false)
+        setUrlPdf('')
+    }
 
     function reimprimir(c: Compra) {
         setModal({ type: 'reimprimir-etiquetas', compra: c })
@@ -2616,7 +2653,7 @@ export default function ComprasIndex() {
             {modalPdf && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
                      style={{ background: 'rgba(0,0,0,0.85)' }}
-                     onClick={() => setModalPdf(false)}>
+                     onClick={cerrarModalPdf}>
                     <div className="w-full max-w-5xl rounded-2xl overflow-hidden shadow-2xl flex flex-col"
                          style={{ background: 'var(--bg-card)', height: '90vh' }}
                          onClick={e => e.stopPropagation()}>
@@ -2628,19 +2665,27 @@ export default function ComprasIndex() {
                                 Reporte de Facturas de Compra
                             </h3>
                             <div className="flex items-center gap-2">
-                                <a href={urlPdf} download target="_blank"
-                                   className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-all hover:opacity-90"
-                                   style={{ background: '#ef4444' }}>
-                                    <Download size={13} /> Descargar
-                                </a>
-                                <button onClick={() => setModalPdf(false)}
+                                {urlPdf && (
+                                    <a href={urlPdf} download={`facturas-compra-${new Date().toISOString().slice(0, 10)}.pdf`}
+                                       className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-all hover:opacity-90"
+                                       style={{ background: '#ef4444' }}>
+                                        <Download size={13} /> Descargar
+                                    </a>
+                                )}
+                                <button onClick={cerrarModalPdf}
                                     className="px-3 py-1.5 rounded-lg text-xs font-semibold border hover:opacity-80"
                                     style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
                                     ✕ Cerrar
                                 </button>
                             </div>
                         </div>
-                        <iframe src={urlPdf} className="flex-1 w-full border-0" title="Reporte PDF Compras" />
+                        {cargandoPdf ? (
+                            <div className="flex-1 flex items-center justify-center text-sm" style={{ color: 'var(--text-muted)' }}>
+                                Generando PDF…
+                            </div>
+                        ) : (
+                            <iframe src={urlPdf} className="flex-1 w-full border-0" title="Reporte PDF Compras" />
+                        )}
                     </div>
                 </div>
             )}
