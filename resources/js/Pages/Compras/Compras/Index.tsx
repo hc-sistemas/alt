@@ -1928,7 +1928,6 @@ export default function ComprasIndex() {
 
             <PageHeader
                 title="Facturas de Compra"
-                description="Registro y gestión de facturas, liquidaciones y documentos de compra"
                 breadcrumbs={[{ label: 'Compras' }, { label: 'Facturas' }]}
                 actions={
                     <div className="flex items-center gap-2 flex-wrap shrink-0">
@@ -1951,6 +1950,26 @@ export default function ComprasIndex() {
             />
 
             <div className="px-6 pt-6 mb-2">
+                {/*
+                    Ancho vía `style.width` inline a propósito, NO clases Tailwind (w-36 etc.):
+                    `.input-field` (app.css) declara `width:100%` fuera de cualquier @layer, y
+                    las utilidades de Tailwind v4 viven dentro de su @layer utilities interno —
+                    por reglas de CSS Cascade Layers, lo no-layereado siempre gana sobre lo
+                    layereado sin importar especificidad ni orden, así que un w-36 de Tailwind
+                    nunca puede ganarle a `.input-field`. Solo un estilo inline (fuera de la
+                    cascada) lo puede sobreescribir de forma confiable — mismo hallazgo y mismo
+                    fix que en Asientos Contables.
+
+                    Presupuesto (1 solo select aquí, no 3 como en Asientos, así que hay bastante
+                    margen sin necesidad de acortar labels ni tocar el buscador/Limpiar):
+                      Estado 200 + Desde 136 + Hasta 136 + Limpiar ~55 + buscador (208+36)
+                      + Excel 36 + PDF 36 = 843px + gaps (12px×6=72) = ~915px
+                    Cabe cómodo en el presupuesto de ~1100px con sidebar abierto. Igual se
+                    envuelve en overflow-x-auto + minWidth como red de seguridad ante cambios
+                    futuros, mismo patrón que Asientos.
+                */}
+                <div className="overflow-x-auto">
+                <div style={{ minWidth: '950px' }}>
                 <FilterToolbar
                     search={{
                         value: buscar,
@@ -1973,24 +1992,32 @@ export default function ComprasIndex() {
                 >
                     <select value={estado} onChange={e => setEstado(e.target.value)}
                         className="input-field shrink-0"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '200px' }}>
                         <option value="">Todos los estados</option>
                         <option value="pendiente">Pendiente</option>
                         <option value="activa">Activa</option>
                         <option value="anulada">Anulada</option>
                     </select>
-                    <input type="date" value={fechaDesde} onChange={e => setFechaDesde(e.target.value)}
-                        className="input-field shrink-0 w-36"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }} />
-                    <input type="date" value={fechaHasta} onChange={e => setFechaHasta(e.target.value)}
-                        className="input-field shrink-0 w-36"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }} />
+                    <div className="flex flex-col gap-0.5 shrink-0">
+                        <span className="text-[11px] leading-none" style={{ color: 'var(--text-muted)' }}>Desde</span>
+                        <input type="date" value={fechaDesde} onChange={e => setFechaDesde(e.target.value)}
+                            className="input-field text-xs"
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '136px' }} />
+                    </div>
+                    <div className="flex flex-col gap-0.5 shrink-0">
+                        <span className="text-[11px] leading-none" style={{ color: 'var(--text-muted)' }}>Hasta</span>
+                        <input type="date" value={fechaHasta} onChange={e => setFechaHasta(e.target.value)}
+                            className="input-field text-xs"
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '136px' }} />
+                    </div>
                     {hayFiltros && (
                         <button type="button" onClick={limpiar} className="text-sm underline shrink-0" style={{ color: 'var(--text-muted)' }}>
                             Limpiar
                         </button>
                     )}
                 </FilterToolbar>
+                </div>
+                </div>
             </div>
 
             {/* Tabla */}
