@@ -39,36 +39,49 @@ class CompraController extends Controller
     public function __construct(
         private AsientoService $asientoService,
         private InventarioServiceInterface $inventario,
+        private SecuencialService $secuencialService,
     ) {}
 
     public function index(Request $request): Response
     {
         $empresaId = session('empresa_activa_id');
-        $query = Compra::with(['proveedor', 'centroCosto', 'recepcionBodega:id,compra_id'])
-            ->withExists('etiquetasProductos as has_etiquetas')
-            ->withCount(['detalles as tiene_productos_codificados' => fn($q) => $q->whereNotNull('producto_id')])
-            ->where('empresa_id', $empresaId);
 
-        if ($request->filled('buscar')) {
-            $q = $request->buscar;
-            $query->where(fn($qb) =>
-                $qb->where('num_documento', 'ilike', "%{$q}%")
-                   ->orWhere('concepto', 'ilike', "%{$q}%")
-                   ->orWhereHas('proveedor', fn($p) =>
-                       $p->where('razon_social', 'ilike', "%{$q}%"))
-            );
-        }
-        if ($request->filled('estado')) {
-            $query->where('estado', $request->estado);
-        }
-        if ($request->filled('fecha_desde')) {
-            $query->where('fecha_emision', '>=', $request->fecha_desde);
-        }
-        if ($request->filled('fecha_hasta')) {
-            $query->where('fecha_emision', '<=', $request->fecha_hasta);
+        // Carga bajo demanda: mismo patrón que Asientos Contables — la query
+        // paginada solo se ejecuta cuando el usuario dispara una búsqueda
+        // explícita (botón lupa del FilterToolbar), nunca en la carga inicial
+        // de la página. Los catálogos de apoyo (proveedores, productos, etc.)
+        // sí se cargan siempre: los necesita el modal "Nueva Factura" y los
+        // selects de filtro incluso antes de buscar.
+        $compras = null;
+
+        if ($request->boolean('buscado')) {
+            $query = Compra::with(['proveedor', 'centroCosto', 'recepcionBodega:id,compra_id'])
+                ->withExists('etiquetasProductos as has_etiquetas')
+                ->withCount(['detalles as tiene_productos_codificados' => fn($q) => $q->whereNotNull('producto_id')])
+                ->where('empresa_id', $empresaId);
+
+            if ($request->filled('buscar')) {
+                $q = $request->buscar;
+                $query->where(fn($qb) =>
+                    $qb->where('num_documento', 'ilike', "%{$q}%")
+                       ->orWhere('concepto', 'ilike', "%{$q}%")
+                       ->orWhereHas('proveedor', fn($p) =>
+                           $p->where('razon_social', 'ilike', "%{$q}%"))
+                );
+            }
+            if ($request->filled('estado')) {
+                $query->where('estado', $request->estado);
+            }
+            if ($request->filled('fecha_desde')) {
+                $query->where('fecha_emision', '>=', $request->fecha_desde);
+            }
+            if ($request->filled('fecha_hasta')) {
+                $query->where('fecha_emision', '<=', $request->fecha_hasta);
+            }
+
+            $compras = $query->orderByDesc('fecha_emision')->paginate(20)->withQueryString();
         }
 
-        $compras     = $query->orderByDesc('fecha_emision')->paginate(20)->withQueryString();
         $proveedores = Proveedor::where('empresa_id', $empresaId)
             ->activos()->orderBy('razon_social')
             ->get(['id', 'razon_social', 'nombre_comercial',

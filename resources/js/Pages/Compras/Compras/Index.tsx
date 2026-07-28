@@ -12,7 +12,7 @@ import { cn } from '@/lib/utils'
 import { formatFecha } from '@/utils/contabilidad'
 import {
     Plus, X, FileText, Download, ChevronLeft, ChevronRight, ChevronDown,
-    Eye, ShoppingCart, Trash2, CreditCard, Pencil,
+    Eye, ShoppingCart, Trash2, CreditCard, Pencil, Search,
     Barcode, CheckCircle, XCircle, RefreshCw, Upload, AlertTriangle,
 } from 'lucide-react'
 import type { Compra, Importacion, Proveedor, CentroCosto, PlanCuenta, Bodega, PageProps, PaginatedData, Producto, EtiquetaDetalleData, EtiquetaGrupoProducto } from '@/types'
@@ -46,7 +46,7 @@ interface PrefillExterior {
 }
 
 interface Props extends PageProps {
-    compras: PaginatedData<Compra>
+    compras: PaginatedData<Compra> | null
     proveedores: Pick<Proveedor, 'id' | 'razon_social' | 'nombre_comercial' | 'identificacion' | 'tiene_credito' | 'dias_credito' | 'tipo'>[]
     centros: Pick<CentroCosto, 'id' | 'nombre' | 'codigo'>[]
     cuentas: Pick<PlanCuenta, 'id' | 'codigo' | 'nombre'>[]
@@ -1869,12 +1869,16 @@ export default function ComprasIndex() {
     const { puede } = usePermiso('compras')
 
     // Estado local de filas — permite actualizar una fila sin recargar la página
-    const [comprasData, setComprasData] = useState(compras.data)
+    const [comprasData, setComprasData] = useState(compras?.data ?? [])
     const actualizarCompra = (id: number, cambios: Partial<Compra>) =>
         setComprasData(prev => prev.map(c => c.id === id ? { ...c, ...cambios } : c))
 
     // Sincronizar cuando Inertia actualiza los props (filtros, paginación)
-    useEffect(() => { setComprasData(compras.data) }, [compras])
+    useEffect(() => { setComprasData(compras?.data ?? []) }, [compras])
+
+    // Carga bajo demanda: mismo patrón que Asientos Contables — `compras` es
+    // `null` hasta que el usuario presiona Buscar (aplicarFiltros manda `buscado=1`).
+    const haBuscado = compras !== null
 
     const [modal, setModal] = useState<ModalState>(prefillExterior ? { type: 'nueva' } : { type: 'none' })
     const [modalXml, setModalXml] = useState(false)
@@ -2137,6 +2141,7 @@ export default function ComprasIndex() {
             ...(estado     && { estado }),
             ...(fechaDesde && { fecha_desde: fechaDesde }),
             ...(fechaHasta && { fecha_hasta: fechaHasta }),
+            buscado: '1',
         }, { preserveState: true, replace: true })
     }
 
@@ -2238,7 +2243,20 @@ export default function ComprasIndex() {
                 </div>
             </div>
 
+            {/* Estado inicial: aún no se ha buscado (carga bajo demanda) */}
+            {!haBuscado && (
+                <div className="px-6 pb-6">
+                    <div className="text-center py-16">
+                        <Search className="w-12 h-12 mx-auto mb-4 opacity-30" style={{ color: 'var(--text-muted)' }} />
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                            Ajusta los filtros y presiona Buscar para consultar las facturas.
+                        </p>
+                    </div>
+                </div>
+            )}
+
             {/* Tabla */}
+            {haBuscado && (
             <div className="px-6 pb-6">
                 <div className="border rounded-xl overflow-hidden"
                     style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
@@ -2463,9 +2481,10 @@ export default function ComprasIndex() {
                     ))}
                 </div>
             </div>
+            )}
 
             {/* Paginación */}
-            {compras.meta && compras.meta.last_page > 1 && (
+            {compras && compras.meta && compras.meta.last_page > 1 && (
                 <div className="flex items-center justify-between px-6 pb-6">
                     <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
                         Mostrando {compras.meta.from}–{compras.meta.to} de {compras.meta.total} registros
