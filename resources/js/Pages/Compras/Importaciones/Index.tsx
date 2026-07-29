@@ -3,6 +3,7 @@ import { router, usePage, useForm, Head } from '@inertiajs/react'
 import { toast, ToastContainer } from 'react-toastify'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
+import FilterToolbar from '@/Components/shared/FilterToolbar'
 import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
@@ -11,7 +12,7 @@ import axios from '@/lib/axios'
 import { cn } from '@/lib/utils'
 import {
     Plus, Pencil, Package, Plane, Anchor, CheckCircle2,
-    X, DollarSign, Loader2, Eye, ExternalLink, AlertCircle, Copy,
+    X, DollarSign, Loader2, Eye, ExternalLink, AlertCircle, Copy, Search,
 } from 'lucide-react'
 import type { Importacion, Proveedor, PageProps } from '@/types'
 import { usePermiso } from '@/Hooks/usePermiso'
@@ -23,9 +24,18 @@ interface ImportacionRow extends Omit<Importacion, 'proveedor'> {
     proveedor: string | null
 }
 
+interface Filtros {
+    estado?: string
+    proveedor_id?: string
+    fecha_desde?: string
+    fecha_hasta?: string
+    buscar?: string
+}
+
 interface Props extends PageProps {
-    importaciones: ImportacionRow[]
+    importaciones: ImportacionRow[] | null
     proveedores: Pick<Proveedor, 'id' | 'razon_social' | 'pais' | 'divisa' | 'tipo'>[]
+    filtros: Filtros
 }
 
 const CONCEPTOS_COSTO = [
@@ -65,6 +75,34 @@ interface DetalleData {
     productos: ProductoImportado[]
     gastos: GastoImportado[]
     totales: { fob: number; gastos: number; total: number }
+}
+
+// ─── Previsualización de Liquidación (auditoría 2026-07-29, Parte 3.1) ────────
+
+interface ProductoPreview {
+    producto_id: number
+    codigo: string
+    nombre: string
+    cantidad: number
+    pct_peso: number | null
+    costo_actual: number
+    costo_nuevo: number
+    pvd_sugerido: number | null
+    pvp_sugerido: number | null
+}
+
+interface PreviewLiquidacionData {
+    metodo_prorrateo: string
+    costo_fob: number
+    costos_extra_total: number
+    costos_extra_detalle: { concepto: string; num_documento: string; monto: number }[]
+    costo_total_estimado: number
+    factor_importacion: number | null
+    suma_pct_peso: number | null
+    comision_pct: number
+    margen_pvd_pct: number
+    margen_pvp_pct: number
+    productos: ProductoPreview[]
 }
 
 // ─── Resultado de Liquidación ─────────────────────────────────────────────────
@@ -383,6 +421,78 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
     const [margenPvdPct, setMargenPvdPct] = useState('20')
     const [margenPvpPct, setMargenPvpPct] = useState('35')
 
+    // ── Previsualización antes de liquidar (auditoría 2026-07-29, Parte 3.1) ──
+    // `previewData` es null hasta que el usuario pide previsualizar; a partir
+    // de ahí se muestra la vista de solo lectura (con % de peso y PVD/PVP
+    // editables) en vez del formulario, y "Confirmar y Liquidar" hace el
+    // submit real. Cambiar cualquier parámetro (método, comisión, márgenes)
+    // invalida la previsualización — hay que volver a generarla, para no
+    // liquidar con una vista vieja que ya no corresponde a los parámetros
+    // actuales del formulario.
+    const [previewData,      setPreviewData]      = useState<PreviewLiquidacionData | null>(null)
+    const [cargandoPreview,  setCargandoPreview]  = useState(false)
+    const [mostrarDetalleCostos, setMostrarDetalleCostos] = useState(false)
+    // % de peso por producto, editable solo con método "peso" — se
+    // inicializa con el % natural que devuelve la previsualización la
+    // primera vez, y desde ahí el usuario puede ajustarlo a mano.
+    const [pesosManual, setPesosManual] = useState<Record<number, string>>({})
+    // Override individual de PVD/PVP sobre el sugerido "masivo" (comisión +
+    // margen aplicado a TODOS los ítems) — mismo patrón ya usado en el tab
+    // "Resultado de Liquidación" (variable `precios` / `actualizarPrecio`).
+    const [preciosPreview, setPreciosPreview] = useState<Record<number, { pvd: string; pvp: string }>>({})
+
+    function invalidarPreview() {
+        if (previewData) setPreviewData(null)
+    }
+
+    async function fetchPreview() {
+        setCargandoPreview(true)
+        try {
+            const params: Record<string, string | Record<string, string>> = {
+                metodo_prorrateo: metodo,
+                comision_pct:     comisionPct,
+                margen_pvd_pct:   margenPvdPct,
+                margen_pvp_pct:   margenPvpPct,
+            }
+            if (metodo === 'peso' && Object.keys(pesosManual).length > 0) {
+                params.pesos_manual = pesosManual
+            }
+            const { data } = await axios.get<PreviewLiquidacionData>(
+                route('compras.importaciones.previsualizar-liquidacion', importacion.id),
+                { params }
+            )
+            setPreviewData(data)
+            const preciosIniciales: Record<number, { pvd: string; pvp: string }> = {}
+            const pesosIniciales: Record<number, string> = { ...pesosManual }
+            data.productos.forEach(p => {
+                preciosIniciales[p.producto_id] = {
+                    pvd: p.pvd_sugerido !== null ? p.pvd_sugerido.toString() : '',
+                    pvp: p.pvp_sugerido !== null ? p.pvp_sugerido.toString() : '',
+                }
+                if (metodo === 'peso' && p.pct_peso !== null && pesosIniciales[p.producto_id] === undefined) {
+                    pesosIniciales[p.producto_id] = p.pct_peso.toString()
+                }
+            })
+            setPreciosPreview(preciosIniciales)
+            if (metodo === 'peso') setPesosManual(pesosIniciales)
+        } catch (err) {
+            notify.error(mensajeError(err, 'No se pudo generar la previsualización'))
+        } finally {
+            setCargandoPreview(false)
+        }
+    }
+
+    function actualizarPesoManual(productoId: number, valor: string) {
+        setPesosManual(prev => ({ ...prev, [productoId]: valor }))
+    }
+
+    function actualizarPrecioPreview(productoId: number, campo: 'pvd' | 'pvp', valor: string) {
+        setPreciosPreview(prev => ({ ...prev, [productoId]: { ...prev[productoId], [campo]: valor } }))
+    }
+
+    const sumaPesosManual = Object.values(pesosManual).reduce((s, v) => s + (parseFloat(v) || 0), 0)
+    const pesosCuadran = metodo !== 'peso' || Object.keys(pesosManual).length === 0 || Math.abs(sumaPesosManual - 100) <= 0.1
+
     // ── Tab 4: Revertir ──
     const [confirmRevertir, setConfirmRevertir] = useState(false)
     const [revProcessing,   setRevProc]         = useState(false)
@@ -476,17 +586,16 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
         })
     }
 
-    function submitLiquidar(e: React.FormEvent) {
-        e.preventDefault()
+    function confirmarLiquidar() {
+        if (metodo === 'peso' && !pesosCuadran) return
         setLiqProc(true)
         router.patch(route('compras.importaciones.liquidar', importacion.id), {
             metodo_prorrateo:  metodo,
             fecha_liquidacion: fechaLiq,
-            ...(metodo === 'factor_importacion' ? {
-                comision_pct:   comisionPct,
-                margen_pvd_pct: margenPvdPct,
-                margen_pvp_pct: margenPvpPct,
-            } : {}),
+            comision_pct:      comisionPct,
+            margen_pvd_pct:    margenPvdPct,
+            margen_pvp_pct:    margenPvpPct,
+            ...(metodo === 'peso' && Object.keys(pesosManual).length > 0 ? { pesos_manual: pesosManual } : {}),
         }, {
             onSuccess: () => { notify.ok(`Importación "${importacion.nombre}" liquidada`); onClose() },
             onError:   (errs) => { notify.error('Error: ' + Object.values(errs).join(', ')); setLiqProc(false) },
@@ -1026,8 +1135,148 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
                                     </div>
                                 )
 
+                                if (previewData) return (
+                                    <div>
+                                        <div className="modal-body space-y-4">
+                                            {/* Resumen — costos extra colapsados en un solo total, con detalle expandible */}
+                                            <div className="rounded-lg p-3 space-y-1.5"
+                                                style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)' }}>
+                                                <div className="flex justify-between text-sm">
+                                                    <span style={{ color: 'var(--text-muted)' }}>Costo FOB (Mercadería)</span>
+                                                    <span className="font-medium tabular-nums" style={{ color: 'var(--text-main)' }}>
+                                                        ${previewData.costo_fob.toFixed(2)}
+                                                    </span>
+                                                </div>
+                                                <button type="button"
+                                                    onClick={() => setMostrarDetalleCostos(v => !v)}
+                                                    className="w-full flex justify-between text-sm hover:opacity-80">
+                                                    <span style={{ color: 'var(--text-muted)' }}>
+                                                        Costos extra ({previewData.costos_extra_detalle.length}) {mostrarDetalleCostos ? '▲' : '▼'}
+                                                    </span>
+                                                    <span className="font-medium tabular-nums" style={{ color: 'var(--text-main)' }}>
+                                                        ${previewData.costos_extra_total.toFixed(2)}
+                                                    </span>
+                                                </button>
+                                                {mostrarDetalleCostos && (
+                                                    <div className="pl-3 space-y-1 border-l-2" style={{ borderColor: 'rgba(245,158,11,0.3)' }}>
+                                                        {previewData.costos_extra_detalle.map((g, i) => (
+                                                            <div key={i} className="flex justify-between text-xs">
+                                                                <span style={{ color: 'var(--text-muted)' }}>
+                                                                    {g.concepto}{g.num_documento ? ` — ${g.num_documento}` : ''}
+                                                                </span>
+                                                                <span className="tabular-nums" style={{ color: 'var(--text-main)' }}>
+                                                                    ${g.monto.toFixed(2)}
+                                                                </span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                                <div className="flex justify-between text-sm font-bold border-t pt-1.5"
+                                                    style={{ borderColor: 'rgba(245,158,11,0.3)', color: 'var(--primary)' }}>
+                                                    <span>Costo total estimado</span>
+                                                    <span className="tabular-nums">${previewData.costo_total_estimado.toFixed(2)}</span>
+                                                </div>
+                                                {previewData.factor_importacion !== null && (
+                                                    <div className="flex justify-between text-sm font-bold">
+                                                        <span style={{ color: 'var(--text-muted)' }}>Factor de Importación</span>
+                                                        <span className="tabular-nums" style={{ color: 'var(--primary)' }}>
+                                                            {previewData.factor_importacion.toFixed(6)}
+                                                        </span>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {metodo === 'peso' && (
+                                                <div className={cn('rounded-lg p-2.5 text-xs font-semibold text-center',
+                                                    pesosCuadran ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400')}
+                                                    style={{ background: pesosCuadran ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)' }}>
+                                                    Total % de peso: {sumaPesosManual.toFixed(2)}% {pesosCuadran ? '✓' : '— debe sumar 100%'}
+                                                </div>
+                                            )}
+
+                                            {/* Tabla resumen por ítem — solo lectura salvo % peso y PVD/PVP */}
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-xs">
+                                                    <thead>
+                                                        <tr className="border-b" style={{ borderColor: 'var(--border)' }}>
+                                                            {[
+                                                                'Producto', 'Cant.',
+                                                                ...(metodo === 'peso' ? ['% Peso'] : []),
+                                                                'Costo Actual', 'Costo Nuevo', 'PVD sugerido', 'PVP sugerido',
+                                                            ].map(h => (
+                                                                <th key={h} className="pb-2 pt-1 px-2 font-semibold uppercase text-[10px] tracking-wider text-left whitespace-nowrap"
+                                                                    style={{ color: 'var(--text-muted)' }}>
+                                                                    {h}
+                                                                </th>
+                                                            ))}
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {previewData.productos.map(p => (
+                                                            <tr key={p.producto_id} className="border-b" style={{ borderColor: 'var(--border)' }}>
+                                                                <td className="py-2 px-2 max-w-40">
+                                                                    <p className="font-mono font-bold" style={{ color: 'var(--primary)' }}>{p.codigo}</p>
+                                                                    <p className="truncate" style={{ color: 'var(--text-main)' }}>{p.nombre}</p>
+                                                                </td>
+                                                                <td className="py-2 px-2 tabular-nums" style={{ color: 'var(--text-main)' }}>
+                                                                    {p.cantidad % 1 === 0 ? p.cantidad.toFixed(0) : p.cantidad.toFixed(2)}
+                                                                </td>
+                                                                {metodo === 'peso' && (
+                                                                    <td className="py-2 px-2">
+                                                                        <input type="number" step="0.01" min="0" max="100"
+                                                                            className="input-field text-xs" style={{ width: '5.5rem' }}
+                                                                            value={pesosManual[p.producto_id] ?? ''}
+                                                                            onChange={e => actualizarPesoManual(p.producto_id, e.target.value)} />
+                                                                    </td>
+                                                                )}
+                                                                <td className="py-2 px-2 tabular-nums" style={{ color: 'var(--text-muted)' }}>
+                                                                    ${p.costo_actual.toFixed(4)}
+                                                                </td>
+                                                                <td className="py-2 px-2 tabular-nums font-medium" style={{ color: 'var(--text-main)' }}>
+                                                                    ${p.costo_nuevo.toFixed(4)}
+                                                                </td>
+                                                                <td className="py-2 px-2">
+                                                                    <input type="number" step="0.01" min="0"
+                                                                        className="input-field text-xs" style={{ width: '6rem' }}
+                                                                        value={preciosPreview[p.producto_id]?.pvd ?? ''}
+                                                                        onChange={e => actualizarPrecioPreview(p.producto_id, 'pvd', e.target.value)} />
+                                                                </td>
+                                                                <td className="py-2 px-2">
+                                                                    <input type="number" step="0.01" min="0"
+                                                                        className="input-field text-xs" style={{ width: '6rem' }}
+                                                                        value={preciosPreview[p.producto_id]?.pvp ?? ''}
+                                                                        onChange={e => actualizarPrecioPreview(p.producto_id, 'pvp', e.target.value)} />
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+
+                                            {metodo === 'peso' && (
+                                                <button type="button" onClick={fetchPreview} disabled={cargandoPreview}
+                                                    className="text-xs underline" style={{ color: 'var(--primary)' }}>
+                                                    {cargandoPreview ? 'Recalculando…' : 'Recalcular con estos % de peso'}
+                                                </button>
+                                            )}
+                                        </div>
+                                        <div className="modal-footer">
+                                            {puede('editar') && (
+                                                <Button type="button" onClick={confirmarLiquidar}
+                                                    disabled={liqProcessing || (metodo === 'peso' && !pesosCuadran)}>
+                                                    <CheckCircle2 className="w-4 h-4" /> Confirmar y Liquidar
+                                                </Button>
+                                            )}
+                                            <Button type="button" variant="outline" onClick={() => setPreviewData(null)}>
+                                                Editar parámetros
+                                            </Button>
+                                            <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
+                                        </div>
+                                    </div>
+                                )
+
                                 return (
-                                    <form onSubmit={submitLiquidar}>
+                                    <form onSubmit={e => { e.preventDefault(); fetchPreview() }}>
                                         <div className="modal-body">
                                             {/* Resumen previo */}
                                             <div className="rounded-lg p-3 space-y-1.5"
@@ -1055,7 +1304,8 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
 
                                             <div className="space-y-1.5">
                                                 <Label>Método de prorrateo <span className="text-red-400">*</span></Label>
-                                                <select value={metodo} onChange={e => setMetodo(e.target.value as typeof metodo)}
+                                                <select value={metodo}
+                                                    onChange={e => { setMetodo(e.target.value as typeof metodo); invalidarPreview(); setPesosManual({}) }}
                                                     className="input-field select-field">
                                                     <option value="cantidad">Por cantidad (unidades)</option>
                                                     <option value="precio">Por precio (valor FOB)</option>
@@ -1065,32 +1315,39 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
                                             </div>
 
                                             {metodo === 'factor_importacion' && (
-                                                <div className="rounded-lg p-3 space-y-3"
-                                                    style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-                                                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                                                        Factor = (Mercadería + todos los costos extra) / Mercadería FOB.
-                                                        Se aplica directamente al costo unitario original de cada producto,
-                                                        y se sugieren precios de venta con estos parámetros:
-                                                    </p>
-                                                    <div className="grid grid-cols-3 gap-3">
-                                                        <div className="space-y-1">
-                                                            <label className="input-label">% Comisión</label>
-                                                            <input type="number" step="0.01" min="0" className="input-field text-sm"
-                                                                value={comisionPct} onChange={e => setComisionPct(e.target.value)} />
-                                                        </div>
-                                                        <div className="space-y-1">
-                                                            <label className="input-label">% Margen PVD</label>
-                                                            <input type="number" step="0.01" min="0" max="99.99" className="input-field text-sm"
-                                                                value={margenPvdPct} onChange={e => setMargenPvdPct(e.target.value)} />
-                                                        </div>
-                                                        <div className="space-y-1">
-                                                            <label className="input-label">% Margen PVP</label>
-                                                            <input type="number" step="0.01" min="0" max="99.99" className="input-field text-sm"
-                                                                value={margenPvpPct} onChange={e => setMargenPvpPct(e.target.value)} />
-                                                        </div>
+                                                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                                    Factor = (Mercadería + todos los costos extra) / Mercadería FOB.
+                                                    Se aplica directamente al costo unitario original de cada producto.
+                                                </p>
+                                            )}
+
+                                            {/* Ganancia sugerida (comisión + márgenes PVD/PVP) — aplica de forma MASIVA
+                                                a todos los ítems de la previsualización, sin importar el método de
+                                                prorrateo elegido (auditoría 2026-07-29, Parte 3.3). Cada ítem se puede
+                                                sobreescribir individualmente ya en la vista de previsualización. */}
+                                            <div className="rounded-lg p-3 space-y-3"
+                                                style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+                                                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                                    Ganancia sugerida (aplica a todos los ítems — editable uno por uno en la previsualización):
+                                                </p>
+                                                <div className="grid grid-cols-3 gap-3">
+                                                    <div className="space-y-1">
+                                                        <label className="input-label">% Comisión</label>
+                                                        <input type="number" step="0.01" min="0" className="input-field text-sm"
+                                                            value={comisionPct} onChange={e => { setComisionPct(e.target.value); invalidarPreview() }} />
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="input-label">% Margen PVD</label>
+                                                        <input type="number" step="0.01" min="0" max="99.99" className="input-field text-sm"
+                                                            value={margenPvdPct} onChange={e => { setMargenPvdPct(e.target.value); invalidarPreview() }} />
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="input-label">% Margen PVP</label>
+                                                        <input type="number" step="0.01" min="0" max="99.99" className="input-field text-sm"
+                                                            value={margenPvpPct} onChange={e => { setMargenPvpPct(e.target.value); invalidarPreview() }} />
                                                     </div>
                                                 </div>
-                                            )}
+                                            </div>
 
                                             <div className="space-y-1.5">
                                                 <Label>Fecha de liquidación <span className="text-red-400">*</span></Label>
@@ -1098,11 +1355,13 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
                                             </div>
                                         </div>
                                         <div className="modal-footer">
-                                            {puede('editar') && (
-                                                <Button type="submit" disabled={liqProcessing}>
-                                                    <CheckCircle2 className="w-4 h-4" /> Liquidar importación
-                                                </Button>
-                                            )}
+                                            <Button type="submit" disabled={cargandoPreview}>
+                                                {cargandoPreview
+                                                    ? <Loader2 className="w-4 h-4 animate-spin" />
+                                                    : <Eye className="w-4 h-4" />
+                                                }
+                                                Previsualizar
+                                            </Button>
                                             <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
                                         </div>
                                     </form>
@@ -1261,14 +1520,47 @@ type ModalState =
     | { type: 'detalle'; importacion: ImportacionRow; tab: TabKey }
 
 export default function ImportacionesIndex() {
-    const { importaciones, proveedores, flash } = usePage<Props>().props
+    const { importaciones, proveedores, filtros, flash } = usePage<Props>().props
     const { puede } = usePermiso('compras')
     const [modal, setModal] = useState<ModalState>({ type: 'none' })
+
+    const [buscar,      setBuscar]      = useState(filtros.buscar       ?? '')
+    const [estado,      setEstado]      = useState(filtros.estado       ?? '')
+    const [proveedorId, setProveedorId] = useState(filtros.proveedor_id ?? '')
+    const [fechaDesde,  setFechaDesde]  = useState(filtros.fecha_desde  ?? '')
+    const [fechaHasta,  setFechaHasta]  = useState(filtros.fecha_hasta  ?? '')
+
+    // Cambiar cualquier filtro después de haber buscado marca los
+    // resultados como "obsoletos" — la tabla vuelve al estado vacío hasta
+    // que se presione Buscar de nuevo (mismo patrón que Cuentas por
+    // Pagar/Anticipos/Devoluciones).
+    const [filtrosSucios, setFiltrosSucios] = useState(false)
+
+    // Carga bajo demanda: `importaciones` viene null hasta que el usuario
+    // presiona Buscar.
+    const haBuscado = importaciones !== null && !filtrosSucios
 
     useEffect(() => {
         if (flash?.success) notify.ok(flash.success)
         if (flash?.error)   notify.error(flash.error)
     }, [flash?.success, flash?.error])
+
+    function cambiarBuscar(v: string)      { setBuscar(v);      setFiltrosSucios(true) }
+    function cambiarEstado(v: string)      { setEstado(v);      setFiltrosSucios(true) }
+    function cambiarProveedorId(v: string) { setProveedorId(v); setFiltrosSucios(true) }
+    function cambiarFechaDesde(v: string)  { setFechaDesde(v);  setFiltrosSucios(true) }
+    function cambiarFechaHasta(v: string)  { setFechaHasta(v);  setFiltrosSucios(true) }
+
+    function aplicarFiltros() {
+        router.get(route('compras.importaciones.index'), {
+            estado, proveedor_id: proveedorId, fecha_desde: fechaDesde, fecha_hasta: fechaHasta, buscar,
+            buscado: '1',
+        }, {
+            preserveState: true,
+            replace: true,
+            onSuccess: () => setFiltrosSucios(false),
+        })
+    }
 
     function cerrar() { setModal({ type: 'none' }) }
 
@@ -1284,7 +1576,6 @@ export default function ImportacionesIndex() {
 
             <PageHeader
                 title="Importaciones COMEX"
-                description="Seguimiento de importaciones internacionales y liquidación de costos"
                 breadcrumbs={[{ label: 'Compras' }, { label: 'Importaciones' }]}
                 actions={
                     puede('crear') ? (
@@ -1297,7 +1588,76 @@ export default function ImportacionesIndex() {
                 }
             />
 
+            <div className="px-6 pt-6 mb-2">
+                {/*
+                    Ancho vía `style.width` inline a propósito, NO clases Tailwind: `.input-field`
+                    (app.css) declara `width:100%` fuera de cualquier @layer, y las utilidades de
+                    Tailwind v4 viven dentro de su @layer utilities interno — por reglas de CSS
+                    Cascade Layers, lo no-layereado siempre gana sobre lo layereado sin importar
+                    especificidad ni orden, así que un w-XX de Tailwind nunca puede ganarle a
+                    `.input-field`. Mismo hallazgo documentado en Asientos/Facturas de Compra/
+                    Proveedores/Cuentas por Pagar/Anticipos/Devoluciones.
+                */}
+                <div className="overflow-x-auto">
+                <div style={{ minWidth: '1050px' }}>
+                <FilterToolbar
+                    search={{
+                        value: buscar,
+                        onChange: cambiarBuscar,
+                        onSearch: aplicarFiltros,
+                        placeholder: 'Nombre, proveedor, invoice...',
+                    }}
+                    searchWidth="w-[170px]"
+                >
+                    <select value={estado} onChange={e => cambiarEstado(e.target.value)}
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '160px' }}>
+                        <option value="">Todos los estados</option>
+                        <option value="en_transito">En Tránsito</option>
+                        <option value="en_aduana">En Aduana</option>
+                        <option value="liquidada">Liquidada</option>
+                    </select>
+
+                    <select value={proveedorId} onChange={e => cambiarProveedorId(e.target.value)}
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '190px' }}>
+                        <option value="">Todos los proveedores</option>
+                        {proveedores.map(p => (
+                            <option key={p.id} value={p.id}>{p.razon_social}</option>
+                        ))}
+                    </select>
+
+                    <div className="flex flex-col gap-1 shrink-0 self-end">
+                        <label className="text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>Desde</label>
+                        <input type="date" value={fechaDesde} onChange={e => cambiarFechaDesde(e.target.value)}
+                            className="input-field text-xs"
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '150px' }} />
+                    </div>
+                    <div className="flex flex-col gap-1 shrink-0 self-end">
+                        <label className="text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>Hasta</label>
+                        <input type="date" value={fechaHasta} onChange={e => cambiarFechaHasta(e.target.value)}
+                            className="input-field text-xs"
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '150px' }} />
+                    </div>
+                </FilterToolbar>
+                </div>
+                </div>
+            </div>
+
+            {/* Estado inicial: aún no se ha buscado (carga bajo demanda) */}
+            {!haBuscado && (
+                <div className="px-6 pb-8">
+                    <div className="text-center py-16">
+                        <Search className="w-12 h-12 mx-auto mb-4 opacity-30" style={{ color: 'var(--text-muted)' }} />
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                            Ajusta los filtros y presiona Buscar para consultar las importaciones.
+                        </p>
+                    </div>
+                </div>
+            )}
+
             {/* Tabla */}
+            {haBuscado && (
             <div className="px-6 pb-8">
                 <div className="border rounded-xl overflow-hidden"
                     style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
@@ -1319,7 +1679,7 @@ export default function ImportacionesIndex() {
                         <div className="py-20 text-center">
                             <Package className="opacity-20 mx-auto mb-3 w-10 h-10" style={{ color: 'var(--text-muted)' }} />
                             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                                No hay importaciones registradas
+                                No se encontraron importaciones con estos filtros
                             </p>
                         </div>
                     )}
@@ -1404,6 +1764,7 @@ export default function ImportacionesIndex() {
                     ))}
                 </div>
             </div>
+            )}
 
             {modal.type === 'crear' && (
                 <CrearModal proveedores={proveedores} onClose={cerrar} />

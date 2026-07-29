@@ -364,6 +364,7 @@ Route::middleware('auth')->group(function () {
             Route::get('/',                         [ImportacionController::class, 'index'])   ->name('index');
             Route::get('/{importacion}/detalle',    [ImportacionController::class, 'detalle']) ->name('detalle');
             Route::get('/{importacion}/resultado-liquidacion', [ImportacionController::class, 'resultadoLiquidacion']) ->name('resultado-liquidacion');
+            Route::get('/{importacion}/previsualizar-liquidacion', [ImportacionController::class, 'previsualizarLiquidacion']) ->name('previsualizar-liquidacion');
             Route::middleware('permiso:compras,crear')->group(function () {
                 Route::post('/',                        [ImportacionController::class, 'store'])   ->name('store');
                 Route::post('/{importacion}/crear-factura',  [ImportacionController::class, 'crearFactura'])  ->name('crear-factura');

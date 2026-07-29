@@ -24,34 +24,64 @@ class ImportacionController extends Controller
 {
     public function __construct(private AsientoService $asientoService) {}
 
-    public function index(): Response
+    public function index(Request $request): Response
     {
-        $empresaId    = session('empresa_activa_id');
-        $importaciones = Importacion::with('proveedor')
-            ->where('empresa_id', $empresaId)
-            ->orderByDesc('created_at')
-            ->get()
-            ->map(fn($i) => [
-                'id'                => $i->id,
-                'nombre'            => $i->nombre,
-                'num_invoice'       => $i->num_invoice,
-                'agente_aduanero'   => $i->agente_aduanero,
-                'proveedor'         => $i->proveedor?->razon_social,
-                'pais_embarque'     => $i->pais_embarque,
-                'costo_fob'         => $i->costo_fob,
-                'divisa'            => $i->divisa,
-                'total_costos_extra'=> $i->total_costos_extra,
-                'costo_total'       => $i->costo_total,
-                'metodo_prorrateo'  => $i->metodo_prorrateo,
-                'proveedor_id'      => $i->proveedor_id,
-                'fecha_partida'     => $i->fecha_partida?->format('Y-m-d'),
-                'fecha_llegada'     => $i->fecha_llegada?->format('Y-m-d'),
-                'fecha_liquidacion' => $i->fecha_liquidacion?->format('d/m/Y'),
-                'estado'            => $i->estado,
-                'estado_label'      => $i->estado_label,
-                'estado_color'      => $i->estado_color,
-                'observaciones'     => $i->observaciones,
-            ]);
+        $empresaId = session('empresa_activa_id');
+
+        // Carga bajo demanda: mismo patrón que Cuentas por Pagar/
+        // Proveedores/Anticipos/Devoluciones — la query solo se ejecuta
+        // cuando el usuario dispara una búsqueda explícita (botón lupa).
+        $importaciones = null;
+
+        if ($request->boolean('buscado')) {
+            $query = Importacion::with('proveedor')
+                ->where('empresa_id', $empresaId);
+
+            if ($request->filled('estado')) {
+                $query->where('estado', $request->estado);
+            }
+            if ($request->filled('proveedor_id')) {
+                $query->where('proveedor_id', $request->proveedor_id);
+            }
+            if ($request->filled('fecha_desde')) {
+                $query->where('fecha_partida', '>=', $request->fecha_desde);
+            }
+            if ($request->filled('fecha_hasta')) {
+                $query->where('fecha_partida', '<=', $request->fecha_hasta);
+            }
+            if ($request->filled('buscar')) {
+                $q = $request->buscar;
+                $query->where(function ($qb) use ($q) {
+                    $qb->where('nombre', 'ilike', "%{$q}%")
+                       ->orWhere('num_invoice', 'ilike', "%{$q}%")
+                       ->orWhereHas('proveedor', fn($p) => $p->where('razon_social', 'ilike', "%{$q}%"));
+                });
+            }
+
+            $importaciones = $query->orderByDesc('created_at')
+                ->get()
+                ->map(fn($i) => [
+                    'id'                => $i->id,
+                    'nombre'            => $i->nombre,
+                    'num_invoice'       => $i->num_invoice,
+                    'agente_aduanero'   => $i->agente_aduanero,
+                    'proveedor'         => $i->proveedor?->razon_social,
+                    'pais_embarque'     => $i->pais_embarque,
+                    'costo_fob'         => $i->costo_fob,
+                    'divisa'            => $i->divisa,
+                    'total_costos_extra'=> $i->total_costos_extra,
+                    'costo_total'       => $i->costo_total,
+                    'metodo_prorrateo'  => $i->metodo_prorrateo,
+                    'proveedor_id'      => $i->proveedor_id,
+                    'fecha_partida'     => $i->fecha_partida?->format('Y-m-d'),
+                    'fecha_llegada'     => $i->fecha_llegada?->format('Y-m-d'),
+                    'fecha_liquidacion' => $i->fecha_liquidacion?->format('d/m/Y'),
+                    'estado'            => $i->estado,
+                    'estado_label'      => $i->estado_label,
+                    'estado_color'      => $i->estado_color,
+                    'observaciones'     => $i->observaciones,
+                ]);
+        }
 
         $proveedores = Proveedor::where('empresa_id', $empresaId)
             ->activos()->orderBy('razon_social')
@@ -60,6 +90,7 @@ class ImportacionController extends Controller
         return Inertia::render('Compras/Importaciones/Index', [
             'importaciones' => $importaciones,
             'proveedores'   => $proveedores,
+            'filtros'       => $request->only(['estado', 'proveedor_id', 'fecha_desde', 'fecha_hasta', 'buscar']),
         ]);
     }
 
@@ -111,6 +142,193 @@ class ImportacionController extends Controller
         return back()->with('success', 'Importación actualizada correctamente.');
     }
 
+    // Previsualización de liquidación (auditoría 2026-07-29, Parte 3.1):
+    // vista de SOLO LECTURA (no persiste nada, no usa DB::transaction()
+    // porque no escribe) que muestra el mismo resultado que produciría
+    // liquidar() con los parámetros dados, para que el usuario pueda
+    // ajustar % de peso y comisión/márgenes ANTES de confirmar. Es un
+    // cálculo independiente y deliberadamente separado de liquidar() (no
+    // comparte código) para no arriesgar la lógica ya validada contra el
+    // Excel real del cliente (MIYAKO USA JULIO 14.xlsx, ver
+    // AUDITORIA_IMPORTACIONES.md) — liquidar() sigue siendo la única
+    // fuente de verdad para lo que realmente se guarda.
+    //
+    // A diferencia de liquidar() (que reparte costo en dos niveles:
+    // primero entre facturas, luego entre líneas de cada factura), aquí
+    // se agrega directamente por PRODUCTO en un solo nivel — matemáticamente
+    // equivalente para un reparto proporcional (cantidad/precio/peso), y
+    // consistente con el mismo nivel de agregación que ya usa
+    // resultadoLiquidacion() (post-liquidación). Por eso es una "vista
+    // simplificada": agrupa por producto, no por línea de factura.
+    public function previsualizarLiquidacion(Request $request, Importacion $importacion): JsonResponse
+    {
+        $empresaId = session('empresa_activa_id');
+        if ($importacion->empresa_id !== $empresaId) abort(403);
+
+        if ($importacion->estaLiquidada()) {
+            return response()->json(['message' => 'Esta importación ya está liquidada.'], 422);
+        }
+
+        $request->validate([
+            'metodo_prorrateo' => 'required|in:cantidad,precio,peso,factor_importacion',
+            'comision_pct'     => 'nullable|numeric|min:0',
+            'margen_pvd_pct'   => 'nullable|numeric|min:0|max:99.99',
+            'margen_pvp_pct'   => 'nullable|numeric|min:0|max:99.99',
+            'pesos_manual'     => 'nullable|array',
+            'pesos_manual.*'   => 'numeric|min:0|max:100',
+        ]);
+
+        $metodo       = $request->input('metodo_prorrateo');
+        $comisionPct  = (float) $request->input('comision_pct', 3);
+        $margenPvdPct = (float) $request->input('margen_pvd_pct', 20);
+        $margenPvpPct = (float) $request->input('margen_pvp_pct', 35);
+        $pesosManual  = $request->input('pesos_manual', []);
+
+        $comprasProducto = Compra::where('importacion_id', $importacion->id)
+            ->where('gasto_no_deducible', false)
+            ->with('detalles.producto')->get();
+
+        $comprasGasto = Compra::where('importacion_id', $importacion->id)
+            ->where('gasto_no_deducible', true)
+            ->get();
+
+        if ($comprasProducto->isEmpty() || $comprasGasto->isEmpty()) {
+            return response()->json([
+                'message' => 'Faltan facturas de productos o costos extra para previsualizar. ' .
+                    'Completa los tabs "2. Productos" y "3. Costos Extra" primero.',
+            ], 422);
+        }
+
+        $totalCostosExtra = (float) $comprasGasto->sum('total');
+        $costoFob         = (float) $importacion->costo_fob;
+
+        $detalleCostosExtra = $comprasGasto->map(fn($c) => [
+            'concepto'      => $c->concepto,
+            'num_documento' => $c->num_documento,
+            'monto'         => (float) $c->total,
+        ])->values();
+
+        // Agregación por producto: cantidad total, base de líneas válidas
+        // (según método) y valor FOB original total de ese producto en
+        // esta importación.
+        $porProducto = []; // producto_id => ['cantidad'=>, 'base'=>, 'fob_total'=>, 'producto'=>Producto]
+
+        foreach ($comprasProducto as $compra) {
+            $validos = $compra->detalles->filter(
+                fn($d) => $d->producto_id !== null
+                    && (float) $d->cantidad > 0
+                    && (float) $d->precio_unitario > 0.01
+            );
+
+            foreach ($validos as $d) {
+                $pid = $d->producto_id;
+                if (!isset($porProducto[$pid])) {
+                    $porProducto[$pid] = [
+                        'cantidad'  => 0.0,
+                        'base'      => 0.0,
+                        'fob_total' => 0.0,
+                        'producto'  => $d->producto,
+                    ];
+                }
+
+                $baseLinea = match ($metodo) {
+                    'peso'   => (float) ($d->peso ?? 0) > 0
+                        ? (float) $d->peso
+                        : (float) $d->cantidad * (float) ($d->producto?->peso ?? 0),
+                    'precio' => (float) $d->cantidad * (float) $d->precio_unitario,
+                    default  => (float) $d->cantidad, // 'cantidad' y 'factor_importacion' (no se usa ahí, ver abajo)
+                };
+
+                $porProducto[$pid]['cantidad']  += (float) $d->cantidad;
+                $porProducto[$pid]['base']      += $baseLinea;
+                $porProducto[$pid]['fob_total'] += (float) $d->cantidad * (float) $d->precio_unitario;
+            }
+        }
+
+        $baseTotalGlobal = array_sum(array_column($porProducto, 'base'));
+        $factor          = null;
+
+        if ($metodo === 'factor_importacion') {
+            $factor = $costoFob > 0 ? ($costoFob + $totalCostosExtra) / $costoFob : null;
+        } elseif ($baseTotalGlobal <= 0) {
+            $mensaje = $metodo === 'peso'
+                ? 'No se puede prorratear por peso: ningún producto de esta importación tiene peso configurado.'
+                : 'No se puede prorratear: las facturas de productos no tienen cantidad ni valor.';
+            return response()->json(['message' => $mensaje], 422);
+        }
+
+        $sumaPctPeso = null;
+        $productosOut = [];
+
+        foreach ($porProducto as $pid => $info) {
+            $producto = $info['producto'];
+            if (!$producto) continue;
+
+            $pctPeso = null;
+
+            if ($metodo === 'factor_importacion') {
+                // Multiplicativo: costo unitario original (cantidad-ponderado
+                // si el mismo producto aparece en más de una línea/factura) × Factor.
+                $costoUnitOriginal = $info['cantidad'] > 0 ? $info['fob_total'] / $info['cantidad'] : 0;
+                $costoNuevoUnitario = $factor !== null ? round($costoUnitOriginal * $factor, 4) : 0;
+            } else {
+                if ($metodo === 'peso') {
+                    $pctPeso = isset($pesosManual[$pid])
+                        ? (float) $pesosManual[$pid]
+                        : ($baseTotalGlobal > 0 ? round($info['base'] / $baseTotalGlobal * 100, 4) : 0);
+                    $sumaPctPeso = ($sumaPctPeso ?? 0) + $pctPeso;
+                    $costoExtraAsignado = $totalCostosExtra * ($pctPeso / 100);
+                } else {
+                    $costoExtraAsignado = $baseTotalGlobal > 0
+                        ? $totalCostosExtra * ($info['base'] / $baseTotalGlobal)
+                        : 0;
+                }
+                $costoNuevoUnitario = $info['cantidad'] > 0
+                    ? round(($info['fob_total'] + $costoExtraAsignado) / $info['cantidad'], 4)
+                    : 0;
+            }
+
+            $ivaPct    = (float) ($producto->porcentaje_iva ?: 15);
+            $pvdSugerido = null;
+            $pvpSugerido = null;
+            if ($costoNuevoUnitario > 0) {
+                $costoConComision = $costoNuevoUnitario * (1 + $comisionPct / 100);
+                $pvdSinIva = $margenPvdPct < 100 ? $costoConComision / (1 - $margenPvdPct / 100) : null;
+                $pvpSinIva = $margenPvpPct < 100 ? $costoConComision / (1 - $margenPvpPct / 100) : null;
+                $pvdSugerido = $pvdSinIva !== null ? round($pvdSinIva * (1 + $ivaPct / 100), 4) : null;
+                $pvpSugerido = $pvpSinIva !== null ? round($pvpSinIva * (1 + $ivaPct / 100), 4) : null;
+            }
+
+            $productosOut[] = [
+                'producto_id'   => $pid,
+                'codigo'        => $producto->codigo,
+                'nombre'        => $producto->nombre,
+                'cantidad'      => $info['cantidad'],
+                'pct_peso'      => $pctPeso,
+                'costo_actual'  => (float) $producto->costo,
+                'costo_nuevo'   => $costoNuevoUnitario,
+                'pvd_sugerido'  => $pvdSugerido,
+                'pvp_sugerido'  => $pvpSugerido,
+            ];
+        }
+
+        usort($productosOut, fn($a, $b) => strcmp($a['codigo'], $b['codigo']));
+
+        return response()->json([
+            'metodo_prorrateo'      => $metodo,
+            'costo_fob'             => $costoFob,
+            'costos_extra_total'    => $totalCostosExtra,
+            'costos_extra_detalle'  => $detalleCostosExtra,
+            'costo_total_estimado'  => $costoFob + $totalCostosExtra,
+            'factor_importacion'    => $factor,
+            'suma_pct_peso'         => $sumaPctPeso !== null ? round($sumaPctPeso, 4) : null,
+            'comision_pct'          => $comisionPct,
+            'margen_pvd_pct'        => $margenPvdPct,
+            'margen_pvp_pct'        => $margenPvpPct,
+            'productos'             => $productosOut,
+        ]);
+    }
+
     public function liquidar(Request $request, Importacion $importacion): RedirectResponse
     {
         if ($importacion->estaLiquidada()) {
@@ -125,7 +343,24 @@ class ImportacionController extends Controller
             'comision_pct'      => 'nullable|numeric|min:0',
             'margen_pvd_pct'    => 'nullable|numeric|min:0|max:99.99',
             'margen_pvp_pct'    => 'nullable|numeric|min:0|max:99.99',
+            // % de peso ajustado manualmente por producto desde la
+            // previsualización (auditoría 2026-07-29, Parte 3.2) — opcional,
+            // solo se usa con metodo_prorrateo=peso. El frontend ya valida
+            // que sume 100% antes de permitir Liquidar; aun así se vuelve a
+            // validar aquí (no confiar solo en el frontend).
+            'pesos_manual'      => 'nullable|array',
+            'pesos_manual.*'    => 'numeric|min:0|max:100',
         ]);
+
+        $pesosManual = $request->input('pesos_manual', []);
+        if ($request->input('metodo_prorrateo') === 'peso' && !empty($pesosManual)) {
+            $sumaPesos = array_sum($pesosManual);
+            if (round($sumaPesos, 2) !== 100.0 && abs($sumaPesos - 100) > 0.05) {
+                return back()->with('error',
+                    "Los porcentajes de peso ajustados manualmente suman {$sumaPesos}% — deben sumar exactamente 100%."
+                );
+            }
+        }
 
         // Compras de productos (base del prorrateo) — con producto para los métodos "peso" y "factor_importacion"
         $comprasProducto = Compra::where('importacion_id', $importacion->id)
@@ -158,9 +393,16 @@ class ImportacionController extends Controller
         // unitario original de cada línea — no es un prorrateo proporcional entre líneas
         // como cantidad/precio/peso, es un factor único aplicado uniformemente.
         $factorImportacion = null;
-        $comisionPct       = null;
-        $margenPvdPct      = null;
-        $margenPvpPct      = null;
+        // Comisión/márgenes de ganancia (PVD/PVP sugerido) ahora se capturan
+        // para CUALQUIER método de prorrateo, no solo "Factor de
+        // Importación" (auditoría 2026-07-29, Parte 3.3 — antes
+        // resultadoLiquidacion() solo sugería precios con este método;
+        // ahora la sugerencia de precios es independiente del método usado
+        // para prorratear el costo). Los defaults (3%/20%/35%) coinciden
+        // con los del Excel real del cliente.
+        $comisionPct       = (float) $request->input('comision_pct', 3);
+        $margenPvdPct      = (float) $request->input('margen_pvd_pct', 20);
+        $margenPvpPct      = (float) $request->input('margen_pvp_pct', 35);
         $baseDetalle       = null;
         $bases             = collect();
         $baseTotal         = 0.0;
@@ -170,9 +412,6 @@ class ImportacionController extends Controller
                 return back()->with('error',
                     'El costo FOB (Mercadería) de la importación debe ser mayor a 0 para calcular el Factor de Importación.');
             }
-            $comisionPct       = (float) $request->input('comision_pct', 3);
-            $margenPvdPct      = (float) $request->input('margen_pvd_pct', 20);
-            $margenPvpPct      = (float) $request->input('margen_pvp_pct', 35);
             $factorImportacion = ($costoFob + $totalCostosExtra) / $costoFob;
         } else {
             // Base de prorrateo por línea de detalle, según el método elegido — se usa
@@ -184,12 +423,46 @@ class ImportacionController extends Controller
             // la línea). Si no, se cae al estimado histórico: cantidad × peso
             // unitario del producto en su ficha (productos.peso) — comportamiento
             // idéntico al de antes para cualquier línea sin este campo nuevo.
-            $baseDetalle = fn($d) => match ($metodo) {
-                'peso'   => (float) ($d->peso ?? 0) > 0
+            //
+            // Si viene `pesos_manual` (% ajustado a mano por producto desde la
+            // previsualización — auditoría 2026-07-29, Parte 3.2), ese % de ese
+            // producto reemplaza su peso natural como base; si el mismo
+            // producto aparece en más de una línea/factura, el % se reparte
+            // entre sus propias líneas proporcionalmente a su peso natural
+            // relativo (no cambia nada para el caso común de una sola línea
+            // por producto). El resto del reparto (entre facturas y entre
+            // líneas de otros productos) sigue exactamente igual que antes.
+            $pesoNaturalPorProducto = [];
+            if ($metodo === 'peso' && !empty($pesosManual)) {
+                foreach ($comprasProducto as $c) {
+                    foreach ($c->detalles as $d) {
+                        if ($d->producto_id === null || (float) $d->cantidad <= 0 || (float) $d->precio_unitario <= 0.01) continue;
+                        $pesoLinea = (float) ($d->peso ?? 0) > 0
+                            ? (float) $d->peso
+                            : (float) $d->cantidad * (float) ($d->producto?->peso ?? 0);
+                        $pesoNaturalPorProducto[$d->producto_id] = ($pesoNaturalPorProducto[$d->producto_id] ?? 0) + $pesoLinea;
+                    }
+                }
+            }
+
+            $baseDetalle = function ($d) use ($metodo, $pesosManual, $pesoNaturalPorProducto) {
+                if ($metodo === 'precio') return (float) $d->cantidad * (float) $d->precio_unitario;
+                if ($metodo !== 'peso')   return (float) $d->cantidad;
+
+                $pesoLineaNatural = (float) ($d->peso ?? 0) > 0
                     ? (float) $d->peso
-                    : (float) $d->cantidad * (float) ($d->producto?->peso ?? 0),
-                'precio' => (float) $d->cantidad * (float) $d->precio_unitario,
-                default  => (float) $d->cantidad,
+                    : (float) $d->cantidad * (float) ($d->producto?->peso ?? 0);
+
+                if (empty($pesosManual) || !isset($pesosManual[$d->producto_id])) {
+                    return $pesoLineaNatural;
+                }
+
+                $totalNaturalProducto = $pesoNaturalPorProducto[$d->producto_id] ?? 0;
+                if ($totalNaturalProducto <= 0) {
+                    return (float) $pesosManual[$d->producto_id];
+                }
+
+                return (float) $pesosManual[$d->producto_id] * ($pesoLineaNatural / $totalNaturalProducto);
             };
 
             $bases = $comprasProducto->map(function ($compra) use ($baseDetalle) {
@@ -657,15 +930,22 @@ class ImportacionController extends Controller
             ->keyBy('producto_id')
             ->map(fn($p) => (float) $p['costo_anterior']);
 
-        // Precios sugeridos (PVD/PVP) solo aplican al método "Factor de Importación" —
-        // se recalculan aquí a partir del costo YA liquidado (que ya trae el factor
-        // incorporado) más comisión/margen/IVA, sin necesidad de guardar un precio
-        // sugerido por producto en el snapshot.
+        // Precios sugeridos (PVD/PVP): antes solo se calculaban para el método
+        // "Factor de Importación"; ahora liquidar() captura comisión/márgenes
+        // para CUALQUIER método (auditoría 2026-07-29, Parte 3.3), así que
+        // aquí solo se necesita que el snapshot los tenga guardados — se
+        // recalculan a partir del costo YA liquidado (que ya trae el
+        // prorrateo/factor incorporado, sea cual sea el método) más
+        // comisión/margen/IVA, sin necesidad de guardar un precio sugerido
+        // por producto en el snapshot. Liquidaciones viejas (antes de este
+        // cambio) no tienen estas claves en el snapshot y simplemente no
+        // muestran precio sugerido — no se inventa un valor.
         $esFactorImportacion = $importacion->metodo_prorrateo === 'factor_importacion'
             && isset($snapshot['factor_importacion']);
-        $comisionPct  = $esFactorImportacion ? (float) $snapshot['comision_pct']  : null;
-        $margenPvdPct = $esFactorImportacion ? (float) $snapshot['margen_pvd_pct'] : null;
-        $margenPvpPct = $esFactorImportacion ? (float) $snapshot['margen_pvp_pct'] : null;
+        $tieneGanancia = isset($snapshot['comision_pct'], $snapshot['margen_pvd_pct'], $snapshot['margen_pvp_pct']);
+        $comisionPct  = $tieneGanancia ? (float) $snapshot['comision_pct']  : null;
+        $margenPvdPct = $tieneGanancia ? (float) $snapshot['margen_pvd_pct'] : null;
+        $margenPvpPct = $tieneGanancia ? (float) $snapshot['margen_pvp_pct'] : null;
 
         $cantidadPorProducto = CompraDetalle::whereHas('compra', function ($q) use ($importacion) {
                 $q->where('importacion_id', $importacion->id)->where('gasto_no_deducible', false);
@@ -678,7 +958,7 @@ class ImportacionController extends Controller
         $productos = Producto::whereIn('id', $cantidadPorProducto->keys())
             ->orderBy('codigo')
             ->get()
-            ->map(function ($p) use ($cantidadPorProducto, $costoAnteriorPorProducto, $esFactorImportacion, $comisionPct, $margenPvdPct, $margenPvpPct) {
+            ->map(function ($p) use ($cantidadPorProducto, $costoAnteriorPorProducto, $tieneGanancia, $comisionPct, $margenPvdPct, $margenPvpPct) {
                 $fila = [
                     'producto_id'    => $p->id,
                     'codigo'         => $p->codigo,
@@ -692,7 +972,7 @@ class ImportacionController extends Controller
                     'pvd_sugerido'   => null,
                 ];
 
-                if ($esFactorImportacion && $p->costo > 0) {
+                if ($tieneGanancia && $p->costo > 0) {
                     $ivaPct           = (float) ($p->porcentaje_iva ?: 15);
                     $costoConComision = $p->costo * (1 + $comisionPct / 100);
                     $pvdSinIva        = $costoConComision / (1 - $margenPvdPct / 100);
