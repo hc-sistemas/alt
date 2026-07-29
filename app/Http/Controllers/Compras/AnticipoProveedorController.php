@@ -68,7 +68,22 @@ class AnticipoProveedorController extends Controller
                 ]);
         }
 
+        // `proveedores`: se usa en el filtro del listado — se deja SIN
+        // restringir por tipo a propósito, para no romper la posibilidad
+        // de filtrar/encontrar los anticipos históricos ya registrados a
+        // proveedores nacionales (ver auditoría 2026-07-29 punto 3 — esos
+        // registros no se tocan ni se ocultan).
+        //
+        // `proveedoresInternacionales`: lista aparte, SOLO para el
+        // selector del formulario "Nuevo Anticipo" — el cliente
+        // especificó este módulo únicamente para proveedores
+        // internacionales/importaciones (auditoría 2026-07-29 punto a).
         $proveedores = Proveedor::where('empresa_id', $empresaId)
+            ->activos()->orderBy('razon_social')
+            ->get(['id', 'razon_social', 'tipo']);
+
+        $proveedoresInternacionales = Proveedor::where('empresa_id', $empresaId)
+            ->where('tipo', 'internacional')
             ->activos()->orderBy('razon_social')
             ->get(['id', 'razon_social', 'tipo']);
 
@@ -84,11 +99,12 @@ class AnticipoProveedorController extends Controller
             ->get(['id', 'nombre', 'tipo', 'saldo_actual']);
 
         return Inertia::render('Compras/Anticipos/Index', [
-            'anticipos'     => $anticipos,
-            'proveedores'   => $proveedores,
-            'importaciones' => $importaciones,
-            'bancos'        => $bancos,
-            'filtros'       => $request->only(['estado', 'proveedor_id', 'buscar']),
+            'anticipos'                  => $anticipos,
+            'proveedores'                => $proveedores,
+            'proveedoresInternacionales' => $proveedoresInternacionales,
+            'importaciones'              => $importaciones,
+            'bancos'                     => $bancos,
+            'filtros'                    => $request->only(['estado', 'proveedor_id', 'buscar']),
         ]);
     }
 
@@ -137,6 +153,18 @@ class AnticipoProveedorController extends Controller
             'banco_id.required'    => 'Selecciona el banco desde donde se pagó.',
             'proveedor_id.required'=> 'El proveedor es obligatorio.',
         ]);
+
+        // Candado: este módulo es únicamente para Anticipos a Proveedores
+        // Extranjeros/Importaciones (especificación del cliente — ver
+        // auditoría 2026-07-29 punto a). No basta con restringir el
+        // <select> del frontend: se valida también aquí por si se intenta
+        // enviar un proveedor_id nacional directamente.
+        $proveedor = Proveedor::findOrFail($request->proveedor_id);
+        if ($proveedor->tipo !== 'internacional') {
+            return back()->with('error',
+                'Los anticipos a proveedores solo aplican para proveedores internacionales/importaciones.'
+            )->withInput();
+        }
 
         $banco = BancoCaja::findOrFail($request->banco_id);
 

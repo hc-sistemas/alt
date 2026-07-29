@@ -53,8 +53,14 @@ interface CxpRow {
 }
 
 interface Props extends PageProps {
-    anticipos:     Anticipo[] | null
-    proveedores:   Pick<Proveedor, 'id' | 'razon_social' | 'tipo'>[]
+    anticipos:                  Anticipo[] | null
+    proveedores:                Pick<Proveedor, 'id' | 'razon_social' | 'tipo'>[]
+    // Solo proveedores tipo='internacional' — este módulo es únicamente
+    // para Anticipos a Proveedores Extranjeros/Importaciones (auditoría
+    // 2026-07-29). `proveedores` (arriba) NO se filtra, para no romper el
+    // filtro del listado sobre anticipos históricos ya registrados a
+    // proveedores nacionales.
+    proveedoresInternacionales: Pick<Proveedor, 'id' | 'razon_social' | 'tipo'>[]
     importaciones: ImportacionRow[]
     bancos:        Pick<BancoCaja, 'id' | 'nombre' | 'tipo' | 'saldo_actual'>[]
     filtros:       Record<string, string>
@@ -63,7 +69,7 @@ interface Props extends PageProps {
 // ─── Modal Nuevo Anticipo ─────────────────────────────────────────────────────
 
 function ModalNuevo({ proveedores, importaciones, bancos, onClose }: {
-    proveedores:   Props['proveedores']
+    proveedores:   Props['proveedoresInternacionales']
     importaciones: Props['importaciones']
     bancos:        Props['bancos']
     onClose:       () => void
@@ -84,7 +90,21 @@ function ModalNuevo({ proveedores, importaciones, bancos, onClose }: {
         e.preventDefault()
         setProcessing(true)
         router.post(route('compras.anticipos.store'), form, {
-            onSuccess: () => { notify.success('Anticipo registrado correctamente'); onClose() },
+            // El candado de tipo de proveedor (y otros rechazos de negocio,
+            // ej. saldo insuficiente) usan back()->with('error', ...), que
+            // Inertia trata como un redirect exitoso (onSuccess), no como
+            // error de validación (onError) — mismo patrón ya corregido en
+            // Devoluciones de Compra: hay que revisar flash.error dentro
+            // de onSuccess en vez de asumir éxito.
+            onSuccess: (page) => {
+                const flash = (page.props as { flash?: { error?: string } }).flash
+                if (flash?.error) {
+                    notify.error(flash.error)
+                } else {
+                    notify.success('Anticipo registrado correctamente')
+                    onClose()
+                }
+            },
             onError:   (errs) => { notify.error(Object.values(errs).flat().join(' | ')); setProcessing(false) },
             onFinish:  () => setProcessing(false),
         })
@@ -108,14 +128,27 @@ function ModalNuevo({ proveedores, importaciones, bancos, onClose }: {
                 <div className="modal-body">
                     <div className="space-y-1.5">
                         <Label>Proveedor <span className="text-red-400">*</span></Label>
-                        <select value={form.proveedor_id}
-                            onChange={e => setForm(f => ({ ...f, proveedor_id: e.target.value }))}
-                            className="input-field select-field">
-                            <option value="">— Seleccionar proveedor —</option>
-                            {proveedores.map(p => (
-                                <option key={p.id} value={p.id}>{p.razon_social}</option>
-                            ))}
-                        </select>
+                        {proveedores.length === 0 ? (
+                            <p className="text-xs rounded-lg p-2.5"
+                               style={{ background: 'rgba(239,68,68,0.08)', color: '#b91c1c', border: '1px solid rgba(239,68,68,0.25)' }}>
+                                No hay proveedores internacionales registrados. Este módulo aplica únicamente a
+                                proveedores de importación.
+                            </p>
+                        ) : (
+                            <>
+                                <select value={form.proveedor_id}
+                                    onChange={e => setForm(f => ({ ...f, proveedor_id: e.target.value }))}
+                                    className="input-field select-field">
+                                    <option value="">— Seleccionar proveedor —</option>
+                                    {proveedores.map(p => (
+                                        <option key={p.id} value={p.id}>{p.razon_social}</option>
+                                    ))}
+                                </select>
+                                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                    Solo proveedores internacionales — este módulo aplica a Importaciones.
+                                </p>
+                            </>
+                        )}
                     </div>
 
                     <div className="space-y-1.5">
@@ -330,7 +363,7 @@ function ModalCruzar({ anticipo, onClose }: {
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function AnticiposIndex() {
-    const { anticipos, proveedores, importaciones, bancos, filtros, flash } = usePage<Props>().props
+    const { anticipos, proveedores, proveedoresInternacionales, importaciones, bancos, filtros, flash } = usePage<Props>().props
     const { puede } = usePermiso('compras')
 
     const [buscar,      setBuscar]      = useState(filtros.buscar       ?? '')
@@ -602,7 +635,7 @@ export default function AnticiposIndex() {
 
             {modalNuevo && (
                 <ModalNuevo
-                    proveedores={proveedores}
+                    proveedores={proveedoresInternacionales}
                     importaciones={importaciones}
                     bancos={bancos}
                     onClose={() => setModalNuevo(false)}
