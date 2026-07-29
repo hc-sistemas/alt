@@ -14,7 +14,13 @@ import 'react-toastify/dist/ReactToastify.css'
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface Proveedor { id: number; razon_social: string }
-interface CompraRef  { id: number; num_documento: string; proveedor_id: number }
+interface CompraRef  {
+    id: number
+    num_documento: string
+    proveedor_id: number
+    total: number
+    saldo_cxp: number | null
+}
 
 interface Devolucion {
     id: number
@@ -168,11 +174,11 @@ function NuevaDevolucionModal({ proveedores, compras, onClose }: {
 
     function submit(e: React.FormEvent) {
         e.preventDefault()
-        if (!proveedorId || !motivo.trim()) return
+        if (!proveedorId || !compraId || !motivo.trim()) return
         setProcessing(true)
         router.post(route('compras.devoluciones.store'), {
             proveedor_id:   proveedorId,
-            compra_id:      compraId || null,
+            compra_id:      compraId,
             num_documento:  numDoc || null,
             fecha,
             motivo,
@@ -184,8 +190,21 @@ function NuevaDevolucionModal({ proveedores, compras, onClose }: {
                 precio_unitario: Number(d.precio_unitario),
             })),
         }, {
-            onSuccess: () => onClose(),
-            onError:   () => { notify.error('Error al guardar la devolución'); setProcessing(false) },
+            // El candado (b/c/d) rechaza con back()->with('error', ...), que
+            // Inertia trata como redirect exitoso (onSuccess), no como error
+            // de validación (onError) — mismo patrón que
+            // Compras/Index.tsx::enviarActualizacion() para el candado
+            // CxP-02: hay que revisar flash.error dentro de onSuccess.
+            onSuccess: (page) => {
+                const flash = (page.props as { flash?: { error?: string } }).flash
+                if (flash?.error) {
+                    notify.error(flash.error)
+                } else {
+                    notify.ok('Devolución registrada correctamente')
+                }
+                onClose()
+            },
+            onError:   (errs) => { notify.error(Object.values(errs).flat().join(' | ') || 'Error al guardar la devolución'); setProcessing(false) },
             onFinish:  () => setProcessing(false),
         })
     }
@@ -214,14 +233,30 @@ function NuevaDevolucionModal({ proveedores, compras, onClose }: {
                                 </select>
                             </div>
                             <div className="space-y-1.5">
-                                <label className="input-label">Compra de origen (opcional)</label>
+                                <label className="input-label">Compra de origen <span className="text-red-400">*</span></label>
                                 <select value={compraId} onChange={e => setCompraId(e.target.value)}
-                                    className="input-field select-field">
-                                    <option value="">— Sin compra vinculada —</option>
-                                    {comprasDelProveedor.map(c => (
-                                        <option key={c.id} value={c.id}>{c.num_documento}</option>
-                                    ))}
+                                    className="input-field select-field" required>
+                                    <option value="">— Seleccionar compra —</option>
+                                    {comprasDelProveedor.map(c => {
+                                        const pagadaCompleto = c.saldo_cxp !== null && c.saldo_cxp <= 0.0001
+                                        return (
+                                            <option key={c.id} value={c.id} disabled={pagadaCompleto}
+                                                title={pagadaCompleto
+                                                    ? 'Esta factura ya está pagada al 100% — anule el pago en Bancos antes de poder devolver contra ella'
+                                                    : undefined}>
+                                                {c.num_documento}{pagadaCompleto ? ' — Pagada al 100% (no disponible)' : ''}
+                                            </option>
+                                        )
+                                    })}
                                 </select>
+                                {compraId && (() => {
+                                    const c = comprasDelProveedor.find(x => String(x.id) === compraId)
+                                    return c && c.saldo_cxp !== null ? (
+                                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                            Saldo pendiente de esta factura: <strong>${c.saldo_cxp.toFixed(2)}</strong>
+                                        </p>
+                                    ) : null
+                                })()}
                             </div>
                         </div>
 
@@ -357,9 +392,9 @@ function NuevaDevolucionModal({ proveedores, compras, onClose }: {
                     </div>
 
                     <div className="modal-footer" style={{ justifyContent: 'space-between' }}>
-                        <button type="submit" disabled={processing || !proveedorId || !motivo.trim()}
+                        <button type="submit" disabled={processing || !proveedorId || !compraId || !motivo.trim()}
                             className="btn-primary flex items-center gap-2"
-                            style={{ color: '#000', opacity: (!proveedorId || !motivo.trim() || processing) ? 0.6 : 1 }}>
+                            style={{ color: '#000', opacity: (!proveedorId || !compraId || !motivo.trim() || processing) ? 0.6 : 1 }}>
                             <RotateCcw size={15} />
                             {processing ? 'Guardando...' : 'Registrar Devolución'}
                         </button>

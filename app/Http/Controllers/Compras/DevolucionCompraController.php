@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Compras;
 
 use App\Http\Controllers\Controller;
 use App\Models\Compra;
+use App\Models\CuentaPagar;
 use App\Models\DevolucionCompra;
 use App\Models\DevolucionCompraDetalle;
 use App\Models\Proveedor;
@@ -79,14 +80,21 @@ class DevolucionCompraController extends Controller
             ->activos()->orderBy('razon_social')
             ->get(['id', 'razon_social']);
 
+        // Se incluye el saldo de la CxP de cada compra para que el
+        // frontend pueda deshabilitar (con tooltip) las facturas ya
+        // pagadas al 100% en el selector — evita que el usuario intente
+        // una devolución que el candado del backend va a rechazar igual.
         $compras = Compra::where('empresa_id', $empresaId)
             ->where('estado', 'activa')
+            ->with('cuentaPagar:id,compra_id,saldo')
             ->orderByDesc('fecha_emision')
-            ->get(['id', 'num_documento', 'proveedor_id'])
+            ->get(['id', 'num_documento', 'proveedor_id', 'total'])
             ->map(fn($c) => [
-                'id'           => $c->id,
-                'num_documento'=> $c->num_documento,
-                'proveedor_id' => $c->proveedor_id,
+                'id'             => $c->id,
+                'num_documento'  => $c->num_documento,
+                'proveedor_id'   => $c->proveedor_id,
+                'total'          => (float) $c->total,
+                'saldo_cxp'      => $c->cuentaPagar ? (float) $c->cuentaPagar->saldo : null,
             ]);
 
         return Inertia::render('Compras/Devoluciones/Index', [
@@ -101,7 +109,7 @@ class DevolucionCompraController extends Controller
     {
         $request->validate([
             'proveedor_id'              => 'required|exists:proveedores,id',
-            'compra_id'                 => 'nullable|exists:compras,id',
+            'compra_id'                 => 'required|exists:compras,id',
             'num_documento'             => 'nullable|string|max:30',
             'fecha'                     => 'required|date',
             'motivo'                    => 'required|string|min:5|max:300',
@@ -116,13 +124,56 @@ class DevolucionCompraController extends Controller
         $empresaId = session('empresa_activa_id');
         $pct = (int) ($request->porcentaje_iva ?? 15);
 
-        DB::transaction(function () use ($request, $empresaId, $pct) {
-            $subtotal = collect($request->detalles)->sum(fn($d) =>
-                round((float)$d['cantidad'] * (float)$d['precio_unitario'], 4)
-            );
-            $iva   = round($subtotal * $pct / 100, 4);
-            $total = round($subtotal + $iva, 4);
+        $subtotal = collect($request->detalles)->sum(fn($d) =>
+            round((float)$d['cantidad'] * (float)$d['precio_unitario'], 4)
+        );
+        $iva   = round($subtotal * $pct / 100, 4);
+        $total = round($subtotal + $iva, 4);
 
+        $compra = Compra::findOrFail($request->compra_id);
+
+        // Candado (b): no se puede devolver más de lo que se compró —
+        // suma lo ya devuelto antes contra esta misma compra (sin contar
+        // devoluciones anuladas, que no cuentan como devolución real) más
+        // esta nueva devolución, contra el total original de la factura.
+        $totalDevueltoPrevio = (float) DevolucionCompra::where('compra_id', $compra->id)
+            ->where('estado', '!=', 'anulada')
+            ->sum('total');
+
+        if (round($totalDevueltoPrevio + $total, 4) > round((float) $compra->total, 4) + 0.0001) {
+            return back()->with('error',
+                "No se puede devolver más de lo comprado. Total de la factura: \$" . number_format((float) $compra->total, 2) .
+                '. Ya devuelto: $' . number_format($totalDevueltoPrevio, 2) .
+                '. Esta devolución: $' . number_format($total, 2) . '.'
+            )->withInput();
+        }
+
+        // Candado (c) y (d): la Cuenta por Pagar de esta compra debe tener
+        // saldo suficiente para reversar. Si ya está pagada al 100% (saldo
+        // 0) o el monto a devolver supera lo que queda pendiente, se
+        // bloquea — no se genera saldo a favor automático, el usuario debe
+        // anular el pago en Bancos primero (mismo criterio que el candado
+        // de inmutabilidad CxP-02).
+        $cuentaPagar = CuentaPagar::where('compra_id', $compra->id)->first();
+
+        if ($cuentaPagar) {
+            if ((float) $cuentaPagar->saldo <= 0.0001) {
+                return back()->with('error',
+                    'Esta factura ya fue pagada en su totalidad. Para procesar la devolución, primero anule el ' .
+                    'pago correspondiente en el módulo de Bancos para liberar la cuenta por pagar.'
+                )->withInput();
+            }
+
+            if ($total > (float) $cuentaPagar->saldo + 0.0001) {
+                return back()->with('error',
+                    'El monto a devolver ($' . number_format($total, 2) . ') supera el saldo pendiente de la cuenta ' .
+                    'por pagar ($' . number_format((float) $cuentaPagar->saldo, 2) . '). Para devolver más de lo que ' .
+                    'queda pendiente, primero anule el pago correspondiente en el módulo de Bancos.'
+                )->withInput();
+            }
+        }
+
+        DB::transaction(function () use ($request, $empresaId, $subtotal, $iva, $total, $cuentaPagar) {
             $dev = DevolucionCompra::create([
                 'empresa_id'    => $empresaId,
                 'compra_id'     => $request->compra_id,
@@ -175,6 +226,19 @@ class DevolucionCompraController extends Controller
                 }
             }
 
+            // Ajuste de la Cuenta por Pagar: a diferencia de la reversión
+            // de inventario y el asiento contable (que no bloquean la
+            // operación si fallan, ver try/catch de arriba y abajo), este
+            // ajuste va SIN try/catch a propósito — es la corrección real
+            // que motivó esta tarea (el saldo de CxP no se estaba
+            // ajustando), así que si falla debe revertir toda la
+            // transacción, no quedar silenciosamente sin aplicar.
+            if ($cuentaPagar) {
+                $nuevoSaldo  = max(0, round((float) $cuentaPagar->saldo - $total, 4));
+                $nuevoEstado = $nuevoSaldo <= 0.0001 ? 'pagada' : 'parcial';
+                $cuentaPagar->update(['saldo' => $nuevoSaldo, 'estado' => $nuevoEstado]);
+            }
+
             // Asiento contable automático (Nota Crédito Proveedor)
             try {
                 $asiento = $this->asientoService->crear(
@@ -225,6 +289,23 @@ class DevolucionCompraController extends Controller
                     Log::warning("Anulación asiento devolución: " . $e->getMessage());
                 }
             }
+
+            // Simétrico al ajuste de CxP que hace store(): si esta
+            // devolución redujo el saldo de la Cuenta por Pagar, anularla
+            // debe restaurarlo (tope: el monto original de la CxP, para no
+            // pasarse si hubo otro movimiento intermedio).
+            $cuentaPagar = CuentaPagar::where('compra_id', $devolucion->compra_id)->first();
+            if ($cuentaPagar) {
+                $nuevoSaldo = min(
+                    (float) $cuentaPagar->monto,
+                    round((float) $cuentaPagar->saldo + (float) $devolucion->total, 4)
+                );
+                $nuevoEstado = $nuevoSaldo <= 0.0001
+                    ? 'pagada'
+                    : ($nuevoSaldo >= (float) $cuentaPagar->monto - 0.0001 ? 'pendiente' : 'parcial');
+                $cuentaPagar->update(['saldo' => $nuevoSaldo, 'estado' => $nuevoEstado]);
+            }
+
             $devolucion->update(['estado' => 'anulada']);
         });
 
