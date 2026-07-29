@@ -11,7 +11,7 @@ import { Button } from '@/Components/ui/button'
 import { cn } from '@/lib/utils'
 import {
     CreditCard, Plus, CheckCircle,
-    Clock, AlertTriangle, X, ArrowLeftRight
+    Clock, AlertTriangle, X, ArrowLeftRight, Search
 } from 'lucide-react'
 import type { PageProps, Proveedor, BancoCaja } from '@/types'
 import { notify, formatMoney, swalBase, injectSwalStyles } from '@/utils/contabilidad'
@@ -53,7 +53,7 @@ interface CxpRow {
 }
 
 interface Props extends PageProps {
-    anticipos:     Anticipo[]
+    anticipos:     Anticipo[] | null
     proveedores:   Pick<Proveedor, 'id' | 'razon_social' | 'tipo'>[]
     importaciones: ImportacionRow[]
     bancos:        Pick<BancoCaja, 'id' | 'nombre' | 'tipo' | 'saldo_actual'>[]
@@ -339,21 +339,39 @@ export default function AnticiposIndex() {
     const [modalNuevo,  setModalNuevo]  = useState(false)
     const [cruzarActivo, setCruzarActivo] = useState<Anticipo | null>(null)
 
+    // Cambiar cualquier filtro después de haber buscado marca los
+    // resultados como "obsoletos" — la tabla vuelve al estado vacío hasta
+    // que se presione Buscar de nuevo, para no mezclar datos viejos con un
+    // filtro nuevo todavía sin aplicar. `anticipos` por sí solo no basta
+    // para esto: cambiar un select no toca la prop del servidor, solo el
+    // estado local, así que sin este flag la tabla seguiría mostrando los
+    // resultados de la búsqueda anterior.
+    const [filtrosSucios, setFiltrosSucios] = useState(false)
+
+    // Carga bajo demanda: `anticipos` viene null hasta que el usuario
+    // presiona Buscar (aplicarFiltros manda buscado=1) — mismo patrón que
+    // Cuentas por Pagar/Proveedores.
+    const haBuscado = anticipos !== null && !filtrosSucios
+
     useEffect(() => {
         if (flash?.success) notify.success(flash.success)
         if (flash?.error)   notify.error(flash.error)
     }, [flash?.success, flash?.error])
 
+    function cambiarBuscar(v: string)      { setBuscar(v);      setFiltrosSucios(true) }
+    function cambiarEstado(v: string)      { setEstado(v);      setFiltrosSucios(true) }
+    function cambiarProveedorId(v: string) { setProveedorId(v); setFiltrosSucios(true) }
+
     function aplicarFiltros() {
         router.get(route('compras.anticipos.index'), {
             buscar, estado,
             ...(proveedorId && { proveedor_id: proveedorId }),
-        }, { preserveState: true, replace: true })
-    }
-
-    function limpiar() {
-        setBuscar(''); setEstado(''); setProveedorId('')
-        router.get(route('compras.anticipos.index'), {}, { preserveState: false })
+            buscado: '1',
+        }, {
+            preserveState: true,
+            replace: true,
+            onSuccess: () => setFiltrosSucios(false),
+        })
     }
 
     async function confirmarAnulacion(a: Anticipo) {
@@ -419,7 +437,6 @@ export default function AnticiposIndex() {
 
             <PageHeader
                 title="Anticipos a Proveedores"
-                description="Pagos adelantados antes de recibir la factura formal"
                 breadcrumbs={[{ label: 'Compras' }, { label: 'Anticipos' }]}
                 actions={
                     puede('crear') ? (
@@ -436,12 +453,12 @@ export default function AnticiposIndex() {
                 <FilterToolbar
                     search={{
                         value: buscar,
-                        onChange: setBuscar,
+                        onChange: cambiarBuscar,
                         onSearch: aplicarFiltros,
                         placeholder: 'Proveedor o transferencia...',
                     }}
                 >
-                    <select value={estado} onChange={e => setEstado(e.target.value)}
+                    <select value={estado} onChange={e => cambiarEstado(e.target.value)}
                         className="input-field shrink-0"
                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
                         <option value="">Todos</option>
@@ -449,7 +466,7 @@ export default function AnticiposIndex() {
                         <option value="cruzado">Cruzados</option>
                     </select>
 
-                    <select value={proveedorId} onChange={e => setProveedorId(e.target.value)}
+                    <select value={proveedorId} onChange={e => cambiarProveedorId(e.target.value)}
                         className="input-field shrink-0"
                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
                         <option value="">Todos los proveedores</option>
@@ -457,14 +474,23 @@ export default function AnticiposIndex() {
                             <option key={p.id} value={p.id}>{p.razon_social}</option>
                         ))}
                     </select>
-
-                    <button type="button" onClick={limpiar} className="text-sm underline shrink-0" style={{ color: 'var(--text-muted)' }}>
-                        Limpiar
-                    </button>
                 </FilterToolbar>
             </div>
 
+            {/* Estado inicial: aún no se ha buscado (carga bajo demanda) */}
+            {!haBuscado && (
+                <div className="px-6 pb-8">
+                    <div className="text-center py-16">
+                        <Search className="w-12 h-12 mx-auto mb-4 opacity-30" style={{ color: 'var(--text-muted)' }} />
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                            Ajusta los filtros y presiona Buscar para consultar los anticipos.
+                        </p>
+                    </div>
+                </div>
+            )}
+
             {/* Tabla */}
+            {haBuscado && (
             <div className="px-6 pb-8">
                 <div className="border rounded-xl overflow-hidden"
                     style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
@@ -488,7 +514,7 @@ export default function AnticiposIndex() {
                             <CreditCard className="opacity-20 mx-auto mb-3 w-10 h-10"
                                 style={{ color: 'var(--text-muted)' }} />
                             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                                No hay anticipos registrados
+                                No se encontraron anticipos con estos filtros
                             </p>
                         </div>
                     )}
@@ -572,6 +598,7 @@ export default function AnticiposIndex() {
                     ))}
                 </div>
             </div>
+            )}
 
             {modalNuevo && (
                 <ModalNuevo

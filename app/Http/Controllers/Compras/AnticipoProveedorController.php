@@ -25,41 +25,48 @@ class AnticipoProveedorController extends Controller
     {
         $empresaId = session('empresa_activa_id');
 
-        $query = AnticipoProveedor::with(['proveedor', 'importacion', 'bancoCaja'])
-            ->where('empresa_id', $empresaId);
+        // Carga bajo demanda: mismo patrón que Cuentas por Pagar/
+        // Proveedores — la query solo se ejecuta cuando el usuario dispara
+        // una búsqueda explícita (botón lupa del FilterToolbar).
+        $anticipos = null;
 
-        if ($request->filled('estado')) {
-            $query->where('estado', $request->estado);
-        }
-        if ($request->filled('proveedor_id')) {
-            $query->where('proveedor_id', $request->proveedor_id);
-        }
-        if ($request->filled('buscar')) {
-            $q = $request->buscar;
-            $query->where(function ($qb) use ($q) {
-                $qb->whereHas('proveedor', fn($p) =>
-                    $p->where('razon_social', 'ilike', "%{$q}%")
-                )->orWhere('num_transferencia', 'ilike', "%{$q}%");
-            });
-        }
+        if ($request->boolean('buscado')) {
+            $query = AnticipoProveedor::with(['proveedor', 'importacion', 'bancoCaja'])
+                ->where('empresa_id', $empresaId);
 
-        $anticipos = $query->orderByDesc('fecha')
-            ->orderByDesc('id')
-            ->get()
-            ->map(fn($a) => [
-                'id'               => $a->id,
-                'proveedor_id'     => $a->proveedor_id,
-                'proveedor'        => $a->proveedor?->razon_social,
-                'importacion'      => $a->importacion?->nombre,
-                'importacion_id'   => $a->importacion_id,
-                'fecha'            => $a->fecha?->format('d/m/Y'),
-                'monto'            => $a->monto,
-                'saldo'            => $a->saldo,
-                'num_transferencia'=> $a->num_transferencia,
-                'banco'            => $a->bancoCaja?->nombre,
-                'estado'           => $a->estado,
-                'asiento_id'       => $a->asiento_id,
-            ]);
+            if ($request->filled('estado')) {
+                $query->where('estado', $request->estado);
+            }
+            if ($request->filled('proveedor_id')) {
+                $query->where('proveedor_id', $request->proveedor_id);
+            }
+            if ($request->filled('buscar')) {
+                $q = $request->buscar;
+                $query->where(function ($qb) use ($q) {
+                    $qb->whereHas('proveedor', fn($p) =>
+                        $p->where('razon_social', 'ilike', "%{$q}%")
+                    )->orWhere('num_transferencia', 'ilike', "%{$q}%");
+                });
+            }
+
+            $anticipos = $query->orderByDesc('fecha')
+                ->orderByDesc('id')
+                ->get()
+                ->map(fn($a) => [
+                    'id'               => $a->id,
+                    'proveedor_id'     => $a->proveedor_id,
+                    'proveedor'        => $a->proveedor?->razon_social,
+                    'importacion'      => $a->importacion?->nombre,
+                    'importacion_id'   => $a->importacion_id,
+                    'fecha'            => $a->fecha?->format('d/m/Y'),
+                    'monto'            => $a->monto,
+                    'saldo'            => $a->saldo,
+                    'num_transferencia'=> $a->num_transferencia,
+                    'banco'            => $a->bancoCaja?->nombre,
+                    'estado'           => $a->estado,
+                    'asiento_id'       => $a->asiento_id,
+                ]);
+        }
 
         $proveedores = Proveedor::where('empresa_id', $empresaId)
             ->activos()->orderBy('razon_social')
