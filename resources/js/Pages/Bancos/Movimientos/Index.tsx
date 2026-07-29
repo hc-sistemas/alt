@@ -10,7 +10,7 @@ import { Label } from '@/Components/ui/label'
 import { cn, formatFecha } from '@/lib/utils'
 import {
     Plus, X, ArrowUpCircle, ArrowDownCircle,
-    Ban, DollarSign, Clock,
+    Ban, DollarSign, Clock, Search,
 } from 'lucide-react'
 import { usePermiso } from '@/Hooks/usePermiso'
 import type { MovimientoBancario, BancoCaja, PlanCuenta, PageProps } from '@/types'
@@ -36,13 +36,13 @@ interface Props extends PageProps {
         banco_caja?: BancoCaja
         cuenta_contrapartida?: PlanCuenta
         creado_por?: { nombre: string }
-    }>
+    }> | null
     bancos:      Pick<BancoCaja, 'id' | 'nombre' | 'tipo' | 'saldo_actual'>[]
     cuentas:     Pick<PlanCuenta, 'id' | 'codigo' | 'nombre'>[]
     proveedores: PersonaOpt[]
     clientes:    PersonaOpt[]
     filtros: { banco_caja_id?: string; tipo?: string; fecha_desde?: string; fecha_hasta?: string; buscar?: string }
-    stats: { total_ingresos: number; total_egresos: number; pendientes_conciliar: number }
+    stats: { total_ingresos: number; total_egresos: number; pendientes_conciliar: number } | null
 }
 
 // ─── Notify / Swal ───────────────────────────────────────────────────────────
@@ -399,6 +399,15 @@ export default function MovimientosIndex() {
     const [anularMov, setAnularMov] = useState<MovimientoBancario | null>(null)
     const [filtro, setFiltro] = useState(filtros)
 
+    // Cambiar cualquier filtro después de haber buscado marca los resultados
+    // como "obsoletos" — la tabla vuelve al estado vacío hasta que se
+    // presione Buscar de nuevo (mismo patrón que Importaciones/Cuentas por
+    // Pagar/Anticipos/Devoluciones).
+    const [filtrosSucios, setFiltrosSucios] = useState(false)
+
+    // Carga bajo demanda: `movimientos`/`stats` vienen null hasta que el
+    // usuario presiona Buscar.
+    const haBuscado = movimientos !== null && !filtrosSucios
 
     useEffect(() => {
         if (flash?.success) notify.ok(flash.success)
@@ -406,16 +415,19 @@ export default function MovimientosIndex() {
         if (flash?.warning) notify.warn(flash.warning as string)
     }, [flash?.success, flash?.error])
 
-    function buscar() {
-        router.get(route('bancos.movimientos.index'), filtro as any, { preserveState: true, replace: true })
-    }
-    function limpiar() {
-        const empty = { banco_caja_id: '', tipo: '', fecha_desde: '', fecha_hasta: '', buscar: '' }
-        setFiltro(empty)
-        router.get(route('bancos.movimientos.index'), {}, { preserveState: true, replace: true })
+    function cambiarFiltro<K extends keyof typeof filtro>(campo: K, valor: string) {
+        setFiltro(f => ({ ...f, [campo]: valor }))
+        setFiltrosSucios(true)
     }
 
-    const inp = { background: 'var(--bg-card)', color: 'var(--text-main)', borderColor: 'var(--border)' }
+    function buscar() {
+        router.get(route('bancos.movimientos.index'), { ...filtro, buscado: '1' } as any, {
+            preserveState: true,
+            replace: true,
+            onSuccess: () => setFiltrosSucios(false),
+        })
+    }
+
     const exportUrl = route('bancos.movimientos.export-excel') + '?' + new URLSearchParams(
         Object.fromEntries(Object.entries(filtro).filter(([, v]) => v)) as Record<string, string>
     ).toString()
@@ -426,7 +438,6 @@ export default function MovimientosIndex() {
 
             <PageHeader
                 title="Movimientos Bancarios"
-                description="Ingresos y egresos de bancos y cajas"
                 breadcrumbs={[{ label: 'Bancos' }, { label: 'Movimientos' }]}
                 actions={
                     puede('crear') ? (
@@ -438,46 +449,75 @@ export default function MovimientosIndex() {
             />
 
             <div className="px-6 pt-6 mb-2">
-                {/* Toolbar */}
+                {/*
+                    Ancho vía `style.width` inline a propósito, NO clases Tailwind: `.input-field`
+                    (app.css) declara `width:100%` fuera de cualquier @layer, y las utilidades de
+                    Tailwind v4 viven dentro de su @layer utilities interno — por reglas de CSS
+                    Cascade Layers, lo no-layereado siempre gana sobre lo layereado sin importar
+                    especificidad ni orden, así que un w-XX de Tailwind nunca puede ganarle a
+                    `.input-field`. Mismo hallazgo documentado en Asientos/Facturas de Compra/
+                    Proveedores/Cuentas por Pagar/Anticipos/Devoluciones/Importaciones.
+                */}
+                <div className="overflow-x-auto">
+                <div style={{ minWidth: '900px' }}>
                 <FilterToolbar
                     search={{
                         value: filtro.buscar ?? '',
-                        onChange: v => setFiltro(f => ({ ...f, buscar: v })),
+                        onChange: v => cambiarFiltro('buscar', v),
                         onSearch: buscar,
                         placeholder: 'Descripción, beneficiario...',
                     }}
+                    searchWidth="w-[170px]"
                     exportHref={exportUrl}
                 >
-                    <select value={filtro.banco_caja_id ?? ''} onChange={e => setFiltro(f => ({ ...f, banco_caja_id: e.target.value }))}
-                        className="input-field shrink-0"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
+                    <select value={filtro.banco_caja_id ?? ''} onChange={e => cambiarFiltro('banco_caja_id', e.target.value)}
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '170px' }}>
                         <option value="">Todos los bancos</option>
                         {bancos.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
                     </select>
 
-                    <select value={filtro.tipo ?? ''} onChange={e => setFiltro(f => ({ ...f, tipo: e.target.value }))}
-                        className="input-field shrink-0"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
+                    <select value={filtro.tipo ?? ''} onChange={e => cambiarFiltro('tipo', e.target.value)}
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '140px' }}>
                         <option value="">Todos los tipos</option>
                         <option value="ingreso">Ingreso</option>
                         <option value="egreso">Egreso</option>
                     </select>
 
-                    <input type="date" value={filtro.fecha_desde ?? ''}
-                        onChange={e => setFiltro(f => ({ ...f, fecha_desde: e.target.value }))}
-                        className="input-field shrink-0 w-36"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }} />
-                    <input type="date" value={filtro.fecha_hasta ?? ''}
-                        onChange={e => setFiltro(f => ({ ...f, fecha_hasta: e.target.value }))}
-                        className="input-field shrink-0 w-36"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }} />
-
-                    <button type="button" onClick={limpiar} className="text-sm underline shrink-0" style={{ color: 'var(--text-muted)' }}>
-                        Limpiar
-                    </button>
+                    <div className="flex flex-col gap-1 shrink-0 self-end">
+                        <label className="text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>Desde</label>
+                        <input type="date" value={filtro.fecha_desde ?? ''}
+                            onChange={e => cambiarFiltro('fecha_desde', e.target.value)}
+                            className="input-field text-xs"
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '150px' }} />
+                    </div>
+                    <div className="flex flex-col gap-1 shrink-0 self-end">
+                        <label className="text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>Hasta</label>
+                        <input type="date" value={filtro.fecha_hasta ?? ''}
+                            onChange={e => cambiarFiltro('fecha_hasta', e.target.value)}
+                            className="input-field text-xs"
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '150px' }} />
+                    </div>
                 </FilterToolbar>
+                </div>
+                </div>
             </div>
 
+            {/* Estado inicial: aún no se ha buscado (carga bajo demanda) */}
+            {!haBuscado && (
+                <div className="px-6 pb-8">
+                    <div className="text-center py-16">
+                        <Search className="w-12 h-12 mx-auto mb-4 opacity-30" style={{ color: 'var(--text-muted)' }} />
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                            Ajusta los filtros y presiona Buscar para consultar los movimientos.
+                        </p>
+                    </div>
+                </div>
+            )}
+
+            {haBuscado && stats && movimientos && (
+            <>
             {/* Stats */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 px-6 py-4">
                 <StatCard label="Total Ingresos" value={fmt(stats.total_ingresos)} icon={ArrowUpCircle}
@@ -594,6 +634,8 @@ export default function MovimientosIndex() {
                     </div>
                 )}
             </div>
+            </>
+            )}
 
             {showModal && (
                 <MovimientoModal

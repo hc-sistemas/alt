@@ -26,35 +26,50 @@ class MovimientoBancarioController extends Controller
     public function index(Request $request): Response
     {
         $empresaId = session('empresa_activa_id');
+        $haBuscado = $request->boolean('buscado');
 
-        $query = MovimientoBancario::with(['bancoCaja', 'cuentaContrapartida', 'creadoPor'])
-            ->where('empresa_id', $empresaId);
+        $movimientos = null;
+        $stats       = null;
 
-        if ($request->filled('banco_caja_id')) {
-            $query->where('banco_caja_id', $request->banco_caja_id);
-        }
-        if ($request->filled('tipo')) {
-            $query->where('tipo', $request->tipo);
-        }
-        if ($request->filled('fecha_desde')) {
-            $query->where('fecha', '>=', $request->fecha_desde);
-        }
-        if ($request->filled('fecha_hasta')) {
-            $query->where('fecha', '<=', $request->fecha_hasta);
-        }
-        if ($request->filled('buscar')) {
-            $q = $request->buscar;
-            $query->where(fn($qb) =>
-                $qb->where('descripcion',    'ilike', "%{$q}%")
-                   ->orWhere('beneficiario', 'ilike', "%{$q}%")
-                   ->orWhere('num_documento','ilike', "%{$q}%")
-            );
-        }
+        if ($haBuscado) {
+            $query = MovimientoBancario::with(['bancoCaja', 'cuentaContrapartida', 'creadoPor'])
+                ->where('empresa_id', $empresaId);
 
-        $movimientos = $query->orderByDesc('fecha')
-                             ->orderByDesc('id')
-                             ->paginate(25)
-                             ->withQueryString();
+            if ($request->filled('banco_caja_id')) {
+                $query->where('banco_caja_id', $request->banco_caja_id);
+            }
+            if ($request->filled('tipo')) {
+                $query->where('tipo', $request->tipo);
+            }
+            if ($request->filled('fecha_desde')) {
+                $query->where('fecha', '>=', $request->fecha_desde);
+            }
+            if ($request->filled('fecha_hasta')) {
+                $query->where('fecha', '<=', $request->fecha_hasta);
+            }
+            if ($request->filled('buscar')) {
+                $q = $request->buscar;
+                $query->where(fn($qb) =>
+                    $qb->where('descripcion',    'ilike', "%{$q}%")
+                       ->orWhere('beneficiario', 'ilike', "%{$q}%")
+                       ->orWhere('num_documento','ilike', "%{$q}%")
+                );
+            }
+
+            $movimientos = $query->orderByDesc('fecha')
+                                 ->orderByDesc('id')
+                                 ->paginate(25)
+                                 ->withQueryString();
+
+            $stats = [
+                'total_ingresos'       => MovimientoBancario::where('empresa_id', $empresaId)
+                    ->where('tipo', 'ingreso')->where('anulado', false)->sum('monto'),
+                'total_egresos'        => MovimientoBancario::where('empresa_id', $empresaId)
+                    ->where('tipo', 'egreso')->where('anulado', false)->sum('monto'),
+                'pendientes_conciliar' => MovimientoBancario::where('empresa_id', $empresaId)
+                    ->where('conciliado', false)->where('anulado', false)->count(),
+            ];
+        }
 
         $bancos  = BancoCaja::where('empresa_id', $empresaId)
                     ->activos()->orderBy('nombre')
@@ -79,14 +94,7 @@ class MovimientoBancarioController extends Controller
             'filtros'     => $request->only([
                 'banco_caja_id', 'tipo', 'fecha_desde', 'fecha_hasta', 'buscar',
             ]),
-            'stats' => [
-                'total_ingresos'       => MovimientoBancario::where('empresa_id', $empresaId)
-                    ->where('tipo', 'ingreso')->where('anulado', false)->sum('monto'),
-                'total_egresos'        => MovimientoBancario::where('empresa_id', $empresaId)
-                    ->where('tipo', 'egreso')->where('anulado', false)->sum('monto'),
-                'pendientes_conciliar' => MovimientoBancario::where('empresa_id', $empresaId)
-                    ->where('conciliado', false)->where('anulado', false)->count(),
-            ],
+            'stats' => $stats,
         ]);
     }
 
