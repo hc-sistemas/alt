@@ -506,8 +506,7 @@ export default function ProveedoresIndex() {
                 actions={
                     puede('crear') ? (
                         <button onClick={() => setModal({ open: true })}
-                            className="btn-primary flex items-center gap-2 whitespace-nowrap shrink-0"
-                            style={{ color: '#000' }}>
+                            className="btn-primary flex items-center gap-2 whitespace-nowrap shrink-0">
                             <Plus size={15} /> Nuevo
                         </button>
                     ) : undefined

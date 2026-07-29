@@ -308,6 +308,7 @@ function CambioEstadoModal({ cheque, estadoNuevo, onClose }: {
                         className="btn-primary flex items-center gap-2"
                         style={{
                             background: estadoNuevo === 'cobrado' ? '#059669' : '#dc2626',
+                            color: '#fff',
                             boxShadow: 'none',
                         }}>
                         {estadoNuevo === 'cobrado'

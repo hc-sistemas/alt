@@ -483,7 +483,7 @@ function CierreFiscalModal({ onClose }: { onClose: () => void }) {
                     <div className="modal-footer" style={{ justifyContent: 'space-between' }}>
                         <button type="submit" disabled={motivo.trim().length < 10 || processing}
                             className="btn-primary flex items-center gap-2"
-                            style={{ background: '#7C3AED', opacity: (motivo.trim().length < 10 || processing) ? 0.6 : 1 }}>
+                            style={{ background: '#7C3AED', color: '#fff', opacity: (motivo.trim().length < 10 || processing) ? 0.6 : 1 }}>
                             <ShieldCheck size={15} />
                             {processing ? 'Procesando...' : `Ejecutar Cierre ${anio}`}
                         </button>

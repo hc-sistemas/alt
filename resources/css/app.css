@@ -419,7 +419,7 @@ body.modal-open { overflow: hidden; }
     padding: 0.625rem 1.25rem;
     font-size: 0.875rem;
     font-weight: 600;
-    color: #FFFFFF;
+    color: #000000;
     background: #F59E0B;
     border-radius: 0.75rem;
     border: none;

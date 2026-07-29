@@ -851,7 +851,7 @@ function ImportarExcelModal({ onClose }: { onClose: () => void }) {
                     <div className="modal-footer" style={{ justifyContent: 'space-between' }}>
                         <button type="submit" disabled={!archivo || processing}
                             className="btn-primary flex items-center gap-2"
-                            style={{ background: '#059669', opacity: (!archivo || processing) ? 0.6 : 1 }}>
+                            style={{ background: '#059669', color: '#fff', opacity: (!archivo || processing) ? 0.6 : 1 }}>
                             <Upload size={15} />
                             {processing ? 'Importando...' : 'Importar'}
                         </button>

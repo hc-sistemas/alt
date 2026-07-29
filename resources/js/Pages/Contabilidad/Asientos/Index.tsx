@@ -388,7 +388,6 @@ export default function AsientosIndex() {
                                 setModalAbierto(true)
                             }}
                             className="btn-primary flex items-center gap-2 whitespace-nowrap shrink-0"
-                            style={{ color: '#000' }}
                         >
                             <Plus size={15} />
                             Nuevo Asiento
@@ -967,7 +966,7 @@ export default function AsientosIndex() {
                                 {urlPdf && (
                                     <a href={urlPdf} download={`reporte-asientos-${new Date().toISOString().slice(0, 10)}.pdf`}
                                        className="btn-primary text-xs py-1.5 px-3"
-                                       style={{ background: '#ef4444', boxShadow: 'none', textDecoration: 'none' }}>
+                                       style={{ background: '#ef4444', color: '#fff', boxShadow: 'none', textDecoration: 'none' }}>
                                         <Download size={13} /> Descargar
                                     </a>
                                 )}

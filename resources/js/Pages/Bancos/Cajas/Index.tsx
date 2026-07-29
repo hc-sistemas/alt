@@ -219,7 +219,7 @@ function CerrarModal({ cierre, onClose }: { cierre: CierreRow; onClose: () => vo
                 <div className="modal-footer">
                     <button type="submit" disabled={processing}
                         className={cn('btn-primary', Math.abs(diferencia) > 0.01 ? 'bg-orange-500' : '')}
-                        style={Math.abs(diferencia) <= 0.01 ? {} : { background: '#F97316', boxShadow: 'none' }}>
+                        style={Math.abs(diferencia) <= 0.01 ? {} : { background: '#F97316', color: '#fff', boxShadow: 'none' }}>
                         <Lock className="w-4 h-4" /> Cerrar Caja
                     </button>
                     <button type="button" onClick={onClose} className="btn-secondary">

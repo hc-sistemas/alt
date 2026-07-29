@@ -394,7 +394,7 @@ function NuevaDevolucionModal({ proveedores, compras, onClose }: {
                     <div className="modal-footer" style={{ justifyContent: 'space-between' }}>
                         <button type="submit" disabled={processing || !proveedorId || !compraId || !motivo.trim()}
                             className="btn-primary flex items-center gap-2"
-                            style={{ color: '#000', opacity: (!proveedorId || !compraId || !motivo.trim() || processing) ? 0.6 : 1 }}>
+                            style={{ opacity: (!proveedorId || !compraId || !motivo.trim() || processing) ? 0.6 : 1 }}>
                             <RotateCcw size={15} />
                             {processing ? 'Guardando...' : 'Registrar Devolución'}
                         </button>

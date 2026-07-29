@@ -273,7 +273,7 @@ export default function HorasExtrasIndex() {
                 <FilterToolbar
                     extraActions={
                         <>
-                            <button onClick={filtrar} className="btn-primary flex items-center gap-2 px-4 py-2" style={{ color: '#000' }}>
+                            <button onClick={filtrar} className="btn-primary flex items-center gap-2 px-4 py-2">
                                 <Filter className="w-4 h-4" /> Filtrar
                             </button>
 

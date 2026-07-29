@@ -1674,7 +1674,7 @@ function CargarXmlModal({ onParsed, onClose }: {
                     <div className="modal-footer" style={{ justifyContent: 'space-between' }}>
                         <button type="submit" disabled={!archivo || loading}
                             className="btn-primary flex items-center gap-2"
-                            style={{ background: '#0891b2', opacity: (!archivo || loading) ? 0.6 : 1 }}>
+                            style={{ background: '#0891b2', color: '#fff', opacity: (!archivo || loading) ? 0.6 : 1 }}>
                             <Upload size={15} />
                             {loading ? 'Procesando...' : 'Cargar XML'}
                         </button>
@@ -2329,7 +2329,7 @@ export default function ComprasIndex() {
                         {puede('crear') && (
                             <button onClick={() => setModalXml(true)}
                                 className="btn-primary flex items-center gap-2 whitespace-nowrap"
-                                style={{ background: '#0891b2' }}>
+                                style={{ background: '#0891b2', color: '#fff' }}>
                                 <Upload size={15} /> Cargar XML SRI
                             </button>
                         )}

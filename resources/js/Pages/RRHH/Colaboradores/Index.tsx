@@ -371,7 +371,7 @@ function ColaboradorModal({ colaborador, puestos, horarios, usuarios, perfiles, 
                                                     type="button"
                                                     disabled={creandoHorario}
                                                     onClick={crearHorario}
-                                                    className="btn-primary text-xs px-3 py-1.5" style={{ color: '#000' }}
+                                                    className="btn-primary text-xs px-3 py-1.5"
                                                 >
                                                     {creandoHorario ? 'Creando…' : 'Crear y asignar'}
                                                 </button>
@@ -520,7 +520,7 @@ function ColaboradorModal({ colaborador, puestos, horarios, usuarios, perfiles, 
                             <button type="button" onClick={onClose} className="btn-secondary">
                                 Cancelar
                             </button>
-                            <button type="submit" disabled={processing} className="btn-primary" style={{ color: '#000' }}>
+                            <button type="submit" disabled={processing} className="btn-primary">
                                 {processing ? 'Guardando…' : isEditar ? 'Actualizar' : 'Crear Colaborador'}
                             </button>
                         </div>
@@ -581,7 +581,7 @@ export default function ColaboradoresIndex() {
                 breadcrumbs={[{ label: 'RRHH' }, { label: 'Colaboradores' }]}
                 actions={
                     puede('crear') ? (
-                        <button onClick={() => setModal({ type: 'nuevo' })} className="btn-primary flex items-center gap-2" style={{ color: '#000' }}>
+                        <button onClick={() => setModal({ type: 'nuevo' })} className="btn-primary flex items-center gap-2">
                             <Plus className="w-4 h-4" /> Nuevo
                         </button>
                     ) : undefined

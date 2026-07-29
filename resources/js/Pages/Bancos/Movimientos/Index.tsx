@@ -381,7 +381,7 @@ function AnularModal({ movimiento, onClose }: { movimiento: MovimientoBancario; 
                 </div>
                 <div className="modal-footer">
                     <button type="submit" disabled={processing || data.motivo.length < 10}
-                        className="btn-primary" style={{ background: '#EF4444', boxShadow: 'none' }}>
+                        className="btn-primary" style={{ background: '#EF4444', color: '#fff', boxShadow: 'none' }}>
                         <Ban className="w-4 h-4" /> Anular
                     </button>
                     <button type="button" onClick={onClose} className="btn-secondary">
