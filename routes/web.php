@@ -323,6 +323,9 @@ Route::middleware('auth')->group(function () {
             Route::get('/',                          [CuentaPagarController::class, 'index'])->name('index');
             Route::get('/pdf',                       [CuentaPagarController::class, 'pdf'])  ->name('pdf');
             Route::get('/excel',                     [CuentaPagarController::class, 'excel'])->name('excel');
+            Route::get('/contar-exportables',        [CuentaPagarController::class, 'contarExportables'])->name('contar-exportables');
+            Route::post('/exportar-segundo-plano',   [CuentaPagarController::class, 'exportarSegundoPlano'])->name('exportar-segundo-plano');
+            Route::get('/exportaciones/{archivo}/descargar', [CuentaPagarController::class, 'descargarExportacion'])->name('exportacion.descargar');
             Route::middleware('permiso:compras,editar')->group(function () {
                 Route::post('/{cuentaPagar}/pagar',      [CuentaPagarController::class, 'pagar'])->name('pagar');
             });

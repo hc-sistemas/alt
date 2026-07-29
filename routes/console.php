@@ -5,6 +5,7 @@ use App\Jobs\AlertaVencimientoCxP;
 use App\Jobs\AlertaVouchersNoLiquidados;
 use App\Jobs\LimpiarExportacionesAsientosJob;
 use App\Jobs\LimpiarExportacionesComprasJob;
+use App\Jobs\LimpiarExportacionesCxPJob;
 use App\Jobs\LimpiarExportacionesProveedoresJob;
 use App\Jobs\RecordatorioCierreNomina;
 use Illuminate\Foundation\Inspiring;
@@ -38,3 +39,7 @@ Schedule::job(new LimpiarExportacionesComprasJob)->dailyAt('03:05');
 // Borra exportaciones de Proveedores (Excel/PDF generados en segundo
 // plano) con más de 48h — diario a las 03:10
 Schedule::job(new LimpiarExportacionesProveedoresJob)->dailyAt('03:10');
+
+// Borra exportaciones de Cuentas por Pagar (Excel/PDF generados en segundo
+// plano) con más de 48h — diario a las 03:15
+Schedule::job(new LimpiarExportacionesCxPJob)->dailyAt('03:15');

@@ -9,7 +9,7 @@ import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { Button } from '@/Components/ui/button'
 import { cn } from '@/lib/utils'
-import { X, FileText, Download, CreditCard, XCircle } from 'lucide-react'
+import { X, FileText, Download, CreditCard, XCircle, Search, Loader2 } from 'lucide-react'
 import type { PageProps, Proveedor, BancoCaja } from '@/types'
 import { usePermiso } from '@/Hooks/usePermiso'
 import 'react-toastify/dist/ReactToastify.css'
@@ -33,6 +33,7 @@ interface CxPRow {
 }
 
 interface Filtros {
+    buscar?: string
     estado?: string
     proveedor_id?: string
     periodo?: string
@@ -41,7 +42,7 @@ interface Filtros {
 }
 
 interface Props extends PageProps {
-    cxp: CxPRow[]
+    cxp: CxPRow[] | null
     proveedores: Pick<Proveedor, 'id' | 'razon_social'>[]
     bancos: Pick<BancoCaja, 'id' | 'nombre' | 'tipo' | 'saldo_actual'>[]
     filtros: Filtros
@@ -237,7 +238,7 @@ export default function CuentasPagarIndex() {
     const { cxp, proveedores, bancos, filtros, flash } = usePage<Props>().props
     const { puede } = usePermiso('compras')
 
-    const [buscar,      setBuscar]      = useState('')
+    const [buscar,      setBuscar]      = useState(filtros.buscar ?? '')
     const [estado,      setEstado]      = useState(filtros.estado ?? '')
     const [proveedorId, setProveedorId] = useState(filtros.proveedor_id ?? '')
     const [periodo,     setPeriodo]     = useState(filtros.periodo ?? '')
@@ -246,28 +247,182 @@ export default function CuentasPagarIndex() {
     const [modalPago,   setModalPago]   = useState<CxPRow | null>(null)
     const [modalPdf,    setModalPdf]    = useState(false)
     const [urlPdf,      setUrlPdf]      = useState('')
-    const abrirPdf = (url: string) => { setUrlPdf(url); setModalPdf(true) }
+    const [cargandoPdf, setCargandoPdf] = useState(false)
+
+    // Carga bajo demanda: `cxp` viene null hasta que el usuario presiona
+    // Buscar (aplicarFiltros manda buscado=1) — mismo patrón que
+    // Asientos/Plan de Cuentas/Facturas de Compra/Proveedores.
+    const haBuscado = cxp !== null
 
     useEffect(() => {
         if (flash?.success) notify.success(flash.success)
         if (flash?.error)   notify.error(flash.error)
     }, [flash?.success, flash?.error])
 
-    function aplicarFiltros() {
+    // `overrides` permite pasar un valor que TODAVÍA no se reflejó en el
+    // estado de React (ver los botones de período más abajo): un
+    // `setPeriodo(val)` seguido de un `aplicarFiltros()` inmediato usaría el
+    // valor VIEJO de `periodo`, porque `aplicarFiltros` es un closure creado
+    // en el render anterior y `setPeriodo` todavía no re-renderizó cuando
+    // se llama. Ese fue el bug real reportado ("un filtro pisa al otro"):
+    // los botones de período aplicaban siempre el período del clic
+    // ANTERIOR, un paso detrás. Pasar el valor nuevo explícito evita
+    // depender de que el closure ya se haya actualizado.
+    function aplicarFiltros(overrides?: Partial<Record<'buscar' | 'estado' | 'proveedor_id' | 'periodo', string>>) {
+        const params = {
+            buscar:       overrides?.buscar       ?? buscar,
+            estado:       overrides?.estado       ?? estado,
+            proveedor_id: overrides?.proveedor_id ?? proveedorId,
+            periodo:      overrides?.periodo      ?? periodo,
+        }
         router.get(route('compras.cxp.index'), {
-            ...(estado      && { estado }),
-            ...(proveedorId && { proveedor_id: proveedorId }),
-            ...(periodo     && { periodo }),
-            ...(fechaDesde  && { fecha_desde: fechaDesde }),
-            ...(fechaHasta  && { fecha_hasta: fechaHasta }),
+            ...(params.buscar       && { buscar: params.buscar }),
+            ...(params.estado       && { estado: params.estado }),
+            ...(params.proveedor_id && { proveedor_id: params.proveedor_id }),
+            ...(params.periodo      && { periodo: params.periodo }),
+            ...(fechaDesde && { fecha_desde: fechaDesde }),
+            ...(fechaHasta && { fecha_hasta: fechaHasta }),
+            buscado: '1',
         }, { preserveState: true, replace: true })
     }
 
+    function seleccionarPeriodo(val: string) {
+        setPeriodo(val)
+        aplicarFiltros({ periodo: val })
+    }
+
+    const paramsFiltrosActuales = () => ({
+        ...(buscar      && { buscar }),
+        ...(estado      && { estado }),
+        ...(proveedorId && { proveedor_id: proveedorId }),
+        ...(periodo     && { periodo }),
+        ...(fechaDesde  && { fecha_desde: fechaDesde }),
+        ...(fechaHasta  && { fecha_hasta: fechaHasta }),
+    })
+
     function limpiar() {
-        setEstado(''); setProveedorId(''); setPeriodo('')
+        setBuscar(''); setEstado(''); setProveedorId(''); setPeriodo('')
         setFechaDesde(''); setFechaHasta('')
         router.get(route('compras.cxp.index'), {}, { preserveState: false })
     }
+
+    // Se trae el PDF como blob (fetch) en vez de apuntar el <iframe> directo
+    // a la URL del backend — mismo patrón que Asientos/Facturas de
+    // Compra/Proveedores: un blob: URL siempre se muestra embebido, sin
+    // depender de si el navegador decide forzar la descarga en el iframe.
+    const abrirPdf = async (url: string) => {
+        setModalPdf(true)
+        setCargandoPdf(true)
+        setUrlPdf('')
+        try {
+            const res = await fetch(url, { headers: { Accept: 'application/pdf' } })
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ message: null })) as { message?: string | null }
+                throw new Error(err.message ?? 'No se pudo generar el PDF.')
+            }
+            const blob = await res.blob()
+            setUrlPdf(URL.createObjectURL(blob))
+        } catch (e) {
+            notify.error(e instanceof Error ? e.message : 'No se pudo generar el PDF. Intenta de nuevo.')
+            setModalPdf(false)
+        } finally {
+            setCargandoPdf(false)
+        }
+    }
+
+    const cerrarModalPdf = () => {
+        if (urlPdf) URL.revokeObjectURL(urlPdf)
+        setModalPdf(false)
+        setUrlPdf('')
+    }
+
+    // ── Excel/PDF grandes (> MAX_FILAS_EXPORT): ofrecer generarlos en
+    //    segundo plano en vez de solo bloquear — mismo patrón que Asientos
+    //    Contables / Facturas de Compra / Proveedores. ────────────────────
+    const [verificandoExport, setVerificandoExport] = useState<'excel' | 'pdf' | null>(null)
+    const [exportandoFondo, setExportandoFondo] = useState<{ formato: 'excel' | 'pdf'; desde: number } | null>(null)
+
+    const confirmarExportacionSegundoPlano = (formato: 'excel' | 'pdf') => {
+        router.post(route('compras.cxp.exportar-segundo-plano'), {
+            formato, ...paramsFiltrosActuales(),
+        }, {
+            preserveScroll: true,
+            preserveState: true,
+            onSuccess: () => setExportandoFondo({ formato, desde: Date.now() }),
+        })
+    }
+
+    const iniciarExportacion = async (formato: 'excel' | 'pdf') => {
+        setVerificandoExport(formato)
+        try {
+            const params = new URLSearchParams(paramsFiltrosActuales())
+            const res = await fetch(route('compras.cxp.contar-exportables') + '?' + params)
+            if (!res.ok) throw new Error()
+            const data = await res.json() as { total: number; limite: number; excede: boolean }
+
+            if (!data.excede) {
+                if (formato === 'excel') {
+                    window.location.href = route('compras.cxp.excel') + '?' + params
+                } else {
+                    abrirPdf(route('compras.cxp.pdf') + '?' + params)
+                }
+                return
+            }
+
+            const { isConfirmed } = await Swal.fire({
+                ...swalBase,
+                title: 'Reporte grande',
+                html: `
+                    <div style="text-align:left;color:#374151;font-size:0.875rem;line-height:1.5">
+                        <p>Este reporte tiene <strong>${data.total.toLocaleString('es-EC')}</strong> cuentas por pagar con
+                        estos filtros — muy grande para generarse al instante (límite: ${data.limite.toLocaleString('es-EC')}).</p>
+                        <p style="margin-top:8px">Se procesará en segundo plano y te avisaremos por notificación
+                        (campanita) cuando esté listo para descargar.</p>
+                    </div>
+                `,
+                icon: 'info',
+                showCancelButton: true,
+                confirmButtonColor: '#F59E0B',
+                confirmButtonText: 'Procesar en segundo plano',
+                cancelButtonText: 'Cancelar',
+                reverseButtons: true,
+            })
+
+            if (isConfirmed) confirmarExportacionSegundoPlano(formato)
+        } catch {
+            notify.error('No se pudo verificar el tamaño del reporte. Intenta de nuevo.')
+        } finally {
+            setVerificandoExport(null)
+        }
+    }
+
+    // Sin websockets/polling en el backend — se consulta el mismo endpoint
+    // que ya usa la campana de notificaciones (notificaciones.index) cada
+    // 15s, mientras haya una exportación en curso, hasta encontrarla o 10
+    // minutos.
+    useEffect(() => {
+        if (!exportandoFondo) return
+        const intervalo = setInterval(async () => {
+            if (Date.now() - exportandoFondo.desde > 10 * 60 * 1000) {
+                setExportandoFondo(null)
+                return
+            }
+            try {
+                const res = await fetch(route('notificaciones.index'))
+                if (!res.ok) return
+                const data = await res.json() as { notificaciones: { tipo: string; created_at: string }[] }
+                const lista = data.notificaciones.some(n =>
+                    (n.tipo === 'exportacion_cxp' || n.tipo === 'exportacion_cxp_error') &&
+                    new Date(n.created_at).getTime() >= exportandoFondo.desde
+                )
+                if (lista) {
+                    notify.success('Tu exportación terminó de procesarse — revisa la campana de notificaciones para descargarla.')
+                    setExportandoFondo(null)
+                }
+            } catch { /* red momentáneamente caída — se reintenta en el próximo tick */ }
+        }, 15000)
+        return () => clearInterval(intervalo)
+    }, [exportandoFondo])
 
     async function iniciarAnulacion(c: CxPRow) {
         if (!c.compra_id) {
@@ -373,19 +528,7 @@ export default function CuentasPagarIndex() {
         }
     }
 
-    const hayFiltros = estado || proveedorId
-
-    const filtradas = cxp.filter(c => {
-        if (!buscar.trim()) return true
-        const q = buscar.toLowerCase()
-        return (
-            (c.proveedor ?? '').toLowerCase().includes(q) ||
-            (c.num_documento ?? '').toLowerCase().includes(q)
-        )
-    })
-
-    const pdfUrl   = `${route('compras.cxp.pdf')}?estado=${estado}&proveedor_id=${proveedorId}`
-    const excelUrl = `${route('compras.cxp.excel')}?estado=${estado}&proveedor_id=${proveedorId}`
+    const hayFiltros = buscar || estado || proveedorId || periodo
 
     return (
         <AppLayout title="Cuentas por Pagar" suppressFlash>
@@ -393,32 +536,57 @@ export default function CuentasPagarIndex() {
 
             <PageHeader
                 title="Cuentas por Pagar"
-                description="Obligaciones pendientes con proveedores ordenadas por vencimiento"
                 breadcrumbs={[{ label: 'Compras' }, { label: 'Cuentas por Pagar' }]}
             />
 
+            {exportandoFondo && (
+                <div className="flex items-center gap-2 text-xs rounded-lg px-3 py-2 mx-6 mt-4"
+                    style={{ background: 'color-mix(in srgb, var(--primary) 12%, var(--bg-main))', color: 'var(--text-main)' }}>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" style={{ color: 'var(--primary)' }} />
+                    <span>
+                        Tu {exportandoFondo.formato === 'excel' ? 'Excel' : 'PDF'} se está procesando en segundo
+                        plano — te avisaremos por notificación cuando esté listo.
+                    </span>
+                </div>
+            )}
+
             <div className="px-6 pt-6 mb-2">
+                {/*
+                    Ancho vía `style.width` inline a propósito, NO clases Tailwind: `.input-field`
+                    (app.css) declara `width:100%` fuera de cualquier @layer, y las utilidades de
+                    Tailwind v4 viven dentro de su @layer utilities interno — por reglas de CSS
+                    Cascade Layers, lo no-layereado siempre gana sobre lo layereado sin importar
+                    especificidad ni orden, así que un w-XX de Tailwind nunca puede ganarle a
+                    `.input-field`. Mismo hallazgo documentado en Asientos/Facturas de Compra/Proveedores.
+                */}
+                <div className="overflow-x-auto">
+                <div style={{ minWidth: '1000px' }}>
                 <FilterToolbar
                     search={{
                         value: buscar,
                         onChange: setBuscar,
-                        onSearch: aplicarFiltros,
+                        onSearch: () => aplicarFiltros(),
                         placeholder: 'Proveedor o documento...',
                     }}
-                    exportHref={excelUrl}
+                    searchWidth="w-[150px]"
+                    onExport={() => iniciarExportacion('excel')}
+                    exportDisabled={verificandoExport !== null}
+                    exportTitle={verificandoExport === 'excel' ? 'Verificando tamaño…' : 'Exportar a Excel'}
                     extraActions={
                         <button
-                            onClick={() => abrirPdf(pdfUrl)}
-                            title="PDF"
-                            className="flex items-center justify-center w-9 h-9 rounded-md border text-sm font-medium shrink-0"
+                            type="button"
+                            onClick={() => iniciarExportacion('pdf')}
+                            disabled={verificandoExport !== null}
+                            title={verificandoExport === 'pdf' ? 'Verificando tamaño…' : 'PDF'}
+                            className="flex items-center justify-center w-9 h-9 rounded-md border text-sm font-medium shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
                             style={{ background: '#ef4444', color: 'white', borderColor: '#ef4444' }}>
                             <FileText className="w-4 h-4" />
                         </button>
                     }
                 >
                     <select value={estado} onChange={e => setEstado(e.target.value)}
-                        className="input-field shrink-0"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '190px' }}>
                         <option value="">Todas (pendiente + parcial)</option>
                         <option value="pendiente">Pendiente</option>
                         <option value="parcial">Parcial</option>
@@ -437,7 +605,8 @@ export default function CuentasPagarIndex() {
                             { val: 'anio',    label: 'Año' },
                         ].map(({ val, label }) => (
                             <button key={val}
-                                onClick={() => { setPeriodo(val); setTimeout(aplicarFiltros, 0) }}
+                                type="button"
+                                onClick={() => seleccionarPeriodo(val)}
                                 className={cn('px-2 py-1 rounded text-xs font-semibold transition-colors whitespace-nowrap',
                                     periodo === val
                                         ? 'text-black'
@@ -453,8 +622,8 @@ export default function CuentasPagarIndex() {
                     </div>
 
                     <select value={proveedorId} onChange={e => setProveedorId(e.target.value)}
-                        className="input-field shrink-0"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '190px' }}>
                         <option value="">Todos los proveedores</option>
                         {proveedores.map(p => (
                             <option key={p.id} value={p.id}>{p.razon_social}</option>
@@ -467,9 +636,24 @@ export default function CuentasPagarIndex() {
                         </button>
                     )}
                 </FilterToolbar>
+                </div>
+                </div>
             </div>
 
+            {/* Estado inicial: aún no se ha buscado (carga bajo demanda) */}
+            {!haBuscado && (
+                <div className="px-6 pb-8">
+                    <div className="text-center py-16">
+                        <Search className="w-12 h-12 mx-auto mb-4 opacity-30" style={{ color: 'var(--text-muted)' }} />
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                            Ajusta los filtros y presiona Buscar para consultar las cuentas por pagar.
+                        </p>
+                    </div>
+                </div>
+            )}
+
             {/* Tabla */}
+            {haBuscado && (
             <div className="px-6 pb-8">
                 <div className="border rounded-xl overflow-hidden"
                     style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
@@ -488,16 +672,16 @@ export default function CuentasPagarIndex() {
                         <span className="col-span-1 text-center">Acciones</span>
                     </div>
 
-                    {filtradas.length === 0 && (
+                    {cxp.length === 0 && (
                         <div className="py-20 text-center">
                             <FileText className="opacity-20 mx-auto mb-3 w-10 h-10" style={{ color: 'var(--text-muted)' }} />
                             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                                No hay cuentas por pagar
+                                No se encontraron cuentas por pagar con estos filtros
                             </p>
                         </div>
                     )}
 
-                    {filtradas.map(c => (
+                    {cxp.map(c => (
                         <div key={c.id}
                             className={cn(
                                 'group grid grid-cols-12 gap-3 px-4 py-3 border-b items-center text-sm transition-colors',
@@ -587,6 +771,7 @@ export default function CuentasPagarIndex() {
                     ))}
                 </div>
             </div>
+            )}
 
             {modalPago && (
                 <ModalPago
@@ -600,7 +785,7 @@ export default function CuentasPagarIndex() {
             {modalPdf && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
                      style={{ background: 'rgba(0,0,0,0.85)' }}
-                     onClick={() => setModalPdf(false)}>
+                     onClick={cerrarModalPdf}>
                     <div className="w-full max-w-5xl rounded-2xl overflow-hidden shadow-2xl flex flex-col"
                          style={{ background: 'var(--bg-card)', height: '90vh' }}
                          onClick={e => e.stopPropagation()}>
@@ -612,19 +797,27 @@ export default function CuentasPagarIndex() {
                                 Reporte de Cuentas por Pagar
                             </h3>
                             <div className="flex items-center gap-2">
-                                <a href={urlPdf} download target="_blank"
-                                   className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-all hover:opacity-90"
-                                   style={{ background: '#ef4444' }}>
-                                    <Download size={13} /> Descargar
-                                </a>
-                                <button onClick={() => setModalPdf(false)}
+                                {urlPdf && (
+                                    <a href={urlPdf} download={`cuentas-pagar-${new Date().toISOString().slice(0, 10)}.pdf`}
+                                       className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-all hover:opacity-90"
+                                       style={{ background: '#ef4444' }}>
+                                        <Download size={13} /> Descargar
+                                    </a>
+                                )}
+                                <button onClick={cerrarModalPdf}
                                     className="px-3 py-1.5 rounded-lg text-xs font-semibold border hover:opacity-80"
                                     style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
                                     ✕ Cerrar
                                 </button>
                             </div>
                         </div>
-                        <iframe src={urlPdf} className="flex-1 w-full border-0" title="Reporte PDF CxP" />
+                        {cargandoPdf ? (
+                            <div className="flex-1 flex items-center justify-center text-sm" style={{ color: 'var(--text-muted)' }}>
+                                Generando PDF…
+                            </div>
+                        ) : (
+                            <iframe src={urlPdf} className="flex-1 w-full border-0" title="Reporte PDF CxP" />
+                        )}
                     </div>
                 </div>
             )}
