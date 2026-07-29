@@ -259,36 +259,25 @@ export default function CuentasPagarIndex() {
         if (flash?.error)   notify.error(flash.error)
     }, [flash?.success, flash?.error])
 
-    // `overrides` permite pasar un valor que TODAVÍA no se reflejó en el
-    // estado de React (ver los botones de período más abajo): un
-    // `setPeriodo(val)` seguido de un `aplicarFiltros()` inmediato usaría el
-    // valor VIEJO de `periodo`, porque `aplicarFiltros` es un closure creado
-    // en el render anterior y `setPeriodo` todavía no re-renderizó cuando
-    // se llama. Ese fue el bug real reportado ("un filtro pisa al otro"):
-    // los botones de período aplicaban siempre el período del clic
-    // ANTERIOR, un paso detrás. Pasar el valor nuevo explícito evita
-    // depender de que el closure ya se haya actualizado.
-    function aplicarFiltros(overrides?: Partial<Record<'buscar' | 'estado' | 'proveedor_id' | 'periodo', string>>) {
-        const params = {
-            buscar:       overrides?.buscar       ?? buscar,
-            estado:       overrides?.estado       ?? estado,
-            proveedor_id: overrides?.proveedor_id ?? proveedorId,
-            periodo:      overrides?.periodo      ?? periodo,
-        }
+    // Carga bajo demanda: cambiar CUALQUIER filtro (período, estado,
+    // proveedor, búsqueda) solo actualiza el estado local — no dispara
+    // ninguna consulta al backend. La única forma de pedir datos es
+    // presionar el botón de la lupa (o Enter en el buscador), que llama a
+    // aplicarFiltros() y manda buscado=1 con los valores YA actuales de
+    // cada filtro. (Antes, los botones de período llamaban aplicarFiltros
+    // de inmediato al hacer clic — eso violaba el patrón de carga bajo
+    // demanda: cambiar el filtro visual ya disparaba la consulta sin que
+    // el usuario presionara Buscar.)
+    function aplicarFiltros() {
         router.get(route('compras.cxp.index'), {
-            ...(params.buscar       && { buscar: params.buscar }),
-            ...(params.estado       && { estado: params.estado }),
-            ...(params.proveedor_id && { proveedor_id: params.proveedor_id }),
-            ...(params.periodo      && { periodo: params.periodo }),
-            ...(fechaDesde && { fecha_desde: fechaDesde }),
-            ...(fechaHasta && { fecha_hasta: fechaHasta }),
+            ...(buscar      && { buscar }),
+            ...(estado      && { estado }),
+            ...(proveedorId && { proveedor_id: proveedorId }),
+            ...(periodo     && { periodo }),
+            ...(fechaDesde  && { fecha_desde: fechaDesde }),
+            ...(fechaHasta  && { fecha_hasta: fechaHasta }),
             buscado: '1',
         }, { preserveState: true, replace: true })
-    }
-
-    function seleccionarPeriodo(val: string) {
-        setPeriodo(val)
-        aplicarFiltros({ periodo: val })
     }
 
     const paramsFiltrosActuales = () => ({
@@ -299,12 +288,6 @@ export default function CuentasPagarIndex() {
         ...(fechaDesde  && { fecha_desde: fechaDesde }),
         ...(fechaHasta  && { fecha_hasta: fechaHasta }),
     })
-
-    function limpiar() {
-        setBuscar(''); setEstado(''); setProveedorId(''); setPeriodo('')
-        setFechaDesde(''); setFechaHasta('')
-        router.get(route('compras.cxp.index'), {}, { preserveState: false })
-    }
 
     // Se trae el PDF como blob (fetch) en vez de apuntar el <iframe> directo
     // a la URL del backend — mismo patrón que Asientos/Facturas de
@@ -528,8 +511,6 @@ export default function CuentasPagarIndex() {
         }
     }
 
-    const hayFiltros = buscar || estado || proveedorId || periodo
-
     return (
         <AppLayout title="Cuentas por Pagar" suppressFlash>
             <Head title="Cuentas por Pagar" />
@@ -565,7 +546,7 @@ export default function CuentasPagarIndex() {
                     search={{
                         value: buscar,
                         onChange: setBuscar,
-                        onSearch: () => aplicarFiltros(),
+                        onSearch: aplicarFiltros,
                         placeholder: 'Proveedor o documento...',
                     }}
                     searchWidth="w-[150px]"
@@ -606,7 +587,7 @@ export default function CuentasPagarIndex() {
                         ].map(({ val, label }) => (
                             <button key={val}
                                 type="button"
-                                onClick={() => seleccionarPeriodo(val)}
+                                onClick={() => setPeriodo(val)}
                                 className={cn('px-2 py-1 rounded text-xs font-semibold transition-colors whitespace-nowrap',
                                     periodo === val
                                         ? 'text-black'
@@ -629,12 +610,6 @@ export default function CuentasPagarIndex() {
                             <option key={p.id} value={p.id}>{p.razon_social}</option>
                         ))}
                     </select>
-
-                    {hayFiltros && (
-                        <button type="button" onClick={limpiar} className="text-sm underline shrink-0" style={{ color: 'var(--text-muted)' }}>
-                            Limpiar
-                        </button>
-                    )}
                 </FilterToolbar>
                 </div>
                 </div>
