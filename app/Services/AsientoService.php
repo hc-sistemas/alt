@@ -774,21 +774,19 @@ class AsientoService
             );
         }
 
-        try {
-            $cuentaAnticipoId = $this->cuentaId('cta_anticipos_proveedores', $empresaId);
-        } catch (\Exception) {
-            $cuenta = PlanCuenta::where('empresa_id', $empresaId)
-                ->where('permite_asientos', true)
-                ->where('estado', true)
-                ->whereIn('codigo', ['1.1.3.3', '1.1.04.04', '1.1.4.4', '1.1.4.03'])
-                ->first();
-            if (!$cuenta) {
-                throw new \Exception(
-                    "Configure el parámetro 'cta_anticipos_proveedores' en Contabilidad → Configuración."
-                );
-            }
-            $cuentaAnticipoId = $cuenta->id;
-        }
+        // El try/catch con una lista de códigos de respaldo que había aquí
+        // antes era código muerto y estaba mal de dos formas a la vez: los
+        // códigos ('1.1.3.3', '1.1.04.04', '1.1.4.4', '1.1.4.03') no
+        // corresponden a "Anticipos a Proveedores" en el plan de cuentas
+        // real (que usa '1.1.3.03'), y además filtraba
+        // PlanCuenta::where('empresa_id', $empresaId) — pero
+        // plan_cuentas.empresa_id es NULL en todas las filas reales (plan
+        // de cuentas compartido entre empresas, mismo hallazgo ya
+        // documentado en ReporteContableController), así que ese filtro
+        // nunca habría encontrado nada de todas formas. cuentaId() ya
+        // tiene su propio fallback correcto (FALLBACK_PLAN → '1.1.3.03'),
+        // no hace falta duplicarlo aquí.
+        $cuentaAnticipoId = $this->cuentaId('cta_anticipos_proveedores', $empresaId);
 
         return $this->crear(
             empresaId:    $empresaId,
@@ -870,7 +868,15 @@ class AsientoService
         $proveedor = $anticipo->proveedor;
         $cc        = $centroCostoId;
 
-        $ctaProvId = ($proveedor && $proveedor->tipo === 'exterior')
+        // BUG REAL encontrado en auditoría (2026-07-29): comparaba contra
+        // 'exterior', pero proveedores.tipo solo usa 'nacional'/
+        // 'internacional' (confirmado en la tabla real y en
+        // Proveedor::scopeInternacionales()) — la condición nunca era
+        // verdadera, así que el cruce de anticipo SIEMPRE enviaba la CxP
+        // resultante a "Proveedores Locales" (2.1.1.01), incluso para
+        // proveedores genuinamente internacionales, en vez de
+        // "Proveedores del Exterior" (2.1.1.02) como pide el cliente.
+        $ctaProvId = ($proveedor && $proveedor->tipo === 'internacional')
             ? $this->cuentaId('cta_proveedores_exterior', $empresaId)
             : $this->cuentaId('cta_proveedores_locales',  $empresaId);
 
