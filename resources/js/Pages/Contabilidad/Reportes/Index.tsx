@@ -19,7 +19,7 @@ interface Ejercicio {
 interface CuentaSimple {
     id: number
     codigo: string
-    descripcion: string
+    nombre: string
 }
 
 interface Props extends PageProps {
@@ -60,6 +60,8 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
     const [modalPdf,    setModalPdf]    = useState(false)
     const [urlPdf,      setUrlPdf]      = useState('')
     const [tituloModal, setTituloModal] = useState('')
+    const [cargandoPdf, setCargandoPdf] = useState(false)
+    const [errorPdf,    setErrorPdf]    = useState('')
 
     const meses = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio',
                    'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
@@ -69,14 +71,44 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
         if (!q) return cuentas.slice(0, 30)
         return cuentas.filter(c =>
             c.codigo.toLowerCase().includes(q) ||
-            c.descripcion.toLowerCase().includes(q)
+            c.nombre.toLowerCase().includes(q)
         ).slice(0, 25)
     }, [mayorBusqueda, cuentas])
 
-    const abrirPdf = (url: string, titulo: string) => {
-        setUrlPdf(url)
-        setTituloModal(titulo)
+    // Se trae el PDF como blob (fetch) en vez de apuntar el <iframe> directo
+    // a la URL del backend — mismo patrón ya corregido en Compras/Asientos/
+    // Proveedores/Cuentas por Pagar: un blob: URL siempre se muestra
+    // embebido, sin depender de si el navegador decide forzar la descarga
+    // en el iframe. Este modal es compartido por los 6 reportes de esta
+    // pantalla, así que corregirlo aquí una sola vez corrige el PDF en
+    // blanco en todos ellos (Libro Diario, Mayor, Balance de Comprobación,
+    // Balance General, Estado de Resultados, Flujo de Caja).
+    const abrirPdf = async (url: string, titulo: string) => {
         setModalPdf(true)
+        setTituloModal(titulo)
+        setCargandoPdf(true)
+        setErrorPdf('')
+        setUrlPdf('')
+        try {
+            const res = await fetch(url, { headers: { Accept: 'application/pdf' } })
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ message: null })) as { message?: string | null }
+                throw new Error(err.message ?? 'No se pudo generar el PDF.')
+            }
+            const blob = await res.blob()
+            setUrlPdf(URL.createObjectURL(blob))
+        } catch (e) {
+            setErrorPdf(e instanceof Error ? e.message : 'No se pudo generar el PDF. Intenta de nuevo.')
+        } finally {
+            setCargandoPdf(false)
+        }
+    }
+
+    const cerrarModalPdf = () => {
+        if (urlPdf) URL.revokeObjectURL(urlPdf)
+        setModalPdf(false)
+        setUrlPdf('')
+        setErrorPdf('')
     }
 
     const generarLibroDiario = () => {
@@ -279,6 +311,9 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
                                         style={mayorCuentaId ? { borderColor: '#2D6A4F' } : undefined}
                                     />
                                 </div>
+                                <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                                    Escribe parte del código (ej. 1.1.1) o del nombre de la cuenta.
+                                </p>
 
                                 {mayorBusqueda && !mayorCuentaId && (
                                     <div className="border rounded-lg mt-1
@@ -298,7 +333,7 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
                                                 onClick={() => {
                                                     setMayorCuentaId(String(c.id))
                                                     setMayorBusqueda(
-                                                        `${c.codigo} — ${c.descripcion}`
+                                                        `${c.codigo} — ${c.nombre}`
                                                     )
                                                 }}
                                                 className="w-full text-left px-3 py-2
@@ -309,7 +344,7 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
                                                       style={{ color: '#1A3A5C' }}>
                                                     {c.codigo}
                                                 </span>
-                                                {' '}{c.descripcion}
+                                                {' '}{c.nombre}
                                             </button>
                                         ))}
                                     </div>
@@ -537,7 +572,7 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
                 <div className="fixed inset-0 z-50 flex items-center
                                 justify-center p-4"
                      style={{ background: 'rgba(0,0,0,0.85)' }}
-                     onClick={() => setModalPdf(false)}>
+                     onClick={cerrarModalPdf}>
                     <div className="w-full max-w-5xl rounded-2xl
                                     overflow-hidden shadow-2xl flex flex-col"
                          style={{ background: 'var(--bg-card)',
@@ -552,18 +587,19 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
                                 {tituloModal}
                             </h3>
                             <div className="flex items-center gap-2">
-                                <a href={urlPdf}
-                                   download
-                                   target="_blank"
-                                   className="flex items-center gap-1 px-3 py-1.5
-                                              rounded-lg text-xs font-semibold
-                                              text-white hover:opacity-90"
-                                   style={{ background: '#1A3A5C' }}>
-                                    <Download size={13} />
-                                    Descargar
-                                </a>
+                                {urlPdf && (
+                                    <a href={urlPdf}
+                                       download={`${tituloModal.toLowerCase().replace(/\s+/g, '-')}-${new Date().toISOString().slice(0, 10)}.pdf`}
+                                       className="flex items-center gap-1 px-3 py-1.5
+                                                  rounded-lg text-xs font-semibold
+                                                  text-white hover:opacity-90"
+                                       style={{ background: '#1A3A5C' }}>
+                                        <Download size={13} />
+                                        Descargar
+                                    </a>
+                                )}
                                 <button
-                                    onClick={() => setModalPdf(false)}
+                                    onClick={cerrarModalPdf}
                                     className="px-3 py-1.5 rounded-lg text-xs
                                                font-semibold border hover:opacity-80"
                                     style={{ borderColor: 'var(--border)',
@@ -573,11 +609,23 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
                             </div>
                         </div>
 
-                        <iframe
-                            src={urlPdf}
-                            className="flex-1 w-full border-0"
-                            title={tituloModal}
-                        />
+                        {cargandoPdf ? (
+                            <div className="flex-1 flex items-center justify-center text-sm"
+                                 style={{ color: 'var(--text-muted)' }}>
+                                Generando PDF…
+                            </div>
+                        ) : errorPdf ? (
+                            <div className="flex-1 flex items-center justify-center text-sm px-6 text-center"
+                                 style={{ color: '#dc2626' }}>
+                                {errorPdf}
+                            </div>
+                        ) : (
+                            <iframe
+                                src={urlPdf}
+                                className="flex-1 w-full border-0"
+                                title={tituloModal}
+                            />
+                        )}
                     </div>
                 </div>
             )}

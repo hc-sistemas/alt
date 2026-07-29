@@ -20,11 +20,24 @@ class ReporteContableController extends Controller
             ->orderByDesc('anio')->orderByDesc('mes')
             ->get(['id','anio','mes','descripcion','estado']);
 
-        $cuentas = PlanCuenta::where('empresa_id', $empresaId)
-            ->where('permite_asientos', true)
+        // El plan de cuentas es compartido entre empresas (empresa_id en
+        // plan_cuentas está siempre NULL en los datos reales — mismo
+        // criterio que PlanCuentaController::index() y el resto de métodos
+        // de este controller, ninguno filtra PlanCuenta por empresa_id).
+        // Filtrar por empresa_id aquí dejaba `$cuentas` siempre vacío, que
+        // es la causa real de "Sin resultados" en el buscador de Mayor
+        // Contable — no un problema de mínimo de caracteres ni de LIKE.
+        //
+        // También se seleccionaba `descripcion` (columna secundaria,
+        // vacía en el 100% de las 206 cuentas reales) en vez de `nombre`
+        // (el campo que sí tiene el nombre real, ej. "Caja General") —
+        // aunque `$cuentas` no hubiera estado vacío, el buscador por
+        // nombre nunca habría encontrado nada y el desplegable habría
+        // mostrado cada cuenta sin nombre.
+        $cuentas = PlanCuenta::where('permite_asientos', true)
             ->where('estado', true)
             ->orderBy('codigo')
-            ->get(['id','codigo','descripcion']);
+            ->get(['id','codigo','nombre']);
 
         return Inertia::render('Contabilidad/Reportes/Index', [
             'ejercicios' => $ejercicios,
