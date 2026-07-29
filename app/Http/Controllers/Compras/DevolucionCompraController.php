@@ -28,37 +28,52 @@ class DevolucionCompraController extends Controller
     {
         $empresaId = session('empresa_activa_id');
 
-        $query = DevolucionCompra::with(['proveedor', 'compra'])
-            ->where('empresa_id', $empresaId);
+        // Carga bajo demanda: mismo patrón que Cuentas por Pagar/
+        // Proveedores/Anticipos Proveedores — la query solo se ejecuta
+        // cuando el usuario dispara una búsqueda explícita (botón lupa).
+        $devoluciones = null;
 
-        if ($request->filled('estado')) {
-            $query->where('estado', $request->estado);
-        }
-        if ($request->filled('proveedor_id')) {
-            $query->where('proveedor_id', $request->proveedor_id);
-        }
-        if ($request->filled('fecha_desde')) {
-            $query->where('fecha', '>=', $request->fecha_desde);
-        }
-        if ($request->filled('fecha_hasta')) {
-            $query->where('fecha', '<=', $request->fecha_hasta);
-        }
+        if ($request->boolean('buscado')) {
+            $query = DevolucionCompra::with(['proveedor', 'compra'])
+                ->where('empresa_id', $empresaId);
 
-        $devoluciones = $query->orderByDesc('fecha')->get()
-            ->map(fn($d) => [
-                'id'             => $d->id,
-                'proveedor'      => $d->proveedor?->razon_social,
-                'proveedor_id'   => $d->proveedor_id,
-                'compra_id'      => $d->compra_id,
-                'num_compra'     => $d->compra?->num_documento,
-                'num_documento'  => $d->num_documento,
-                'fecha'          => $d->fecha?->format('d/m/Y'),
-                'motivo'         => $d->motivo,
-                'estado'         => $d->estado,
-                'subtotal'       => $d->subtotal,
-                'iva'            => $d->iva,
-                'total'          => $d->total,
-            ]);
+            if ($request->filled('estado')) {
+                $query->where('estado', $request->estado);
+            }
+            if ($request->filled('proveedor_id')) {
+                $query->where('proveedor_id', $request->proveedor_id);
+            }
+            if ($request->filled('fecha_desde')) {
+                $query->where('fecha', '>=', $request->fecha_desde);
+            }
+            if ($request->filled('fecha_hasta')) {
+                $query->where('fecha', '<=', $request->fecha_hasta);
+            }
+            if ($request->filled('buscar')) {
+                $q = $request->buscar;
+                $query->where(function ($qb) use ($q) {
+                    $qb->whereHas('proveedor', fn($p) => $p->where('razon_social', 'ilike', "%{$q}%"))
+                       ->orWhere('num_documento', 'ilike', "%{$q}%")
+                       ->orWhere('motivo', 'ilike', "%{$q}%");
+                });
+            }
+
+            $devoluciones = $query->orderByDesc('fecha')->get()
+                ->map(fn($d) => [
+                    'id'             => $d->id,
+                    'proveedor'      => $d->proveedor?->razon_social,
+                    'proveedor_id'   => $d->proveedor_id,
+                    'compra_id'      => $d->compra_id,
+                    'num_compra'     => $d->compra?->num_documento,
+                    'num_documento'  => $d->num_documento,
+                    'fecha'          => $d->fecha?->format('d/m/Y'),
+                    'motivo'         => $d->motivo,
+                    'estado'         => $d->estado,
+                    'subtotal'       => $d->subtotal,
+                    'iva'            => $d->iva,
+                    'total'          => $d->total,
+                ]);
+        }
 
         $proveedores = Proveedor::where('empresa_id', $empresaId)
             ->activos()->orderBy('razon_social')
@@ -78,7 +93,7 @@ class DevolucionCompraController extends Controller
             'devoluciones' => $devoluciones,
             'proveedores'  => $proveedores,
             'compras'      => $compras,
-            'filtros'      => $request->only(['estado', 'proveedor_id', 'fecha_desde', 'fecha_hasta']),
+            'filtros'      => $request->only(['estado', 'proveedor_id', 'fecha_desde', 'fecha_hasta', 'buscar']),
         ]);
     }
 

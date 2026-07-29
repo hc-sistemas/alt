@@ -5,7 +5,7 @@ import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
 import FilterToolbar from '@/Components/shared/FilterToolbar'
 import {
-    RotateCcw, Plus, X, CheckCircle, XCircle, Clock, PackageX,
+    RotateCcw, Plus, X, CheckCircle, XCircle, Clock, PackageX, Search,
 } from 'lucide-react'
 import type { PageProps } from '@/types'
 import { usePermiso } from '@/Hooks/usePermiso'
@@ -52,10 +52,11 @@ interface Filtros {
     proveedor_id?: string
     fecha_desde?: string
     fecha_hasta?: string
+    buscar?: string
 }
 
 interface Props extends PageProps {
-    devoluciones: Devolucion[]
+    devoluciones: Devolucion[] | null
     proveedores:  Proveedor[]
     compras:      CompraRef[]
     filtros:      Filtros
@@ -377,21 +378,44 @@ export default function DevolucionesIndex() {
     const { puede } = usePermiso('compras')
 
     const [showModal, setShowModal] = useState(false)
-    const [buscar, setBuscar]         = useState('')
+    const [buscar, setBuscar]         = useState(filtros.buscar ?? '')
     const [estado, setEstado]         = useState(filtros.estado ?? '')
     const [proveedorId, setProveedorId] = useState(filtros.proveedor_id ?? '')
     const [fechaDesde, setFechaDesde] = useState(filtros.fecha_desde ?? '')
     const [fechaHasta, setFechaHasta] = useState(filtros.fecha_hasta ?? '')
+
+    // Cambiar cualquier filtro después de haber buscado marca los
+    // resultados como "obsoletos" — la tabla vuelve al estado vacío hasta
+    // que se presione Buscar de nuevo (mismo patrón que Cuentas por Pagar/
+    // Anticipos Proveedores). Sin esto, cambiar un <select> solo tocaría
+    // estado local sin volver a pedir datos, dejando la tabla vieja
+    // mezclada con un filtro nuevo todavía sin aplicar.
+    const [filtrosSucios, setFiltrosSucios] = useState(false)
+
+    // Carga bajo demanda: `devoluciones` viene null hasta que el usuario
+    // presiona Buscar.
+    const haBuscado = devoluciones !== null && !filtrosSucios
 
     useEffect(() => {
         if (flash?.success) notify.ok(flash.success)
         if (flash?.error)   notify.error(flash.error)
     }, [flash])
 
+    function cambiarBuscar(v: string)      { setBuscar(v);      setFiltrosSucios(true) }
+    function cambiarEstado(v: string)      { setEstado(v);      setFiltrosSucios(true) }
+    function cambiarProveedorId(v: string) { setProveedorId(v); setFiltrosSucios(true) }
+    function cambiarFechaDesde(v: string)  { setFechaDesde(v);  setFiltrosSucios(true) }
+    function cambiarFechaHasta(v: string)  { setFechaHasta(v);  setFiltrosSucios(true) }
+
     function aplicarFiltros() {
         router.get(route('compras.devoluciones.index'), {
-            estado, proveedor_id: proveedorId, fecha_desde: fechaDesde, fecha_hasta: fechaHasta,
-        }, { preserveState: true, replace: true })
+            estado, proveedor_id: proveedorId, fecha_desde: fechaDesde, fecha_hasta: fechaHasta, buscar,
+            buscado: '1',
+        }, {
+            preserveState: true,
+            replace: true,
+            onSuccess: () => setFiltrosSucios(false),
+        })
     }
 
     function limpiar() {
@@ -399,17 +423,7 @@ export default function DevolucionesIndex() {
         router.get(route('compras.devoluciones.index'), {}, { preserveState: false })
     }
 
-    const filtradas = useMemo(() => {
-        if (!buscar.trim()) return devoluciones
-        const q = buscar.toLowerCase()
-        return devoluciones.filter(d =>
-            d.proveedor?.toLowerCase().includes(q) ||
-            d.num_documento?.toLowerCase().includes(q) ||
-            d.motivo?.toLowerCase().includes(q)
-        )
-    }, [devoluciones, buscar])
-
-    const hayFiltros = !!(estado || proveedorId || fechaDesde || fechaHasta)
+    const hayFiltros = !!(estado || proveedorId || fechaDesde || fechaHasta || buscar)
 
     function confirmarAnular(dev: Devolucion) {
         const motivo = window.prompt('Motivo de la anulación (mínimo 5 caracteres):')
@@ -426,7 +440,6 @@ export default function DevolucionesIndex() {
 
             <PageHeader
                 title="Devoluciones de Compra"
-                description={`${filtradas.length} devolución(es)`}
                 breadcrumbs={[{ label: 'Compras' }, { label: 'Devoluciones' }]}
                 actions={
                     puede('crear') ? (
@@ -441,46 +454,85 @@ export default function DevolucionesIndex() {
 
             <div className="p-4 md:p-6 space-y-5" style={{ background: 'var(--bg-main)', minHeight: '100vh' }}>
 
+                {/*
+                    Ancho vía `style.width` inline a propósito, NO clases Tailwind: `.input-field`
+                    (app.css) declara `width:100%` fuera de cualquier @layer, y las utilidades de
+                    Tailwind v4 viven dentro de su @layer utilities interno — por reglas de CSS
+                    Cascade Layers, lo no-layereado siempre gana sobre lo layereado sin importar
+                    especificidad ni orden, así que un w-XX de Tailwind nunca puede ganarle a
+                    `.input-field`. Mismo hallazgo documentado en Asientos/Facturas de Compra/
+                    Proveedores/Cuentas por Pagar/Anticipos Proveedores.
+                */}
+                <div className="overflow-x-auto">
+                <div style={{ minWidth: '1100px' }}>
                 <FilterToolbar
                     search={{
                         value: buscar,
-                        onChange: setBuscar,
-                        onSearch: () => {},
+                        onChange: cambiarBuscar,
+                        onSearch: aplicarFiltros,
                         placeholder: 'Proveedor, N° doc...',
                     }}
+                    searchWidth="w-[150px]"
                 >
-                    <select value={estado} onChange={e => setEstado(e.target.value)}
-                        className="input-field shrink-0"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
+                    <select value={estado} onChange={e => cambiarEstado(e.target.value)}
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '160px' }}>
                         <option value="">Todos los estados</option>
                         <option value="pendiente">Pendiente</option>
                         <option value="procesada">Procesada</option>
                         <option value="anulada">Anulada</option>
                     </select>
 
-                    <select value={proveedorId} onChange={e => setProveedorId(e.target.value)}
-                        className="input-field shrink-0"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
+                    <select value={proveedorId} onChange={e => cambiarProveedorId(e.target.value)}
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '190px' }}>
                         <option value="">Todos los proveedores</option>
                         {proveedores.map(p => <option key={p.id} value={p.id}>{p.razon_social}</option>)}
                     </select>
 
-                    <input type="date" value={fechaDesde} onChange={e => setFechaDesde(e.target.value)}
-                        className="input-field shrink-0 w-36"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }} />
-                    <input type="date" value={fechaHasta} onChange={e => setFechaHasta(e.target.value)}
-                        className="input-field shrink-0 w-36"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }} />
+                    {/* Labels "Desde"/"Hasta" apilados sobre el input: el bloque
+                        queda más alto que los selects de al lado (sin label), así
+                        que se alinean al final de la fila (self-end) en vez de al
+                        centro por defecto del FilterToolbar (items-center) — evita
+                        que el input de fecha quede descolgado respecto al resto. */}
+                    <div className="flex flex-col gap-1 shrink-0 self-end">
+                        <label className="text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>Desde</label>
+                        <input type="date" value={fechaDesde} onChange={e => cambiarFechaDesde(e.target.value)}
+                            className="input-field text-xs"
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '150px' }} />
+                    </div>
+                    <div className="flex flex-col gap-1 shrink-0 self-end">
+                        <label className="text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>Hasta</label>
+                        <input type="date" value={fechaHasta} onChange={e => cambiarFechaHasta(e.target.value)}
+                            className="input-field text-xs"
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '150px' }} />
+                    </div>
 
-                    <button type="button" onClick={aplicarFiltros} className="text-sm underline shrink-0" style={{ color: 'var(--primary)' }}>Filtrar</button>
                     {hayFiltros && (
-                        <button type="button" onClick={limpiar} className="text-sm underline shrink-0" style={{ color: 'var(--text-muted)' }}>
+                        <button type="button" onClick={limpiar} className="text-sm underline shrink-0 self-end" style={{ color: 'var(--text-muted)' }}>
                             Limpiar
                         </button>
                     )}
                 </FilterToolbar>
+                </div>
+                </div>
+
+                {/* Estado inicial: aún no se ha buscado (carga bajo demanda) */}
+                {!haBuscado && (
+                    <div className="text-center py-16">
+                        <Search className="w-12 h-12 mx-auto mb-4 opacity-30" style={{ color: 'var(--text-muted)' }} />
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                            Ajusta los filtros y presiona Buscar para consultar las devoluciones.
+                        </p>
+                    </div>
+                )}
 
                 {/* Tabla */}
+                {haBuscado && (
+                <>
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                    {devoluciones.length} devolución(es) encontrada(s)
+                </p>
                 <div className="rounded-2xl border overflow-hidden"
                     style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
                     <div className="grid gap-2 px-4 py-3 border-b text-[11px] font-semibold uppercase tracking-wider"
@@ -500,14 +552,14 @@ export default function DevolucionesIndex() {
                         <span>Acc.</span>
                     </div>
 
-                    {filtradas.length === 0 ? (
+                    {devoluciones.length === 0 ? (
                         <div className="py-16 text-center">
                             <RotateCcw className="w-10 h-10 mx-auto mb-3 opacity-20" style={{ color: 'var(--text-muted)' }} />
                             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                                No hay devoluciones registradas
+                                No se encontraron devoluciones con estos filtros
                             </p>
                         </div>
-                    ) : filtradas.map((dev, i) => (
+                    ) : devoluciones.map((dev, i) => (
                         <div key={dev.id}
                             className="grid gap-2 px-4 py-3 border-b items-center text-sm"
                             style={{
@@ -550,6 +602,8 @@ export default function DevolucionesIndex() {
                         </div>
                     ))}
                 </div>
+                </>
+                )}
             </div>
 
             {showModal && (
