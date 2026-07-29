@@ -7,6 +7,7 @@ use App\Jobs\LimpiarExportacionesAsientosJob;
 use App\Jobs\LimpiarExportacionesComprasJob;
 use App\Jobs\LimpiarExportacionesCxPJob;
 use App\Jobs\LimpiarExportacionesProveedoresJob;
+use App\Jobs\LimpiarExportacionesReportesContablesJob;
 use App\Jobs\RecordatorioCierreNomina;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -43,3 +44,7 @@ Schedule::job(new LimpiarExportacionesProveedoresJob)->dailyAt('03:10');
 // Borra exportaciones de Cuentas por Pagar (Excel/PDF generados en segundo
 // plano) con más de 48h — diario a las 03:15
 Schedule::job(new LimpiarExportacionesCxPJob)->dailyAt('03:15');
+
+// Borra exportaciones de Reportes Contables (Libro Diario/Mayor generados
+// en segundo plano) con más de 48h — diario a las 03:20
+Schedule::job(new LimpiarExportacionesReportesContablesJob)->dailyAt('03:20');

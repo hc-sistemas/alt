@@ -232,7 +232,12 @@ Route::middleware('auth')->group(function () {
         Route::prefix('contabilidad/reportes')->name('contabilidad.reportes.')->group(function () {
             Route::get('/',                      [ReporteContableController::class, 'index'])              ->name('index');
             Route::get('/libro-diario',          [ReporteContableController::class, 'libroDiario'])        ->name('libro-diario');
+            Route::get('/libro-diario/contar',   [ReporteContableController::class, 'contarLibroDiario'])  ->name('libro-diario.contar');
+            Route::post('/libro-diario/segundo-plano', [ReporteContableController::class, 'libroDiarioSegundoPlano'])->name('libro-diario.segundo-plano');
             Route::get('/mayor',                 [ReporteContableController::class, 'mayor'])              ->name('mayor');
+            Route::get('/mayor/contar',          [ReporteContableController::class, 'contarMayor'])        ->name('mayor.contar');
+            Route::post('/mayor/segundo-plano',  [ReporteContableController::class, 'mayorSegundoPlano'])   ->name('mayor.segundo-plano');
+            Route::get('/exportaciones/{archivo}/descargar', [ReporteContableController::class, 'descargarExportacion'])->name('exportacion.descargar');
             Route::get('/balance-comprobacion',  [ReporteContableController::class, 'balanceComprobacion'])->name('balance-comprobacion');
             Route::get('/balance-general',       [ReporteContableController::class, 'balanceGeneral'])     ->name('balance-general');
             Route::get('/estado-resultados',     [ReporteContableController::class, 'estadoResultados'])   ->name('estado-resultados');
