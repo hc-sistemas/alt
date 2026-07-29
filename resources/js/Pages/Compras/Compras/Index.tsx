@@ -12,7 +12,7 @@ import { cn } from '@/lib/utils'
 import { formatFecha } from '@/utils/contabilidad'
 import {
     Plus, X, FileText, Download, ChevronLeft, ChevronRight, ChevronDown,
-    Eye, ShoppingCart, Trash2, CreditCard, Pencil, Search,
+    Eye, ShoppingCart, Trash2, CreditCard, Pencil, Search, Loader2,
     Barcode, CheckCircle, XCircle, RefreshCw, Upload, AlertTriangle,
 } from 'lucide-react'
 import type { Compra, Importacion, Proveedor, CentroCosto, PlanCuenta, Bodega, PageProps, PaginatedData, Producto, EtiquetaDetalleData, EtiquetaGrupoProducto } from '@/types'
@@ -1967,6 +1967,93 @@ export default function ComprasIndex() {
         setUrlPdf('')
     }
 
+    // ── Reporte PDF grande (> MAX_FILAS_PDF): ofrecer generarlo en segundo
+    //    plano en vez de solo bloquear — mismo patrón que Asientos Contables
+    //    (contar-exportables -> Swal "Reporte grande" -> Job en cola ->
+    //    notificación campana cuando termina). ──────────────────────────────
+    const [verificandoExportPdf, setVerificandoExportPdf] = useState(false)
+    const [exportandoFondo, setExportandoFondo] = useState<{ desde: number } | null>(null)
+
+    const construirUrlPdf = () =>
+        `${route('compras.facturas.pdf')}?estado=${estado}&fecha_desde=${fechaDesde}&fecha_hasta=${fechaHasta}`
+
+    const confirmarExportacionSegundoPlano = () => {
+        router.post(route('compras.facturas.pdf-segundo-plano'), {
+            estado, fecha_desde: fechaDesde, fecha_hasta: fechaHasta,
+        }, {
+            preserveScroll: true,
+            preserveState: true,
+            onSuccess: () => setExportandoFondo({ desde: Date.now() }),
+        })
+    }
+
+    const iniciarExportacionPdf = async () => {
+        setVerificandoExportPdf(true)
+        try {
+            const params = new URLSearchParams({ estado, fecha_desde: fechaDesde, fecha_hasta: fechaHasta })
+            const res = await fetch(route('compras.facturas.contar-pdf') + '?' + params)
+            if (!res.ok) throw new Error()
+            const data = await res.json() as { total: number; limite: number; excede: boolean }
+
+            if (!data.excede) {
+                abrirPdf(construirUrlPdf())
+                return
+            }
+
+            const { isConfirmed } = await Swal.fire({
+                ...swalBase,
+                title: 'Reporte grande',
+                html: `
+                    <div style="text-align:left;color:#374151;font-size:0.875rem;line-height:1.5">
+                        <p>Este reporte tiene <strong>${data.total.toLocaleString('es-EC')}</strong> facturas con
+                        estos filtros — muy grande para generarse al instante (límite: ${data.limite.toLocaleString('es-EC')}).</p>
+                        <p style="margin-top:8px">Se procesará en segundo plano y te avisaremos por notificación
+                        (campanita) cuando esté listo para descargar.</p>
+                    </div>
+                `,
+                icon: 'info',
+                showCancelButton: true,
+                confirmButtonColor: '#F59E0B',
+                confirmButtonText: 'Procesar en segundo plano',
+                cancelButtonText: 'Cancelar',
+                reverseButtons: true,
+            })
+
+            if (isConfirmed) confirmarExportacionSegundoPlano()
+        } catch {
+            notify.error('No se pudo verificar el tamaño del reporte. Intenta de nuevo.')
+        } finally {
+            setVerificandoExportPdf(false)
+        }
+    }
+
+    // Sin websockets/polling en el backend — se consulta el mismo endpoint que
+    // ya usa la campana de notificaciones (notificaciones.index) cada 15s,
+    // mientras haya una exportación en curso, hasta encontrarla o 10 minutos.
+    useEffect(() => {
+        if (!exportandoFondo) return
+        const intervalo = setInterval(async () => {
+            if (Date.now() - exportandoFondo.desde > 10 * 60 * 1000) {
+                setExportandoFondo(null)
+                return
+            }
+            try {
+                const res = await fetch(route('notificaciones.index'))
+                if (!res.ok) return
+                const data = await res.json() as { notificaciones: { tipo: string; created_at: string }[] }
+                const lista = data.notificaciones.some(n =>
+                    (n.tipo === 'exportacion_compras' || n.tipo === 'exportacion_compras_error') &&
+                    new Date(n.created_at).getTime() >= exportandoFondo.desde
+                )
+                if (lista) {
+                    notify.ok('Tu reporte terminó de procesarse — revisa la campana de notificaciones para descargarlo.')
+                    setExportandoFondo(null)
+                }
+            } catch { /* red momentáneamente caída — se reintenta en el próximo tick */ }
+        }, 15000)
+        return () => clearInterval(intervalo)
+    }, [exportandoFondo])
+
     function reimprimir(c: Compra) {
         setModal({ type: 'reimprimir-etiquetas', compra: c })
     }
@@ -2250,6 +2337,16 @@ export default function ComprasIndex() {
                 }
             />
 
+            {exportandoFondo && (
+                <div className="flex items-center gap-2 text-xs rounded-lg px-3 py-2 mx-6 mt-4"
+                    style={{ background: 'color-mix(in srgb, var(--primary) 12%, var(--bg-main))', color: 'var(--text-main)' }}>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" style={{ color: 'var(--primary)' }} />
+                    <span>
+                        Tu PDF se está procesando en segundo plano — te avisaremos por notificación cuando esté listo.
+                    </span>
+                </div>
+            )}
+
             <div className="px-6 pt-6 mb-2">
                 {/*
                     Ancho vía `style.width` inline a propósito, NO clases Tailwind (w-36 etc.):
@@ -2284,11 +2381,10 @@ export default function ComprasIndex() {
                     onExport={() => window.location.href = `${route('compras.facturas.excel')}?estado=${estado}&fecha_desde=${fechaDesde}&fecha_hasta=${fechaHasta}`}
                     extraActions={
                         <button
-                            onClick={() => abrirPdf(
-                                `${route('compras.facturas.pdf')}?estado=${estado}&fecha_desde=${fechaDesde}&fecha_hasta=${fechaHasta}`
-                            )}
-                            title="PDF"
-                            className="flex items-center justify-center w-9 h-9 rounded-md border text-sm font-medium shrink-0"
+                            onClick={iniciarExportacionPdf}
+                            disabled={verificandoExportPdf}
+                            title={verificandoExportPdf ? 'Verificando tamaño…' : 'PDF'}
+                            className="flex items-center justify-center w-9 h-9 rounded-md border text-sm font-medium shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
                             style={{ background: '#ef4444', color: 'white', borderColor: '#ef4444' }}>
                             <FileText className="w-4 h-4" />
                         </button>

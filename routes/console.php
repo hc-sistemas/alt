@@ -4,6 +4,7 @@ use App\Jobs\AlertaAtrasosRecurrentes;
 use App\Jobs\AlertaVencimientoCxP;
 use App\Jobs\AlertaVouchersNoLiquidados;
 use App\Jobs\LimpiarExportacionesAsientosJob;
+use App\Jobs\LimpiarExportacionesComprasJob;
 use App\Jobs\RecordatorioCierreNomina;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -28,3 +29,7 @@ Schedule::job(new RecordatorioCierreNomina)->monthlyOn(28, '09:00');
 // Borra exportaciones de Asientos Contables (Excel/PDF generados en segundo
 // plano) con más de 48h — diario a las 03:00
 Schedule::job(new LimpiarExportacionesAsientosJob)->dailyAt('03:00');
+
+// Borra reportes PDF de Facturas de Compra generados en segundo plano con
+// más de 48h — diario a las 03:05
+Schedule::job(new LimpiarExportacionesComprasJob)->dailyAt('03:05');

@@ -282,6 +282,9 @@ Route::middleware('auth')->group(function () {
             Route::get('/',                  [CompraController::class, 'index']) ->name('index');
             Route::get('/pdf',               [CompraController::class, 'pdf'])   ->name('pdf');
             Route::get('/excel',             [CompraController::class, 'excel']) ->name('excel');
+            Route::get('/contar-pdf',              [CompraController::class, 'contarFacturasPdf'])      ->name('contar-pdf');
+            Route::post('/pdf-segundo-plano',      [CompraController::class, 'pdfSegundoPlano'])        ->name('pdf-segundo-plano');
+            Route::get('/exportaciones/{archivo}/descargar', [CompraController::class, 'descargarPdfSegundoPlano']) ->name('exportacion.descargar');
             Route::get('/{compra}',                    [CompraController::class, 'show'])              ->name('show');
             Route::get('/{compra}/pdf',               [CompraController::class, 'pdfIndividual'])    ->name('pdf-individual');
             Route::get('/{compra}/detalles',                        [CompraController::class, 'detallesCompra'])          ->name('detalles');

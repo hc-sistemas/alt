@@ -3,6 +3,7 @@ namespace App\Http\Controllers\Compras;
 
 use App\Http\Controllers\Controller;
 use App\Exports\ComprasExport;
+use App\Jobs\ExportarComprasJob;
 use App\Models\Bodega;
 use App\Models\Compra;
 use App\Models\CompraDetalle;
@@ -27,6 +28,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 use Illuminate\Http\Response as HttpResponse;
@@ -1459,6 +1461,61 @@ class CompraController extends Controller
         $empresa = Empresa::find($empresaId);
         $pdf = Pdf::loadView('pdf.compras', compact('compras', 'empresa'))->setPaper('a4', 'landscape');
         return $pdf->stream('facturas-compra-' . now()->format('Y-m-d') . '.pdf');
+    }
+
+    // Chequeo liviano (sin generar nada) para que el frontend decida, ANTES de
+    // pedir el PDF, si el filtro actual entra en el camino rápido (síncrono)
+    // o necesita el camino de segundo plano (Job en cola) — mismo patrón que
+    // AsientoContableController::contarExportables().
+    public function contarFacturasPdf(Request $request): JsonResponse
+    {
+        $empresaId = session('empresa_activa_id');
+        $query     = Compra::where('empresa_id', $empresaId);
+        if ($request->filled('estado'))      { $query->where('estado', $request->estado); }
+        if ($request->filled('fecha_desde')) { $query->where('fecha_emision', '>=', $request->fecha_desde); }
+        if ($request->filled('fecha_hasta')) { $query->where('fecha_emision', '<=', $request->fecha_hasta); }
+
+        $total = $query->count();
+
+        return response()->json([
+            'total'  => $total,
+            'limite' => self::MAX_FILAS_PDF,
+            'excede' => $total > self::MAX_FILAS_PDF,
+        ]);
+    }
+
+    // Camino de segundo plano: sin límite de filas (ExportarComprasJob no
+    // aplica MAX_FILAS_PDF), genera el archivo completo en el worker de colas
+    // y avisa por notificación cuando está listo — ver CLAUDE.md para el
+    // requisito de QUEUE_CONNECTION + `php artisan queue:work`.
+    public function pdfSegundoPlano(Request $request): RedirectResponse
+    {
+        $empresaId = session('empresa_activa_id');
+        $filtros   = $request->only(['estado', 'fecha_desde', 'fecha_hasta']);
+
+        ExportarComprasJob::dispatch((int) $empresaId, (int) Auth::id(), $filtros);
+
+        return back()->with('success',
+            'Tu PDF de Facturas de Compra se está procesando en segundo plano. Te avisaremos por notificación cuando esté listo para descargar.');
+    }
+
+    // Sirve el archivo generado por ExportarComprasJob. Autorización simple:
+    // el nombre de archivo lleva el usuario_id como prefijo (ver el Job), y
+    // basename() descarta cualquier intento de path traversal en la ruta.
+    public function descargarPdfSegundoPlano(string $archivo): \Illuminate\Http\Response
+    {
+        $archivo = basename($archivo);
+
+        if (!str_starts_with($archivo, Auth::id() . '_')) {
+            abort(403, 'No tienes acceso a este archivo.');
+        }
+
+        $ruta = ExportarComprasJob::CARPETA . "/{$archivo}";
+        if (!Storage::disk('local')->exists($ruta)) {
+            abort(404, 'El archivo expiró o ya no está disponible (las exportaciones se conservan 48 horas). Genera el PDF nuevamente.');
+        }
+
+        return Storage::disk('local')->download($ruta, 'facturas-compra-' . now()->format('Y-m-d') . '.pdf');
     }
 
     public function excel(Request $request): \Symfony\Component\HttpFoundation\BinaryFileResponse
