@@ -11,7 +11,7 @@ import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
 import {
     Plus, Pencil, ToggleLeft, ToggleRight, X,
-    FileText, Download, ShoppingCart,
+    FileText, Download, ShoppingCart, Search, Loader2,
 } from 'lucide-react'
 import type { Proveedor, PageProps } from '@/types'
 import { usePermiso } from '@/Hooks/usePermiso'
@@ -19,8 +19,16 @@ import 'react-toastify/dist/ReactToastify.css'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+interface Filtros {
+    buscar?: string
+    tipo?: string
+    estado?: string
+    credito?: string
+}
+
 interface Props extends PageProps {
-    proveedores: Proveedor[]
+    proveedores: Proveedor[] | null
+    filtros: Filtros
 }
 
 // ─── Notify ───────────────────────────────────────────────────────────────────
@@ -300,30 +308,162 @@ function ProveedorModal({ proveedor, onClose }: ModalProps) {
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function ProveedoresIndex() {
-    const { proveedores, flash } = usePage<Props>().props
+    const { proveedores, filtros, flash } = usePage<Props>().props
     const { puede } = usePermiso('compras')
 
-    const [busqueda, setBusqueda] = useState('')
+    const [busqueda, setBusqueda] = useState(filtros.buscar ?? '')
+    const [tipo,     setTipo]     = useState(filtros.tipo ?? '')
+    const [estado,   setEstado]   = useState(filtros.estado ?? '')
+    const [credito,  setCredito]  = useState(filtros.credito ?? '')
     const [modal, setModal] = useState<{ open: boolean; proveedor?: Proveedor }>({ open: false })
     const [modalPdf, setModalPdf] = useState(false)
     const [urlPdf,   setUrlPdf]   = useState('')
-    const abrirPdf = (url: string) => { setUrlPdf(url); setModalPdf(true) }
+    const [cargandoPdf, setCargandoPdf] = useState(false)
+
+    // Carga bajo demanda: `proveedores` viene null hasta que el usuario
+    // presiona Buscar (aplicarFiltros manda buscado=1) — mismo patrón que
+    // Asientos/Plan de Cuentas/Facturas de Compra.
+    const haBuscado = proveedores !== null
 
     useEffect(() => {
         if (flash?.success) notify.ok(flash.success)
         if (flash?.error)   notify.error(flash.error)
     }, [flash?.success, flash?.error])
 
-    const filtrados = proveedores.filter(p => {
-        if (!busqueda.trim()) return true
-        const q = busqueda.toLowerCase()
-        return (
-            p.razon_social.toLowerCase().includes(q) ||
-            p.identificacion.toLowerCase().includes(q) ||
-            (p.nombre_comercial ?? '').toLowerCase().includes(q) ||
-            (p.email ?? '').toLowerCase().includes(q)
-        )
+    function aplicarFiltros() {
+        router.get(route('compras.proveedores.index'), {
+            ...(busqueda && { buscar: busqueda }),
+            ...(tipo     && { tipo }),
+            ...(estado   && { estado }),
+            ...(credito  && { credito }),
+            buscado: '1',
+        }, { preserveState: true, replace: true })
+    }
+
+    const paramsFiltrosActuales = () => ({
+        ...(busqueda && { buscar: busqueda }),
+        ...(tipo     && { tipo }),
+        ...(estado   && { estado }),
+        ...(credito  && { credito }),
     })
+
+    // Se trae el PDF como blob (fetch) en vez de apuntar el <iframe> directo
+    // a la URL del backend — mismo patrón que Asientos/Facturas de Compra:
+    // un blob: URL siempre se muestra embebido, sin depender de si el
+    // navegador decide forzar la descarga en el iframe.
+    const abrirPdf = async (url: string) => {
+        setModalPdf(true)
+        setCargandoPdf(true)
+        setUrlPdf('')
+        try {
+            const res = await fetch(url, { headers: { Accept: 'application/pdf' } })
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ message: null })) as { message?: string | null }
+                throw new Error(err.message ?? 'No se pudo generar el PDF.')
+            }
+            const blob = await res.blob()
+            setUrlPdf(URL.createObjectURL(blob))
+        } catch (e) {
+            notify.error(e instanceof Error ? e.message : 'No se pudo generar el PDF. Intenta de nuevo.')
+            setModalPdf(false)
+        } finally {
+            setCargandoPdf(false)
+        }
+    }
+
+    const cerrarModalPdf = () => {
+        if (urlPdf) URL.revokeObjectURL(urlPdf)
+        setModalPdf(false)
+        setUrlPdf('')
+    }
+
+    // ── Excel/PDF grandes (> MAX_FILAS_EXPORT): ofrecer generarlos en
+    //    segundo plano en vez de solo bloquear — mismo patrón que Asientos
+    //    Contables / Facturas de Compra. ──────────────────────────────────
+    const [verificandoExport, setVerificandoExport] = useState<'excel' | 'pdf' | null>(null)
+    const [exportandoFondo, setExportandoFondo] = useState<{ formato: 'excel' | 'pdf'; desde: number } | null>(null)
+
+    const confirmarExportacionSegundoPlano = (formato: 'excel' | 'pdf') => {
+        router.post(route('compras.proveedores.exportar-segundo-plano'), {
+            formato, ...paramsFiltrosActuales(),
+        }, {
+            preserveScroll: true,
+            preserveState: true,
+            onSuccess: () => setExportandoFondo({ formato, desde: Date.now() }),
+        })
+    }
+
+    const iniciarExportacion = async (formato: 'excel' | 'pdf') => {
+        setVerificandoExport(formato)
+        try {
+            const params = new URLSearchParams(paramsFiltrosActuales())
+            const res = await fetch(route('compras.proveedores.contar-exportables') + '?' + params)
+            if (!res.ok) throw new Error()
+            const data = await res.json() as { total: number; limite: number; excede: boolean }
+
+            if (!data.excede) {
+                if (formato === 'excel') {
+                    window.location.href = route('compras.proveedores.excel') + '?' + params
+                } else {
+                    abrirPdf(route('compras.proveedores.pdf') + '?' + params)
+                }
+                return
+            }
+
+            const { isConfirmed } = await Swal.fire({
+                ...swalBase,
+                title: 'Reporte grande',
+                html: `
+                    <div style="text-align:left;color:#374151;font-size:0.875rem;line-height:1.5">
+                        <p>Este reporte tiene <strong>${data.total.toLocaleString('es-EC')}</strong> proveedores con
+                        estos filtros — muy grande para generarse al instante (límite: ${data.limite.toLocaleString('es-EC')}).</p>
+                        <p style="margin-top:8px">Se procesará en segundo plano y te avisaremos por notificación
+                        (campanita) cuando esté listo para descargar.</p>
+                    </div>
+                `,
+                icon: 'info',
+                showCancelButton: true,
+                confirmButtonColor: '#F59E0B',
+                confirmButtonText: 'Procesar en segundo plano',
+                cancelButtonText: 'Cancelar',
+                reverseButtons: true,
+            })
+
+            if (isConfirmed) confirmarExportacionSegundoPlano(formato)
+        } catch {
+            notify.error('No se pudo verificar el tamaño del reporte. Intenta de nuevo.')
+        } finally {
+            setVerificandoExport(null)
+        }
+    }
+
+    // Sin websockets/polling en el backend — se consulta el mismo endpoint
+    // que ya usa la campana de notificaciones (notificaciones.index) cada
+    // 15s, mientras haya una exportación en curso, hasta encontrarla o 10
+    // minutos.
+    useEffect(() => {
+        if (!exportandoFondo) return
+        const intervalo = setInterval(async () => {
+            if (Date.now() - exportandoFondo.desde > 10 * 60 * 1000) {
+                setExportandoFondo(null)
+                return
+            }
+            try {
+                const res = await fetch(route('notificaciones.index'))
+                if (!res.ok) return
+                const data = await res.json() as { notificaciones: { tipo: string; created_at: string }[] }
+                const lista = data.notificaciones.some(n =>
+                    (n.tipo === 'exportacion_proveedores' || n.tipo === 'exportacion_proveedores_error') &&
+                    new Date(n.created_at).getTime() >= exportandoFondo.desde
+                )
+                if (lista) {
+                    notify.ok('Tu exportación terminó de procesarse — revisa la campana de notificaciones para descargarla.')
+                    setExportandoFondo(null)
+                }
+            } catch { /* red momentáneamente caída — se reintenta en el próximo tick */ }
+        }, 15000)
+        return () => clearInterval(intervalo)
+    }, [exportandoFondo])
 
     async function confirmarToggle(p: Proveedor) {
         if (!p.estado && (p.saldo_pendiente ?? 0) > 0) {
@@ -362,41 +502,103 @@ export default function ProveedoresIndex() {
 
             <PageHeader
                 title="Proveedores"
-                description="Gestión de proveedores nacionales e internacionales"
                 breadcrumbs={[{ label: 'Compras' }, { label: 'Proveedores' }]}
                 actions={
                     puede('crear') ? (
-                        <button onClick={() => setModal({ open: true })} className="btn-primary flex items-center gap-2 whitespace-nowrap shrink-0">
+                        <button onClick={() => setModal({ open: true })}
+                            className="btn-primary flex items-center gap-2 whitespace-nowrap shrink-0"
+                            style={{ color: '#000' }}>
                             <Plus size={15} /> Nuevo
                         </button>
                     ) : undefined
                 }
             />
 
+            {exportandoFondo && (
+                <div className="flex items-center gap-2 text-xs rounded-lg px-3 py-2 mx-6 mt-4"
+                    style={{ background: 'color-mix(in srgb, var(--primary) 12%, var(--bg-main))', color: 'var(--text-main)' }}>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" style={{ color: 'var(--primary)' }} />
+                    <span>
+                        Tu {exportandoFondo.formato === 'excel' ? 'Excel' : 'PDF'} se está procesando en segundo
+                        plano — te avisaremos por notificación cuando esté listo.
+                    </span>
+                </div>
+            )}
+
             <div className="px-6 pt-6 mb-2">
-                {/* Toolbar */}
+                {/*
+                    Ancho vía `style.width` inline a propósito, NO clases Tailwind: `.input-field`
+                    (app.css) declara `width:100%` fuera de cualquier @layer, y las utilidades de
+                    Tailwind v4 viven dentro de su @layer utilities interno — por reglas de CSS
+                    Cascade Layers, lo no-layereado siempre gana sobre lo layereado sin importar
+                    especificidad ni orden, así que un w-XX de Tailwind nunca puede ganarle a
+                    `.input-field`. Mismo hallazgo documentado en Asientos/Facturas de Compra.
+                */}
+                <div className="overflow-x-auto">
+                <div style={{ minWidth: '950px' }}>
                 <FilterToolbar
                     search={{
                         value: busqueda,
                         onChange: setBusqueda,
-                        onSearch: () => {},
+                        onSearch: aplicarFiltros,
                         placeholder: 'Nombre, RUC, email...',
                     }}
-                    exportHref={route('compras.proveedores.excel')}
+                    searchWidth="w-[130px]"
+                    onExport={() => iniciarExportacion('excel')}
+                    exportDisabled={verificandoExport !== null}
+                    exportTitle={verificandoExport === 'excel' ? 'Verificando tamaño…' : 'Exportar a Excel'}
                     extraActions={
                         <button
                             type="button"
-                            onClick={() => abrirPdf(route('compras.proveedores.pdf'))}
-                            className="flex items-center justify-center w-9 h-9 rounded-md border text-sm font-medium shrink-0"
-                            style={{ background: '#EF4444', color: 'white', borderColor: '#EF4444' }}
-                            title="PDF">
+                            onClick={() => iniciarExportacion('pdf')}
+                            disabled={verificandoExport !== null}
+                            title={verificandoExport === 'pdf' ? 'Verificando tamaño…' : 'PDF'}
+                            className="flex items-center justify-center w-9 h-9 rounded-md border text-sm font-medium shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                            style={{ background: '#EF4444', color: 'white', borderColor: '#EF4444' }}>
                             <FileText className="w-4 h-4" />
                         </button>
                     }
-                />
+                >
+                    <select value={tipo} onChange={e => setTipo(e.target.value)}
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '160px' }}>
+                        <option value="">Todos los tipos</option>
+                        <option value="nacional">Nacional</option>
+                        <option value="internacional">Internacional</option>
+                    </select>
+                    <select value={estado} onChange={e => setEstado(e.target.value)}
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '150px' }}>
+                        <option value="">Todos los estados</option>
+                        <option value="activo">Activo</option>
+                        <option value="inactivo">Inactivo</option>
+                    </select>
+                    <select value={credito} onChange={e => setCredito(e.target.value)}
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '160px' }}>
+                        <option value="">Todo (crédito)</option>
+                        <option value="con">Con crédito</option>
+                        <option value="sin">Sin crédito</option>
+                    </select>
+                </FilterToolbar>
+                </div>
+                </div>
             </div>
 
+            {/* Estado inicial: aún no se ha buscado (carga bajo demanda) */}
+            {!haBuscado && (
+                <div className="px-6 pb-8">
+                    <div className="text-center py-16">
+                        <Search className="w-12 h-12 mx-auto mb-4 opacity-30" style={{ color: 'var(--text-muted)' }} />
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                            Ajusta los filtros y presiona Buscar para consultar los proveedores.
+                        </p>
+                    </div>
+                </div>
+            )}
+
             {/* Tabla */}
+            {haBuscado && (
             <div className="px-6 pb-8">
                 <div className="border rounded-xl overflow-hidden"
                     style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
@@ -414,16 +616,16 @@ export default function ProveedoresIndex() {
                         <span className="col-span-1 text-right">Acción</span>
                     </div>
 
-                    {filtrados.length === 0 && (
+                    {proveedores.length === 0 && (
                         <div className="py-20 text-center">
                             <ShoppingCart className="opacity-20 mx-auto mb-3 w-10 h-10" style={{ color: 'var(--text-muted)' }} />
                             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                                {busqueda ? 'No se encontraron proveedores' : 'No hay proveedores registrados'}
+                                No se encontraron proveedores con estos filtros
                             </p>
                         </div>
                     )}
 
-                    {filtrados.map(p => (
+                    {proveedores.map(p => (
                         <div key={p.id}
                             className={cn(
                                 'group grid grid-cols-12 gap-3 px-4 py-3 border-b items-center transition-colors text-sm',
@@ -498,6 +700,7 @@ export default function ProveedoresIndex() {
                     ))}
                 </div>
             </div>
+            )}
 
             {modal.open && (
                 <ProveedorModal
@@ -510,7 +713,7 @@ export default function ProveedoresIndex() {
             {modalPdf && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
                      style={{ background: 'rgba(0,0,0,0.85)' }}
-                     onClick={() => setModalPdf(false)}>
+                     onClick={cerrarModalPdf}>
                     <div className="w-full max-w-5xl rounded-2xl overflow-hidden shadow-2xl flex flex-col"
                          style={{ background: 'var(--bg-card)', height: '90vh' }}
                          onClick={e => e.stopPropagation()}>
@@ -522,19 +725,27 @@ export default function ProveedoresIndex() {
                                 Reporte de Proveedores
                             </h3>
                             <div className="flex items-center gap-2">
-                                <a href={urlPdf} download target="_blank"
-                                   className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-all hover:opacity-90"
-                                   style={{ background: '#ef4444' }}>
-                                    <Download size={13} /> Descargar
-                                </a>
-                                <button onClick={() => setModalPdf(false)}
+                                {urlPdf && (
+                                    <a href={urlPdf} download={`proveedores-${new Date().toISOString().slice(0, 10)}.pdf`}
+                                       className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-all hover:opacity-90"
+                                       style={{ background: '#ef4444' }}>
+                                        <Download size={13} /> Descargar
+                                    </a>
+                                )}
+                                <button onClick={cerrarModalPdf}
                                     className="px-3 py-1.5 rounded-lg text-xs font-semibold border hover:opacity-80"
                                     style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
                                     ✕ Cerrar
                                 </button>
                             </div>
                         </div>
-                        <iframe src={urlPdf} className="flex-1 w-full border-0" title="Reporte PDF Proveedores" />
+                        {cargandoPdf ? (
+                            <div className="flex-1 flex items-center justify-center text-sm" style={{ color: 'var(--text-muted)' }}>
+                                Generando PDF…
+                            </div>
+                        ) : (
+                            <iframe src={urlPdf} className="flex-1 w-full border-0" title="Reporte PDF Proveedores" />
+                        )}
                     </div>
                 </div>
             )}

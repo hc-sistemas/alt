@@ -5,6 +5,7 @@ use App\Jobs\AlertaVencimientoCxP;
 use App\Jobs\AlertaVouchersNoLiquidados;
 use App\Jobs\LimpiarExportacionesAsientosJob;
 use App\Jobs\LimpiarExportacionesComprasJob;
+use App\Jobs\LimpiarExportacionesProveedoresJob;
 use App\Jobs\RecordatorioCierreNomina;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -33,3 +34,7 @@ Schedule::job(new LimpiarExportacionesAsientosJob)->dailyAt('03:00');
 // Borra reportes PDF de Facturas de Compra generados en segundo plano con
 // más de 48h — diario a las 03:05
 Schedule::job(new LimpiarExportacionesComprasJob)->dailyAt('03:05');
+
+// Borra exportaciones de Proveedores (Excel/PDF generados en segundo
+// plano) con más de 48h — diario a las 03:10
+Schedule::job(new LimpiarExportacionesProveedoresJob)->dailyAt('03:10');

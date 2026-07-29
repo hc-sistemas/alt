@@ -269,6 +269,9 @@ Route::middleware('auth')->group(function () {
             Route::get('/',                     [ComprasProveedorController::class, 'index'])       ->name('index');
             Route::get('/pdf',                  [ComprasProveedorController::class, 'pdf'])         ->name('pdf');
             Route::get('/excel',                [ComprasProveedorController::class, 'excel'])       ->name('excel');
+            Route::get('/contar-exportables',   [ComprasProveedorController::class, 'contarExportables'])     ->name('contar-exportables');
+            Route::post('/exportar-segundo-plano', [ComprasProveedorController::class, 'exportarSegundoPlano'])->name('exportar-segundo-plano');
+            Route::get('/exportaciones/{archivo}/descargar', [ComprasProveedorController::class, 'descargarExportacion']) ->name('exportacion.descargar');
             Route::middleware('permiso:compras,crear')->group(function () {
                 Route::post('/',                [ComprasProveedorController::class, 'store'])       ->name('store');
             });
