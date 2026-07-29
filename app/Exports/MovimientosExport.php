@@ -47,6 +47,13 @@ class MovimientosExport implements
         if (!empty($this->filtros['fecha_hasta'])) {
             $query->where('fecha', '<=', $this->filtros['fecha_hasta']);
         }
+        if (!empty($this->filtros['centro_costo_id'])) {
+            $query->where('centro_costo_id', $this->filtros['centro_costo_id']);
+        }
+        if (!empty($this->filtros['persona_id']) && !empty($this->filtros['persona_tipo'])) {
+            $query->where('persona_tipo', $this->filtros['persona_tipo'])
+                  ->where('persona_id', $this->filtros['persona_id']);
+        }
         if (!empty($this->filtros['buscar'])) {
             $q = $this->filtros['buscar'];
             $query->where(fn($qb) =>

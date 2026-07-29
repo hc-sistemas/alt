@@ -10,10 +10,10 @@ import { Label } from '@/Components/ui/label'
 import { cn, formatFecha } from '@/lib/utils'
 import {
     Plus, X, ArrowUpCircle, ArrowDownCircle,
-    Ban, DollarSign, Clock, Search,
+    Ban, DollarSign, Clock, Search, FileText, FileCode, Download, Loader2,
 } from 'lucide-react'
 import { usePermiso } from '@/Hooks/usePermiso'
-import type { MovimientoBancario, BancoCaja, PlanCuenta, PageProps } from '@/types'
+import type { MovimientoBancario, BancoCaja, PlanCuenta, CentroCosto, PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -37,11 +37,15 @@ interface Props extends PageProps {
         cuenta_contrapartida?: PlanCuenta
         creado_por?: { nombre: string }
     }> | null
-    bancos:      Pick<BancoCaja, 'id' | 'nombre' | 'tipo' | 'saldo_actual'>[]
-    cuentas:     Pick<PlanCuenta, 'id' | 'codigo' | 'nombre'>[]
-    proveedores: PersonaOpt[]
-    clientes:    PersonaOpt[]
-    filtros: { banco_caja_id?: string; tipo?: string; fecha_desde?: string; fecha_hasta?: string; buscar?: string }
+    bancos:       Pick<BancoCaja, 'id' | 'nombre' | 'tipo' | 'saldo_actual'>[]
+    cuentas:      Pick<PlanCuenta, 'id' | 'codigo' | 'nombre'>[]
+    proveedores:  PersonaOpt[]
+    clientes:     PersonaOpt[]
+    centrosCosto: Pick<CentroCosto, 'id' | 'nombre'>[]
+    filtros: {
+        banco_caja_id?: string; tipo?: string; fecha_desde?: string; fecha_hasta?: string; buscar?: string
+        centro_costo_id?: string; persona_tipo?: string; persona_id?: string
+    }
     stats: { total_ingresos: number; total_egresos: number; pendientes_conciliar: number } | null
 }
 
@@ -393,7 +397,7 @@ function AnularModal({ movimiento, onClose }: { movimiento: MovimientoBancario; 
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function MovimientosIndex() {
-    const { movimientos, bancos, cuentas, proveedores, clientes, filtros, stats, flash } = usePage<Props>().props
+    const { movimientos, bancos, cuentas, proveedores, clientes, centrosCosto, filtros, stats, flash } = usePage<Props>().props
     const { puede } = usePermiso('bancos')
     const [showModal, setShowModal] = useState(false)
     const [anularMov, setAnularMov] = useState<MovimientoBancario | null>(null)
@@ -420,6 +424,41 @@ export default function MovimientosIndex() {
         setFiltrosSucios(true)
     }
 
+    // ── Filtro Persona: combina proveedores + clientes en un solo buscador
+    //    (mismo patrón de búsqueda-con-dropdown ya usado para "Cuenta
+    //    contrapartida" en el modal Nuevo Movimiento, no un componente nuevo). ──
+    const personasCombinadas = useMemo(() => [
+        ...proveedores.map(p => ({ id: p.id, nombre: p.nombre, tipo: 'proveedor' as const })),
+        ...clientes.map(c => ({ id: c.id, nombre: c.nombre, tipo: 'cliente' as const })),
+    ], [proveedores, clientes])
+
+    const [personaSeleccionada, setPersonaSeleccionada] = useState<{ id: number; nombre: string; tipo: 'proveedor' | 'cliente' } | null>(() => {
+        if (!filtros.persona_id || !filtros.persona_tipo) return null
+        return personasCombinadas.find(p => String(p.id) === filtros.persona_id && p.tipo === filtros.persona_tipo) ?? null
+    })
+    const [personaBusqueda, setPersonaBusqueda] = useState('')
+    const [showPersonaDropdown, setShowPersonaDropdown] = useState(false)
+
+    const personasFiltradas = useMemo(() => {
+        const q = personaBusqueda.toLowerCase().trim()
+        if (!q) return personasCombinadas.slice(0, 20)
+        return personasCombinadas.filter(p => p.nombre.toLowerCase().includes(q)).slice(0, 20)
+    }, [personaBusqueda, personasCombinadas])
+
+    function seleccionarPersonaFiltro(p: { id: number; nombre: string; tipo: 'proveedor' | 'cliente' }) {
+        setPersonaSeleccionada(p)
+        setPersonaBusqueda('')
+        setShowPersonaDropdown(false)
+        setFiltro(f => ({ ...f, persona_id: String(p.id), persona_tipo: p.tipo }))
+        setFiltrosSucios(true)
+    }
+    function quitarPersonaFiltro() {
+        setPersonaSeleccionada(null)
+        setPersonaBusqueda('')
+        setFiltro(f => ({ ...f, persona_id: '', persona_tipo: '' }))
+        setFiltrosSucios(true)
+    }
+
     function buscar() {
         router.get(route('bancos.movimientos.index'), { ...filtro, buscado: '1' } as any, {
             preserveState: true,
@@ -428,9 +467,126 @@ export default function MovimientosIndex() {
         })
     }
 
-    const exportUrl = route('bancos.movimientos.export-excel') + '?' + new URLSearchParams(
+    const paramsFiltrosActuales = () =>
         Object.fromEntries(Object.entries(filtro).filter(([, v]) => v)) as Record<string, string>
-    ).toString()
+
+    const exportUrl = route('bancos.movimientos.export-excel') + '?' + new URLSearchParams(paramsFiltrosActuales()).toString()
+    const exportXmlUrl = route('bancos.movimientos.exportar-xml') + '?' + new URLSearchParams(paramsFiltrosActuales()).toString()
+
+    // ── PDF: se trae como blob (fetch) en vez de apuntar el <iframe> directo a
+    //    la URL del backend — mismo patrón que Asientos/Facturas de Compra/
+    //    Proveedores/Cuentas por Pagar: un blob: URL siempre se muestra
+    //    embebido, sin depender de si el navegador decide forzar la descarga. ──
+    const [modalPdf, setModalPdf] = useState(false)
+    const [cargandoPdf, setCargandoPdf] = useState(false)
+    const [urlPdf, setUrlPdf] = useState('')
+
+    const abrirPdf = async (url: string) => {
+        setModalPdf(true)
+        setCargandoPdf(true)
+        setUrlPdf('')
+        try {
+            const res = await fetch(url, { headers: { Accept: 'application/pdf' } })
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ message: null })) as { message?: string | null }
+                throw new Error(err.message ?? 'No se pudo generar el PDF.')
+            }
+            const blob = await res.blob()
+            setUrlPdf(URL.createObjectURL(blob))
+        } catch (e) {
+            notify.error(e instanceof Error ? e.message : 'No se pudo generar el PDF. Intenta de nuevo.')
+            setModalPdf(false)
+        } finally {
+            setCargandoPdf(false)
+        }
+    }
+
+    const cerrarModalPdf = () => {
+        if (urlPdf) URL.revokeObjectURL(urlPdf)
+        setModalPdf(false)
+        setUrlPdf('')
+    }
+
+    // ── PDF grande (> MAX_FILAS_EXPORT): ofrecer generarlo en segundo plano en
+    //    vez de solo bloquear — mismo patrón que Asientos/Facturas de Compra/
+    //    Proveedores/Cuentas por Pagar. ──────────────────────────────────────
+    const [verificandoPdf, setVerificandoPdf] = useState(false)
+    const [exportandoFondo, setExportandoFondo] = useState<{ desde: number } | null>(null)
+
+    const confirmarExportacionSegundoPlano = () => {
+        router.post(route('bancos.movimientos.exportar-segundo-plano'), paramsFiltrosActuales(), {
+            preserveScroll: true,
+            preserveState: true,
+            onSuccess: () => setExportandoFondo({ desde: Date.now() }),
+        })
+    }
+
+    const iniciarExportacionPdf = async () => {
+        setVerificandoPdf(true)
+        try {
+            const params = new URLSearchParams(paramsFiltrosActuales())
+            const res = await fetch(route('bancos.movimientos.contar-exportables') + '?' + params)
+            if (!res.ok) throw new Error()
+            const data = await res.json() as { total: number; limite: number; excede: boolean }
+
+            if (!data.excede) {
+                abrirPdf(route('bancos.movimientos.pdf') + '?' + params)
+                return
+            }
+
+            const { isConfirmed } = await Swal.fire({
+                ...swalBase,
+                title: 'Reporte grande',
+                html: `
+                    <div style="text-align:left;color:#374151;font-size:0.875rem;line-height:1.5">
+                        <p>Este reporte tiene <strong>${data.total.toLocaleString('es-EC')}</strong> movimientos con
+                        estos filtros — muy grande para generarse al instante (límite: ${data.limite.toLocaleString('es-EC')}).</p>
+                        <p style="margin-top:8px">Se procesará en segundo plano y te avisaremos por notificación
+                        (campanita) cuando esté listo para descargar.</p>
+                    </div>
+                `,
+                icon: 'info',
+                showCancelButton: true,
+                confirmButtonColor: '#F59E0B',
+                confirmButtonText: 'Procesar en segundo plano',
+                cancelButtonText: 'Cancelar',
+                reverseButtons: true,
+            })
+
+            if (isConfirmed) confirmarExportacionSegundoPlano()
+        } catch {
+            notify.error('No se pudo verificar el tamaño del reporte. Intenta de nuevo.')
+        } finally {
+            setVerificandoPdf(false)
+        }
+    }
+
+    // Sin websockets/polling en el backend — se consulta el mismo endpoint que
+    // ya usa la campana de notificaciones (notificaciones.index) cada 15s,
+    // mientras haya una exportación en curso, hasta encontrarla o 10 minutos.
+    useEffect(() => {
+        if (!exportandoFondo) return
+        const intervalo = setInterval(async () => {
+            if (Date.now() - exportandoFondo.desde > 10 * 60 * 1000) {
+                setExportandoFondo(null)
+                return
+            }
+            try {
+                const res = await fetch(route('notificaciones.index'))
+                if (!res.ok) return
+                const data = await res.json() as { notificaciones: { tipo: string; created_at: string }[] }
+                const lista = data.notificaciones.some(n =>
+                    (n.tipo === 'exportacion_movimientos' || n.tipo === 'exportacion_movimientos_error') &&
+                    new Date(n.created_at).getTime() >= exportandoFondo.desde
+                )
+                if (lista) {
+                    notify.ok('Tu exportación terminó de procesarse — revisa la campana de notificaciones para descargarla.')
+                    setExportandoFondo(null)
+                }
+            } catch { /* red momentáneamente caída — se reintenta en el próximo tick */ }
+        }, 15000)
+        return () => clearInterval(intervalo)
+    }, [exportandoFondo])
 
     return (
         <AppLayout title="Movimientos Bancarios" suppressFlash>
@@ -448,6 +604,14 @@ export default function MovimientosIndex() {
                 }
             />
 
+            {exportandoFondo && (
+                <div className="flex items-center gap-2 text-xs rounded-lg px-3 py-2 mx-6 mt-4"
+                    style={{ background: 'color-mix(in srgb, var(--primary) 12%, var(--bg-main))', color: 'var(--text-main)' }}>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" style={{ color: 'var(--primary)' }} />
+                    <span>Tu PDF se está procesando en segundo plano — te avisaremos por notificación cuando esté listo.</span>
+                </div>
+            )}
+
             <div className="px-6 pt-6 mb-2">
                 {/*
                     Ancho vía `style.width` inline a propósito, NO clases Tailwind: `.input-field`
@@ -459,7 +623,7 @@ export default function MovimientosIndex() {
                     Proveedores/Cuentas por Pagar/Anticipos/Devoluciones/Importaciones.
                 */}
                 <div className="overflow-x-auto">
-                <div style={{ minWidth: '900px' }}>
+                <div style={{ minWidth: '1500px' }}>
                 <FilterToolbar
                     search={{
                         value: filtro.buscar ?? '',
@@ -467,23 +631,94 @@ export default function MovimientosIndex() {
                         onSearch: buscar,
                         placeholder: 'Descripción, beneficiario...',
                     }}
-                    searchWidth="w-[170px]"
+                    searchWidth="w-[160px]"
                     exportHref={exportUrl}
+                    extraActions={
+                        <>
+                            <a href={exportXmlUrl}
+                                className="flex items-center justify-center w-9 h-9 rounded-md text-sm font-medium border shrink-0"
+                                style={{ background: '#4F46E5', color: 'white', borderColor: '#4F46E5', transition: 'background 0.2s' }}
+                                onMouseEnter={e => (e.currentTarget.style.background = '#4338CA')}
+                                onMouseLeave={e => (e.currentTarget.style.background = '#4F46E5')}
+                                title="Exportar a XML">
+                                <FileCode className="w-4 h-4" />
+                            </a>
+                            <button type="button"
+                                onClick={iniciarExportacionPdf}
+                                disabled={verificandoPdf}
+                                title={verificandoPdf ? 'Verificando tamaño…' : 'PDF'}
+                                className="flex items-center justify-center w-9 h-9 rounded-md border text-sm font-medium shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                                style={{ background: '#ef4444', color: 'white', borderColor: '#ef4444' }}>
+                                <FileText className="w-4 h-4" />
+                            </button>
+                        </>
+                    }
                 >
                     <select value={filtro.banco_caja_id ?? ''} onChange={e => cambiarFiltro('banco_caja_id', e.target.value)}
                         className="input-field shrink-0 text-xs"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '170px' }}>
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '160px' }}>
                         <option value="">Todos los bancos</option>
                         {bancos.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
                     </select>
 
                     <select value={filtro.tipo ?? ''} onChange={e => cambiarFiltro('tipo', e.target.value)}
                         className="input-field shrink-0 text-xs"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '140px' }}>
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '120px' }}>
                         <option value="">Todos los tipos</option>
                         <option value="ingreso">Ingreso</option>
                         <option value="egreso">Egreso</option>
                     </select>
+
+                    <select value={filtro.centro_costo_id ?? ''} onChange={e => cambiarFiltro('centro_costo_id', e.target.value)}
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '150px' }}>
+                        <option value="">Todos los centros</option>
+                        {centrosCosto.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                    </select>
+
+                    {/* Persona: buscador combinado proveedor+cliente, mismo patrón
+                        de search-input-con-dropdown ya usado para "Cuenta
+                        contrapartida" en el modal Nuevo Movimiento. */}
+                    <div className="relative shrink-0" style={{ width: '160px' }}>
+                        <input type="text"
+                            value={personaSeleccionada ? personaSeleccionada.nombre : personaBusqueda}
+                            onChange={e => {
+                                if (personaSeleccionada) setPersonaSeleccionada(null)
+                                setPersonaBusqueda(e.target.value)
+                                setShowPersonaDropdown(true)
+                            }}
+                            onFocus={() => setShowPersonaDropdown(true)}
+                            placeholder="Persona (prov./cliente)"
+                            className="input-field text-xs"
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '160px' }} />
+                        {(personaSeleccionada || personaBusqueda) && (
+                            <button type="button" onClick={quitarPersonaFiltro}
+                                className="absolute top-1/2 right-2 -translate-y-1/2 hover:opacity-70"
+                                style={{ color: 'var(--text-muted)' }}>
+                                <X className="w-3 h-3" />
+                            </button>
+                        )}
+                        {showPersonaDropdown && !personaSeleccionada && personasFiltradas.length > 0 && (
+                            <div className="absolute z-20 mt-1 rounded-lg shadow-xl border overflow-hidden"
+                                style={{ background: 'var(--bg-card)', borderColor: 'var(--border)', width: '260px' }}>
+                                <div className="max-h-52 overflow-y-auto">
+                                    {personasFiltradas.map(p => (
+                                        <button key={`${p.tipo}-${p.id}`} type="button"
+                                            onClick={() => seleccionarPersonaFiltro(p)}
+                                            className="w-full text-left px-3 py-2 text-xs flex items-center justify-between gap-2 transition-colors"
+                                            style={{ color: 'var(--text-main)' }}
+                                            onMouseEnter={e => (e.currentTarget.style.background = 'rgba(245,158,11,0.1)')}
+                                            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                                            <span className="truncate">{p.nombre}</span>
+                                            <span className="text-[9px] uppercase font-semibold shrink-0" style={{ color: 'var(--text-muted)' }}>
+                                                {p.tipo === 'proveedor' ? 'Prov.' : 'Cliente'}
+                                            </span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
 
                     <div className="flex flex-col gap-1 shrink-0 self-end">
                         <label className="text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>Desde</label>
@@ -648,7 +883,46 @@ export default function MovimientosIndex() {
             )}
             {anularMov && <AnularModal movimiento={anularMov} onClose={() => setAnularMov(null)} />}
 
-
+            {/* ── Modal PDF ── */}
+            {modalPdf && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+                     style={{ background: 'rgba(0,0,0,0.85)' }}
+                     onClick={cerrarModalPdf}>
+                    <div className="w-full max-w-5xl rounded-2xl overflow-hidden shadow-2xl flex flex-col"
+                         style={{ background: 'var(--bg-card)', height: '90vh' }}
+                         onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between px-4 py-3 border-b shrink-0"
+                             style={{ borderColor: 'var(--border)' }}>
+                            <h3 className="font-semibold text-sm flex items-center gap-2"
+                                style={{ color: 'var(--text-main)' }}>
+                                <FileText size={16} style={{ color: '#ef4444' }} />
+                                Reporte de Movimientos Bancarios
+                            </h3>
+                            <div className="flex items-center gap-2">
+                                {urlPdf && (
+                                    <a href={urlPdf} download={`movimientos-bancarios-${new Date().toISOString().slice(0, 10)}.pdf`}
+                                       className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-all hover:opacity-90"
+                                       style={{ background: '#ef4444' }}>
+                                        <Download size={13} /> Descargar
+                                    </a>
+                                )}
+                                <button onClick={cerrarModalPdf}
+                                    className="px-3 py-1.5 rounded-lg text-xs font-semibold border hover:opacity-80"
+                                    style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
+                                    ✕ Cerrar
+                                </button>
+                            </div>
+                        </div>
+                        {cargandoPdf ? (
+                            <div className="flex-1 flex items-center justify-center text-sm" style={{ color: 'var(--text-muted)' }}>
+                                Generando PDF…
+                            </div>
+                        ) : (
+                            <iframe src={urlPdf} className="flex-1 w-full border-0" title="Reporte PDF Movimientos" />
+                        )}
+                    </div>
+                </div>
+            )}
 
             <ToastContainer position="top-right" autoClose={3500} hideProgressBar={false}
                 newestOnTop closeOnClick pauseOnHover draggable theme="colored"

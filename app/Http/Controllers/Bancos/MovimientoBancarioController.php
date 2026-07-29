@@ -4,24 +4,82 @@ namespace App\Http\Controllers\Bancos;
 
 use App\Exports\MovimientosExport;
 use App\Http\Controllers\Controller;
+use App\Jobs\ExportarMovimientosJob;
 use App\Models\AsientoContable;
 use App\Models\BancoCaja;
+use App\Models\CentroCosto;
 use App\Models\Cliente;
+use App\Models\Empresa;
 use App\Models\MovimientoBancario;
 use App\Models\PlanCuenta;
 use App\Models\Proveedor;
 use App\Services\AsientoService;
+use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 use Maatwebsite\Excel\Facades\Excel;
 
 class MovimientoBancarioController extends Controller
 {
+    // Calibrado con curl real (no tinker) contra la plantilla pdf.bancos-movimientos,
+    // con php artisan serve en puerto real y filtros de fecha sobre los movimientos
+    // de volumen de prueba ya presentes en la BD (ver project_volumen_test_data):
+    // 224 filas ~5.8s, 388 filas ~4.7s, 539 filas ~6.6s, 608 filas ~7.5s, 672 filas
+    // ~8.5s, 736 filas ~10.4s (empieza a notarse, mismo punto donde CxP —con su
+    // propia plantilla, distinta— cortó en 600 al ver 800 filas en 10.65s). Se corta
+    // en 600 por el mismo criterio: cada plantilla se mide por separado, no se asume
+    // el número de otra pantalla, pero aquí coincide con el de CxP.
+    private const MAX_FILAS_EXPORT = 600;
+
+    private const FILTROS_KEYS = [
+        'banco_caja_id', 'tipo', 'fecha_desde', 'fecha_hasta', 'buscar',
+        'centro_costo_id', 'persona_tipo', 'persona_id',
+    ];
+
     public function __construct(private AsientoService $asientoService) {}
+
+    private function queryFiltrada(Request $request)
+    {
+        $empresaId = session('empresa_activa_id');
+        $query = MovimientoBancario::with(['bancoCaja', 'cuentaContrapartida', 'creadoPor'])
+            ->where('empresa_id', $empresaId);
+
+        if ($request->filled('banco_caja_id')) {
+            $query->where('banco_caja_id', $request->banco_caja_id);
+        }
+        if ($request->filled('tipo')) {
+            $query->where('tipo', $request->tipo);
+        }
+        if ($request->filled('fecha_desde')) {
+            $query->where('fecha', '>=', $request->fecha_desde);
+        }
+        if ($request->filled('fecha_hasta')) {
+            $query->where('fecha', '<=', $request->fecha_hasta);
+        }
+        if ($request->filled('centro_costo_id')) {
+            $query->where('centro_costo_id', $request->centro_costo_id);
+        }
+        if ($request->filled('persona_id') && $request->filled('persona_tipo')) {
+            $query->where('persona_tipo', $request->persona_tipo)
+                  ->where('persona_id', $request->persona_id);
+        }
+        if ($request->filled('buscar')) {
+            $q = $request->buscar;
+            $query->where(fn($qb) =>
+                $qb->where('descripcion',    'ilike', "%{$q}%")
+                   ->orWhere('beneficiario', 'ilike', "%{$q}%")
+                   ->orWhere('num_documento','ilike', "%{$q}%")
+            );
+        }
+
+        return $query;
+    }
 
     public function index(Request $request): Response
     {
@@ -32,31 +90,8 @@ class MovimientoBancarioController extends Controller
         $stats       = null;
 
         if ($haBuscado) {
-            $query = MovimientoBancario::with(['bancoCaja', 'cuentaContrapartida', 'creadoPor'])
-                ->where('empresa_id', $empresaId);
-
-            if ($request->filled('banco_caja_id')) {
-                $query->where('banco_caja_id', $request->banco_caja_id);
-            }
-            if ($request->filled('tipo')) {
-                $query->where('tipo', $request->tipo);
-            }
-            if ($request->filled('fecha_desde')) {
-                $query->where('fecha', '>=', $request->fecha_desde);
-            }
-            if ($request->filled('fecha_hasta')) {
-                $query->where('fecha', '<=', $request->fecha_hasta);
-            }
-            if ($request->filled('buscar')) {
-                $q = $request->buscar;
-                $query->where(fn($qb) =>
-                    $qb->where('descripcion',    'ilike', "%{$q}%")
-                       ->orWhere('beneficiario', 'ilike', "%{$q}%")
-                       ->orWhere('num_documento','ilike', "%{$q}%")
-                );
-            }
-
-            $movimientos = $query->orderByDesc('fecha')
+            $movimientos = $this->queryFiltrada($request)
+                                 ->orderByDesc('fecha')
                                  ->orderByDesc('id')
                                  ->paginate(25)
                                  ->withQueryString();
@@ -84,16 +119,18 @@ class MovimientoBancarioController extends Controller
         $clientes = Cliente::where('empresa_id', $empresaId)
             ->activos()->orderBy('razon_social')
             ->get(['id', 'razon_social as nombre', 'identificacion']);
+        $centrosCosto = CentroCosto::where('empresa_id', $empresaId)
+            ->where('estado', true)->orderBy('nombre')
+            ->get(['id', 'nombre']);
 
         return Inertia::render('Bancos/Movimientos/Index', [
-            'movimientos' => $movimientos,
-            'bancos'      => $bancos,
-            'cuentas'     => $cuentas,
-            'proveedores' => $proveedores,
-            'clientes'    => $clientes,
-            'filtros'     => $request->only([
-                'banco_caja_id', 'tipo', 'fecha_desde', 'fecha_hasta', 'buscar',
-            ]),
+            'movimientos'  => $movimientos,
+            'bancos'       => $bancos,
+            'cuentas'      => $cuentas,
+            'proveedores'  => $proveedores,
+            'clientes'     => $clientes,
+            'centrosCosto' => $centrosCosto,
+            'filtros'      => $request->only(self::FILTROS_KEYS),
             'stats' => $stats,
         ]);
     }
@@ -184,12 +221,8 @@ class MovimientoBancarioController extends Controller
     public function exportExcel(Request $request): \Symfony\Component\HttpFoundation\BinaryFileResponse
     {
         $empresaId = session('empresa_activa_id');
-
-        $filtros = $request->only([
-            'banco_caja_id', 'tipo', 'fecha_desde', 'fecha_hasta', 'buscar',
-        ]);
-
-        $fecha = now()->format('Y-m-d');
+        $filtros   = $request->only(self::FILTROS_KEYS);
+        $fecha     = now()->format('Y-m-d');
 
         return Excel::download(
             new MovimientosExport($empresaId, $filtros),
@@ -197,11 +230,13 @@ class MovimientoBancarioController extends Controller
         );
     }
 
+    // Respeta los mismos filtros que el listado y la exportación Excel — antes
+    // este endpoint ignoraba cualquier filtro aplicado en pantalla y siempre
+    // exportaba TODOS los movimientos no anulados de la empresa.
     public function exportarXml(Request $request): \Illuminate\Http\Response
     {
         $empresaId   = session('empresa_activa_id');
-        $movimientos = MovimientoBancario::with(['bancoCaja', 'cuentaContrapartida'])
-            ->where('empresa_id', $empresaId)
+        $movimientos = $this->queryFiltrada($request)
             ->where('anulado', false)
             ->orderByDesc('fecha')
             ->get();
@@ -233,6 +268,94 @@ class MovimientoBancarioController extends Controller
             'Content-Type'        => 'application/xml',
             'Content-Disposition' => 'attachment; filename="movimientos-' . now()->format('Y-m-d') . '.xml"',
         ]);
+    }
+
+    public function pdf(Request $request): \Illuminate\Http\Response|JsonResponse
+    {
+        $empresaId = session('empresa_activa_id');
+
+        $total = $this->queryFiltrada($request)->count();
+        if ($total > self::MAX_FILAS_EXPORT) {
+            return response()->json([
+                'message' => "Hay {$total} movimientos con estos filtros — demasiados para generar un PDF de una vez " .
+                    '(máximo ' . self::MAX_FILAS_EXPORT . '). Aplica un filtro más específico.',
+            ], 422);
+        }
+
+        $movimientos = $this->queryFiltrada($request)
+            ->orderByDesc('fecha')->orderByDesc('id')->get();
+
+        // Ingresos/egresos del resumen excluyen anulados (igual que las tarjetas de
+        // stats del listado) aunque la tabla del PDF sí incluye anulados con su badge
+        // de Estado — misma distinción que ya existe entre index()'s `stats` (excluye
+        // anulados) y sus filas (los muestra atenuados).
+        $totalIngresos = $this->queryFiltrada($request)
+            ->where('tipo', 'ingreso')->where('anulado', false)->sum('monto');
+        $totalEgresos = $this->queryFiltrada($request)
+            ->where('tipo', 'egreso')->where('anulado', false)->sum('monto');
+
+        $empresa = Empresa::find($empresaId);
+        $pdf = Pdf::loadView('pdf.bancos-movimientos', compact('movimientos', 'empresa', 'totalIngresos', 'totalEgresos'))
+            ->setPaper('a4');
+        return $pdf->stream('movimientos-bancarios-' . now()->format('Y-m-d') . '.pdf');
+    }
+
+    // Chequeo liviano (sin generar nada) para que el frontend decida, ANTES de pedir
+    // el PDF, si el filtro actual entra en el camino rápido (síncrono) o necesita el
+    // camino de segundo plano — mismo patrón que AsientoContableController/CuentaPagarController.
+    public function contarExportables(Request $request): JsonResponse
+    {
+        $total = $this->queryFiltrada($request)->count();
+
+        return response()->json([
+            'total'  => $total,
+            'limite' => self::MAX_FILAS_EXPORT,
+            'excede' => $total > self::MAX_FILAS_EXPORT,
+        ]);
+    }
+
+    // Camino de segundo plano: sin límite de filas, genera el PDF completo en el
+    // worker de colas y avisa por notificación cuando está listo. El link de
+    // descarga se construye con el host REAL de esta request
+    // ($request->getSchemeAndHttpHost()), no con config('app.url') — un Job corre
+    // sin request activa, así que route() ahí cae al host fijo de config/app.php,
+    // que puede no ser el que realmente sirvió la petición (mismo bug que rompió
+    // antes la descarga de Excel de Asientos en un entorno con puerto distinto al
+    // .env). Se captura el host aquí, donde sí hay una request real, y se pasa al Job.
+    public function exportarSegundoPlano(Request $request): RedirectResponse
+    {
+        $empresaId = session('empresa_activa_id');
+        $filtros   = $request->only(self::FILTROS_KEYS);
+        $baseUrl   = $request->getSchemeAndHttpHost();
+
+        ExportarMovimientosJob::dispatch(
+            (int) $empresaId,
+            (int) Auth::id(),
+            $filtros,
+            $baseUrl,
+        );
+
+        return back()->with('success',
+            'Tu PDF de Movimientos Bancarios se está procesando en segundo plano. Te avisaremos por notificación cuando esté listo para descargar.');
+    }
+
+    // Sirve el PDF generado por ExportarMovimientosJob. Autorización simple: el
+    // nombre de archivo lleva el usuario_id como prefijo (ver el Job), y basename()
+    // descarta cualquier intento de path traversal.
+    public function descargarExportacion(string $archivo): \Symfony\Component\HttpFoundation\Response
+    {
+        $archivo = basename($archivo);
+
+        if (!str_starts_with($archivo, Auth::id() . '_')) {
+            abort(403, 'No tienes acceso a este archivo.');
+        }
+
+        $ruta = ExportarMovimientosJob::CARPETA . "/{$archivo}";
+        if (!Storage::disk('local')->exists($ruta)) {
+            abort(404, 'El archivo expiró o ya no está disponible (las exportaciones se conservan 48 horas). Genera la exportación nuevamente.');
+        }
+
+        return Storage::disk('local')->download($ruta, 'movimientos-bancarios-' . now()->format('Y-m-d') . '.pdf');
     }
 
     public function anular(Request $request, MovimientoBancario $movimiento): RedirectResponse

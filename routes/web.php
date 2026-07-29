@@ -503,6 +503,10 @@ Route::middleware('auth')->group(function () {
             Route::get('/',                      [MovimientoBancarioController::class, 'index'])       ->name('index');
             Route::get('/export-excel',          [MovimientoBancarioController::class, 'exportExcel']) ->name('export-excel');
             Route::get('/exportar-xml',          [MovimientoBancarioController::class, 'exportarXml']) ->name('exportar-xml');
+            Route::get('/pdf',                   [MovimientoBancarioController::class, 'pdf'])          ->name('pdf');
+            Route::get('/contar-exportables',    [MovimientoBancarioController::class, 'contarExportables']) ->name('contar-exportables');
+            Route::post('/exportar-segundo-plano', [MovimientoBancarioController::class, 'exportarSegundoPlano']) ->name('exportar-segundo-plano');
+            Route::get('/exportaciones/{archivo}/descargar', [MovimientoBancarioController::class, 'descargarExportacion']) ->name('exportacion.descargar');
             Route::middleware('permiso:bancos,crear')->group(function () {
                 Route::post('/',                     [MovimientoBancarioController::class, 'store'])       ->name('store');
             });
