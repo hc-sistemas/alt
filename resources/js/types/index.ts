@@ -670,6 +670,8 @@ export interface BancoCaja {
     empresa_id: number
     cuenta_id: number | null
     cuenta?: PlanCuenta
+    centro_costo_id: number | null
+    centro_costo?: CentroCosto
     tipo: 'banco' | 'caja' | 'caja_chica' | 'tarjeta'
     tipo_label?: string
     tipo_color?: string

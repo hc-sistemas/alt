@@ -12,14 +12,17 @@ import {
     Landmark, Wallet, CreditCard, PiggyBank, TrendingUp, Search,
 } from 'lucide-react'
 import { usePermiso } from '@/Hooks/usePermiso'
-import type { BancoCaja, PlanCuenta, PageProps } from '@/types'
+import type { BancoCaja, PlanCuenta, CentroCosto, PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Props extends PageProps {
-    bancos: (BancoCaja & { cuenta: string | null })[]
+    bancos: (BancoCaja & { cuenta: string | null; centro_costo: string | null })[]
     cuentas: Pick<PlanCuenta, 'id' | 'codigo' | 'nombre'>[]
+    centrosCosto: Pick<CentroCosto, 'id' | 'nombre' | 'codigo'>[]
+    cuentasAutoMap: Record<string, string>
+    tiposRequierenCentroCosto: string[]
     stats: { total_bancos: number; total_cajas: number; saldo_bancos: number; saldo_cajas: number }
 }
 
@@ -75,7 +78,7 @@ function StatCard({ label, value, icon: Icon, cls, valueCls }: {
 // ─── BancoCajaCard ────────────────────────────────────────────────────────────
 
 function BancoCard({ banco, onEdit, onToggle, onDelete, puedeEditar, puedeEliminar: puedeEliminarPermiso }: {
-    banco: BancoCaja & { cuenta: string | null }
+    banco: BancoCaja & { cuenta: string | null; centro_costo: string | null }
     onEdit: () => void
     onToggle: () => void
     onDelete: () => void
@@ -84,6 +87,7 @@ function BancoCard({ banco, onEdit, onToggle, onDelete, puedeEditar, puedeElimin
 }) {
     const Icon = tipoIcon[banco.tipo] ?? Landmark
     const saldoCero = Math.abs(Number(banco.saldo_actual)) <= 0.01
+    const requiereCentroCosto = banco.tipo === 'caja' || banco.tipo === 'caja_chica'
 
     return (
         <div className={cn(
@@ -133,6 +137,17 @@ function BancoCard({ banco, onEdit, onToggle, onDelete, puedeEditar, puedeElimin
                     style={{ background: 'var(--bg-main)', color: 'var(--text-muted)' }}>
                     {banco.num_cuenta} {banco.tipo_cuenta && `· ${banco.tipo_cuenta}`}
                 </p>
+            )}
+
+            {requiereCentroCosto && (
+                banco.centro_costo
+                    ? <p className="text-xs px-2 py-1 rounded-md w-fit"
+                        style={{ background: 'color-mix(in srgb, var(--primary) 12%, transparent)', color: 'var(--primary)' }}>
+                        🏢 {banco.centro_costo}
+                    </p>
+                    : <p className="text-xs px-2 py-1 rounded-md w-fit font-semibold bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400">
+                        ⚠ Centro de costo sin asignar
+                    </p>
             )}
 
             <div className="flex items-end justify-between border-t pt-3 mt-auto" style={{ borderColor: 'var(--border)' }}>
@@ -222,20 +237,16 @@ function CuentaSearchModal({ cuentas, onSelect, onClose }: {
 
 // ─── Modal Banco/Caja ─────────────────────────────────────────────────────────
 
-const CUENTAS_AUTO: Record<string, string> = {
-    banco:      '1.1.1.3',
-    caja:       '1.1.1.1',
-    caja_chica: '1.1.1.2',
-    tarjeta:    '1.1.1.5',
-}
-
 interface ModalProps {
-    banco?: BancoCaja & { cuenta: string | null }
+    banco?: BancoCaja & { cuenta: string | null; centro_costo: string | null }
     cuentas: Props['cuentas']
+    centrosCosto: Props['centrosCosto']
+    cuentasAutoMap: Props['cuentasAutoMap']
+    tiposRequierenCentroCosto: Props['tiposRequierenCentroCosto']
     onClose: () => void
 }
 
-function BancoModal({ banco, cuentas, onClose }: ModalProps) {
+function BancoModal({ banco, cuentas, centrosCosto, cuentasAutoMap, tiposRequierenCentroCosto, onClose }: ModalProps) {
     const isEdit = !!banco
     const [showCuentaModal, setShowCuentaModal] = useState(false)
 
@@ -244,30 +255,36 @@ function BancoModal({ banco, cuentas, onClose }: ModalProps) {
     // Cuenta inicial: si tiene asignada la usa, si es nuevo busca la auto
     const initialCuenta = (() => {
         if (banco?.cuenta_id) return cuentas.find(c => c.id === Number(banco.cuenta_id)) ?? null
-        return cuentas.find(c => c.codigo === CUENTAS_AUTO[initialTipo]) ?? null
+        return cuentas.find(c => c.codigo === cuentasAutoMap[initialTipo]) ?? null
     })()
 
     const [cuentaSeleccionada, setCuentaSeleccionada] = useState<Props['cuentas'][0] | null>(initialCuenta)
 
     const { data, setData, post, put, processing, errors } = useForm({
-        tipo:          initialTipo,
-        nombre:        banco?.nombre ?? '',
-        num_cuenta:    banco?.num_cuenta ?? '',
-        tipo_cuenta:   banco?.tipo_cuenta ?? '',
-        cuenta_id:     (initialCuenta?.id ?? banco?.cuenta_id ?? '') as string | number,
-        saldo_inicial: banco?.saldo_inicial ?? 0,
+        tipo:             initialTipo,
+        nombre:           banco?.nombre ?? '',
+        num_cuenta:       banco?.num_cuenta ?? '',
+        tipo_cuenta:      banco?.tipo_cuenta ?? '',
+        cuenta_id:        (initialCuenta?.id ?? banco?.cuenta_id ?? '') as string | number,
+        centro_costo_id:  (banco?.centro_costo_id ?? '') as string | number,
+        saldo_inicial:    banco?.saldo_inicial ?? 0,
     })
+
+    const requiereCentroCosto = tiposRequierenCentroCosto.includes(data.tipo)
 
     function handleTipoChange(tipo: string) {
         setData('tipo', tipo)
         // Cambiar cuenta auto solo si la cuenta actual también es una auto (o no hay)
         const esAutoActual = cuentaSeleccionada
-            ? Object.values(CUENTAS_AUTO).includes(cuentaSeleccionada.codigo)
+            ? Object.values(cuentasAutoMap).includes(cuentaSeleccionada.codigo)
             : true
         if (esAutoActual) {
-            const auto = cuentas.find(c => c.codigo === CUENTAS_AUTO[tipo]) ?? null
+            const auto = cuentas.find(c => c.codigo === cuentasAutoMap[tipo]) ?? null
             setCuentaSeleccionada(auto)
             setData('cuenta_id', auto ? (auto.id as any) : '')
+        }
+        if (!tiposRequierenCentroCosto.includes(tipo)) {
+            setData('centro_costo_id', '')
         }
     }
 
@@ -358,7 +375,7 @@ function BancoModal({ banco, cuentas, onClose }: ModalProps) {
                         <div className="space-y-1.5">
                             <div className="flex items-center justify-between">
                                 <Label>Cuenta contable</Label>
-                                {cuentaSeleccionada && CUENTAS_AUTO[data.tipo] === cuentaSeleccionada.codigo && (
+                                {cuentaSeleccionada && cuentasAutoMap[data.tipo] === cuentaSeleccionada.codigo && (
                                     <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
                                         style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)', color: 'var(--primary)' }}>
                                         Auto
@@ -386,7 +403,26 @@ function BancoModal({ banco, cuentas, onClose }: ModalProps) {
                                     <X size={11} /> Quitar cuenta
                                 </button>
                             )}
+                            {!cuentaSeleccionada && (
+                                <p className="text-xs px-2.5 py-1.5 rounded-md font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400">
+                                    ⚠ No se encontró una cuenta contable automática — selecciónala manualmente para no dejar este registro sin vínculo contable.
+                                </p>
+                            )}
                         </div>
+
+                        {requiereCentroCosto && (
+                            <div className="space-y-1.5">
+                                <Label>Centro de Costo <span className="text-red-400">*</span></Label>
+                                <select value={data.centro_costo_id} onChange={e => setData('centro_costo_id', e.target.value)}
+                                    required className="input-field select-field">
+                                    <option value="">— Seleccionar —</option>
+                                    {centrosCosto.map(c => (
+                                        <option key={c.id} value={c.id}>{c.nombre}</option>
+                                    ))}
+                                </select>
+                                {errors.centro_costo_id && <p className="text-red-400 text-xs">{errors.centro_costo_id}</p>}
+                            </div>
+                        )}
 
                         {!isEdit && (
                             <div className="space-y-1.5">
@@ -424,7 +460,7 @@ function BancoModal({ banco, cuentas, onClose }: ModalProps) {
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function BancosCajasIndex() {
-    const { bancos, cuentas, stats, flash } = usePage<Props>().props
+    const { bancos, cuentas, centrosCosto, cuentasAutoMap, tiposRequierenCentroCosto, stats, flash } = usePage<Props>().props
     const { puede } = usePermiso('bancos')
     const [modal, setModal] = useState<{ open: boolean; banco?: Props['bancos'][0] }>({ open: false })
 
@@ -570,7 +606,9 @@ export default function BancosCajasIndex() {
             </div>
 
             {modal.open && (
-                <BancoModal banco={modal.banco} cuentas={cuentas} onClose={() => setModal({ open: false })} />
+                <BancoModal banco={modal.banco} cuentas={cuentas} centrosCosto={centrosCosto}
+                    cuentasAutoMap={cuentasAutoMap} tiposRequierenCentroCosto={tiposRequierenCentroCosto}
+                    onClose={() => setModal({ open: false })} />
             )}
 
 
