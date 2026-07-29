@@ -100,18 +100,18 @@ function BancoCard({ banco, onEdit, onToggle, onDelete, puedeEditar, puedeElimin
                         <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{banco.tipo_label}</p>
                     </div>
                 </div>
-                <div className="flex gap-1">
+                <div className="flex items-center gap-1.5 shrink-0">
                     {puedeEditar && (
                         <button onClick={onEdit} title="Editar"
                             className="p-1.5 rounded hover:bg-blue-500/20 text-blue-500 transition-colors">
-                            <Pencil className="w-3.5 h-3.5" />
+                            <Pencil className="w-4 h-4" />
                         </button>
                     )}
                     {puedeEditar && (
                         <button onClick={onToggle} title={banco.estado ? 'Desactivar' : 'Activar'}
                             className={cn('p-1.5 rounded transition-colors',
                                 banco.estado ? 'hover:bg-red-500/20 text-red-500' : 'hover:bg-green-500/20 text-green-600')}>
-                            {banco.estado ? <ToggleRight className="w-3.5 h-3.5" /> : <ToggleLeft className="w-3.5 h-3.5" />}
+                            {banco.estado ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
                         </button>
                     )}
                     {puedeEliminarPermiso && (
@@ -119,13 +119,10 @@ function BancoCard({ banco, onEdit, onToggle, onDelete, puedeEditar, puedeElimin
                             onClick={saldoCero ? onDelete : undefined}
                             title={saldoCero ? 'Eliminar permanentemente' : `Tiene saldo de ${fmt(banco.saldo_actual)}. Solo puedes inactivarlo`}
                             disabled={!saldoCero}
-                            className={cn(
-                                'p-1.5 rounded transition-colors',
-                                saldoCero
-                                    ? 'hover:bg-red-500/20 text-red-400 cursor-pointer'
-                                    : 'opacity-25 cursor-not-allowed text-gray-400'
-                            )}>
-                            <Trash2 className="w-3.5 h-3.5" />
+                            className={cn('p-1.5 rounded transition-colors',
+                                saldoCero ? 'hover:bg-red-500/20 text-red-400 cursor-pointer' : 'cursor-not-allowed')}
+                            style={saldoCero ? undefined : { color: 'var(--text-muted)', opacity: 0.4 }}>
+                            <Trash2 className="w-4 h-4" />
                         </button>
                     )}
                 </div>
@@ -133,12 +130,12 @@ function BancoCard({ banco, onEdit, onToggle, onDelete, puedeEditar, puedeElimin
 
             {banco.num_cuenta && (
                 <p className="font-mono text-xs px-2 py-1 rounded-md"
-                    style={{ background: 'rgba(0,0,0,0.05)', color: 'var(--text-muted)' }}>
+                    style={{ background: 'var(--bg-main)', color: 'var(--text-muted)' }}>
                     {banco.num_cuenta} {banco.tipo_cuenta && `· ${banco.tipo_cuenta}`}
                 </p>
             )}
 
-            <div className="flex items-end justify-between border-t pt-3" style={{ borderColor: 'var(--border)' }}>
+            <div className="flex items-end justify-between border-t pt-3 mt-auto" style={{ borderColor: 'var(--border)' }}>
                 <div>
                     <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Saldo actual</p>
                     <p className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>{fmt(banco.saldo_actual)}</p>
@@ -513,7 +510,6 @@ export default function BancosCajasIndex() {
 
             <PageHeader
                 title="Bancos y Cajas"
-                description="Catálogo de cuentas bancarias y cajas"
                 breadcrumbs={[{ label: 'Bancos' }, { label: 'Bancos y Cajas' }]}
                 actions={
                     puede('crear') ? (
