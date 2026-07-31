@@ -252,7 +252,6 @@ export default function CajasIndex() {
 
             <PageHeader
                 title="Control de Cajas"
-                description="Apertura y cierre de cajas diarias"
                 breadcrumbs={[{ label: 'Bancos' }, { label: 'Cajas' }]}
                 actions={
                     !cajaAbierta && puede('crear') ? (
@@ -263,43 +262,7 @@ export default function CajasIndex() {
                         </button>
                     ) : undefined
                 }
-            />
-
-            {/* Banner caja abierta */}
-            <div className="px-6 pb-4">
-                {cajaAbierta ? (
-                    <div className="rounded-xl p-4 flex items-center justify-between"
-                        style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)' }}>
-                        <div className="flex items-center gap-3">
-                            <CheckCircle className="w-6 h-6 text-green-500" />
-                            <div>
-                                <p className="font-semibold text-sm text-green-700 dark:text-green-400">
-                                    Caja abierta hoy — {(cajaAbierta as any).banco_caja?.nombre}
-                                </p>
-                                <p className="text-xs text-green-600 dark:text-green-500">
-                                    Apertura: {cajaAbierta.hora_apertura} · Monto inicial: {fmt(Number(cajaAbierta.monto_inicial))}
-                                </p>
-                            </div>
-                        </div>
-                        {puede('editar') && (
-                            <button
-                                onClick={() => setCerrarCierre({
-                                    id: cajaAbierta.id,
-                                    caja: (cajaAbierta as any).banco_caja?.nombre ?? '',
-                                    centro_costo: null, fecha: '',
-                                    monto_inicial: Number(cajaAbierta.monto_inicial),
-                                    total_cobrado: 0, total_efectivo: 0, total_tarjeta: 0,
-                                    diferencia: 0, estado: 'abierto',
-                                    hora_apertura: null, hora_cierre: null,
-                                    usuario_apertura: null, usuario_cierre: null,
-                                    tiene_diferencia: false, total_facturado: 0,
-                                } as any)}
-                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white bg-green-600 hover:bg-green-700">
-                                <Lock className="w-4 h-4" /> Cerrar Caja
-                            </button>
-                        )}
-                    </div>
-                ) : (
+                banner={!cajaAbierta && (
                     <div className="rounded-xl p-4 flex items-center gap-3"
                         style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)' }}>
                         <AlertTriangle className="w-6 h-6 text-red-500" />
@@ -308,10 +271,47 @@ export default function CajasIndex() {
                         </p>
                     </div>
                 )}
+            />
+
+            {/* Banner caja abierta */}
+            {cajaAbierta && (
+            <div className="px-6 py-4">
+                <div className="rounded-xl p-4 flex items-center justify-between"
+                    style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)' }}>
+                    <div className="flex items-center gap-3">
+                        <CheckCircle className="w-6 h-6 text-green-500" />
+                        <div>
+                            <p className="font-semibold text-sm text-green-700 dark:text-green-400">
+                                Caja abierta hoy — {(cajaAbierta as any).banco_caja?.nombre}
+                            </p>
+                            <p className="text-xs text-green-600 dark:text-green-500">
+                                Apertura: {cajaAbierta.hora_apertura} · Monto inicial: {fmt(Number(cajaAbierta.monto_inicial))}
+                            </p>
+                        </div>
+                    </div>
+                    {puede('editar') && (
+                        <button
+                            onClick={() => setCerrarCierre({
+                                id: cajaAbierta.id,
+                                caja: (cajaAbierta as any).banco_caja?.nombre ?? '',
+                                centro_costo: null, fecha: '',
+                                monto_inicial: Number(cajaAbierta.monto_inicial),
+                                total_cobrado: 0, total_efectivo: 0, total_tarjeta: 0,
+                                diferencia: 0, estado: 'abierto',
+                                hora_apertura: null, hora_cierre: null,
+                                usuario_apertura: null, usuario_cierre: null,
+                                tiene_diferencia: false, total_facturado: 0,
+                            } as any)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white bg-green-600 hover:bg-green-700">
+                            <Lock className="w-4 h-4" /> Cerrar Caja
+                        </button>
+                    )}
+                </div>
             </div>
+            )}
 
             {/* Historial */}
-            <div className="px-6 pb-8">
+            <div className={cn('px-6 pb-8', !cajaAbierta && 'pt-4')}>
                 <h2 className="text-sm font-semibold mb-3 uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
                     Historial de cierres
                 </h2>
