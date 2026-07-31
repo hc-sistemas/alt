@@ -45,11 +45,21 @@ class CierreCajaController extends Controller
                 'tiene_diferencia' => $c->tieneDiferencia(),
             ]);
 
-        $cajaAbierta = CierreCaja::where('empresa_id', $empresaId)
+        $cajaAbiertaModel = CierreCaja::where('empresa_id', $empresaId)
             ->where('estado', 'abierto')
             ->where('fecha', now()->toDateString())
             ->with('bancoCaja')
             ->first();
+
+        // Igual que en $cierres arriba: hora_apertura se formatea aquí porque
+        // el cast del modelo es 'datetime' — pasar el modelo crudo serializa
+        // un ISO completo (ej. "2026-08-01T02:34:00.000000Z") en vez de "21:34".
+        $cajaAbierta = $cajaAbiertaModel ? [
+            'id'            => $cajaAbiertaModel->id,
+            'banco_caja'    => $cajaAbiertaModel->bancoCaja ? ['nombre' => $cajaAbiertaModel->bancoCaja->nombre] : null,
+            'monto_inicial' => $cajaAbiertaModel->monto_inicial,
+            'hora_apertura' => $cajaAbiertaModel->hora_apertura?->format('H:i'),
+        ] : null;
 
         $centros = CentroCosto::where('empresa_id', $empresaId)->get(['id', 'nombre']);
 

@@ -9,7 +9,7 @@ import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
 import { Plus, X, Wallet, AlertTriangle, CheckCircle, Lock } from 'lucide-react'
 import { usePermiso } from '@/Hooks/usePermiso'
-import type { BancoCaja, CierreCaja, CentroCosto, PageProps } from '@/types'
+import type { BancoCaja, CentroCosto, PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -27,7 +27,12 @@ interface Props extends PageProps {
     cierres: CierreRow[]
     cajas: BancoCaja[]
     centros: Pick<CentroCosto, 'id' | 'nombre'>[]
-    cajaAbierta: (CierreCaja & { banco_caja?: BancoCaja }) | null
+    cajaAbierta: {
+        id: number
+        banco_caja: { nombre: string } | null
+        monto_inicial: number
+        hora_apertura: string | null
+    } | null
 }
 
 // ─── Notify ───────────────────────────────────────────────────────────────────
@@ -253,65 +258,53 @@ export default function CajasIndex() {
             <PageHeader
                 title="Control de Cajas"
                 breadcrumbs={[{ label: 'Bancos' }, { label: 'Cajas' }]}
-                actions={
-                    !cajaAbierta && puede('crear') ? (
-                        <button onClick={() => setShowAbrir(true)}
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-black whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5 shrink-0"
-                            style={{ background: 'var(--primary)' }}>
-                            <Plus size={15} /> Abrir Caja
-                        </button>
-                    ) : undefined
+                description={
+                    cajaAbierta ? (
+                        <span className="flex items-center gap-1.5 text-green-600 dark:text-green-400">
+                            <CheckCircle size={12} className="shrink-0" />
+                            Caja abierta: {cajaAbierta.banco_caja?.nombre}
+                            {' '}· Desde las {cajaAbierta.hora_apertura}
+                            {' '}· Saldo inicial {fmt(Number(cajaAbierta.monto_inicial))}
+                        </span>
+                    ) : (
+                        <span className="flex items-center gap-1.5 text-red-600 dark:text-red-400">
+                            <AlertTriangle size={12} className="shrink-0" />
+                            No hay caja abierta hoy · Abre una caja para registrar movimientos de efectivo.
+                        </span>
+                    )
                 }
-                banner={!cajaAbierta && (
-                    <div className="rounded-xl p-4 flex items-center gap-3"
-                        style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)' }}>
-                        <AlertTriangle className="w-6 h-6 text-red-500" />
-                        <p className="text-sm text-red-700 dark:text-red-400 font-medium">
-                            No hay caja abierta hoy. Abre una caja para registrar movimientos de efectivo.
-                        </p>
+                actions={
+                    <div className="flex items-center gap-2 flex-wrap shrink-0">
+                        {!cajaAbierta && puede('crear') && (
+                            <button onClick={() => setShowAbrir(true)}
+                                className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-black whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5 shrink-0"
+                                style={{ background: 'var(--primary)' }}>
+                                <Plus size={15} /> Abrir Caja
+                            </button>
+                        )}
+                        {cajaAbierta && puede('editar') && (
+                            <button
+                                onClick={() => setCerrarCierre({
+                                    id: cajaAbierta.id,
+                                    caja: cajaAbierta.banco_caja?.nombre ?? '',
+                                    centro_costo: null, fecha: '',
+                                    monto_inicial: Number(cajaAbierta.monto_inicial),
+                                    total_cobrado: 0, total_efectivo: 0, total_tarjeta: 0,
+                                    diferencia: 0, estado: 'abierto',
+                                    hora_apertura: null, hora_cierre: null,
+                                    usuario_apertura: null, usuario_cierre: null,
+                                    tiene_diferencia: false, total_facturado: 0,
+                                } as any)}
+                                className="flex items-center gap-1.5 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5 shrink-0 bg-green-600">
+                                <Lock className="w-4 h-4" /> Cerrar Caja
+                            </button>
+                        )}
                     </div>
-                )}
+                }
             />
 
-            {/* Banner caja abierta */}
-            {cajaAbierta && (
-            <div className="px-6 py-4">
-                <div className="rounded-xl p-4 flex items-center justify-between"
-                    style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)' }}>
-                    <div className="flex items-center gap-3">
-                        <CheckCircle className="w-6 h-6 text-green-500" />
-                        <div>
-                            <p className="font-semibold text-sm text-green-700 dark:text-green-400">
-                                Caja abierta hoy — {(cajaAbierta as any).banco_caja?.nombre}
-                            </p>
-                            <p className="text-xs text-green-600 dark:text-green-500">
-                                Apertura: {cajaAbierta.hora_apertura} · Monto inicial: {fmt(Number(cajaAbierta.monto_inicial))}
-                            </p>
-                        </div>
-                    </div>
-                    {puede('editar') && (
-                        <button
-                            onClick={() => setCerrarCierre({
-                                id: cajaAbierta.id,
-                                caja: (cajaAbierta as any).banco_caja?.nombre ?? '',
-                                centro_costo: null, fecha: '',
-                                monto_inicial: Number(cajaAbierta.monto_inicial),
-                                total_cobrado: 0, total_efectivo: 0, total_tarjeta: 0,
-                                diferencia: 0, estado: 'abierto',
-                                hora_apertura: null, hora_cierre: null,
-                                usuario_apertura: null, usuario_cierre: null,
-                                tiene_diferencia: false, total_facturado: 0,
-                            } as any)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white bg-green-600 hover:bg-green-700">
-                            <Lock className="w-4 h-4" /> Cerrar Caja
-                        </button>
-                    )}
-                </div>
-            </div>
-            )}
-
             {/* Historial */}
-            <div className={cn('px-6 pb-8', !cajaAbierta && 'pt-4')}>
+            <div className="px-6 py-8">
                 <h2 className="text-sm font-semibold mb-3 uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
                     Historial de cierres
                 </h2>
