@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { router, usePage, useForm, Head } from '@inertiajs/react'
 import { toast, ToastContainer } from 'react-toastify'
 import Swal from 'sweetalert2'
@@ -44,7 +44,7 @@ interface Props extends PageProps {
     centrosCosto: Pick<CentroCosto, 'id' | 'nombre'>[]
     filtros: {
         banco_caja_id?: string; tipo?: string; fecha_desde?: string; fecha_hasta?: string; buscar?: string
-        centro_costo_id?: string; persona_tipo?: string; persona_id?: string
+        centro_costo_id?: string
     }
     stats: { total_ingresos: number; total_egresos: number; pendientes_conciliar: number } | null
 }
@@ -424,41 +424,6 @@ export default function MovimientosIndex() {
         setFiltrosSucios(true)
     }
 
-    // ── Filtro Persona: combina proveedores + clientes en un solo buscador
-    //    (mismo patrón de búsqueda-con-dropdown ya usado para "Cuenta
-    //    contrapartida" en el modal Nuevo Movimiento, no un componente nuevo). ──
-    const personasCombinadas = useMemo(() => [
-        ...proveedores.map(p => ({ id: p.id, nombre: p.nombre, tipo: 'proveedor' as const })),
-        ...clientes.map(c => ({ id: c.id, nombre: c.nombre, tipo: 'cliente' as const })),
-    ], [proveedores, clientes])
-
-    const [personaSeleccionada, setPersonaSeleccionada] = useState<{ id: number; nombre: string; tipo: 'proveedor' | 'cliente' } | null>(() => {
-        if (!filtros.persona_id || !filtros.persona_tipo) return null
-        return personasCombinadas.find(p => String(p.id) === filtros.persona_id && p.tipo === filtros.persona_tipo) ?? null
-    })
-    const [personaBusqueda, setPersonaBusqueda] = useState('')
-    const [showPersonaDropdown, setShowPersonaDropdown] = useState(false)
-
-    const personasFiltradas = useMemo(() => {
-        const q = personaBusqueda.toLowerCase().trim()
-        if (!q) return personasCombinadas.slice(0, 20)
-        return personasCombinadas.filter(p => p.nombre.toLowerCase().includes(q)).slice(0, 20)
-    }, [personaBusqueda, personasCombinadas])
-
-    function seleccionarPersonaFiltro(p: { id: number; nombre: string; tipo: 'proveedor' | 'cliente' }) {
-        setPersonaSeleccionada(p)
-        setPersonaBusqueda('')
-        setShowPersonaDropdown(false)
-        setFiltro(f => ({ ...f, persona_id: String(p.id), persona_tipo: p.tipo }))
-        setFiltrosSucios(true)
-    }
-    function quitarPersonaFiltro() {
-        setPersonaSeleccionada(null)
-        setPersonaBusqueda('')
-        setFiltro(f => ({ ...f, persona_id: '', persona_tipo: '' }))
-        setFiltrosSucios(true)
-    }
-
     function buscar() {
         router.get(route('bancos.movimientos.index'), { ...filtro, buscado: '1' } as any, {
             preserveState: true,
@@ -623,7 +588,7 @@ export default function MovimientosIndex() {
                     Proveedores/Cuentas por Pagar/Anticipos/Devoluciones/Importaciones.
                 */}
                 <div className="overflow-x-auto">
-                <div style={{ minWidth: '1500px' }}>
+                <div style={{ minWidth: '1100px' }}>
                 <FilterToolbar
                     search={{
                         value: filtro.buscar ?? '',
@@ -657,82 +622,38 @@ export default function MovimientosIndex() {
                     <select value={filtro.banco_caja_id ?? ''} onChange={e => cambiarFiltro('banco_caja_id', e.target.value)}
                         className="input-field shrink-0 text-xs"
                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '160px' }}>
-                        <option value="">Todos los bancos</option>
+                        <option value="">Bancos</option>
                         {bancos.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
                     </select>
 
                     <select value={filtro.tipo ?? ''} onChange={e => cambiarFiltro('tipo', e.target.value)}
                         className="input-field shrink-0 text-xs"
                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '120px' }}>
-                        <option value="">Todos los tipos</option>
+                        <option value="">Tipos</option>
                         <option value="ingreso">Ingreso</option>
                         <option value="egreso">Egreso</option>
                     </select>
 
                     <select value={filtro.centro_costo_id ?? ''} onChange={e => cambiarFiltro('centro_costo_id', e.target.value)}
                         className="input-field shrink-0 text-xs"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '150px' }}>
-                        <option value="">Todos los centros</option>
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '160px' }}>
+                        <option value="">Centros</option>
                         {centrosCosto.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
                     </select>
-
-                    {/* Persona: buscador combinado proveedor+cliente, mismo patrón
-                        de search-input-con-dropdown ya usado para "Cuenta
-                        contrapartida" en el modal Nuevo Movimiento. */}
-                    <div className="relative shrink-0" style={{ width: '160px' }}>
-                        <input type="text"
-                            value={personaSeleccionada ? personaSeleccionada.nombre : personaBusqueda}
-                            onChange={e => {
-                                if (personaSeleccionada) setPersonaSeleccionada(null)
-                                setPersonaBusqueda(e.target.value)
-                                setShowPersonaDropdown(true)
-                            }}
-                            onFocus={() => setShowPersonaDropdown(true)}
-                            placeholder="Persona (prov./cliente)"
-                            className="input-field text-xs"
-                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '160px' }} />
-                        {(personaSeleccionada || personaBusqueda) && (
-                            <button type="button" onClick={quitarPersonaFiltro}
-                                className="absolute top-1/2 right-2 -translate-y-1/2 hover:opacity-70"
-                                style={{ color: 'var(--text-muted)' }}>
-                                <X className="w-3 h-3" />
-                            </button>
-                        )}
-                        {showPersonaDropdown && !personaSeleccionada && personasFiltradas.length > 0 && (
-                            <div className="absolute z-20 mt-1 rounded-lg shadow-xl border overflow-hidden"
-                                style={{ background: 'var(--bg-card)', borderColor: 'var(--border)', width: '260px' }}>
-                                <div className="max-h-52 overflow-y-auto">
-                                    {personasFiltradas.map(p => (
-                                        <button key={`${p.tipo}-${p.id}`} type="button"
-                                            onClick={() => seleccionarPersonaFiltro(p)}
-                                            className="w-full text-left px-3 py-2 text-xs flex items-center justify-between gap-2 transition-colors"
-                                            style={{ color: 'var(--text-main)' }}
-                                            onMouseEnter={e => (e.currentTarget.style.background = 'rgba(245,158,11,0.1)')}
-                                            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                                            <span className="truncate">{p.nombre}</span>
-                                            <span className="text-[9px] uppercase font-semibold shrink-0" style={{ color: 'var(--text-muted)' }}>
-                                                {p.tipo === 'proveedor' ? 'Prov.' : 'Cliente'}
-                                            </span>
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-                    </div>
 
                     <div className="flex flex-col gap-1 shrink-0 self-end">
                         <label className="text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>Desde</label>
                         <input type="date" value={filtro.fecha_desde ?? ''}
                             onChange={e => cambiarFiltro('fecha_desde', e.target.value)}
                             className="input-field text-xs"
-                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '150px' }} />
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '140px' }} />
                     </div>
                     <div className="flex flex-col gap-1 shrink-0 self-end">
                         <label className="text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>Hasta</label>
                         <input type="date" value={filtro.fecha_hasta ?? ''}
                             onChange={e => cambiarFiltro('fecha_hasta', e.target.value)}
                             className="input-field text-xs"
-                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '150px' }} />
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '140px' }} />
                     </div>
                 </FilterToolbar>
                 </div>
