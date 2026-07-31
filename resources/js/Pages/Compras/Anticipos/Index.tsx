@@ -373,18 +373,19 @@ export default function AnticiposIndex() {
     const [cruzarActivo, setCruzarActivo] = useState<Anticipo | null>(null)
 
     // Cambiar cualquier filtro después de haber buscado marca los
-    // resultados como "obsoletos" — la tabla vuelve al estado vacío hasta
-    // que se presione Buscar de nuevo, para no mezclar datos viejos con un
-    // filtro nuevo todavía sin aplicar. `anticipos` por sí solo no basta
-    // para esto: cambiar un select no toca la prop del servidor, solo el
-    // estado local, así que sin este flag la tabla seguiría mostrando los
-    // resultados de la búsqueda anterior.
+    // resultados como "obsoletos" respecto al filtro actual — la tabla NO
+    // se vacía (se sigue mostrando la última búsqueda, atenuada vía esta
+    // misma bandera) hasta que se presione Buscar de nuevo. Antes esto
+    // forzaba el estado vacío inmediatamente al cambiar cualquier filtro,
+    // generando un parpadeo datos→vacío→datos.
     const [filtrosSucios, setFiltrosSucios] = useState(false)
 
     // Carga bajo demanda: `anticipos` viene null hasta que el usuario
-    // presiona Buscar (aplicarFiltros manda buscado=1) — mismo patrón que
-    // Cuentas por Pagar/Proveedores.
-    const haBuscado = anticipos !== null && !filtrosSucios
+    // presiona Buscar por primera vez (aplicarFiltros manda buscado=1) —
+    // mismo patrón que Cuentas por Pagar/Proveedores. Una vez que hay
+    // resultados, se siguen mostrando aunque el usuario cambie un filtro
+    // sin volver a buscar.
+    const haBuscado = anticipos !== null
 
     useEffect(() => {
         if (flash?.success) notify.success(flash.success)
@@ -524,7 +525,7 @@ export default function AnticiposIndex() {
 
             {/* Tabla */}
             {haBuscado && (
-            <div className="px-6 pb-8">
+            <div className={cn('px-6 pb-8 transition-opacity', filtrosSucios && 'opacity-60')}>
                 <div className="border rounded-xl overflow-hidden"
                     style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
 

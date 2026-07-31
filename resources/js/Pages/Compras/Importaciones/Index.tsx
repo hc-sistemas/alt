@@ -1531,14 +1531,18 @@ export default function ImportacionesIndex() {
     const [fechaHasta,  setFechaHasta]  = useState(filtros.fecha_hasta  ?? '')
 
     // Cambiar cualquier filtro después de haber buscado marca los
-    // resultados como "obsoletos" — la tabla vuelve al estado vacío hasta
-    // que se presione Buscar de nuevo (mismo patrón que Cuentas por
-    // Pagar/Anticipos/Devoluciones).
+    // resultados como "obsoletos" respecto al filtro actual — la tabla NO
+    // se vacía (se sigue mostrando la última búsqueda, atenuada vía esta
+    // misma bandera) hasta que se presione Buscar de nuevo. Antes esto
+    // forzaba el estado vacío inmediatamente al cambiar cualquier filtro,
+    // generando un parpadeo datos→vacío→datos.
     const [filtrosSucios, setFiltrosSucios] = useState(false)
 
     // Carga bajo demanda: `importaciones` viene null hasta que el usuario
-    // presiona Buscar.
-    const haBuscado = importaciones !== null && !filtrosSucios
+    // presiona Buscar por primera vez. Una vez que hay resultados, se
+    // siguen mostrando aunque el usuario cambie un filtro sin volver a
+    // buscar.
+    const haBuscado = importaciones !== null
 
     useEffect(() => {
         if (flash?.success) notify.ok(flash.success)
@@ -1658,7 +1662,7 @@ export default function ImportacionesIndex() {
 
             {/* Tabla */}
             {haBuscado && (
-            <div className="px-6 pb-8">
+            <div className={cn('px-6 pb-8 transition-opacity', filtrosSucios && 'opacity-60')}>
                 <div className="border rounded-xl overflow-hidden"
                     style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
 

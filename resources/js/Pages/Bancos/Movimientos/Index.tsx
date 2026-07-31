@@ -404,14 +404,17 @@ export default function MovimientosIndex() {
     const [filtro, setFiltro] = useState(filtros)
 
     // Cambiar cualquier filtro después de haber buscado marca los resultados
-    // como "obsoletos" — la tabla vuelve al estado vacío hasta que se
-    // presione Buscar de nuevo (mismo patrón que Importaciones/Cuentas por
-    // Pagar/Anticipos/Devoluciones).
+    // como "obsoletos" respecto al filtro actual — la tabla NO se vacía (se
+    // sigue mostrando la última búsqueda, atenuada) hasta que se presione
+    // Buscar de nuevo. Antes esto forzaba el estado vacío inmediatamente al
+    // cambiar cualquier filtro, generando un parpadeo datos→vacío→datos.
     const [filtrosSucios, setFiltrosSucios] = useState(false)
 
     // Carga bajo demanda: `movimientos`/`stats` vienen null hasta que el
-    // usuario presiona Buscar.
-    const haBuscado = movimientos !== null && !filtrosSucios
+    // usuario presiona Buscar por primera vez. Una vez que hay resultados,
+    // se siguen mostrando (atenuados vía filtrosSucios) aunque el usuario
+    // cambie un filtro sin volver a buscar.
+    const haBuscado = movimientos !== null
 
     useEffect(() => {
         if (flash?.success) notify.ok(flash.success)
@@ -673,7 +676,7 @@ export default function MovimientosIndex() {
             )}
 
             {haBuscado && stats && movimientos && (
-            <>
+            <div className={cn('transition-opacity', filtrosSucios && 'opacity-60')}>
             {/* Stats */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 px-6 py-4">
                 <StatCard label="Total Ingresos" value={fmt(stats.total_ingresos)} icon={ArrowUpCircle}
@@ -706,7 +709,7 @@ export default function MovimientosIndex() {
                     {movimientos.data.length === 0 && (
                         <div className="py-20 text-center">
                             <DollarSign className="w-12 h-12 opacity-20 mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
-                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No hay movimientos registrados</p>
+                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No se encontraron movimientos con estos filtros</p>
                         </div>
                     )}
 
@@ -790,7 +793,7 @@ export default function MovimientosIndex() {
                     </div>
                 )}
             </div>
-            </>
+            </div>
             )}
 
             {showModal && (

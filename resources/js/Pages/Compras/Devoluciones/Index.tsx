@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import type { PageProps } from '@/types'
 import { usePermiso } from '@/Hooks/usePermiso'
+import { cn } from '@/lib/utils'
 import 'react-toastify/dist/ReactToastify.css'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -420,16 +421,18 @@ export default function DevolucionesIndex() {
     const [fechaHasta, setFechaHasta] = useState(filtros.fecha_hasta ?? '')
 
     // Cambiar cualquier filtro después de haber buscado marca los
-    // resultados como "obsoletos" — la tabla vuelve al estado vacío hasta
-    // que se presione Buscar de nuevo (mismo patrón que Cuentas por Pagar/
-    // Anticipos Proveedores). Sin esto, cambiar un <select> solo tocaría
-    // estado local sin volver a pedir datos, dejando la tabla vieja
-    // mezclada con un filtro nuevo todavía sin aplicar.
+    // resultados como "obsoletos" respecto al filtro actual — la tabla NO
+    // se vacía (se sigue mostrando la última búsqueda, atenuada vía esta
+    // misma bandera) hasta que se presione Buscar de nuevo. Antes esto
+    // forzaba el estado vacío inmediatamente al cambiar cualquier filtro,
+    // generando un parpadeo datos→vacío→datos.
     const [filtrosSucios, setFiltrosSucios] = useState(false)
 
     // Carga bajo demanda: `devoluciones` viene null hasta que el usuario
-    // presiona Buscar.
-    const haBuscado = devoluciones !== null && !filtrosSucios
+    // presiona Buscar por primera vez. Una vez que hay resultados, se
+    // siguen mostrando aunque el usuario cambie un filtro sin volver a
+    // buscar.
+    const haBuscado = devoluciones !== null
 
     useEffect(() => {
         if (flash?.success) notify.ok(flash.success)
@@ -564,7 +567,7 @@ export default function DevolucionesIndex() {
 
                 {/* Tabla */}
                 {haBuscado && (
-                <>
+                <div className={cn('transition-opacity', filtrosSucios && 'opacity-60')}>
                 <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
                     {devoluciones.length} devolución(es) encontrada(s)
                 </p>
@@ -637,7 +640,7 @@ export default function DevolucionesIndex() {
                         </div>
                     ))}
                 </div>
-                </>
+                </div>
                 )}
             </div>
 
