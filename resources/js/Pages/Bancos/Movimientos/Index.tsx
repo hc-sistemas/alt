@@ -588,7 +588,7 @@ export default function MovimientosIndex() {
                     Proveedores/Cuentas por Pagar/Anticipos/Devoluciones/Importaciones.
                 */}
                 <div className="overflow-x-auto">
-                <div style={{ minWidth: '1100px' }}>
+                <div style={{ minWidth: '950px' }}>
                 <FilterToolbar
                     search={{
                         value: filtro.buscar ?? '',
@@ -596,7 +596,7 @@ export default function MovimientosIndex() {
                         onSearch: buscar,
                         placeholder: 'Descripción, beneficiario...',
                     }}
-                    searchWidth="w-[160px]"
+                    searchWidth="w-[120px]"
                     exportHref={exportUrl}
                     extraActions={
                         <>
@@ -621,14 +621,14 @@ export default function MovimientosIndex() {
                 >
                     <select value={filtro.banco_caja_id ?? ''} onChange={e => cambiarFiltro('banco_caja_id', e.target.value)}
                         className="input-field shrink-0 text-xs"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '160px' }}>
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '128px' }}>
                         <option value="">Bancos</option>
                         {bancos.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
                     </select>
 
                     <select value={filtro.tipo ?? ''} onChange={e => cambiarFiltro('tipo', e.target.value)}
                         className="input-field shrink-0 text-xs"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '120px' }}>
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '112px' }}>
                         <option value="">Tipos</option>
                         <option value="ingreso">Ingreso</option>
                         <option value="egreso">Egreso</option>
@@ -636,7 +636,7 @@ export default function MovimientosIndex() {
 
                     <select value={filtro.centro_costo_id ?? ''} onChange={e => cambiarFiltro('centro_costo_id', e.target.value)}
                         className="input-field shrink-0 text-xs"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '160px' }}>
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '132px' }}>
                         <option value="">Centros</option>
                         {centrosCosto.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
                     </select>
@@ -646,14 +646,14 @@ export default function MovimientosIndex() {
                         <input type="date" value={filtro.fecha_desde ?? ''}
                             onChange={e => cambiarFiltro('fecha_desde', e.target.value)}
                             className="input-field text-xs"
-                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '140px' }} />
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '125px' }} />
                     </div>
                     <div className="flex flex-col gap-1 shrink-0 self-end">
                         <label className="text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>Hasta</label>
                         <input type="date" value={filtro.fecha_hasta ?? ''}
                             onChange={e => cambiarFiltro('fecha_hasta', e.target.value)}
                             className="input-field text-xs"
-                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '140px' }} />
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '125px' }} />
                     </div>
                 </FilterToolbar>
                 </div>
