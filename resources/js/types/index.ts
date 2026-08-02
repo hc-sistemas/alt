@@ -862,6 +862,7 @@ export interface Asistencia {
     ip_salida: string | null
     observacion: string | null
     colaborador?: Colaborador
+    horas_extras?: Pick<HorasExtrasAprobacion, 'id' | 'asistencia_id' | 'estado' | 'horas_aprobadas'> | null
 }
 
 export interface HorasExtrasAprobacion {

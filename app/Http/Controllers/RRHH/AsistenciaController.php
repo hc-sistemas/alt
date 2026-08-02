@@ -32,15 +32,22 @@ class AsistenciaController extends Controller
         $asistenciaHoy = null;
 
         if ($colaborador) {
-            $asistenciaHoy = Asistencia::where('colaborador_id', $colaborador->id)
+            $asistenciaHoy = Asistencia::with('horasExtras:id,asistencia_id,estado,horas_aprobadas')
+                ->where('colaborador_id', $colaborador->id)
                 ->where('fecha', $hoy)
                 ->first();
         }
 
         // Historial del mes actual
+        // NOM-06: las horas extra quedan "pendiente" al timbrar y solo cuentan como
+        // aprobadas cuando un Administrador las revisa en Horas Extras — por eso se
+        // trae el estado real de HorasExtrasAprobacion en vez de confiar en el valor
+        // de asistencias.horas_extra a secas (ese campo se llena de inmediato al
+        // marcar salida, sin importar si luego se aprueba o se rechaza).
         $historial = null;
         if ($colaborador) {
-            $historial = Asistencia::where('colaborador_id', $colaborador->id)
+            $historial = Asistencia::with('horasExtras:id,asistencia_id,estado,horas_aprobadas')
+                ->where('colaborador_id', $colaborador->id)
                 ->whereBetween('fecha', [$ahora->copy()->startOfMonth(), $ahora->copy()->endOfMonth()])
                 ->orderByDesc('fecha')
                 ->get();
@@ -49,7 +56,7 @@ class AsistenciaController extends Controller
         // Si es admin/super_admin → ver todas las asistencias del día
         $resumenDia = null;
         if (in_array(Auth::user()?->perfil?->nombre, ['super_admin', 'admin'], true)) {
-            $resumenDia = Asistencia::with('colaborador')
+            $resumenDia = Asistencia::with(['colaborador', 'horasExtras:id,asistencia_id,estado,horas_aprobadas'])
                 ->whereHas('colaborador', fn($q) => $q->where('empresa_id', $empresaId))
                 ->where('fecha', $hoy)
                 ->orderBy('hora_entrada')

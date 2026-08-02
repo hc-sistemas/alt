@@ -11,6 +11,11 @@ import 'react-toastify/dist/ReactToastify.css'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+interface HorasExtrasEstado {
+    estado: 'pendiente' | 'aprobado' | 'rechazado'
+    horas_aprobadas: number | null
+}
+
 interface ResumenItem {
     id: number
     colaborador: { id: number; apellidos: string; nombres: string }
@@ -19,6 +24,8 @@ interface ResumenItem {
     hora_salida: string | null
     minutos_atraso: number
     horas_extra: number | null
+    tipo_extra: 'suplementaria' | 'extraordinaria' | null
+    horas_extras?: HorasExtrasEstado | null
 }
 
 interface Props extends PageProps {
@@ -86,6 +93,40 @@ function RelojDigital({ serverTime }: { serverTime: string }) {
     )
 }
 
+// ─── Celda H. Extra ───────────────────────────────────────────────────────────
+//
+// NOM-06: las horas extra quedan "Pendiente de Aprobación" al timbrar la salida
+// y solo cuentan como reales cuando un Administrador las aprueba en RRHH >
+// Horas Extras — nunca deben mostrarse aquí como si ya contaran solo porque el
+// timbre las calculó. `horas_extras` es la relación con HorasExtrasAprobacion
+// (null si nunca se generó una solicitud, ej. no hubo atraso en la salida).
+
+function CeldaHorasExtra({ horasExtra, tipoExtra, aprobacion }: {
+    horasExtra: number | null
+    tipoExtra: 'suplementaria' | 'extraordinaria' | null
+    aprobacion?: HorasExtrasEstado | null
+}) {
+    if (!horasExtra || horasExtra <= 0) {
+        return <span style={{ color: 'var(--text-muted)' }}>—</span>
+    }
+    if (!aprobacion || aprobacion.estado === 'pendiente') {
+        return (
+            <span className="font-medium text-xs text-amber-600 dark:text-amber-400">
+                Pendiente de aprobación
+            </span>
+        )
+    }
+    if (aprobacion.estado === 'rechazado') {
+        return <span className="font-medium text-xs text-red-500">Rechazada</span>
+    }
+    const horas = aprobacion.horas_aprobadas ?? horasExtra
+    return (
+        <span className={cn('font-medium text-xs', tipoExtra === 'extraordinaria' ? 'text-purple-500' : 'text-blue-500')}>
+            {horas}h {tipoExtra === 'extraordinaria' ? 'ext' : 'sup'}
+        </span>
+    )
+}
+
 // ─── Badge estado asistencia ──────────────────────────────────────────────────
 
 function EstadoAsistencia({ a }: { a: Asistencia | null }) {
@@ -111,7 +152,9 @@ function EstadoAsistencia({ a }: { a: Asistencia | null }) {
             <CheckCircle2 className="w-4 h-4 text-blue-500" />
             {formatHora(a.hora_entrada as unknown as string)} → {formatHora(a.hora_salida as unknown as string)}
             {(a.horas_extra ?? 0) > 0 && (
-                <span className="text-purple-500 text-xs font-normal ml-1">+{a.horas_extra}h extra</span>
+                <span className="text-xs font-normal ml-1">
+                    <CeldaHorasExtra horasExtra={a.horas_extra} tipoExtra={a.tipo_extra} aprobacion={a.horas_extras} />
+                </span>
             )}
         </div>
     )
@@ -163,14 +206,13 @@ export default function AsistenciaIndex() {
 
             <PageHeader
                 title="Asistencia"
-                description="Timbre digital — hora tomada del servidor"
                 breadcrumbs={[{ label: 'RRHH' }, { label: 'Asistencia' }]}
             />
 
             <div className="p-6 space-y-6 max-w-4xl">
 
                 {/* ── Timbre ── */}
-                <div className="rounded-2xl border p-8 text-center space-y-6"
+                <div className="rounded-2xl border p-8 md:p-10 text-center space-y-8"
                     style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
 
                     <RelojDigital serverTime={server_time} />
@@ -182,7 +224,7 @@ export default function AsistenciaIndex() {
                             Tu usuario no está vinculado a ningún colaborador activo.
                         </div>
                     ) : (
-                        <div className="space-y-4">
+                        <div className="space-y-5">
                             {/* Nombre del colaborador */}
                             <p className="text-lg font-semibold" style={{ color: 'var(--text-main)' }}>
                                 {colaborador.apellidos} {colaborador.nombres}
@@ -195,7 +237,7 @@ export default function AsistenciaIndex() {
 
                             {/* Botón timbre */}
                             {!tieneSalida && (
-                                <div className="flex justify-center">
+                                <div className="flex justify-center pt-1">
                                     {puedeEntrada && (
                                         <button
                                             onClick={() => registrar('entrada')}
@@ -267,7 +309,7 @@ export default function AsistenciaIndex() {
                             <thead>
                                 <tr style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
                                     {['Fecha', 'Entrada', 'Salida', 'Atraso', 'H. Extra'].map(h => (
-                                        <th key={h} className="text-left px-3 py-2 font-medium uppercase tracking-wider"
+                                        <th key={h} className="text-left px-3 py-3 font-medium uppercase tracking-wider"
                                             style={{ color: 'var(--text-muted)' }}>{h}</th>
                                     ))}
                                 </tr>
@@ -276,16 +318,16 @@ export default function AsistenciaIndex() {
                                 {historial.map(a => (
                                     <tr key={a.id} className="border-t hover:bg-black/5 transition-colors"
                                         style={{ borderColor: 'var(--border)' }}>
-                                        <td className="px-3 py-2" style={{ color: 'var(--text-main)' }}>
+                                        <td className="px-3 py-2.5" style={{ color: 'var(--text-main)' }}>
                                             {formatFecha(a.fecha)}
                                         </td>
-                                        <td className="px-3 py-2 font-mono" style={{ color: 'var(--text-main)' }}>
+                                        <td className="px-3 py-2.5 font-mono" style={{ color: 'var(--text-main)' }}>
                                             {formatHora(a.hora_entrada as unknown as string)}
                                         </td>
-                                        <td className="px-3 py-2 font-mono" style={{ color: 'var(--text-muted)' }}>
+                                        <td className="px-3 py-2.5 font-mono" style={{ color: 'var(--text-muted)' }}>
                                             {formatHora(a.hora_salida as unknown as string)}
                                         </td>
-                                        <td className="px-3 py-2">
+                                        <td className="px-3 py-2.5">
                                             {(a.minutos_atraso ?? 0) > 0 ? (
                                                 <span className="text-amber-600 dark:text-amber-400 font-medium">
                                                     {a.minutos_atraso} min
@@ -294,15 +336,8 @@ export default function AsistenciaIndex() {
                                                 <span className="text-emerald-500">—</span>
                                             )}
                                         </td>
-                                        <td className="px-3 py-2">
-                                            {(a.horas_extra ?? 0) > 0 ? (
-                                                <span className={cn(
-                                                    'font-medium text-xs',
-                                                    a.tipo_extra === 'extraordinaria' ? 'text-purple-500' : 'text-blue-500'
-                                                )}>
-                                                    {a.horas_extra}h {a.tipo_extra === 'extraordinaria' ? 'ext' : 'sup'}
-                                                </span>
-                                            ) : <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                                        <td className="px-3 py-2.5">
+                                            <CeldaHorasExtra horasExtra={a.horas_extra} tipoExtra={a.tipo_extra} aprobacion={a.horas_extras} />
                                         </td>
                                     </tr>
                                 ))}
@@ -325,7 +360,7 @@ export default function AsistenciaIndex() {
                             <thead>
                                 <tr style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
                                     {['Colaborador', 'Entrada', 'Salida', 'Atraso', 'H. Extra'].map(h => (
-                                        <th key={h} className="text-left px-3 py-2 font-medium uppercase tracking-wider"
+                                        <th key={h} className="text-left px-3 py-3 font-medium uppercase tracking-wider"
                                             style={{ color: 'var(--text-muted)' }}>{h}</th>
                                     ))}
                                 </tr>
@@ -334,26 +369,24 @@ export default function AsistenciaIndex() {
                                 {resumenDia.map(a => (
                                     <tr key={a.id} className="border-t hover:bg-black/5 transition-colors"
                                         style={{ borderColor: 'var(--border)' }}>
-                                        <td className="px-3 py-2 font-medium" style={{ color: 'var(--text-main)' }}>
+                                        <td className="px-3 py-2.5 font-medium" style={{ color: 'var(--text-main)' }}>
                                             {a.colaborador.apellidos} {a.colaborador.nombres}
                                         </td>
-                                        <td className="px-3 py-2 font-mono" style={{ color: 'var(--text-main)' }}>
+                                        <td className="px-3 py-2.5 font-mono" style={{ color: 'var(--text-main)' }}>
                                             {formatHora(a.hora_entrada)}
                                         </td>
-                                        <td className="px-3 py-2 font-mono" style={{ color: 'var(--text-muted)' }}>
+                                        <td className="px-3 py-2.5 font-mono" style={{ color: 'var(--text-muted)' }}>
                                             {formatHora(a.hora_salida)}
                                         </td>
-                                        <td className="px-3 py-2">
+                                        <td className="px-3 py-2.5">
                                             {(a.minutos_atraso ?? 0) > 0 ? (
                                                 <span className="text-amber-600 dark:text-amber-400 font-medium">
                                                     {a.minutos_atraso} min
                                                 </span>
                                             ) : <span className="text-emerald-500">—</span>}
                                         </td>
-                                        <td className="px-3 py-2">
-                                            {(a.horas_extra ?? 0) > 0 ? (
-                                                <span className="text-purple-500 font-medium">{a.horas_extra}h</span>
-                                            ) : <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                                        <td className="px-3 py-2.5">
+                                            <CeldaHorasExtra horasExtra={a.horas_extra} tipoExtra={a.tipo_extra} aprobacion={a.horas_extras} />
                                         </td>
                                     </tr>
                                 ))}
