@@ -9,7 +9,7 @@ import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
 import {
-    Plus, Pencil, ToggleLeft, ToggleRight, X,
+    Plus, Pencil, ToggleLeft, ToggleRight, X, Search,
     User, Briefcase, DollarSign, CreditCard, Phone, Lock, Clock,
 } from 'lucide-react'
 import { usePermiso } from '@/Hooks/usePermiso'
@@ -28,8 +28,18 @@ const PERFIL_LABEL: Record<string, string> = {
     bodeguero: 'Bodeguero',
 }
 
+// Instituciones bancarias del Ecuador — lista desplegable pedida por el
+// cliente (antes era texto libre). "Otro…" revela un campo de texto para
+// bancos/cooperativas fuera de esta lista, sin perder flexibilidad.
+const BANCOS_ECUADOR = [
+    'Banco Pichincha', 'Banco del Pacífico', 'Banco Guayaquil', 'Produbanco',
+    'Banco Internacional', 'Banco Bolivariano', 'Banco de Loja', 'Banco Solidario',
+    'Banco General Rumiñahui', 'Banco ProCredit', 'Diners Club',
+    'Cooperativa JEP', 'Cooperativa Policía Nacional',
+]
+
 interface Props extends PageProps {
-    colaboradores: PaginatedData<Colaborador>
+    colaboradores: PaginatedData<Colaborador> | null
     puestos: PuestoTrabajo[]
     horarios: Horario[]
     usuarios: UsuarioItem[]
@@ -138,6 +148,13 @@ function ColaboradorModal({ colaborador, puestos, horarios, usuarios, perfiles, 
         perfil_id:           '',
         estado_usuario:      colaborador?.usuario?.estado ?? true,
     })
+
+    // Si el banco guardado no está en la lista conocida (dato viejo o
+    // institución no listada), arranca en modo "Otro…" para no perder el
+    // valor ya capturado.
+    const [bancoOtro, setBancoOtro] = useState(
+        !!colaborador?.banco && !BANCOS_ECUADOR.includes(colaborador.banco)
+    )
 
     const tieneUsuarioVinculado = isEditar && !!colaborador?.usuario
 
@@ -421,7 +438,35 @@ function ColaboradorModal({ colaborador, puestos, horarios, usuarios, perfiles, 
                         {/* Tab: Datos Bancarios */}
                         {tab === 'bancarios' && (
                             <div className="grid grid-cols-2 gap-4">
-                                {field('Banco', 'banco')}
+                                <div>
+                                    <Label className="input-label">Institución Bancaria</Label>
+                                    <select
+                                        className="input-field"
+                                        value={bancoOtro ? '__otro__' : data.banco}
+                                        onChange={e => {
+                                            if (e.target.value === '__otro__') {
+                                                setBancoOtro(true)
+                                                setData('banco', '')
+                                            } else {
+                                                setBancoOtro(false)
+                                                setData('banco', e.target.value)
+                                            }
+                                        }}
+                                    >
+                                        <option value="">— Seleccionar —</option>
+                                        {BANCOS_ECUADOR.map(b => <option key={b} value={b}>{b}</option>)}
+                                        <option value="__otro__">Otro…</option>
+                                    </select>
+                                    {bancoOtro && (
+                                        <Input
+                                            className="input-field mt-2"
+                                            placeholder="Nombre de la institución"
+                                            value={data.banco}
+                                            onChange={e => setData('banco', e.target.value)}
+                                        />
+                                    )}
+                                    {errors.banco && <p className="mt-1 text-xs text-red-500">{errors.banco}</p>}
+                                </div>
                                 <div>
                                     <Label className="input-label">Tipo de Cuenta</Label>
                                     <select className="input-field" value={data.tipo_cuenta} onChange={e => setData('tipo_cuenta', e.target.value)}>
@@ -539,16 +584,28 @@ export default function ColaboradoresIndex() {
     const { puede } = usePermiso('rrhh')
 
     const [modal, setModal] = useState<{ type: 'nuevo' | 'editar'; colaborador?: Colaborador } | null>(null)
-    const [buscar, setBuscar] = useState(filtros.buscar ?? '')
-    const [departamento, setDepartamento] = useState(filtros.departamento ?? '')
-    const [estado, setEstado] = useState(filtros.estado ?? '')
+    const [filtro, setFiltro] = useState(filtros)
+
+    // Cambiar cualquier filtro después de haber buscado no vacía la tabla —
+    // solo la atenúa (opacity-60) hasta que se presione Buscar de nuevo.
+    // Mismo patrón ya usado en Movimientos Bancarios/Anticipos/Devoluciones/
+    // Importaciones/Cajas/Datafast/Conciliaciones/Cheques.
+    const [filtrosSucios, setFiltrosSucios] = useState(false)
+
+    // Carga bajo demanda: `colaboradores` viene null hasta la primera búsqueda.
+    const haBuscado = colaboradores !== null
+
+    function cambiarFiltro<K extends keyof typeof filtro>(campo: K, valor: string) {
+        setFiltro(f => ({ ...f, [campo]: valor }))
+        setFiltrosSucios(true)
+    }
 
     function filtrar() {
-        router.get(route('rrhh.colaboradores.index'), {
-            buscar:      buscar || undefined,
-            departamento: departamento || undefined,
-            estado:       estado || undefined,
-        }, { preserveState: true, replace: true })
+        router.get(route('rrhh.colaboradores.index'), { ...filtro, buscado: '1' }, {
+            preserveState: true,
+            replace: true,
+            onSuccess: () => setFiltrosSucios(false),
+        })
     }
 
     function toggleEstado(c: Colaborador) {
@@ -577,7 +634,6 @@ export default function ColaboradoresIndex() {
 
             <PageHeader
                 title="Colaboradores"
-                description="Gestión de la ficha laboral del personal"
                 breadcrumbs={[{ label: 'RRHH' }, { label: 'Colaboradores' }]}
                 actions={
                     puede('crear') ? (
@@ -591,44 +647,47 @@ export default function ColaboradoresIndex() {
             <div className="p-6 space-y-4">
                 <FilterToolbar
                     search={{
-                        value: buscar,
-                        onChange: setBuscar,
+                        value: filtro.buscar ?? '',
+                        onChange: v => cambiarFiltro('buscar', v),
                         onSearch: filtrar,
                         placeholder: 'Nombre, cédula, cargo...',
                     }}
                 >
                     <select
-                        value={departamento}
-                        onChange={e => { setDepartamento(e.target.value); }}
+                        value={filtro.departamento ?? ''}
+                        onChange={e => cambiarFiltro('departamento', e.target.value)}
                         className="input-field shrink-0"
                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}
                     >
-                        <option value="">Todos los depto.</option>
+                        <option value="">Departamento</option>
                         {departamentos.map(d => <option key={d} value={d}>{d}</option>)}
                     </select>
 
                     <select
-                        value={estado}
-                        onChange={e => setEstado(e.target.value)}
+                        value={filtro.estado ?? ''}
+                        onChange={e => cambiarFiltro('estado', e.target.value)}
                         className="input-field shrink-0"
                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}
                     >
-                        <option value="">Todos</option>
+                        <option value="">Estado</option>
                         <option value="activo">Activos</option>
                         <option value="inactivo">Inactivos</option>
                     </select>
-
-                    {(buscar || departamento || estado) && (
-                        <button
-                            type="button"
-                            onClick={() => { setBuscar(''); setDepartamento(''); setEstado(''); router.get(route('rrhh.colaboradores.index')); }}
-                            className="text-sm underline shrink-0" style={{ color: 'var(--text-muted)' }}>
-                            Limpiar
-                        </button>
-                    )}
                 </FilterToolbar>
 
+                {/* Estado inicial: aún no se ha buscado (carga bajo demanda) */}
+                {!haBuscado && (
+                    <div className="text-center py-16">
+                        <Search className="w-12 h-12 mx-auto mb-4 opacity-30" style={{ color: 'var(--text-muted)' }} />
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                            Ajusta los filtros y presiona Buscar para consultar los colaboradores.
+                        </p>
+                    </div>
+                )}
+
                 {/* Tabla */}
+                {haBuscado && colaboradores && (
+                <div className={cn('space-y-4', filtrosSucios && 'opacity-60 transition-opacity')}>
                 <div className="rounded-xl border overflow-x-auto" style={{ borderColor: 'var(--border)' }}>
                     <table className="w-full text-xs">
                         <thead>
@@ -643,7 +702,7 @@ export default function ColaboradoresIndex() {
                             {colaboradores.data.length === 0 ? (
                                 <tr>
                                     <td colSpan={8} className="text-center py-16 text-sm" style={{ color: 'var(--text-muted)' }}>
-                                        No hay colaboradores registrados.
+                                        No se encontraron colaboradores con estos filtros.
                                     </td>
                                 </tr>
                             ) : colaboradores.data.map(c => (
@@ -736,6 +795,8 @@ export default function ColaboradoresIndex() {
                             ))}
                         </div>
                     </div>
+                )}
+                </div>
                 )}
             </div>
 

@@ -27,29 +27,33 @@ class ColaboradorController extends Controller
     {
         $empresaId = session('empresa_activa_id');
 
-        $query = Colaborador::with(['puesto', 'horario', 'usuario:id,username,estado'])
-            ->where('empresa_id', $empresaId);
+        $colaboradores = null;
 
-        if ($request->filled('buscar')) {
-            $q = $request->buscar;
-            $query->where(fn($qb) =>
-                $qb->where('nombres', 'ilike', "%{$q}%")
-                   ->orWhere('apellidos', 'ilike', "%{$q}%")
-                   ->orWhere('cedula_ruc', 'ilike', "%{$q}%")
-                   ->orWhere('cargo', 'ilike', "%{$q}%")
-            );
+        if ($request->boolean('buscado')) {
+            $query = Colaborador::with(['puesto', 'horario', 'usuario:id,username,estado'])
+                ->where('empresa_id', $empresaId);
+
+            if ($request->filled('buscar')) {
+                $q = $request->buscar;
+                $query->where(fn($qb) =>
+                    $qb->where('nombres', 'ilike', "%{$q}%")
+                       ->orWhere('apellidos', 'ilike', "%{$q}%")
+                       ->orWhere('cedula_ruc', 'ilike', "%{$q}%")
+                       ->orWhere('cargo', 'ilike', "%{$q}%")
+                );
+            }
+
+            if ($request->filled('departamento')) {
+                $query->where('departamento', $request->departamento);
+            }
+
+            if ($request->filled('estado')) {
+                $query->where('estado', $request->estado === 'activo');
+            }
+
+            $colaboradores = $query->orderBy('apellidos')->orderBy('nombres')
+                ->paginate(20)->withQueryString();
         }
-
-        if ($request->filled('departamento')) {
-            $query->where('departamento', $request->departamento);
-        }
-
-        if ($request->filled('estado')) {
-            $query->where('estado', $request->estado === 'activo');
-        }
-
-        $colaboradores = $query->orderBy('apellidos')->orderBy('nombres')
-            ->paginate(20)->withQueryString();
 
         $puestos  = PuestoTrabajo::where('empresa_id', $empresaId)
             ->where('estado', true)->orderBy('nombre')
