@@ -21,41 +21,45 @@ class ChequesController extends Controller
     {
         $empresaId = session('empresa_activa_id');
 
-        $query = Cheque::with(['bancoCaja'])
-            ->where('empresa_id', $empresaId);
+        $cheques = null;
 
-        if ($request->filled('estado')) {
-            $query->where('estado', $request->estado);
-        }
-        if ($request->filled('banco_caja_id')) {
-            $query->where('banco_caja_id', $request->banco_caja_id);
-        }
-        if ($request->filled('buscar')) {
-            $q = $request->buscar;
-            $query->where(fn($qb) =>
-                $qb->where('numero',       'ilike', "%{$q}%")
-                   ->orWhere('beneficiario','ilike', "%{$q}%")
-            );
-        }
+        if ($request->boolean('buscado')) {
+            $query = Cheque::with(['bancoCaja'])
+                ->where('empresa_id', $empresaId);
 
-        $cheques = $query->orderByDesc('fecha_emision')
-            ->orderByDesc('id')
-            ->get()
-            ->map(fn($c) => [
-                'id'            => $c->id,
-                'numero'        => $c->numero,
-                'banco_nombre'  => $c->bancoCaja?->nombre,
-                'banco_caja_id' => $c->banco_caja_id,
-                'banco'         => $c->banco,
-                'cuenta'        => $c->cuenta,
-                'monto'         => $c->monto,
-                'fecha_emision' => $c->fecha_emision?->format('d/m/Y'),
-                'fecha_cobro'   => $c->fecha_cobro?->format('d/m/Y'),
-                'beneficiario'  => $c->beneficiario,
-                'estado'        => $c->estado,
-                'observacion'   => $c->observacion,
-                'movimiento_id' => $c->movimiento_id,
-            ]);
+            if ($request->filled('estado')) {
+                $query->where('estado', $request->estado);
+            }
+            if ($request->filled('banco_caja_id')) {
+                $query->where('banco_caja_id', $request->banco_caja_id);
+            }
+            if ($request->filled('buscar')) {
+                $q = $request->buscar;
+                $query->where(fn($qb) =>
+                    $qb->where('numero',       'ilike', "%{$q}%")
+                       ->orWhere('beneficiario','ilike', "%{$q}%")
+                );
+            }
+
+            $cheques = $query->orderByDesc('fecha_emision')
+                ->orderByDesc('id')
+                ->get()
+                ->map(fn($c) => [
+                    'id'            => $c->id,
+                    'numero'        => $c->numero,
+                    'banco_nombre'  => $c->bancoCaja?->nombre,
+                    'banco_caja_id' => $c->banco_caja_id,
+                    'banco'         => $c->banco,
+                    'cuenta'        => $c->cuenta,
+                    'monto'         => $c->monto,
+                    'fecha_emision' => $c->fecha_emision?->format('d/m/Y'),
+                    'fecha_cobro'   => $c->fecha_cobro?->format('d/m/Y'),
+                    'beneficiario'  => $c->beneficiario,
+                    'estado'        => $c->estado,
+                    'observacion'   => $c->observacion,
+                    'movimiento_id' => $c->movimiento_id,
+                ]);
+        }
 
         $bancos = BancoCaja::where('empresa_id', $empresaId)
             ->activos()->bancos()->orderBy('nombre')
