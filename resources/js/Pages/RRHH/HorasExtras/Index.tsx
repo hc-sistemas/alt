@@ -65,9 +65,16 @@ function TipoBadge({ tipo }: { tipo: string }) {
 
 // ─── Modal Aprobar ────────────────────────────────────────────────────────────
 
+const MSG_NO_ENTERO = 'Las horas aprobadas deben ser un número entero, sin fracciones.'
+
 function ModalAprobar({ extra, onClose }: { extra: HoraExtra; onClose: () => void }) {
-    const { data, setData, patch, processing, errors } = useForm({
-        horas_aprobadas: String(extra.horas_solicitadas),
+    // Regla de negocio: las horas extra solo se pagan en enteros. La sugerencia
+    // inicial redondea HACIA ABAJO lo detectado por el timbre (2.98h → 2h) —
+    // criterio conservador confirmado con el usuario 2026-08-02, evita sugerir
+    // de más. El Administrador puede seguir bajando el valor, pero nunca subirlo
+    // a una fracción.
+    const { data, setData, patch, processing, errors, setError, clearErrors } = useForm({
+        horas_aprobadas: String(Math.floor(extra.horas_solicitadas)),
         observacion:     '',
     })
 
@@ -75,8 +82,26 @@ function ModalAprobar({ extra, onClose }: { extra: HoraExtra; onClose: () => voi
     const factor       = extra.tipo === 'extraordinaria' ? 2.0 : 1.5
     const valorPreview = (parseFloat(data.horas_aprobadas || '0') * valorHora * factor).toFixed(2)
 
+    function cambiarHoras(valor: string) {
+        setData('horas_aprobadas', valor)
+        const n = Number(valor)
+        if (valor !== '' && !Number.isNaN(n) && !Number.isInteger(n)) {
+            setError('horas_aprobadas', MSG_NO_ENTERO)
+        } else {
+            clearErrors('horas_aprobadas')
+        }
+    }
+
     function submit(e: React.FormEvent) {
         e.preventDefault()
+        // No confiar solo en la validación del backend: mismo criterio que el
+        // resto del sistema (validar en cliente Y servidor) — bloquear el
+        // envío aquí evita el viaje de red para un error ya conocido.
+        const n = Number(data.horas_aprobadas)
+        if (data.horas_aprobadas === '' || Number.isNaN(n) || !Number.isInteger(n)) {
+            setError('horas_aprobadas', MSG_NO_ENTERO)
+            return
+        }
         patch(route('rrhh.horas-extras.aprobar', extra.id), {
             onSuccess: () => {
                 onClose()
@@ -114,16 +139,20 @@ function ModalAprobar({ extra, onClose }: { extra: HoraExtra; onClose: () => voi
 
                         {/* Horas aprobadas */}
                         <div>
-                            <Label className="input-label">Horas aprobadas (máx. 4h/día) *</Label>
+                            <Label className="input-label">Horas aprobadas — entero, máx. 4h/día *</Label>
                             <Input
                                 type="number"
                                 min="0"
                                 max="4"
-                                step="0.25"
+                                step="1"
+                                inputMode="numeric"
                                 className="input-field"
                                 value={data.horas_aprobadas}
-                                onChange={e => setData('horas_aprobadas', e.target.value)}
+                                onChange={e => cambiarHoras(e.target.value)}
                             />
+                            <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
+                                Sugerido: {Math.floor(extra.horas_solicitadas)}h (redondeado hacia abajo de las {extra.horas_solicitadas}h solicitadas). Las horas extra solo se pagan en enteros.
+                            </p>
                             {errors.horas_aprobadas && (
                                 <p className="mt-1 text-xs text-red-500">{errors.horas_aprobadas}</p>
                             )}
@@ -151,7 +180,7 @@ function ModalAprobar({ extra, onClose }: { extra: HoraExtra; onClose: () => voi
 
                     <div className="modal-footer flex justify-end gap-3 px-6 py-4">
                         <button type="button" onClick={onClose} className="btn-secondary">Cancelar</button>
-                        <button type="submit" disabled={processing} className="btn-primary flex items-center gap-2">
+                        <button type="submit" disabled={processing || !!errors.horas_aprobadas} className="btn-primary flex items-center gap-2">
                             <Check className="w-4 h-4" />
                             {processing ? 'Aprobando…' : 'Aprobar'}
                         </button>

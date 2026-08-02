@@ -72,9 +72,17 @@ class HorasExtrasController extends Controller
             return back()->with('error', 'Esta solicitud ya fue procesada.');
         }
 
+        // Regla de negocio: las horas extra solo se pagan en números enteros —
+        // el Administrador puede ajustar hacia abajo o hasta el entero que
+        // decida, pero nunca aprobar una fracción (aunque el timbre haya
+        // detectado, ej., 2.98h solicitadas). No basta con `step="1"` en el
+        // input del frontend (no bloquea que el usuario escriba "2.98" a
+        // mano), así que se valida también aquí con la regla `integer`.
         $data = $request->validate([
-            'horas_aprobadas' => 'required|numeric|min:0|max:' . self::MAX_HORAS_DIA,
+            'horas_aprobadas' => 'required|integer|min:0|max:' . self::MAX_HORAS_DIA,
             'observacion'     => 'nullable|string|max:300',
+        ], [
+            'horas_aprobadas.integer' => 'Las horas aprobadas deben ser un número entero, sin fracciones.',
         ]);
 
         // Verificar límite semanal
