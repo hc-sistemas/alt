@@ -7,7 +7,7 @@ import FilterToolbar from '@/Components/shared/FilterToolbar'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
-import { Plus, X, GitMerge, AlertTriangle, CheckCircle, Eye } from 'lucide-react'
+import { Plus, X, GitMerge, AlertTriangle, CheckCircle, Eye, Search } from 'lucide-react'
 import { usePermiso } from '@/Hooks/usePermiso'
 import type { BancoCaja, ConciliacionBancaria, PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
@@ -25,10 +25,11 @@ interface Filtros {
     fecha_desde?:   string
     fecha_hasta?:   string
     estado?:        string
+    buscar?:        string
 }
 
 interface Props extends PageProps {
-    conciliaciones: ConcRow[]
+    conciliaciones: ConcRow[] | null
     bancos:  Pick<BancoCaja, 'id' | 'nombre' | 'saldo_actual'>[]
     filtros: Filtros
 }
@@ -165,10 +166,17 @@ export default function ConciliacionesIndex() {
     const { conciliaciones, bancos, filtros, flash } = usePage<Props>().props
     const { puede } = usePermiso('bancos')
     const [showModal, setShowModal] = useState(false)
-    const [bancoId,     setBancoId]     = useState(filtros.banco_caja_id ?? '')
-    const [fechaDesde,  setFechaDesde]  = useState(filtros.fecha_desde   ?? '')
-    const [fechaHasta,  setFechaHasta]  = useState(filtros.fecha_hasta   ?? '')
-    const [estadoFiltro, setEstadoFiltro] = useState(filtros.estado      ?? '')
+
+    const [filtro, setFiltro] = useState(filtros)
+
+    // Cambiar cualquier filtro después de haber buscado no vacía la tabla —
+    // solo la atenúa (opacity-60) hasta que se presione Buscar de nuevo.
+    // Mismo patrón ya usado en Movimientos Bancarios/Anticipos/Devoluciones/
+    // Importaciones/Cajas/Datafast.
+    const [filtrosSucios, setFiltrosSucios] = useState(false)
+
+    // Carga bajo demanda: `conciliaciones` viene null hasta la primera búsqueda.
+    const haBuscado = conciliaciones !== null
 
     useEffect(() => {
         if (flash?.success) notify.ok(flash.success)
@@ -176,19 +184,18 @@ export default function ConciliacionesIndex() {
         if (flash?.warning) notify.warn(flash.warning as string)
     }, [flash?.success, flash?.error])
 
-    function aplicarFiltros() {
-        router.get(route('bancos.conciliaciones.index'), {
-            banco_caja_id: bancoId, fecha_desde: fechaDesde,
-            fecha_hasta: fechaHasta, estado: estadoFiltro,
-        }, { preserveState: true, replace: true })
+    function cambiarFiltro<K extends keyof typeof filtro>(campo: K, valor: string) {
+        setFiltro(f => ({ ...f, [campo]: valor }))
+        setFiltrosSucios(true)
     }
 
-    function limpiar() {
-        setBancoId(''); setFechaDesde(''); setFechaHasta(''); setEstadoFiltro('')
-        router.get(route('bancos.conciliaciones.index'), {}, { preserveState: false })
+    function buscar() {
+        router.get(route('bancos.conciliaciones.index'), { ...filtro, buscado: '1' } as any, {
+            preserveState: true,
+            replace: true,
+            onSuccess: () => setFiltrosSucios(false),
+        })
     }
-
-    const hayFiltros = !!(bancoId || fechaDesde || fechaHasta || estadoFiltro)
 
     return (
         <AppLayout title="Conciliación Bancaria" suppressFlash>
@@ -196,7 +203,6 @@ export default function ConciliacionesIndex() {
 
             <PageHeader
                 title="Conciliación Bancaria"
-                description="Cuadre de saldos banco vs sistema"
                 breadcrumbs={[{ label: 'Bancos' }, { label: 'Conciliaciones' }]}
                 actions={
                     puede('crear') ? (
@@ -210,40 +216,62 @@ export default function ConciliacionesIndex() {
             />
 
             <div className="px-6 pt-6 mb-2">
-                <FilterToolbar>
-                    <select value={bancoId} onChange={e => setBancoId(e.target.value)}
-                        className="input-field shrink-0"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
-                        <option value="">Todos los bancos</option>
+                <FilterToolbar
+                    search={{
+                        value: filtro.buscar ?? '',
+                        onChange: v => cambiarFiltro('buscar', v),
+                        onSearch: buscar,
+                        placeholder: 'Banco, descripción...',
+                    }}
+                    searchWidth="w-[150px]"
+                >
+                    <select value={filtro.banco_caja_id ?? ''} onChange={e => cambiarFiltro('banco_caja_id', e.target.value)}
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '150px' }}>
+                        <option value="">Banco</option>
                         {bancos.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
                     </select>
 
-                    <input type="date" value={fechaDesde} onChange={e => setFechaDesde(e.target.value)}
-                        className="input-field shrink-0 w-36"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }} />
-                    <input type="date" value={fechaHasta} onChange={e => setFechaHasta(e.target.value)}
-                        className="input-field shrink-0 w-36"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }} />
+                    <div className="flex flex-col gap-1 shrink-0 self-end">
+                        <label className="text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>Desde</label>
+                        <input type="date" value={filtro.fecha_desde ?? ''}
+                            onChange={e => cambiarFiltro('fecha_desde', e.target.value)}
+                            className="input-field text-xs"
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '140px' }} />
+                    </div>
+                    <div className="flex flex-col gap-1 shrink-0 self-end">
+                        <label className="text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>Hasta</label>
+                        <input type="date" value={filtro.fecha_hasta ?? ''}
+                            onChange={e => cambiarFiltro('fecha_hasta', e.target.value)}
+                            className="input-field text-xs"
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '140px' }} />
+                    </div>
 
-                    <select value={estadoFiltro} onChange={e => setEstadoFiltro(e.target.value)}
-                        className="input-field shrink-0"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
-                        <option value="">Todos los estados</option>
+                    <select value={filtro.estado ?? ''} onChange={e => cambiarFiltro('estado', e.target.value)}
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '120px' }}>
+                        <option value="">Estado</option>
                         <option value="pendiente">Pendiente</option>
                         <option value="conciliada">Conciliada</option>
                     </select>
-
-                    <button type="button" onClick={aplicarFiltros} className="text-sm underline shrink-0" style={{ color: 'var(--primary)' }}>Filtrar</button>
-                    {hayFiltros && (
-                        <button type="button" onClick={limpiar} className="text-sm underline shrink-0" style={{ color: 'var(--text-muted)' }}>
-                            Limpiar
-                        </button>
-                    )}
                 </FilterToolbar>
             </div>
 
+            {/* Estado inicial: aún no se ha buscado (carga bajo demanda) */}
+            {!haBuscado && (
+                <div className="px-6 pb-8">
+                    <div className="text-center py-16">
+                        <Search className="w-12 h-12 mx-auto mb-4 opacity-30" style={{ color: 'var(--text-muted)' }} />
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                            Ajusta los filtros y presiona Buscar para consultar las conciliaciones.
+                        </p>
+                    </div>
+                </div>
+            )}
+
             {/* Tabla */}
-            <div className="px-6 pb-8">
+            {haBuscado && conciliaciones && (
+            <div className={cn('px-6 pb-8', filtrosSucios && 'opacity-60 transition-opacity')}>
                 <div className="border rounded-xl overflow-hidden"
                     style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
                     <div className="grid grid-cols-12 gap-2 px-4 py-2.5 border-b text-[11px] font-semibold uppercase tracking-wider"
@@ -260,7 +288,7 @@ export default function ConciliacionesIndex() {
                     {conciliaciones.length === 0 && (
                         <div className="py-20 text-center">
                             <GitMerge className="w-12 h-12 opacity-20 mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
-                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No hay conciliaciones registradas</p>
+                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No se encontraron conciliaciones con estos filtros</p>
                         </div>
                     )}
 
@@ -308,6 +336,7 @@ export default function ConciliacionesIndex() {
                     ))}
                 </div>
             </div>
+            )}
 
             {showModal && <ConciliacionModal bancos={bancos} onClose={() => setShowModal(false)} />}
 
