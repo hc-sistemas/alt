@@ -271,7 +271,7 @@ export default function CompraShow() {
                                         notify.error('Esta compra no tiene una recepción de bodega asociada')
                                     }
                                 }}
-                                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90"
+                                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-black transition-all hover:opacity-90"
                                 style={{ background: '#10b981' }}>
                                 <PackageCheck size={15} /> Confirmar recepción
                             </button>

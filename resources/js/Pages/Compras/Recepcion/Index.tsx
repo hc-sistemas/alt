@@ -340,7 +340,7 @@ export default function RecepcionIndex() {
                             onClick={() => completarRecepcion(false)}
                             disabled={completando || escaneados.length === 0}
                             className={cn(
-                                'flex items-center gap-2 px-6 py-2.5 rounded-xl font-semibold text-sm text-white transition-all',
+                                'flex items-center gap-2 px-6 py-2.5 rounded-xl font-semibold text-sm text-black transition-all',
                                 todoCompleto
                                     ? 'bg-green-600 hover:bg-green-700'
                                     : 'bg-amber-500 hover:bg-amber-600',

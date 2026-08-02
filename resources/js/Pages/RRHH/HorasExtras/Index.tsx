@@ -390,7 +390,7 @@ export default function HorasExtrasIndex() {
                                                 <>
                                                     <button
                                                         onClick={() => setModal({ tipo: 'aprobar', extra: e })}
-                                                        className="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-white transition-colors"
+                                                        className="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-black transition-colors"
                                                         style={{ background: '#10b981' }}
                                                         title="Aprobar"
                                                     >

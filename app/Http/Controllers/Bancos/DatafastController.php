@@ -23,41 +23,45 @@ class DatafastController extends Controller
     {
         $empresaId = session('empresa_activa_id');
 
-        $query = DatafastLote::where('empresa_id', $empresaId)
-            ->with(['bancoCaja', 'liquidacion'])
-            ->orderByDesc('fecha');
+        $lotes = null;
 
-        if ($request->filled('banco_caja_id')) {
-            $query->where('banco_caja_id', $request->banco_caja_id);
-        }
-        if ($request->filled('estado')) {
-            $query->where('estado', $request->estado);
-        }
-        if ($request->filled('fecha_desde')) {
-            $query->where('fecha', '>=', $request->fecha_desde);
-        }
-        if ($request->filled('fecha_hasta')) {
-            $query->where('fecha', '<=', $request->fecha_hasta);
-        }
-        if ($request->filled('buscar')) {
-            $query->where('numero_lote', 'ilike', '%' . $request->buscar . '%');
-        }
+        if ($request->boolean('buscado')) {
+            $query = DatafastLote::where('empresa_id', $empresaId)
+                ->with(['bancoCaja', 'liquidacion'])
+                ->orderByDesc('fecha');
 
-        $lotes = $query->get()->map(fn($l) => [
-            'id'             => $l->id,
-            'numero_lote'    => $l->numero_lote,
-            'fecha'          => $l->fecha?->format('d/m/Y'),
-            'banco'          => $l->bancoCaja?->nombre,
-            'banco_caja_id'  => $l->banco_caja_id,
-            'total_vouchers' => $l->total_vouchers,
-            'estado'         => $l->estado,
-            'liquidacion'    => $l->liquidacion ? [
-                'fecha_deposito'    => $l->liquidacion->fecha_deposito?->format('d/m/Y'),
-                'valor_bruto'       => $l->liquidacion->valor_bruto,
-                'comision_datafast' => $l->liquidacion->comision_datafast,
-                'valor_neto'        => $l->liquidacion->valor_neto,
-            ] : null,
-        ]);
+            if ($request->filled('banco_caja_id')) {
+                $query->where('banco_caja_id', $request->banco_caja_id);
+            }
+            if ($request->filled('estado')) {
+                $query->where('estado', $request->estado);
+            }
+            if ($request->filled('fecha_desde')) {
+                $query->where('fecha', '>=', $request->fecha_desde);
+            }
+            if ($request->filled('fecha_hasta')) {
+                $query->where('fecha', '<=', $request->fecha_hasta);
+            }
+            if ($request->filled('buscar')) {
+                $query->where('numero_lote', 'ilike', '%' . $request->buscar . '%');
+            }
+
+            $lotes = $query->get()->map(fn($l) => [
+                'id'             => $l->id,
+                'numero_lote'    => $l->numero_lote,
+                'fecha'          => $l->fecha?->format('d/m/Y'),
+                'banco'          => $l->bancoCaja?->nombre,
+                'banco_caja_id'  => $l->banco_caja_id,
+                'total_vouchers' => $l->total_vouchers,
+                'estado'         => $l->estado,
+                'liquidacion'    => $l->liquidacion ? [
+                    'fecha_deposito'    => $l->liquidacion->fecha_deposito?->format('d/m/Y'),
+                    'valor_bruto'       => $l->liquidacion->valor_bruto,
+                    'comision_datafast' => $l->liquidacion->comision_datafast,
+                    'valor_neto'        => $l->liquidacion->valor_neto,
+                ] : null,
+            ]);
+        }
 
         $bancos = BancoCaja::where('empresa_id', $empresaId)
             ->activos()->orderBy('nombre')
