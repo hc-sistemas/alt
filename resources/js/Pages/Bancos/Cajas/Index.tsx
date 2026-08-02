@@ -4,10 +4,11 @@ import { toast, ToastContainer } from 'react-toastify'
 import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
+import FilterToolbar from '@/Components/shared/FilterToolbar'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
-import { Plus, X, Wallet, AlertTriangle, CheckCircle, Lock } from 'lucide-react'
+import { Plus, X, Wallet, AlertTriangle, CheckCircle, Lock, Search, Clock } from 'lucide-react'
 import { usePermiso } from '@/Hooks/usePermiso'
 import type { BancoCaja, CentroCosto, PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
@@ -21,10 +22,12 @@ interface CierreRow {
     hora_apertura: string | null; hora_cierre: string | null
     usuario_apertura: string | null; usuario_cierre: string | null
     tiene_diferencia: boolean
+    dias_abierta: number
+    sospechosa: boolean
 }
 
 interface Props extends PageProps {
-    cierres: CierreRow[]
+    cierres: CierreRow[] | null
     cajas: BancoCaja[]
     centros: Pick<CentroCosto, 'id' | 'nombre'>[]
     cajaAbierta: {
@@ -33,6 +36,10 @@ interface Props extends PageProps {
         monto_inicial: number
         hora_apertura: string | null
     } | null
+    filtros: {
+        banco_caja_id?: string; estado?: string; centro_costo_id?: string
+        fecha_desde?: string; fecha_hasta?: string; buscar?: string
+    }
 }
 
 // ─── Notify ───────────────────────────────────────────────────────────────────
@@ -240,16 +247,42 @@ function CerrarModal({ cierre, onClose }: { cierre: CierreRow; onClose: () => vo
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function CajasIndex() {
-    const { cierres, cajas, centros, cajaAbierta, flash } = usePage<Props>().props
+    const { cierres, cajas, centros, cajaAbierta, filtros, flash } = usePage<Props>().props
     const { puede } = usePermiso('bancos')
     const [showAbrir, setShowAbrir] = useState(false)
     const [cerrarCierre, setCerrarCierre] = useState<CierreRow | null>(null)
+
+    const [filtro, setFiltro] = useState(filtros)
+
+    // Cambiar cualquier filtro después de haber buscado marca los resultados
+    // como "obsoletos" respecto al filtro actual — la tabla NO se vacía (se
+    // sigue mostrando la última búsqueda, atenuada) hasta que se presione
+    // Buscar de nuevo (mismo patrón ya corregido en Movimientos Bancarios/
+    // Anticipos/Devoluciones/Importaciones).
+    const [filtrosSucios, setFiltrosSucios] = useState(false)
+
+    // Carga bajo demanda: `cierres` viene null hasta que el usuario presiona
+    // Buscar por primera vez.
+    const haBuscado = cierres !== null
 
     useEffect(() => {
         if (flash?.success) notify.ok(flash.success)
         if (flash?.error)   notify.error(flash.error)
         if (flash?.warning) notify.warn(flash.warning as string)
     }, [flash?.success, flash?.error])
+
+    function cambiarFiltro<K extends keyof typeof filtro>(campo: K, valor: string) {
+        setFiltro(f => ({ ...f, [campo]: valor }))
+        setFiltrosSucios(true)
+    }
+
+    function buscar() {
+        router.get(route('bancos.cajas.index'), { ...filtro, buscado: '1' } as any, {
+            preserveState: true,
+            replace: true,
+            onSuccess: () => setFiltrosSucios(false),
+        })
+    }
 
     return (
         <AppLayout title="Control de Cajas" suppressFlash>
@@ -294,8 +327,9 @@ export default function CajasIndex() {
                                     hora_apertura: null, hora_cierre: null,
                                     usuario_apertura: null, usuario_cierre: null,
                                     tiene_diferencia: false, total_facturado: 0,
+                                    dias_abierta: 0, sospechosa: false,
                                 } as any)}
-                                className="flex items-center gap-1.5 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5 shrink-0 bg-green-600">
+                                className="flex items-center gap-1.5 px-4 py-2 rounded-xl font-semibold text-sm text-black whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5 shrink-0 bg-green-600">
                                 <Lock className="w-4 h-4" /> Cerrar Caja
                             </button>
                         )}
@@ -303,8 +337,84 @@ export default function CajasIndex() {
                 }
             />
 
+            <div className="px-6 pt-6 mb-2">
+                {/*
+                    Ancho vía `style.width` inline a propósito, NO clases Tailwind: `.input-field`
+                    (app.css) declara `width:100%` fuera de cualquier @layer, y las utilidades de
+                    Tailwind v4 viven dentro de su @layer utilities interno — por reglas de CSS
+                    Cascade Layers, lo no-layereado siempre gana sobre lo layereado sin importar
+                    especificidad ni orden, así que un w-XX de Tailwind nunca puede ganarle a
+                    `.input-field`. Mismo hallazgo documentado en Movimientos Bancarios/Asientos/
+                    Facturas de Compra/Proveedores/Cuentas por Pagar/Anticipos/Devoluciones/
+                    Importaciones.
+                */}
+                <div className="overflow-x-auto">
+                <div style={{ minWidth: '1050px' }}>
+                <FilterToolbar
+                    search={{
+                        value: filtro.buscar ?? '',
+                        onChange: v => cambiarFiltro('buscar', v),
+                        onSearch: buscar,
+                        placeholder: 'Usuario, observaciones...',
+                    }}
+                    searchWidth="w-[130px]"
+                >
+                    <select value={filtro.banco_caja_id ?? ''} onChange={e => cambiarFiltro('banco_caja_id', e.target.value)}
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '160px' }}>
+                        <option value="">Caja</option>
+                        {cajas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                    </select>
+
+                    <select value={filtro.estado ?? ''} onChange={e => cambiarFiltro('estado', e.target.value)}
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '110px' }}>
+                        <option value="">Estado</option>
+                        <option value="abierto">Abierta</option>
+                        <option value="cerrado">Cerrada</option>
+                    </select>
+
+                    <select value={filtro.centro_costo_id ?? ''} onChange={e => cambiarFiltro('centro_costo_id', e.target.value)}
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '140px' }}>
+                        <option value="">Centro</option>
+                        {centros.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                    </select>
+
+                    <div className="flex flex-col gap-1 shrink-0 self-end">
+                        <label className="text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>Desde</label>
+                        <input type="date" value={filtro.fecha_desde ?? ''}
+                            onChange={e => cambiarFiltro('fecha_desde', e.target.value)}
+                            className="input-field text-xs"
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '140px' }} />
+                    </div>
+                    <div className="flex flex-col gap-1 shrink-0 self-end">
+                        <label className="text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>Hasta</label>
+                        <input type="date" value={filtro.fecha_hasta ?? ''}
+                            onChange={e => cambiarFiltro('fecha_hasta', e.target.value)}
+                            className="input-field text-xs"
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '140px' }} />
+                    </div>
+                </FilterToolbar>
+                </div>
+                </div>
+            </div>
+
+            {/* Estado inicial: aún no se ha buscado (carga bajo demanda) */}
+            {!haBuscado && (
+                <div className="px-6 pb-8">
+                    <div className="text-center py-16">
+                        <Search className="w-12 h-12 mx-auto mb-4 opacity-30" style={{ color: 'var(--text-muted)' }} />
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                            Ajusta los filtros y presiona Buscar para consultar el historial de cierres.
+                        </p>
+                    </div>
+                </div>
+            )}
+
             {/* Historial */}
-            <div className="px-6 py-8">
+            {haBuscado && cierres && (
+            <div className={cn('px-6 pb-8', filtrosSucios && 'opacity-60 transition-opacity')}>
                 <h2 className="text-sm font-semibold mb-3 uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
                     Historial de cierres
                 </h2>
@@ -326,7 +436,7 @@ export default function CajasIndex() {
                     {cierres.length === 0 && (
                         <div className="py-16 text-center">
                             <Wallet className="w-10 h-10 opacity-20 mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
-                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Sin historial de cierres</p>
+                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No se encontraron cierres con estos filtros</p>
                         </div>
                     )}
 
@@ -360,11 +470,17 @@ export default function CajasIndex() {
                                     {fmt(c.diferencia)}
                                 </p>
                             </div>
-                            <div className="col-span-1 flex justify-center">
+                            <div className="col-span-1 flex flex-col items-center gap-1">
                                 {c.estado === 'abierto'
                                     ? <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">Abierta</span>
                                     : <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700 dark:bg-slate-700/40 dark:text-slate-300">Cerrada</span>
                                 }
+                                {c.sospechosa && (
+                                    <span title={`Abierta desde hace ${c.dias_abierta} día(s) sin cerrar — se supone que las cajas cierran el mismo día`}
+                                        className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 whitespace-nowrap">
+                                        <Clock className="w-2.5 h-2.5" /> {c.dias_abierta}d
+                                    </span>
+                                )}
                             </div>
                             <div className="col-span-1 flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
                                 {c.estado === 'abierto' && puede('editar') && (
@@ -378,6 +494,7 @@ export default function CajasIndex() {
                     ))}
                 </div>
             </div>
+            )}
 
             {showAbrir && <AbrirModal cajas={cajas} centros={centros} onClose={() => setShowAbrir(false)} />}
             {cerrarCierre && <CerrarModal cierre={cerrarCierre} onClose={() => setCerrarCierre(null)} />}
