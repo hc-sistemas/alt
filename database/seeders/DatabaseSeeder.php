@@ -17,6 +17,7 @@ class DatabaseSeeder extends Seeder
             PlanCuentaSeeder::class,
             PersonasSeeder::class,
             PermisoSeeder::class,
+            FeriadoNacionalSeeder::class,
         ]);
     }
 }

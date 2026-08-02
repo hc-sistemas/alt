@@ -8,7 +8,7 @@ import DesgloseHorasExtraModal from '@/Components/shared/DesgloseHorasExtraModal
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { cn, formatFecha } from '@/lib/utils'
-import { Check, X, Filter, Clock, Eye } from 'lucide-react'
+import { Check, X, Info, Search, Eye } from 'lucide-react'
 import { usePermiso } from '@/Hooks/usePermiso'
 import type { HorasExtrasAprobacion, Colaborador, PageProps, PaginatedData } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
@@ -28,9 +28,9 @@ type HoraExtra = Omit<HorasExtrasAprobacion, 'colaborador' | 'aprobado_por_usuar
 }
 
 interface Props extends PageProps {
-    extras: PaginatedData<HoraExtra>
+    extras: PaginatedData<HoraExtra> | null
     colaboradores: ColaboradorItem[]
-    filtros: { estado?: string; colaborador_id?: string; fecha_desde?: string; fecha_hasta?: string }
+    filtros: { estado?: string; colaborador_id?: string; fecha_desde?: string; fecha_hasta?: string; buscar?: string }
 }
 
 // ─── Notify ───────────────────────────────────────────────────────────────────
@@ -238,23 +238,27 @@ export default function HorasExtrasIndex() {
     const { puede } = usePermiso('rrhh')
 
     const [modal, setModal] = useState<{ tipo: 'aprobar' | 'rechazar' | 'detalle'; extra: HoraExtra } | null>(null)
-    const [estado, setEstado]         = useState(filtros.estado ?? '')
-    const [colabId, setColabId]       = useState(filtros.colaborador_id ?? '')
-    const [fechaDesde, setFechaDesde] = useState(filtros.fecha_desde ?? '')
-    const [fechaHasta, setFechaHasta] = useState(filtros.fecha_hasta ?? '')
+    const [filtro, setFiltro] = useState(filtros)
 
-    function filtrar() {
-        router.get(route('rrhh.horas-extras.index'), {
-            estado:        estado        || undefined,
-            colaborador_id: colabId     || undefined,
-            fecha_desde:   fechaDesde   || undefined,
-            fecha_hasta:   fechaHasta   || undefined,
-        }, { preserveState: true, replace: true })
+    // Cambiar cualquier filtro después de haber buscado no vacía la tabla —
+    // solo la atenúa (opacity-60) hasta que se presione Buscar de nuevo.
+    // Mismo patrón ya usado en el resto del sistema esta sesión.
+    const [filtrosSucios, setFiltrosSucios] = useState(false)
+
+    // Carga bajo demanda: `extras` viene null hasta la primera búsqueda.
+    const haBuscado = extras !== null
+
+    function cambiarFiltro<K extends keyof typeof filtro>(campo: K, valor: string) {
+        setFiltro(f => ({ ...f, [campo]: valor }))
+        setFiltrosSucios(true)
     }
 
-    function limpiar() {
-        setEstado(''); setColabId(''); setFechaDesde(''); setFechaHasta('')
-        router.get(route('rrhh.horas-extras.index'))
+    function filtrar() {
+        router.get(route('rrhh.horas-extras.index'), { ...filtro, buscado: '1' }, {
+            preserveState: true,
+            replace: true,
+            onSuccess: () => setFiltrosSucios(false),
+        })
     }
 
     return (
@@ -264,36 +268,34 @@ export default function HorasExtrasIndex() {
 
             <PageHeader
                 title="Horas Extras"
-                description="Panel de aprobación — límite legal: 4h/día · 12h/semana"
                 breadcrumbs={[{ label: 'RRHH' }, { label: 'Horas Extras' }]}
             />
 
             <div className="p-6 space-y-4">
                 {/* Filtros */}
                 <FilterToolbar
+                    search={{
+                        value: filtro.buscar ?? '',
+                        onChange: v => cambiarFiltro('buscar', v),
+                        onSearch: filtrar,
+                        placeholder: 'Colaborador, cédula...',
+                    }}
                     extraActions={
-                        <>
-                            <button onClick={filtrar} className="btn-primary flex items-center gap-2 px-4 py-2">
-                                <Filter className="w-4 h-4" /> Filtrar
-                            </button>
-
-                            {(estado || colabId || fechaDesde || fechaHasta) && (
-                                <button onClick={limpiar} className="flex items-center gap-1 text-xs" style={{ color: 'var(--text-muted)' }}>
-                                    <X className="w-3 h-3" /> Limpiar
-                                </button>
+                        <span className="ml-auto flex items-center gap-1.5 text-xs" style={{ color: 'var(--text-muted)' }}
+                            title="Regla NOM-06 (Ecuador): las horas extra aprobadas no pueden superar 4h en un mismo día ni 12h en la semana, por colaborador.">
+                            <Info className="w-3.5 h-3.5" />
+                            Límite legal: 4h/día · 12h/semana
+                            {haBuscado && extras && (
+                                <span className="ml-2">· {extras.total} solicitud{extras.total !== 1 ? 'es' : ''}</span>
                             )}
-
-                            <span className="ml-auto text-xs" style={{ color: 'var(--text-muted)' }}>
-                                {extras.total} solicitud{extras.total !== 1 ? 'es' : ''}
-                            </span>
-                        </>
+                        </span>
                     }
                 >
                     <div>
                         <Label className="input-label">Estado</Label>
                         <select className="input-field w-36"
                             style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}
-                            value={estado} onChange={e => setEstado(e.target.value)}>
+                            value={filtro.estado ?? ''} onChange={e => cambiarFiltro('estado', e.target.value)}>
                             <option value="">Todos</option>
                             <option value="pendiente">Pendiente</option>
                             <option value="aprobado">Aprobado</option>
@@ -305,7 +307,7 @@ export default function HorasExtrasIndex() {
                         <Label className="input-label">Colaborador</Label>
                         <select className="input-field w-52"
                             style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}
-                            value={colabId} onChange={e => setColabId(e.target.value)}>
+                            value={filtro.colaborador_id ?? ''} onChange={e => cambiarFiltro('colaborador_id', e.target.value)}>
                             <option value="">Todos</option>
                             {colaboradores.map(c => (
                                 <option key={c.id} value={c.id}>{c.apellidos} {c.nombres}</option>
@@ -316,17 +318,29 @@ export default function HorasExtrasIndex() {
                     <div>
                         <Label className="input-label">Desde</Label>
                         <Input type="date" className="input-field w-40"
-                            value={fechaDesde} onChange={e => setFechaDesde(e.target.value)} />
+                            value={filtro.fecha_desde ?? ''} onChange={e => cambiarFiltro('fecha_desde', e.target.value)} />
                     </div>
 
                     <div>
                         <Label className="input-label">Hasta</Label>
                         <Input type="date" className="input-field w-40"
-                            value={fechaHasta} onChange={e => setFechaHasta(e.target.value)} />
+                            value={filtro.fecha_hasta ?? ''} onChange={e => cambiarFiltro('fecha_hasta', e.target.value)} />
                     </div>
                 </FilterToolbar>
 
+                {/* Estado inicial: aún no se ha buscado (carga bajo demanda) */}
+                {!haBuscado && (
+                    <div className="text-center py-16">
+                        <Search className="w-12 h-12 mx-auto mb-4 opacity-30" style={{ color: 'var(--text-muted)' }} />
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                            Ajusta los filtros y presiona Buscar para consultar las solicitudes.
+                        </p>
+                    </div>
+                )}
+
                 {/* Tabla */}
+                {haBuscado && extras && (
+                <div className={cn('space-y-4', filtrosSucios && 'opacity-60 transition-opacity')}>
                 <div className="rounded-xl border overflow-x-auto" style={{ borderColor: 'var(--border)' }}>
                     <table className="w-full text-xs">
                         <thead>
@@ -447,6 +461,8 @@ export default function HorasExtrasIndex() {
                             ))}
                         </div>
                     </div>
+                )}
+                </div>
                 )}
             </div>
 

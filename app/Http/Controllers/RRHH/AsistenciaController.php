@@ -5,6 +5,7 @@ namespace App\Http\Controllers\RRHH;
 use App\Http\Controllers\Controller;
 use App\Models\Asistencia;
 use App\Models\Colaborador;
+use App\Models\FeriadoNacional;
 use App\Models\HorasExtrasAprobacion;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
@@ -158,11 +159,14 @@ class AsistenciaController extends Controller
                 // se necesita el valor absoluto de minutos extra.
                 $horasExtra = round(abs($ahora->diffInMinutes($horaSalida)) / 60, 2);
 
-                // Regla NOM-05 Ecuador: suplementarias = días laborables hasta 24:00
+                // Regla NOM-06 Ecuador: extraordinaria (recargo 100%) = sábado,
+                // domingo, feriado nacional o madrugada (00:00-06:00); el resto
+                // (día laborable, fuera de madrugada) = suplementaria (recargo 50%).
                 $esFindeSemana = $ahora->isWeekend();
                 $esMadrugada   = $ahora->hour >= 0 && $ahora->hour < 6;
+                $esFeriado     = FeriadoNacional::esFeriado($hoy);
 
-                $tipoExtra = ($esFindeSemana || $esMadrugada)
+                $tipoExtra = ($esFindeSemana || $esMadrugada || $esFeriado)
                     ? 'extraordinaria'
                     : 'suplementaria';
             }

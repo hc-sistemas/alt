@@ -21,26 +21,39 @@ class HorasExtrasController extends Controller
     {
         $empresaId = session('empresa_activa_id');
 
-        $query = HorasExtrasAprobacion::with(['colaborador', 'aprobadoPorUsuario'])
-            ->whereHas('colaborador', fn($q) => $q->where('empresa_id', $empresaId));
+        $extras = null;
 
-        if ($request->filled('estado')) {
-            $query->where('estado', $request->estado);
+        if ($request->boolean('buscado')) {
+            $query = HorasExtrasAprobacion::with(['colaborador', 'aprobadoPorUsuario'])
+                ->whereHas('colaborador', fn($q) => $q->where('empresa_id', $empresaId));
+
+            if ($request->filled('estado')) {
+                $query->where('estado', $request->estado);
+            }
+
+            if ($request->filled('colaborador_id')) {
+                $query->where('colaborador_id', $request->colaborador_id);
+            }
+
+            if ($request->filled('fecha_desde')) {
+                $query->where('fecha', '>=', $request->fecha_desde);
+            }
+
+            if ($request->filled('fecha_hasta')) {
+                $query->where('fecha', '<=', $request->fecha_hasta);
+            }
+
+            if ($request->filled('buscar')) {
+                $q = $request->buscar;
+                $query->whereHas('colaborador', fn($c) =>
+                    $c->where('nombres', 'ilike', "%{$q}%")
+                      ->orWhere('apellidos', 'ilike', "%{$q}%")
+                      ->orWhere('cedula_ruc', 'ilike', "%{$q}%")
+                );
+            }
+
+            $extras = $query->orderByDesc('fecha')->paginate(25)->withQueryString();
         }
-
-        if ($request->filled('colaborador_id')) {
-            $query->where('colaborador_id', $request->colaborador_id);
-        }
-
-        if ($request->filled('fecha_desde')) {
-            $query->where('fecha', '>=', $request->fecha_desde);
-        }
-
-        if ($request->filled('fecha_hasta')) {
-            $query->where('fecha', '<=', $request->fecha_hasta);
-        }
-
-        $extras = $query->orderByDesc('fecha')->paginate(25)->withQueryString();
 
         $colaboradores = Colaborador::where('empresa_id', $empresaId)
             ->activos()->orderBy('apellidos')->orderBy('nombres')
@@ -49,7 +62,7 @@ class HorasExtrasController extends Controller
         return Inertia::render('RRHH/HorasExtras/Index', [
             'extras'        => $extras,
             'colaboradores' => $colaboradores,
-            'filtros'       => $request->only(['estado', 'colaborador_id', 'fecha_desde', 'fecha_hasta']),
+            'filtros'       => $request->only(['estado', 'colaborador_id', 'fecha_desde', 'fecha_hasta', 'buscar']),
         ]);
     }
 
