@@ -19,6 +19,22 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 class BancoReporteController extends Controller
 {
+    // Calibrado con curl real contra el servidor (php artisan serve), no con
+    // tinker, igual que Contabilidad > Reportes (Libro Diario/Mayor): el SQL
+    // de estos 2 reportes es rápido (índices en fecha/banco_caja_id/
+    // empresa_id, sin N+1 — with('bancoCaja') ya está eager loaded); el
+    // costo real es DomPDF renderizando una fila por movimiento, que escala
+    // peor que lineal. Medido: Estado de Cuenta con 477 movimientos → 10.7s
+    // (ya lento). Movimientos Bancarios con ~1000 movimientos → 17.6s, y
+    // con 3236 (todo el histórico sin filtrar) → **crashea con 500** sin
+    // log de excepción (memory_limit agotado en el render de DomPDF, no una
+    // excepción de Laravel). Reporte de Caja NO tiene este problema — solo
+    // 6 cierres en la BD real, 1.3s con todos los filtros vacíos, no
+    // necesita guard. Punto de corte para los 2 reportes con volumen real:
+    // 500 movimientos (mismo umbral que Libro Diario, misma naturaleza de
+    // "una fila por transacción").
+    private const MAX_FILAS_REPORTE = 500;
+
     public function index(): Response
     {
         $empresaId = session('empresa_activa_id');
@@ -37,7 +53,7 @@ class BancoReporteController extends Controller
         ]);
     }
 
-    public function estadoCuenta(Request $request): \Illuminate\Http\Response
+    public function estadoCuenta(Request $request): \Illuminate\Http\Response|\Illuminate\Http\JsonResponse
     {
         $empresaId = session('empresa_activa_id');
 
@@ -48,6 +64,19 @@ class BancoReporteController extends Controller
         ]);
 
         $banco = BancoCaja::findOrFail($request->banco_caja_id);
+
+        $totalFilas = MovimientoBancario::where('empresa_id', $empresaId)
+            ->where('banco_caja_id', $banco->id)
+            ->whereBetween('fecha', [$request->fecha_desde, $request->fecha_hasta])
+            ->where('anulado', false)
+            ->count();
+
+        if ($totalFilas > self::MAX_FILAS_REPORTE) {
+            return response()->json([
+                'message' => "Este Estado de Cuenta tiene {$totalFilas} movimientos con estos filtros — demasiados para generarse al instante " .
+                    '(máximo ' . self::MAX_FILAS_REPORTE . '). Acota el rango de fechas.',
+            ], 422);
+        }
 
         $saldoInicial = (float) MovimientoBancario::where('empresa_id', $empresaId)
             ->where('banco_caja_id', $banco->id)
@@ -98,7 +127,7 @@ class BancoReporteController extends Controller
         );
     }
 
-    public function reporteMovimientos(Request $request): \Illuminate\Http\Response
+    public function reporteMovimientos(Request $request): \Illuminate\Http\Response|\Illuminate\Http\JsonResponse
     {
         $empresaId = session('empresa_activa_id');
 
@@ -117,6 +146,14 @@ class BancoReporteController extends Controller
         }
         if ($request->filled('fecha_hasta')) {
             $query->where('fecha', '<=', $request->fecha_hasta);
+        }
+
+        $totalFilas = (clone $query)->count();
+        if ($totalFilas > self::MAX_FILAS_REPORTE) {
+            return response()->json([
+                'message' => "Este reporte tiene {$totalFilas} movimientos con estos filtros — demasiados para generarse al instante " .
+                    '(máximo ' . self::MAX_FILAS_REPORTE . '). Acota el rango de fechas o filtra por banco/tipo.',
+            ], 422);
         }
 
         $movimientos   = $query->orderByDesc('fecha')->get();

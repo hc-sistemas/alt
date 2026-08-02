@@ -39,10 +39,20 @@ function Campo({ label, required, children }: {
 }
 
 // ─── Modal PDF ────────────────────────────────────────────────────────────────
+//
+// El PDF se trae como blob (fetch) en vez de apuntar el <iframe> directo a la
+// URL del backend — mismo patrón ya corregido esta sesión en Compras/Asientos/
+// Proveedores/Cuentas por Pagar/Reportes Contables: un blob: URL siempre se
+// muestra embebido, sin depender de si el navegador decide forzar la
+// descarga. También muestra "Generando PDF…" mientras carga y el mensaje de
+// error real (ej. "demasiados movimientos, acota el rango") si el backend
+// responde 422/500, en vez de dejar el modal colgado con un iframe en blanco.
 
-function ModalPdf({ url, titulo, onClose }: {
+function ModalPdf({ url, titulo, cargando, error, onClose }: {
     url: string
     titulo: string
+    cargando: boolean
+    error: string
     onClose: () => void
 }) {
     return (
@@ -58,7 +68,19 @@ function ModalPdf({ url, titulo, onClose }: {
                     <X className="w-4 h-4" />
                 </button>
             </div>
-            <iframe src={url} className="flex-1 rounded-xl border-0 w-full" title={titulo} />
+            <div className="flex-1 rounded-xl overflow-hidden" style={{ background: 'var(--bg-card)' }}>
+                {cargando ? (
+                    <div className="w-full h-full flex items-center justify-center text-sm" style={{ color: 'var(--text-muted)' }}>
+                        Generando PDF…
+                    </div>
+                ) : error ? (
+                    <div className="w-full h-full flex items-center justify-center text-sm px-6 text-center" style={{ color: '#dc2626' }}>
+                        {error}
+                    </div>
+                ) : (
+                    <iframe src={url} className="w-full h-full border-0" title={titulo} />
+                )}
+            </div>
         </div>
     )
 }
@@ -87,11 +109,35 @@ export default function BancosReportesIndex() {
     const [modalPdf,    setModalPdf]    = useState(false)
     const [urlPdf,      setUrlPdf]      = useState('')
     const [tituloModal, setTituloModal] = useState('')
+    const [cargandoPdf, setCargandoPdf] = useState(false)
+    const [errorPdf,    setErrorPdf]    = useState('')
 
-    const abrirPdf = (url: string, titulo: string) => {
-        setUrlPdf(url)
-        setTituloModal(titulo)
+    const abrirPdf = async (url: string, titulo: string) => {
         setModalPdf(true)
+        setTituloModal(titulo)
+        setCargandoPdf(true)
+        setErrorPdf('')
+        setUrlPdf('')
+        try {
+            const res = await fetch(url, { headers: { Accept: 'application/pdf' } })
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ message: null })) as { message?: string | null }
+                throw new Error(err.message ?? 'No se pudo generar el PDF.')
+            }
+            const blob = await res.blob()
+            setUrlPdf(URL.createObjectURL(blob))
+        } catch (e) {
+            setErrorPdf(e instanceof Error ? e.message : 'No se pudo generar el PDF. Intenta de nuevo.')
+        } finally {
+            setCargandoPdf(false)
+        }
+    }
+
+    const cerrarModalPdf = () => {
+        if (urlPdf) URL.revokeObjectURL(urlPdf)
+        setModalPdf(false)
+        setUrlPdf('')
+        setErrorPdf('')
     }
 
     const generarEstadoCuenta = () => {
@@ -125,7 +171,6 @@ export default function BancosReportesIndex() {
 
             <PageHeader
                 title="Reportes de Bancos"
-                description="Estado de cuenta, movimientos y caja"
                 breadcrumbs={[{ label: 'Bancos' }, { label: 'Reportes' }]}
             />
 
@@ -173,6 +218,9 @@ export default function BancosReportesIndex() {
                             </div>
                             <button onClick={generarEstadoCuenta}
                                 disabled={!ecBanco || !ecDesde || !ecHasta}
+                                title={!ecBanco || !ecDesde || !ecHasta
+                                    ? 'Selecciona Banco y el rango de fechas (Desde/Hasta) para generar el Estado de Cuenta'
+                                    : undefined}
                                 className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl
                                            text-sm font-semibold text-white transition-all hover:opacity-90
                                            disabled:opacity-50 disabled:cursor-not-allowed"
@@ -286,7 +334,7 @@ export default function BancosReportesIndex() {
             </div>
 
             {modalPdf && (
-                <ModalPdf url={urlPdf} titulo={tituloModal} onClose={() => setModalPdf(false)} />
+                <ModalPdf url={urlPdf} titulo={tituloModal} cargando={cargandoPdf} error={errorPdf} onClose={cerrarModalPdf} />
             )}
         </AppLayout>
     )
