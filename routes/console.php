@@ -7,6 +7,7 @@ use App\Jobs\AlertaVouchersNoLiquidados;
 use App\Jobs\LimpiarExportacionesAsientosJob;
 use App\Jobs\LimpiarExportacionesComprasJob;
 use App\Jobs\LimpiarExportacionesCxPJob;
+use App\Jobs\LimpiarExportacionesNominaJob;
 use App\Jobs\LimpiarExportacionesProveedoresJob;
 use App\Jobs\LimpiarExportacionesReportesContablesJob;
 use App\Jobs\RecordatorioCierreNomina;
@@ -53,3 +54,7 @@ Schedule::job(new LimpiarExportacionesCxPJob)->dailyAt('03:15');
 // Borra exportaciones de Reportes Contables (Libro Diario/Mayor generados
 // en segundo plano) con más de 48h — diario a las 03:20
 Schedule::job(new LimpiarExportacionesReportesContablesJob)->dailyAt('03:20');
+
+// Borra ZIP de roles de pago de Nómina generados en segundo plano con más
+// de 48h — diario a las 03:25
+Schedule::job(new LimpiarExportacionesNominaJob)->dailyAt('03:25');

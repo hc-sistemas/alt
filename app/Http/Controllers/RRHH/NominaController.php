@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\RRHH;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\ExportarNominaZipJob;
 use App\Models\Asistencia;
 use App\Models\Colaborador;
 use App\Models\Nomina;
@@ -10,50 +11,86 @@ use App\Models\NominaDetalle;
 use App\Models\PrestamoEmpleado;
 use App\Models\HorasExtrasAprobacion;
 use App\Services\AsientoService;
+use App\Services\NominaCalculoService;
 use Barryvdh\DomPDF\Facade\Pdf;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
-use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class NominaController extends Controller
 {
-    public function __construct(private AsientoService $asientoService) {}
+    public function __construct(
+        private AsientoService $asientoService,
+        private NominaCalculoService $nominaCalculoService,
+    ) {}
 
     // ── Listado de nóminas ────────────────────────────────────────────────────
+
+    private const MESES_ES = [
+        1 => 'enero', 2 => 'febrero', 3 => 'marzo', 4 => 'abril',
+        5 => 'mayo', 6 => 'junio', 7 => 'julio', 8 => 'agosto',
+        9 => 'septiembre', 10 => 'octubre', 11 => 'noviembre', 12 => 'diciembre',
+    ];
 
     public function index(Request $request): Response
     {
         $empresaId = session('empresa_activa_id');
 
-        $query = Nomina::where('empresa_id', $empresaId)
-            ->with(['generadoPor:id,nombre', 'procesadoPor:id,nombre', 'pagadoPor:id,nombre'])
-            ->withCount('detalles');
+        $nominas = null;
 
-        if ($request->filled('anio')) {
-            $query->where('anio', $request->anio);
-        }
-        if ($request->filled('mes')) {
-            $query->where('mes', $request->mes);
-        }
-        if ($request->filled('tipo')) {
-            $query->where('periodo_tipo', $request->tipo);
-        }
-        if ($request->filled('estado')) {
-            $query->where('estado', $request->estado);
-        }
+        if ($request->boolean('buscado')) {
+            $query = Nomina::where('empresa_id', $empresaId)
+                ->with(['generadoPor:id,nombre', 'procesadoPor:id,nombre', 'pagadoPor:id,nombre'])
+                ->withCount('detalles');
 
-        $nominas = $query->orderByDesc('anio')->orderByDesc('mes')
-            ->orderByDesc('quincena')->orderByDesc('id')
-            ->paginate(20)->withQueryString();
+            if ($request->filled('anio')) {
+                $query->where('anio', $request->anio);
+            }
+            if ($request->filled('mes')) {
+                $query->where('mes', $request->mes);
+            }
+            if ($request->filled('tipo')) {
+                $query->where('periodo_tipo', $request->tipo);
+            }
+            if ($request->filled('estado')) {
+                $query->where('estado', $request->estado);
+            }
+            if ($request->filled('buscar')) {
+                // No hay un campo de texto libre en "nominas" (es un período, no un
+                // documento con nombre) — se busca por año exacto, nombre del mes en
+                // español, o tipo/estado, para que la lupa tenga sentido con un dato
+                // real que el usuario reconozca (ej. escribir "agosto" o "2026").
+                $q = mb_strtolower(trim($request->buscar));
+                $mesMatch = array_search($q, self::MESES_ES, true);
+                if ($mesMatch === false) {
+                    $mesMatch = collect(self::MESES_ES)->search(fn($nombre) => str_contains($nombre, $q));
+                    $mesMatch = $mesMatch === false ? null : $mesMatch;
+                }
+                $query->where(function ($qb) use ($q, $mesMatch) {
+                    if (is_numeric($q)) {
+                        $qb->orWhere('anio', $q);
+                    }
+                    if ($mesMatch) {
+                        $qb->orWhere('mes', $mesMatch);
+                    }
+                    $qb->orWhere('periodo_tipo', 'ilike', "%{$q}%")
+                       ->orWhere('estado', 'ilike', "%{$q}%");
+                });
+            }
+
+            $nominas = $query->orderByDesc('anio')->orderByDesc('mes')
+                ->orderByDesc('quincena')->orderByDesc('id')
+                ->paginate(20)->withQueryString();
+        }
 
         return Inertia::render('RRHH/Nomina/Index', [
             'nominas' => $nominas,
-            'filtros' => $request->only(['anio', 'mes', 'tipo', 'estado']),
+            'filtros' => $request->only(['anio', 'mes', 'tipo', 'estado', 'buscar']),
             'anios'   => range(now()->year, now()->year - 3),
         ]);
     }
@@ -115,7 +152,7 @@ class NominaController extends Controller
                 $totalEgresos  = 0;
 
                 foreach ($colaboradores as $col) {
-                    $detalle = $this->calcularDetalle($col, $data, $nomina->id);
+                    $detalle = $this->nominaCalculoService->calcularDetalle($col, $data, $nomina->id);
                     NominaDetalle::create($detalle);
                     $totalIngresos += (float)$detalle['total_ingresos'];
                     $totalEgresos  += (float)$detalle['total_egresos'];
@@ -157,15 +194,32 @@ class NominaController extends Controller
 
     // ── Edición manual de una fila ────────────────────────────────────────────
 
-    public function update(Request $request, int $id, int $did): JsonResponse
+    // Edición manual de contingencia (faltas, atrasos, comisiones puntuales,
+    // egresos no asignados): el cliente pide que SOLO Contador o Súper
+    // Administrador puedan hacerlo, más estricto que el permiso genérico
+    // "rrhh,editar" del middleware de la ruta (ese permiso también lo puede
+    // tener, por ejemplo, un perfil de RRHH sin ser Contador ni Súper Admin —
+    // ver PERFILES_ACCESO en ColaboradorController). Se valida el rol real
+    // aquí, no solo ocultando el botón en el frontend.
+    private const PERFILES_EDICION_MANUAL = ['super_admin', 'contador'];
+
+    public function update(Request $request, int $id, int $did): RedirectResponse
     {
         $empresaId = session('empresa_activa_id');
+
+        if (!in_array(Auth::user()?->perfil?->nombre, self::PERFILES_EDICION_MANUAL, true)) {
+            throw ValidationException::withMessages([
+                'error' => 'Solo un Contador o Súper Administrador puede editar manualmente un rol de pago.',
+            ]);
+        }
 
         $nomina  = Nomina::where('empresa_id', $empresaId)->findOrFail($id);
         $detalle = NominaDetalle::where('nomina_id', $nomina->id)->findOrFail($did);
 
         if ($nomina->estado !== 'borrador') {
-            return response()->json(['error' => 'Solo se puede editar nóminas en borrador.'], 422);
+            throw ValidationException::withMessages([
+                'error' => 'Solo se puede editar nóminas en borrador.',
+            ]);
         }
 
         $data = $request->validate([
@@ -215,11 +269,7 @@ class NominaController extends Controller
             ]);
         });
 
-        return response()->json([
-            'success' => true,
-            'detalle' => $detalle->fresh()->load('colaborador'),
-            'nomina'  => $nomina->fresh(),
-        ]);
+        return back()->with('success', 'Rol de pago actualizado manualmente.');
     }
 
     // ── Procesar (borrador → procesado + asiento contable) ───────────────────
@@ -363,143 +413,40 @@ class NominaController extends Controller
         return $pdf->stream("rol-{$nombre}-{$nomina->anio}-{$nomina->mes}.pdf");
     }
 
-    // ── ZIP con todos los PDFs de la nómina ──────────────────────────────────
-
-    public function pdfMasivo(int $id): BinaryFileResponse
+    // ── ZIP con todos los PDFs de la nómina — en segundo plano ────────────────
+    // Antes generaba el ZIP de forma síncrona dentro del propio request HTTP
+    // (un PDF por colaborador, uno por uno, con DomPDF), bloqueando la UI en
+    // nóminas con muchos colaboradores. Ahora solo despacha el Job y notifica
+    // — mismo patrón que Libro Diario/Mayor en Reportes Contables.
+    public function pdfMasivo(Request $request, int $id): RedirectResponse
     {
         $empresaId = session('empresa_activa_id');
 
-        $nomina = Nomina::where('empresa_id', $empresaId)
-            ->with(['empresa', 'detalles.colaborador'])->findOrFail($id);
+        $nomina = Nomina::where('empresa_id', $empresaId)->findOrFail($id);
 
-        $tmpDir  = sys_get_temp_dir() . '/nomina_' . $nomina->id . '_' . time();
-        $zipPath = $tmpDir . '.zip';
-        mkdir($tmpDir, 0755, true);
+        ExportarNominaZipJob::dispatch($nomina->id, (int) Auth::id(), $request->getSchemeAndHttpHost());
 
-        foreach ($nomina->detalles as $det) {
-            $pdf = Pdf::loadView('pdf.nomina-individual', [
-                'nomina'  => $nomina->append('periodo_label'),
-                'detalle' => $det,
-                'empresa' => $nomina->empresa,
-            ])->setPaper('a4', 'portrait');
-
-            $nombre = str_replace(' ', '-', $det->colaborador->apellidos);
-            file_put_contents("{$tmpDir}/{$nombre}.pdf", $pdf->output());
-        }
-
-        $zip = new \ZipArchive();
-        $zip->open($zipPath, \ZipArchive::CREATE);
-        foreach (glob("{$tmpDir}/*.pdf") as $file) {
-            $zip->addFile($file, basename($file));
-        }
-        $zip->close();
-
-        // Limpiar directorio temporal
-        array_map('unlink', glob("{$tmpDir}/*.pdf"));
-        rmdir($tmpDir);
-
-        return response()->download($zipPath, "nomina-{$nomina->anio}-{$nomina->mes}.zip")
-            ->deleteFileAfterSend(true);
+        return back()->with('success',
+            'El ZIP con los roles de pago se está generando en segundo plano. Te avisaremos por notificación cuando esté listo para descargar.');
     }
 
-    // ── Lógica de cálculo por colaborador ────────────────────────────────────
-
-    private function calcularDetalle(Colaborador $col, array $data, int $nominaId): array
+    // ── Descarga del ZIP ya generado por ExportarNominaZipJob ─────────────────
+    public function descargarExportacion(string $archivo): \Symfony\Component\HttpFoundation\Response
     {
-        $esQuincenal = $data['periodo_tipo'] === 'quincenal';
-        $anio        = (int)$data['anio'];
-        $mes         = (int)$data['mes'];
+        $archivo = basename($archivo);
 
-        // Sueldo base (dividido a la mitad si es quincenal)
-        $sueldo = $esQuincenal
-            ? round((float)$col->sueldo_base / 2, 2)
-            : (float)$col->sueldo_base;
-
-        // Horas extras aprobadas del período
-        $baseQuery = HorasExtrasAprobacion::where('colaborador_id', $col->id)
-            ->where('estado', 'aprobado')
-            ->whereYear('fecha', $anio)
-            ->whereMonth('fecha', $mes);
-
-        // Si es quincenal filtramos por días de la quincena
-        if ($esQuincenal) {
-            $diaInicio = $data['quincena'] === 1 ? 1  : 16;
-            $diaFin    = $data['quincena'] === 1 ? 15 : (int)date('t', mktime(0, 0, 0, $mes, 1, $anio));
-            $baseQuery->whereDay('fecha', '>=', $diaInicio)
-                      ->whereDay('fecha', '<=', $diaFin);
+        if (!str_starts_with($archivo, Auth::id() . '_')) {
+            abort(403, 'No tienes acceso a este archivo.');
         }
 
-        $extras50  = (float)(clone $baseQuery)->where('tipo', 'suplementaria')->sum('valor_calculado');
-        $extras100 = (float)(clone $baseQuery)->where('tipo', 'extraordinaria')->sum('valor_calculado');
-
-        // Décimos mensualizados (solo nómina mensual)
-        $otrosIngresos = 0.0;
-        if (!$esQuincenal) {
-            $SBU = 460.0; // Salario Básico Unificado Ecuador 2026
-            if ($col->decimo_tercero === 'mensualiza') {
-                $otrosIngresos += round((float)$col->sueldo_base / 12, 2);
-            }
-            if ($col->decimo_cuarto === 'mensualiza') {
-                $otrosIngresos += round($SBU / 12, 2);
-            }
-            if ($col->fondos_reserva === 'mensualiza') {
-                // Fondos de reserva: aplica desde mes 13 de contrato.
-                // abs(): diffInMonths() en Carbon 3 es firmado (negativo porque
-                // fecha_ingreso siempre es anterior a now()); sin abs() esta condición
-                // nunca se cumplía para ningún colaborador, sin importar su antigüedad.
-                $mesesContrato = (int) abs(now()->diffInMonths($col->fecha_ingreso));
-                if ($mesesContrato >= 13) {
-                    $otrosIngresos += round((float)$col->sueldo_base * 0.0833, 2);
-                }
-            }
+        $ruta = ExportarNominaZipJob::CARPETA . '/' . $archivo;
+        if (!Storage::disk('local')->exists($ruta)) {
+            abort(404, 'El archivo expiró o ya no está disponible (las exportaciones se conservan 48 horas). Genera el ZIP nuevamente.');
         }
 
-        $totalIngresos = round($sueldo + $extras50 + $extras100 + $otrosIngresos, 2);
+        $nombreDescarga = preg_replace('/^\d+_/', '', $archivo);
 
-        // Aporte personal IESS 9.45%
-        $aportePersonal = round($totalIngresos * 0.0945, 2);
-
-        // Descuento por atrasos (minutos_atraso del período)
-        $minutosAtraso = Asistencia::where('colaborador_id', $col->id)
-            ->whereYear('fecha', $anio)->whereMonth('fecha', $mes)->sum('minutos_atraso');
-
-        // Valor por minuto = sueldo_base / (30 días * 8h * 60min)
-        $descuentoAtraso = round((float)$minutosAtraso * ((float)$col->sueldo_base / 14400), 2);
-
-        // Préstamos (cuota mensual o mitad si quincenal)
-        $descuentoPrestamos = PrestamoEmpleado::cuotasMes($col->id, $data['periodo_tipo']);
-
-        // Anticipos
-        $descuentoAnticipos = 0.0; // Se descuentan en nómina mensual completa únicamente
-        if (!$esQuincenal) {
-            $descuentoAnticipos = PrestamoEmpleado::anticiposPendientes($col->id);
-        }
-
-        $totalEgresos = round($aportePersonal + $descuentoAtraso + $descuentoPrestamos + $descuentoAnticipos, 2);
-        $netoPagar    = round($totalIngresos - $totalEgresos, 2);
-
-        return [
-            'nomina_id'            => $nominaId,
-            'colaborador_id'       => $col->id,
-            'sueldo_base'          => $sueldo,
-            'horas_extras_50'      => $extras50,
-            'horas_extras_100'     => $extras100,
-            'comisiones'           => 0,
-            'otros_ingresos'       => $otrosIngresos,
-            'total_ingresos'       => $totalIngresos,
-            'aporte_personal_iess' => $aportePersonal,
-            'descuento_atrasos'    => $descuentoAtraso,
-            'descuento_prestamos'  => $descuentoPrestamos,
-            'descuento_anticipos'  => $descuentoAnticipos,
-            'otros_egresos'        => 0,
-            'total_egresos'        => $totalEgresos,
-            'neto_pagar'           => $netoPagar,
-            'tipo_pago'            => $col->tipo_cuenta ? 'transferencia' : null,
-            'num_cuenta'           => $col->numero_cuenta,
-            'banco'                => $col->banco,
-            'estado'               => 'borrador',
-            'modificado_manualmente' => false,
-            'created_at'           => now(),
-        ];
+        return Storage::disk('local')->download($ruta, $nombreDescarga);
     }
+
 }

@@ -624,9 +624,13 @@ Route::middleware('auth')->group(function () {
 
         Route::prefix('nomina')->name('nomina.')->group(function () {
             Route::get('/',                        [NominaController::class, 'index'])         ->name('index');
+            // Registrada ANTES de "/{id}" (comodín) para que no la intercepte como
+            // si "exportaciones" fuera un {id} — mismo cuidado que en el resto de
+            // rutas de descarga de exportaciones en segundo plano del proyecto.
+            Route::get('/exportaciones/{archivo}/descargar', [NominaController::class, 'descargarExportacion']) ->name('exportacion.descargar');
             Route::get('/{id}',                    [NominaController::class, 'show'])          ->name('show');
             Route::get('/{id}/pdf/{did}',          [NominaController::class, 'pdfIndividual']) ->name('pdf-individual');
-            Route::get('/{id}/zip',                [NominaController::class, 'pdfMasivo'])     ->name('pdf-masivo');
+            Route::post('/{id}/zip',               [NominaController::class, 'pdfMasivo'])     ->name('pdf-masivo');
             Route::middleware('permiso:rrhh,crear')->group(function () {
                 Route::post('/generar',                [NominaController::class, 'generar'])       ->name('generar');
             });

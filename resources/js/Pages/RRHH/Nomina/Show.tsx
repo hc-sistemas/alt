@@ -270,9 +270,16 @@ interface Props extends PageProps {
     nomina: Nomina
 }
 
+// Edición manual de contingencia: SOLO Contador o Súper Administrador,
+// más estricto que el permiso genérico "rrhh,editar" (ver misma
+// restricción validada en el backend, NominaController::update() —
+// esto es solo para no ni mostrar el botón, el backend es la autoridad real).
+const PERFILES_EDICION_MANUAL = ['super_admin', 'contador']
+
 export default function NominaShow() {
-    const { nomina, flash } = usePage<Props>().props
+    const { nomina, flash, auth } = usePage<Props>().props
     const { puede } = usePermiso('rrhh')
+    const puedeEditarManual = !!auth?.user?.perfil && PERFILES_EDICION_MANUAL.includes(auth.user.perfil)
 
     const [editando, setEditando] = useState<NominaDetalle | null>(null)
     const [showPagar, setShowPagar] = useState(false)
@@ -408,15 +415,17 @@ export default function NominaShow() {
                             </button>
                         )}
 
-                        {/* ZIP descarga masiva */}
-                        <a
-                            href={route('rrhh.nomina.pdf-masivo', nomina.id)}
-                            className="btn-secondary flex items-center gap-1.5 text-sm no-underline"
-                            target="_blank"
-                        >
-                            <Download className="w-4 h-4" />
-                            Descargar todos los roles (ZIP)
-                        </a>
+                        {/* ZIP descarga masiva — se genera en segundo plano (Job en cola);
+                            no bloquea la UI, avisa por notificación cuando está listo. */}
+                        {(nomina.estado === 'procesado' || nomina.estado === 'pagado') && (
+                            <button
+                                onClick={() => router.post(route('rrhh.nomina.pdf-masivo', nomina.id), {}, { preserveScroll: true })}
+                                className="btn-secondary flex items-center gap-1.5 text-sm"
+                            >
+                                <Download className="w-4 h-4" />
+                                Generar ZIP de todos los roles
+                            </button>
+                        )}
                     </div>
                 </div>
 
@@ -425,7 +434,7 @@ export default function NominaShow() {
                     <table className="w-full text-sm min-w-275">
                         <thead>
                             <tr style={{ background: 'var(--bg-main)', borderBottom: '1px solid var(--border)' }}>
-                                {['Empleado', 'Sueldo', 'H.Ext', 'Otros Ing.', 'IESS Pers.', 'Desc. Atr.', 'Prést.', 'Total Ing.', 'Total Egr.', 'Neto', 'Tipo Pago', 'Cta. Banco', 'Acciones'].map(h => (
+                                {['Empleado', 'Identificación', 'Sueldo', 'H.Ext', 'Otros Ing.', 'IESS Pers.', 'Desc. Atr.', 'Prést.', 'Total Ing.', 'Total Egr.', 'Neto', 'Estado', 'Tipo Pago', 'Cta. Banco', 'Acciones'].map(h => (
                                     <th key={h} className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>
                                         {h}
                                     </th>
@@ -435,7 +444,7 @@ export default function NominaShow() {
                         <tbody>
                             {detalles.length === 0 ? (
                                 <tr>
-                                    <td colSpan={13} className="py-10 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
+                                    <td colSpan={15} className="py-10 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
                                         Sin detalles.
                                     </td>
                                 </tr>
@@ -453,10 +462,13 @@ export default function NominaShow() {
                                             {d.colaborador?.apellidos} {d.colaborador?.nombres}
                                         </div>
                                         {d.modificado_manualmente && (
-                                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-50 text-yellow-700 border border-yellow-200 font-medium">
-                                                Modificado manualmente
+                                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-50 text-yellow-700 border border-yellow-200 font-medium whitespace-nowrap">
+                                                [Modificado Manualmente]
                                             </span>
                                         )}
+                                    </td>
+                                    <td className="px-3 py-2.5 font-mono text-xs" style={{ color: 'var(--text-muted)' }}>
+                                        {d.colaborador?.cedula_ruc ?? '—'}
                                     </td>
                                     <td className="px-3 py-2.5 font-mono text-xs text-right" style={{ color: 'var(--text-main)' }}>
                                         {fmt(d.sueldo_base)}
@@ -498,6 +510,9 @@ export default function NominaShow() {
                                     <td className="px-3 py-2.5 font-mono text-xs text-right font-bold text-green-600">
                                         {fmt(d.neto_pagar)}
                                     </td>
+                                    <td className="px-3 py-2.5">
+                                        {badgeEstado(d.estado)}
+                                    </td>
                                     <td className="px-3 py-2.5 text-xs capitalize" style={{ color: 'var(--text-muted)' }}>
                                         {d.tipo_pago ?? '—'}
                                     </td>
@@ -514,8 +529,8 @@ export default function NominaShow() {
                                             >
                                                 <FileText className="w-4 h-4 text-blue-600" />
                                             </button>
-                                            {/* Editar manual — solo en borrador */}
-                                            {nomina.estado === 'borrador' && puede('editar') && (
+                                            {/* Editar manual — solo en borrador, y solo Contador/Súper Admin */}
+                                            {nomina.estado === 'borrador' && puede('editar') && puedeEditarManual && (
                                                 <button
                                                     onClick={() => setEditando(d)}
                                                     className="p-1.5 rounded hover:bg-amber-50 transition-colors"
@@ -536,6 +551,7 @@ export default function NominaShow() {
                                     <td className="px-3 py-2.5 text-xs font-bold uppercase" style={{ color: 'var(--text-main)' }}>
                                         TOTALES
                                     </td>
+                                    <td />
                                     <td className="px-3 py-2.5 font-mono text-xs text-right font-bold" style={{ color: 'var(--text-main)' }}>
                                         {fmt(detalles.reduce((s, d) => s + Number(d.sueldo_base), 0))}
                                     </td>
@@ -550,7 +566,7 @@ export default function NominaShow() {
                                     <td className="px-3 py-2.5 font-mono text-xs text-right font-bold text-green-600">
                                         {fmt(nomina.total_neto)}
                                     </td>
-                                    <td colSpan={3} />
+                                    <td colSpan={4} />
                                 </tr>
                             </tfoot>
                         )}
