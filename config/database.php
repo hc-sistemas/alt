@@ -99,6 +99,22 @@ return [
             'sslmode' => env('DB_SSLMODE', 'prefer'),
         ],
 
+        // Conexión de solo lectura a la BD del sistema legacy (altamira2),
+        // usada por comandos de migración de datos históricos.
+        'pgsql_legacy' => [
+            'driver' => 'pgsql',
+            'host' => env('DB_LEGACY_HOST', env('DB_HOST', '127.0.0.1')),
+            'port' => env('DB_LEGACY_PORT', env('DB_PORT', '5432')),
+            'database' => env('DB_LEGACY_DATABASE', 'altamira2'),
+            'username' => env('DB_LEGACY_USERNAME', env('DB_USERNAME', 'root')),
+            'password' => env('DB_LEGACY_PASSWORD', env('DB_PASSWORD', '')),
+            'charset' => env('DB_CHARSET', 'utf8'),
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'search_path' => 'public',
+            'sslmode' => env('DB_SSLMODE', 'prefer'),
+        ],
+
         'sqlsrv' => [
             'driver' => 'sqlsrv',
             'url' => env('DB_URL'),

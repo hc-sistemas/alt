@@ -1,5 +1,5 @@
 import { Head, Link, router, usePage } from '@inertiajs/react'
-import { Fragment, useEffect, useRef, useState } from 'react'
+import { Fragment, useRef, useState } from 'react'
 import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
@@ -7,6 +7,7 @@ import { Input } from '@/Components/ui/input'
 import { Search, FileSpreadsheet, Upload } from 'lucide-react'
 import { toastExito, toastError } from '@/lib/toast'
 import { cn } from '@/lib/utils'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { PaginatedData, PageProps } from '@/types'
 
 interface ListaPrecioRow {
@@ -16,6 +17,7 @@ interface ListaPrecioRow {
     marca_nombre: string
     pvp_base: number
     pvd_base: number
+    porcentaje_iva: number
     lista_pvp_precio: number | null
     lista_pvp_descuento_max: number | null
     lista_pvp_descuento_max_promo: number | null
@@ -29,7 +31,7 @@ interface Marca { id: number; nombre: string }
 interface Categoria { id: number; nombre: string }
 
 interface Props extends PageProps {
-    listas: PaginatedData<ListaPrecioRow>
+    listas: PaginatedData<ListaPrecioRow> | null
     filters: { search?: string; marca_id?: string; categoria_id?: string }
     marcas: Marca[]
     categorias: Categoria[]
@@ -88,8 +90,13 @@ function tienePromoGuardada(row: ListaPrecioRow): boolean {
         && tieneValor(row.vigencia_hasta)
 }
 
+function conIva(base: number, porcentajeIva: number): number {
+    return base * (1 + (Number(porcentajeIva) || 0) / 100)
+}
+
 export default function ListasPrecioIndex() {
     const { listas, filters, marcas, categorias } = usePage<Props>().props
+    const { puede } = usePermiso('inventario')
 
     const [search, setSearch]   = useState(filters.search ?? '')
     const [marcaId, setMarcaId] = useState(filters.marca_id ?? '')
@@ -97,23 +104,19 @@ export default function ListasPrecioIndex() {
     const [editing, setEditing] = useState<EditState | null>(null)
     const [promoEditing, setPromoEditing] = useState<PromoEditState | null>(null)
 
-    const debounceRef   = useRef<ReturnType<typeof setTimeout> | null>(null)
-    const isFirstRender = useRef(true)
     const fileInputRef  = useRef<HTMLInputElement>(null)
     const blurTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-    useEffect(() => {
-        if (isFirstRender.current) { isFirstRender.current = false; return }
-        if (debounceRef.current) clearTimeout(debounceRef.current)
-        debounceRef.current = setTimeout(() => {
-            router.get(route('inventario.listas.index'), {
-                search: search || undefined,
-                marca_id: marcaId || undefined,
-                categoria_id: catId || undefined,
-            }, { preserveState: true, replace: true })
-        }, 300)
-        return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
-    }, [search, marcaId, catId])
+    const haBuscado = listas !== null
+
+    function buscar() {
+        router.get(route('inventario.listas.index'), {
+            search: search || undefined,
+            marca_id: marcaId || undefined,
+            categoria_id: catId || undefined,
+            buscado: '1',
+        }, { preserveState: false })
+    }
 
     function startEdit(row: ListaPrecioRow) {
         setEditing({
@@ -292,6 +295,9 @@ export default function ListasPrecioIndex() {
     // los 3 valores, con el % clickeable para reabrir la misma edición inline.
     function promoGroupCells(row: ListaPrecioRow) {
         if (!tienePromoGuardada(row)) {
+            if (!puede('editar')) {
+                return <td colSpan={3} className={tdBase} style={{ borderLeft: '1px solid var(--border)' }} />
+            }
             return (
                 <td colSpan={3} className={cn(tdBase, 'text-center')} style={{ borderLeft: '1px solid var(--border)' }}>
                     <button
@@ -308,10 +314,10 @@ export default function ListasPrecioIndex() {
         return (
             <>
                 <td
-                    className={cn(tdMuted, 'cursor-pointer hover:underline')}
+                    className={cn(tdMuted, puede('editar') && 'cursor-pointer hover:underline')}
                     style={{ color: 'var(--primary)', borderLeft: '1px solid var(--border)' }}
-                    onClick={() => startPromoEdit(row)}
-                    title="Clic para editar la promo"
+                    onClick={() => puede('editar') && startPromoEdit(row)}
+                    title={puede('editar') ? 'Clic para editar la promo' : undefined}
                 >
                     {fmt(row.lista_pvp_descuento_max_promo)}%
                 </td>
@@ -339,23 +345,26 @@ export default function ListasPrecioIndex() {
             <Head title="Listas de Precio" />
             <PageHeader
                 title="Listas de Precio"
-                description="Precios especiales PVP/PVD por producto. Clic en una celda para editar."
                 breadcrumbs={[{ label: 'Inventario' }, { label: 'Listas de Precio' }]}
+                actions={
+                    puede('crear') ? (
+                        <button
+                            onClick={() => fileInputRef.current?.click()}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium"
+                            style={{ background: 'var(--primary)', color: 'black', transition: 'background 0.2s' }}
+                            onMouseEnter={e => (e.currentTarget.style.background = 'var(--primary-hover)')}
+                            onMouseLeave={e => (e.currentTarget.style.background = 'var(--primary)')}
+                        >
+                            <Upload className="w-4 h-4" />
+                            Importar
+                        </button>
+                    ) : undefined
+                }
             />
 
             <div className="p-6">
                 {/* Filtros + acciones */}
                 <div className="flex items-center gap-3 mb-4 flex-wrap">
-                    <div className="relative">
-                        <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
-                        <Input
-                            value={search}
-                            onChange={e => setSearch(e.target.value)}
-                            placeholder="Código o nombre..."
-                            className="pl-9 w-52"
-                        />
-                    </div>
-
                     <select value={marcaId} onChange={e => setMarcaId(e.target.value)}
                         className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm"
                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
@@ -370,37 +379,55 @@ export default function ListasPrecioIndex() {
                         {categorias.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
                     </select>
 
-                    <div className="flex items-center gap-2 ml-auto">
-                        <button
-                            onClick={descargarPlantilla}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium"
-                            style={{ background: '#16A34A', color: 'white', transition: 'background 0.2s' }}
-                            onMouseEnter={e => (e.currentTarget.style.background = '#15803D')}
-                            onMouseLeave={e => (e.currentTarget.style.background = '#16A34A')}
-                        >
-                            <FileSpreadsheet className="w-4 h-4" />
-                            Excel
+                    <div className="flex shrink-0 ml-auto" role="group">
+                        <div className="relative">
+                            <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+                            <Input
+                                value={search}
+                                onChange={e => setSearch(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && buscar()}
+                                placeholder="Código o nombre..."
+                                className="pl-9 w-52 rounded-r-none border-r-0"
+                            />
+                        </div>
+                        <button className="flex items-center justify-center w-9 h-9 rounded-r-md border text-sm font-medium shrink-0"
+                            style={{ background: 'var(--primary)', color: 'black', borderColor: 'var(--primary)' }}
+                            onClick={buscar}
+                            title="Buscar">
+                            <Search className="w-4 h-4" />
                         </button>
-                        <button
-                            onClick={() => fileInputRef.current?.click()}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium"
-                            style={{ background: 'var(--primary)', color: 'black', transition: 'background 0.2s' }}
-                            onMouseEnter={e => (e.currentTarget.style.background = 'var(--primary-hover)')}
-                            onMouseLeave={e => (e.currentTarget.style.background = 'var(--primary)')}
-                        >
-                            <Upload className="w-4 h-4" />
-                            Importar
-                        </button>
-                        <input
-                            ref={fileInputRef}
-                            type="file"
-                            accept=".xlsx,.xls"
-                            className="hidden"
-                            onChange={handleFileChange}
-                        />
                     </div>
+
+                    <button
+                        onClick={descargarPlantilla}
+                        className="flex items-center justify-center w-9 h-9 rounded-md text-sm font-medium border shrink-0"
+                        style={{ background: '#16A34A', color: 'white', borderColor: '#16A34A', transition: 'background 0.2s' }}
+                        onMouseEnter={e => (e.currentTarget.style.background = '#15803D')}
+                        onMouseLeave={e => (e.currentTarget.style.background = '#16A34A')}
+                        title="Excel">
+                        <FileSpreadsheet className="w-4 h-4" />
+                    </button>
+                    <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept=".xlsx,.xls"
+                        className="hidden"
+                        onChange={handleFileChange}
+                    />
                 </div>
 
+                {/* Estado inicial: aún no se ha buscado */}
+                {!haBuscado && (
+                    <div className="text-center py-16">
+                        <Search className="w-12 h-12 mx-auto mb-4 opacity-30" style={{ color: 'var(--text-muted)' }} />
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                            Ajusta los filtros y presiona Buscar para consultar las listas de precio.
+                        </p>
+                    </div>
+                )}
+
+                {haBuscado && listas && (
+                <>
                 {/* Tabla */}
                 <div className="rounded-xl border overflow-x-auto" style={{ borderColor: 'var(--border)' }}>
                     <table className="w-full text-xs">
@@ -408,8 +435,8 @@ export default function ListasPrecioIndex() {
                             <tr style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
                                 {[
                                     'Código', 'Nombre', 'Marca',
-                                    'PVP Base', 'PVP Lista', 'Desc. PVP%',
-                                    'PVD Base', 'PVD Lista', 'Desc. PVD%',
+                                    'PVP+IVA', 'PVP Lista', 'Desc. PVP%',
+                                    'PVD+IVA', 'PVD Lista', 'Desc. PVD%',
                                 ].map(h => (
                                     <th key={h}
                                         className="text-left px-2 py-3 font-medium text-xs uppercase tracking-wider whitespace-nowrap"
@@ -469,18 +496,18 @@ export default function ListasPrecioIndex() {
                                             {row.marca_nombre}
                                         </td>
 
-                                        {/* PVP Base — solo lectura */}
+                                        {/* PVP+IVA — solo lectura */}
                                         <td className={tdMuted} style={{ color: 'var(--text-muted)' }}>
-                                            {Number(row.pvp_base).toFixed(2)}
+                                            {conIva(Number(row.lista_pvp_precio ?? row.pvp_base), row.porcentaje_iva).toFixed(2)}
                                         </td>
 
                                         {active ? (
                                             <>
                                                 {editCell('pvp',          { type: 'number', step: 0.01, min: 0,       onBlur: blurHandler, onFocus: focusHandler })}
                                                 {editCell('descuento_pvp', { type: 'number', step: 0.01, min: 0, max: 100, onBlur: blurHandler, onFocus: focusHandler })}
-                                                {/* PVD Base — solo lectura intercalada */}
+                                                {/* PVD+IVA — solo lectura intercalada */}
                                                 <td className={tdMuted} style={{ color: 'var(--text-muted)' }}>
-                                                    {Number(row.pvd_base).toFixed(2)}
+                                                    {conIva(Number(row.lista_pvd_precio ?? row.pvd_base), row.porcentaje_iva).toFixed(2)}
                                                 </td>
                                                 {editCell('pvd',          { type: 'number', step: 0.01, min: 0,       onBlur: blurHandler, onFocus: focusHandler })}
                                                 {editCell('descuento_pvd', { type: 'number', step: 0.01, min: 0, max: 100, onBlur: blurHandler, onFocus: focusHandler })}
@@ -488,40 +515,40 @@ export default function ListasPrecioIndex() {
                                         ) : (
                                             <>
                                                 <td
-                                                    className={cn(tdMuted, 'cursor-pointer hover:underline')}
+                                                    className={cn(tdMuted, puede('editar') && 'cursor-pointer hover:underline')}
                                                     style={{ color: row.lista_pvp_precio != null ? 'var(--primary)' : 'var(--text-muted)' }}
-                                                    onClick={() => startEdit(row)}
-                                                    title="Clic para editar"
+                                                    onClick={() => puede('editar') && startEdit(row)}
+                                                    title={puede('editar') ? 'Clic para editar' : undefined}
                                                 >
                                                     {row.lista_pvp_precio != null ? Number(row.lista_pvp_precio).toFixed(2) : '—'}
                                                 </td>
                                                 <td
-                                                    className={cn(tdMuted, 'cursor-pointer hover:underline')}
+                                                    className={cn(tdMuted, puede('editar') && 'cursor-pointer hover:underline')}
                                                     style={{ color: 'var(--text-muted)' }}
-                                                    onClick={() => startEdit(row)}
-                                                    title="Clic para editar"
+                                                    onClick={() => puede('editar') && startEdit(row)}
+                                                    title={puede('editar') ? 'Clic para editar' : undefined}
                                                 >
                                                     {row.lista_pvp_descuento_max != null ? `${Number(row.lista_pvp_descuento_max).toFixed(2)}%` : '—'}
                                                 </td>
 
-                                                {/* PVD Base */}
+                                                {/* PVD+IVA */}
                                                 <td className={tdMuted} style={{ color: 'var(--text-muted)' }}>
-                                                    {Number(row.pvd_base).toFixed(2)}
+                                                    {conIva(Number(row.lista_pvd_precio ?? row.pvd_base), row.porcentaje_iva).toFixed(2)}
                                                 </td>
 
                                                 <td
-                                                    className={cn(tdMuted, 'cursor-pointer hover:underline')}
+                                                    className={cn(tdMuted, puede('editar') && 'cursor-pointer hover:underline')}
                                                     style={{ color: row.lista_pvd_precio != null ? 'var(--primary)' : 'var(--text-muted)' }}
-                                                    onClick={() => startEdit(row)}
-                                                    title="Clic para editar"
+                                                    onClick={() => puede('editar') && startEdit(row)}
+                                                    title={puede('editar') ? 'Clic para editar' : undefined}
                                                 >
                                                     {row.lista_pvd_precio != null ? Number(row.lista_pvd_precio).toFixed(2) : '—'}
                                                 </td>
                                                 <td
-                                                    className={cn(tdMuted, 'cursor-pointer hover:underline')}
+                                                    className={cn(tdMuted, puede('editar') && 'cursor-pointer hover:underline')}
                                                     style={{ color: 'var(--text-muted)' }}
-                                                    onClick={() => startEdit(row)}
-                                                    title="Clic para editar"
+                                                    onClick={() => puede('editar') && startEdit(row)}
+                                                    title={puede('editar') ? 'Clic para editar' : undefined}
                                                 >
                                                     {row.lista_pvd_descuento_max != null ? `${Number(row.lista_pvd_descuento_max).toFixed(2)}%` : '—'}
                                                 </td>
@@ -616,6 +643,8 @@ export default function ListasPrecioIndex() {
                 <p className="mt-3 text-xs" style={{ color: 'var(--text-muted)' }}>
                     Clic en cualquier celda para editar. Al salir de la fila se guarda automáticamente. Enter guarda, Escape cancela.
                 </p>
+                </>
+                )}
             </div>
         </AppLayout>
     )

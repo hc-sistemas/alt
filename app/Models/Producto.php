@@ -11,7 +11,7 @@ class Producto extends Model
     protected $table = 'productos';
 
     protected $fillable = [
-        'empresa_id', 'marca_id', 'categoria_id',
+        'empresa_id', 'marca_id', 'marca_fabricante', 'categoria_id',
         'codigo', 'codigo_externo', 'nombre', 'descripcion', 'unidad', 'tipo',
         'requiere_serie', 'costo', 'pvp', 'pvd', 'descuento_maximo',
         'porcentaje_iva', 'tiene_ice', 'porcentaje_ice',

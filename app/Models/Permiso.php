@@ -9,7 +9,7 @@ class Permiso extends Model
     protected $table = 'permisos';
 
     protected $fillable = [
-        'perfil_id', 'modulo_id',
+        'perfil_id', 'modulo_id', 'empresa_id',
         'ver', 'crear', 'editar', 'eliminar', 'anular',
     ];
 
@@ -32,5 +32,10 @@ class Permiso extends Model
     public function modulo(): BelongsTo
     {
         return $this->belongsTo(Modulo::class);
+    }
+
+    public function empresa(): BelongsTo
+    {
+        return $this->belongsTo(Empresa::class);
     }
 }

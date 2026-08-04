@@ -8,6 +8,7 @@ import { Label } from '@/Components/ui/label'
 import { formatMoneda } from '@/lib/utils'
 import { toastError } from '@/lib/toast'
 import { Plus, Trash2, Save, X, Send } from 'lucide-react'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { PageProps, Transportista } from '@/types'
 
 interface FacturaDetalleItem {
@@ -46,6 +47,7 @@ const hoy = new Date().toISOString().slice(0, 10)
 
 export default function Form() {
     const { factura, transportistas } = usePage<Props>().props
+    const { puede } = usePermiso('ventas')
 
     const [transportistaId, setTransportistaId] = useState<number | ''>(transportistas[0]?.id ?? '')
     const [fechaInicio, setFechaInicio] = useState(hoy)
@@ -302,16 +304,20 @@ export default function Form() {
                         </Button>
                     </Link>
                     <div className="flex gap-3">
-                        <span title="Funcionalidad en desarrollo">
-                            <Button type="button" variant="secondary" disabled>
-                                <Send className="w-4 h-4" />
-                                Enviar al SRI
+                        {puede('editar') && (
+                            <span title="Funcionalidad en desarrollo">
+                                <Button type="button" variant="secondary" disabled>
+                                    <Send className="w-4 h-4" />
+                                    Enviar al SRI
+                                </Button>
+                            </span>
+                        )}
+                        {puede('crear') && (
+                            <Button type="submit" loading={guardando}>
+                                <Save className="w-4 h-4" />
+                                Guardar Guía
                             </Button>
-                        </span>
-                        <Button type="submit" loading={guardando}>
-                            <Save className="w-4 h-4" />
-                            Guardar Guía
-                        </Button>
+                        )}
                     </div>
                 </div>
             </form>

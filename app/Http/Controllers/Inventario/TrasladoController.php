@@ -27,16 +27,14 @@ class TrasladoController extends Controller
 
     public function productosEnBodega(Request $request): JsonResponse
     {
-        $empresaId = session('empresa_activa_id');
         $bodegaId  = $request->integer('bodega_id');
         $query     = $request->string('q')->trim();
 
         $resultados = InventarioSaldo::with('producto.marca')
             ->where('bodega_id', $bodegaId)
             ->where('stock_actual', '>', 0)
-            ->whereHas('producto', function ($q) use ($empresaId, $query) {
-                $q->where('empresa_id', $empresaId)
-                  ->where('estado', true)
+            ->whereHas('producto', function ($q) use ($query) {
+                $q->where('estado', true)
                   ->when($query->isNotEmpty(), fn($q) =>
                       $q->where(function ($q) use ($query) {
                           $q->where('codigo', 'ilike', "%{$query}%")
@@ -61,17 +59,23 @@ class TrasladoController extends Controller
     public function index(Request $request): Response
     {
         $empresaId = session('empresa_activa_id');
+        $busquedaRealizada = $request->boolean('buscado');
 
-        $traslados = TrasladoBodega::with(['bodegaOrigen', 'bodegaDestino', 'enviadoPor', 'detalles'])
-            ->where('empresa_id', $empresaId)
-            ->when($request->estado, fn($q) => $q->where('estado', $request->estado))
-            ->when($request->bodega_origen_id, fn($q) => $q->where('bodega_origen_id', $request->bodega_origen_id))
-            ->when($request->bodega_destino_id, fn($q) => $q->where('bodega_destino_id', $request->bodega_destino_id))
-            ->when($request->fecha_desde, fn($q) => $q->where('fecha', '>=', $request->fecha_desde))
-            ->when($request->fecha_hasta, fn($q) => $q->where('fecha', '<=', $request->fecha_hasta))
-            ->orderByDesc('created_at')
-            ->paginate(20)
-            ->withQueryString();
+        $traslados = null;
+
+        if ($busquedaRealizada) {
+            $traslados = TrasladoBodega::with(['bodegaOrigen', 'bodegaDestino', 'enviadoPor', 'detalles'])
+                ->where('empresa_id', $empresaId)
+                ->when($request->search, fn($q) => $q->where('numero', 'ilike', "%{$request->search}%"))
+                ->when($request->estado, fn($q) => $q->where('estado', $request->estado))
+                ->when($request->bodega_origen_id, fn($q) => $q->where('bodega_origen_id', $request->bodega_origen_id))
+                ->when($request->bodega_destino_id, fn($q) => $q->where('bodega_destino_id', $request->bodega_destino_id))
+                ->when($request->fecha_desde, fn($q) => $q->where('fecha', '>=', $request->fecha_desde))
+                ->when($request->fecha_hasta, fn($q) => $q->where('fecha', '<=', $request->fecha_hasta))
+                ->orderByDesc('created_at')
+                ->paginate(20)
+                ->withQueryString();
+        }
 
         $bodegas = Bodega::where('empresa_id', $empresaId)
             ->where('estado', true)
@@ -81,7 +85,7 @@ class TrasladoController extends Controller
         return Inertia::render('Inventario/Traslados/Index', [
             'traslados' => $traslados,
             'bodegas'   => $bodegas,
-            'filters'   => $request->only(['estado', 'bodega_origen_id', 'bodega_destino_id', 'fecha_desde', 'fecha_hasta']),
+            'filters'   => $request->only(['search', 'estado', 'bodega_origen_id', 'bodega_destino_id', 'fecha_desde', 'fecha_hasta']),
         ]);
     }
 
@@ -90,8 +94,7 @@ class TrasladoController extends Controller
         $empresaId = session('empresa_activa_id');
 
         return Inertia::render('Inventario/Traslados/Form', [
-            'productos' => Producto::where('empresa_id', $empresaId)
-                ->where('estado', true)
+            'productos' => Producto::where('estado', true)
                 ->orderBy('nombre')
                 ->get(['id', 'codigo', 'nombre']),
             'bodegas'   => Bodega::where('empresa_id', $empresaId)
@@ -172,7 +175,7 @@ class TrasladoController extends Controller
             ->with('success', 'Traslado creado correctamente.');
     }
 
-    public function show(TrasladoBodega $traslado): Response
+    public function show(Request $request, TrasladoBodega $traslado): Response|JsonResponse
     {
         $empresaId = session('empresa_activa_id');
 
@@ -181,6 +184,10 @@ class TrasladoController extends Controller
         }
 
         $traslado->load(['bodegaOrigen', 'bodegaDestino', 'enviadoPor', 'recibidoPor', 'detalles.producto']);
+
+        if ($request->wantsJson()) {
+            return response()->json(['traslado' => $traslado]);
+        }
 
         return Inertia::render('Inventario/Traslados/Show', [
             'traslado' => $traslado,
@@ -230,6 +237,16 @@ class TrasladoController extends Controller
                         (float) $detalle->cantidad_enviada,
                         'traslado',
                         $traslado->id
+                    );
+
+                    // Libera la reserva hecha en store() al crear el traslado — sin esto,
+                    // cantidad_reservada queda huerfana para siempre aunque el stock ya
+                    // se egreso fisicamente. Usa cantidad_enviada (lo reservado), no
+                    // cantidad_recibida (puede diferir por mermas).
+                    $this->inventario->liberarReserva(
+                        (int) $detalle->producto_id,
+                        (int) $traslado->bodega_origen_id,
+                        (float) $detalle->cantidad_enviada
                     );
 
                     if ($cantidadRecibida > 0) {
@@ -294,8 +311,7 @@ class TrasladoController extends Controller
                     $this->inventario->liberarReserva(
                         (int) $detalle->producto_id,
                         (int) $traslado->bodega_origen_id,
-                        'traslado_detalle',
-                        $detalle->id
+                        (float) $detalle->cantidad_enviada
                     );
                 }
 

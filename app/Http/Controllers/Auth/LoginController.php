@@ -24,21 +24,22 @@ class LoginController extends Controller
     public function login(Request $request): RedirectResponse
     {
         $request->validate([
-            'email' => ['required', 'email'],
+            'usuario' => ['required', 'string'],
             'password' => ['required', 'string'],
         ]);
 
         $this->checkRateLimit($request);
 
-        $credentials = $request->only('email', 'password');
+        $campo = filter_var($request->usuario, FILTER_VALIDATE_EMAIL) ? 'email' : 'username';
+        $credentials = [$campo => $request->usuario, 'password' => $request->password];
 
         if (!Auth::attempt($credentials, $request->boolean('remember'))) {
             RateLimiter::hit($this->throttleKey($request), 60);
 
-            $this->auditoria->sesion('login_fail', $request->email);
+            $this->auditoria->sesion('login_fail', $request->usuario);
 
             throw ValidationException::withMessages([
-                'email' => 'Las credenciales proporcionadas son incorrectas.',
+                'usuario' => 'Las credenciales proporcionadas son incorrectas.',
             ]);
         }
 
@@ -81,7 +82,7 @@ class LoginController extends Controller
             $seconds = RateLimiter::availableIn($this->throttleKey($request));
 
             throw ValidationException::withMessages([
-                'email' => "Demasiados intentos. Por favor espera {$seconds} segundos.",
+                'usuario' => "Demasiados intentos. Por favor espera {$seconds} segundos.",
             ]);
         }
     }

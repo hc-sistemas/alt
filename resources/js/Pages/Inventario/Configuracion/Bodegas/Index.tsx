@@ -5,9 +5,10 @@ import PageHeader from '@/Components/shared/PageHeader'
 import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
-import { Plus, Pencil, Trash2, X, Save } from 'lucide-react'
+import { Plus, Pencil, Trash2, X, Save, Search } from 'lucide-react'
 import { toastExito, toastError } from '@/lib/toast'
 import { confirmarEliminar } from '@/lib/swal'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { Bodega, CentroCosto, PaginatedData, PageProps } from '@/types'
 
 interface Props extends PageProps {
@@ -37,6 +38,7 @@ const emptyForm = {
 
 export default function BodegasIndex() {
     const { bodegas, centrosCosto, filters, tipos } = usePage<Props>().props
+    const { puede } = usePermiso('inventario')
     const [tipoFiltro, setTipoFiltro] = useState(filters.tipo ?? '')
 
     const [modalOpen, setModalOpen] = useState(false)
@@ -45,9 +47,8 @@ export default function BodegasIndex() {
     const [errors, setErrors] = useState<Record<string, string>>({})
     const [procesando, setProcesando] = useState(false)
 
-    function aplicarFiltro(tipo: string) {
-        setTipoFiltro(tipo)
-        router.get(route('inventario.config.bodegas.index'), { tipo: tipo || undefined }, { preserveState: true, replace: true })
+    function buscar() {
+        router.get(route('inventario.config.bodegas.index'), { tipo: tipoFiltro || undefined }, { preserveState: true, replace: true })
     }
 
     function abrirCrear() {
@@ -130,28 +131,35 @@ export default function BodegasIndex() {
             <Head title="Bodegas" />
             <PageHeader
                 title="Bodegas"
-                description="Gestión de bodegas y almacenes de la empresa"
                 breadcrumbs={[{ label: 'Inventario' }, { label: 'Configuración' }, { label: 'Bodegas' }]}
+                actions={
+                    puede('crear') ? (
+                        <Button onClick={abrirCrear}>
+                            <Plus className="w-4 h-4" />
+                            Nueva Bodega
+                        </Button>
+                    ) : undefined
+                }
             />
 
             <div className="p-6">
-                <div className="flex items-center gap-4 mb-4 flex-wrap">
-                    <Button onClick={abrirCrear}>
-                        <Plus className="w-4 h-4" />
-                        Nueva Bodega
-                    </Button>
-                    <div className="flex items-center gap-2">
-                        <span className="text-sm whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>Tipo:</span>
-                        <select
-                            value={tipoFiltro}
-                            onChange={e => aplicarFiltro(e.target.value)}
-                            className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm"
-                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}
-                        >
-                            <option value="">Todos</option>
-                            {tipos.map(t => <option key={t} value={t}>{TIPO_LABELS[t] ?? t}</option>)}
-                        </select>
-                    </div>
+                <div className="flex items-center gap-3 mb-4 flex-wrap">
+                    <select
+                        value={tipoFiltro}
+                        onChange={e => setTipoFiltro(e.target.value)}
+                        className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}
+                    >
+                        <option value="">Todos los tipos</option>
+                        {tipos.map(t => <option key={t} value={t}>{TIPO_LABELS[t] ?? t}</option>)}
+                    </select>
+
+                    <button className="flex items-center justify-center w-9 h-9 rounded-md text-sm font-medium border shrink-0 ml-auto"
+                        style={{ background: 'var(--primary)', color: 'black', borderColor: 'var(--primary)' }}
+                        onClick={buscar}
+                        title="Buscar">
+                        <Search className="w-4 h-4" />
+                    </button>
                 </div>
 
                 <div className="rounded-xl border overflow-x-auto" style={{ borderColor: 'var(--border)' }}>
@@ -193,12 +201,16 @@ export default function BodegasIndex() {
                                     </td>
                                     <td className="px-4 py-3">
                                         <div className="flex items-center justify-end gap-1">
-                                            <Button variant="ghost" size="icon" title="Editar" onClick={() => abrirEditar(bodega)}>
-                                                <Pencil className="w-4 h-4" />
-                                            </Button>
-                                            <Button variant="ghost" size="icon" title="Eliminar" onClick={() => eliminar(bodega)}>
-                                                <Trash2 className="w-4 h-4 text-red-400" />
-                                            </Button>
+                                            {puede('editar') && (
+                                                <Button variant="ghost" size="icon" title="Editar" onClick={() => abrirEditar(bodega)}>
+                                                    <Pencil className="w-4 h-4" />
+                                                </Button>
+                                            )}
+                                            {puede('eliminar') && (
+                                                <Button variant="ghost" size="icon" title="Eliminar" onClick={() => eliminar(bodega)}>
+                                                    <Trash2 className="w-4 h-4 text-red-400" />
+                                                </Button>
+                                            )}
                                         </div>
                                     </td>
                                 </tr>

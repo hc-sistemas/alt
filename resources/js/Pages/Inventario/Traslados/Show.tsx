@@ -5,6 +5,7 @@ import PageHeader from '@/Components/shared/PageHeader'
 import { Button } from '@/Components/ui/button'
 import { ArrowRight, X, Save } from 'lucide-react'
 import { toastExito, toastError } from '@/lib/toast'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { TrasladoBodega, PageProps } from '@/types'
 
 interface Props extends PageProps {
@@ -23,6 +24,7 @@ const ESTADO_LABELS: Record<string, string> = {
 
 export default function TrasladoShow() {
     const { traslado, auth } = usePage<Props>().props
+    const { puede } = usePermiso('inventario')
     const isPendiente = traslado.estado === 'pendiente'
 
     const perfilesPermitidos = ['super_admin', 'admin', 'bodeguero']
@@ -63,10 +65,10 @@ export default function TrasladoShow() {
                 toastError(json.message ?? 'Error al confirmar')
                 return
             }
-            toastExito('Traslado aceptado correctamente')
+            toastExito('Movimiento aceptado correctamente')
             router.reload()
         } catch {
-            toastError('Error al confirmar el traslado')
+            toastError('Error al confirmar el movimiento')
         }
     }
 
@@ -89,7 +91,7 @@ export default function TrasladoShow() {
                 toastError(json.message ?? 'Error al rechazar')
                 return
             }
-            toastExito('Traslado rechazado')
+            toastExito('Movimiento rechazado')
             router.visit(route('inventario.traslados.index'))
         } catch {
             toastError('Error al rechazar')
@@ -100,13 +102,13 @@ export default function TrasladoShow() {
     }
 
     return (
-        <AppLayout title={`Traslado #${traslado.id}`}>
-            <Head title={`Traslado #${traslado.id}`} />
+        <AppLayout title={`Movimiento #${traslado.id}`}>
+            <Head title={`Movimiento #${traslado.id}`} />
             <PageHeader
-                title={`Traslado #${traslado.id}`}
+                title={`Movimiento #${traslado.id}`}
                 breadcrumbs={[
                     { label: 'Inventario' },
-                    { label: 'Traslados', href: route('inventario.traslados.index') },
+                    { label: 'Movimientos', href: route('inventario.traslados.index') },
                     { label: `#${traslado.id}` },
                 ]}
             />
@@ -243,15 +245,19 @@ export default function TrasladoShow() {
                             />
                         </div>
                         <div className="flex gap-3">
-                            <Button type="submit" loading={processing}>
-                                <Save className="w-4 h-4" />
-                                Confirmar recepción
-                            </Button>
-                            <Button type="button" variant="outline"
-                                style={{ borderColor: '#EF4444', color: '#EF4444' }}
-                                onClick={() => setModalAnular(true)}>
-                                Rechazar traslado
-                            </Button>
+                            {puede('editar') && (
+                                <Button type="submit" loading={processing}>
+                                    <Save className="w-4 h-4" />
+                                    Confirmar recepción
+                                </Button>
+                            )}
+                            {puede('anular') && (
+                                <Button type="button" variant="outline"
+                                    style={{ borderColor: '#EF4444', color: '#EF4444' }}
+                                    onClick={() => setModalAnular(true)}>
+                                    Rechazar movimiento
+                                </Button>
+                            )}
                         </div>
                     </form>
                 )}
@@ -259,7 +265,7 @@ export default function TrasladoShow() {
                 {/* Botón de regreso */}
                 <div className="flex gap-3 pt-2">
                     <Button variant="outline" onClick={() => router.visit(route('inventario.traslados.index'))}>
-                        Volver a Traslados
+                        Volver a Movimientos
                     </Button>
                 </div>
             </div>
@@ -272,7 +278,7 @@ export default function TrasladoShow() {
                         style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
                         <div className="flex items-center justify-between">
                             <h3 className="text-base font-semibold" style={{ color: 'var(--text-main)' }}>
-                                Rechazar traslado #{traslado.id}
+                                Rechazar movimiento #{traslado.id}
                             </h3>
                             <button onClick={() => setModalAnular(false)} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700">
                                 <X className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />

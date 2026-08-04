@@ -9,6 +9,7 @@ import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
 import { Plus, Save, AlertTriangle, X } from 'lucide-react'
 import { toastExito, toastError } from '@/lib/toast'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { PageProps } from '@/types'
 
 interface ProductoOption {
@@ -46,6 +47,7 @@ function lineaVacia(): LineaAjuste {
 
 export default function KardexAjuste() {
     const { productos, bodegas, productoId, bodegaId, redirect_to } = usePage<Props>().props
+    const { puede } = usePermiso('inventario')
 
     const productoInicial = productoId
         ? productos.find(p => p.id === productoId) ?? null
@@ -164,7 +166,6 @@ export default function KardexAjuste() {
             <Head title="Ajuste de Inventario" />
             <PageHeader
                 title="Ajuste de Inventario"
-                description="Registrar entradas o salidas manuales de stock para varios productos en una misma bodega"
                 breadcrumbs={[
                     { label: 'Inventario' },
                     { label: 'Kárdex', href: route('inventario.kardex.saldos') },
@@ -350,10 +351,12 @@ export default function KardexAjuste() {
 
                 {/* Acciones */}
                 <div className="flex gap-3">
-                    <Button type="submit" loading={guardando}>
-                        <Save className="w-4 h-4" />
-                        Registrar ajuste
-                    </Button>
+                    {puede('crear') && (
+                        <Button type="submit" loading={guardando}>
+                            <Save className="w-4 h-4" />
+                            Registrar ajuste
+                        </Button>
+                    )}
                     <Button type="button" variant="outline"
                         onClick={() => router.visit(redirect_to)}>
                         Cancelar

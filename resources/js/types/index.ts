@@ -238,6 +238,7 @@ export interface Producto {
     id: number
     empresa_id: number
     marca_id: number | null
+    marca_fabricante: string | null
     categoria_id: number | null
     codigo: string
     codigo_externo: string | null
