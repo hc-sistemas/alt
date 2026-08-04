@@ -27,20 +27,32 @@ class LiquidacionesController extends Controller
     {
         $empresaId = session('empresa_activa_id');
 
-        $query = Liquidacion::with(['colaborador', 'creadoPor:id,nombre'])
-            ->whereHas('colaborador', fn($q) => $q->where('empresa_id', $empresaId));
+        $liquidaciones = null;
 
-        if ($request->filled('colaborador_id')) {
-            $query->where('colaborador_id', $request->colaborador_id);
-        }
-        if ($request->filled('motivo')) {
-            $query->where('motivo', $request->motivo);
-        }
-        if ($request->filled('estado')) {
-            $query->where('estado', $request->estado);
-        }
+        if ($request->boolean('buscado')) {
+            $query = Liquidacion::with(['colaborador', 'creadoPor:id,nombre'])
+                ->whereHas('colaborador', fn($q) => $q->where('empresa_id', $empresaId));
 
-        $liquidaciones = $query->orderByDesc('id')->paginate(20)->withQueryString();
+            if ($request->filled('colaborador_id')) {
+                $query->where('colaborador_id', $request->colaborador_id);
+            }
+            if ($request->filled('motivo')) {
+                $query->where('motivo', $request->motivo);
+            }
+            if ($request->filled('estado')) {
+                $query->where('estado', $request->estado);
+            }
+            if ($request->filled('buscar')) {
+                $q = $request->buscar;
+                $query->whereHas('colaborador', fn($qc) => $qc
+                    ->where('apellidos', 'ilike', "%{$q}%")
+                    ->orWhere('nombres', 'ilike', "%{$q}%")
+                    ->orWhere('cedula_ruc', 'ilike', "%{$q}%")
+                );
+            }
+
+            $liquidaciones = $query->orderByDesc('id')->paginate(20)->withQueryString();
+        }
 
         $colaboradores = Colaborador::where('empresa_id', $empresaId)
             ->activos()->orderBy('apellidos')->orderBy('nombres')
@@ -50,7 +62,7 @@ class LiquidacionesController extends Controller
         return Inertia::render('RRHH/Liquidaciones/Index', [
             'liquidaciones' => $liquidaciones,
             'colaboradores' => $colaboradores,
-            'filtros'       => $request->only(['colaborador_id', 'motivo', 'estado']),
+            'filtros'       => $request->only(['colaborador_id', 'motivo', 'estado', 'buscar']),
         ]);
     }
 
@@ -81,7 +93,12 @@ class LiquidacionesController extends Controller
                 return response()->json(['error' => 'La fecha de salida no puede ser anterior a la fecha de ingreso ('.$fechaIngreso->format('d/m/Y').').'], 422);
             }
 
-            $mesesLaborados = (float)$fechaIngreso->diffInMonths($fechaSalida);
+            // Carbon 3 cambió diffInMonths() para devolver meses con fracción
+            // decimal (ej. 38.806451612903) en vez del entero truncado que
+            // devolvía Carbon 2 — el (int) explícito restaura el comportamiento
+            // original con el que se calibró esta fórmula de décimos/fondos de
+            // reserva (proporción por MES completo, no por fracción de mes).
+            $mesesLaborados = (int)$fechaIngreso->diffInMonths($fechaSalida);
             $diasLaborados  = (int)$fechaIngreso->diffInDays($fechaSalida);
 
             $decimoTercero = 0.0;

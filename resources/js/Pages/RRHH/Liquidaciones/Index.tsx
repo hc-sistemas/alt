@@ -7,7 +7,7 @@ import { Input } from '@/Components/ui/input'
 import { cn } from '@/lib/utils'
 import {
     FileText, CheckCircle2, AlertTriangle, Trash2, Eye, ChevronRight, ChevronLeft,
-    Download, PenLine, X,
+    Download, PenLine, X, Search,
 } from 'lucide-react'
 import { usePermiso } from '@/Hooks/usePermiso'
 import type { Liquidacion, LiquidacionCalculo, Colaborador, PageProps, PaginatedData } from '@/types'
@@ -20,9 +20,9 @@ interface ColabItem {
 }
 
 interface Props extends PageProps {
-    liquidaciones: PaginatedData<Liquidacion>
+    liquidaciones: PaginatedData<Liquidacion> | null
     colaboradores: ColabItem[]
-    filtros: { estado?: string; colaborador_id?: string }
+    filtros: { estado?: string; colaborador_id?: string; buscar?: string }
     flash?: { success?: string; error?: string }
 }
 
@@ -108,8 +108,15 @@ export default function LiquidacionesIndex({ liquidaciones, colaboradores, filtr
     const [errCalc, setErrCalc]       = useState<string | null>(null)
 
     // filtros
-    const [filtroEst, setFiltroEst]     = useState(filtros.estado ?? '')
-    const [filtroColab, setFiltroColab] = useState(filtros.colaborador_id ?? '')
+    const [filtro, setFiltro] = useState(filtros)
+
+    // Cambiar cualquier filtro después de haber buscado no vacía la tabla —
+    // solo la atenúa (opacity-60) hasta que se presione Buscar de nuevo.
+    // Mismo patrón ya usado en el resto del sistema esta sesión.
+    const [filtrosSucios, setFiltrosSucios] = useState(false)
+
+    // Carga bajo demanda: `liquidaciones` viene null hasta la primera búsqueda.
+    const haBuscado = liquidaciones !== null
 
     // modal PDF
     const [pdfUrl, setPdfUrl] = useState<string | null>(null)
@@ -119,16 +126,17 @@ export default function LiquidacionesIndex({ liquidaciones, colaboradores, filtr
         border: '1px solid var(--border)', borderRadius: 6, padding: '5px 10px', fontSize: 13, outline: 'none',
     }
 
-    function aplicarFiltros() {
-        router.get(route('rrhh.liquidaciones.index'), {
-            estado: filtroEst || undefined,
-            colaborador_id: filtroColab || undefined,
-        }, { preserveState: true, replace: true })
+    function cambiarFiltro<K extends keyof typeof filtro>(campo: K, valor: string) {
+        setFiltro(f => ({ ...f, [campo]: valor }))
+        setFiltrosSucios(true)
     }
 
-    function resetFiltros() {
-        setFiltroEst(''); setFiltroColab('')
-        router.get(route('rrhh.liquidaciones.index'), {}, { preserveState: true, replace: true })
+    function aplicarFiltros() {
+        router.get(route('rrhh.liquidaciones.index'), { ...filtro, buscado: '1' }, {
+            preserveState: true,
+            replace: true,
+            onSuccess: () => setFiltrosSucios(false),
+        })
     }
 
     function abrirWizard() { setWiz(initWizard()); setErrCalc(null); setModalOpen(true) }
@@ -265,7 +273,6 @@ export default function LiquidacionesIndex({ liquidaciones, colaboradores, filtr
 
             <PageHeader
                 title="Liquidaciones"
-                description="Finiquitos, cálculo de haberes y actas legales"
                 breadcrumbs={[{ label: 'RRHH' }, { label: 'Liquidaciones' }]}
                 actions={
                     puede('crear') ? (
@@ -282,29 +289,40 @@ export default function LiquidacionesIndex({ liquidaciones, colaboradores, filtr
                 {/* Toolbar */}
                 <div style={{ marginTop: 16 }}>
                     <FilterToolbar
-                        extraActions={
-                            <>
-                                <button onClick={aplicarFiltros}
-                                    style={{ ...inputStyle, cursor: 'pointer', background: 'var(--primary)', color: '#000', border: 'none', padding: '6px 12px' }}>
-                                    Filtrar
-                                </button>
-                                <button onClick={resetFiltros} style={{ ...inputStyle, cursor: 'pointer' }}>Limpiar</button>
-                            </>
-                        }
+                        search={{
+                            value: filtro.buscar ?? '',
+                            onChange: v => cambiarFiltro('buscar', v),
+                            onSearch: aplicarFiltros,
+                            placeholder: 'Buscar colaborador...',
+                        }}
                     >
-                        <select value={filtroColab} onChange={e => setFiltroColab(e.target.value)} style={inputStyle}>
-                            <option value="">Todos los colaboradores</option>
+                        <select value={filtro.colaborador_id ?? ''} onChange={e => cambiarFiltro('colaborador_id', e.target.value)}
+                            style={{ ...inputStyle, width: '160px' }}>
+                            <option value="">Colaborador</option>
                             {colaboradores.map(c => <option key={c.id} value={c.id}>{c.apellidos} {c.nombres}</option>)}
                         </select>
-                        <select value={filtroEst} onChange={e => setFiltroEst(e.target.value)} style={inputStyle}>
-                            <option value="">Estado: todos</option>
+                        <select value={filtro.estado ?? ''} onChange={e => cambiarFiltro('estado', e.target.value)}
+                            style={{ ...inputStyle, width: '110px' }}>
+                            <option value="">Estado</option>
                             <option value="borrador">Borrador</option>
                             <option value="aprobada">Aprobada</option>
                         </select>
                     </FilterToolbar>
                 </div>
 
+                {/* Estado inicial: aún no se ha buscado (carga bajo demanda) */}
+                {!haBuscado && (
+                    <div className="text-center py-16">
+                        <Search className="w-12 h-12 mx-auto mb-4 opacity-30" style={{ color: 'var(--text-muted)' }} />
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                            Ajusta los filtros y presiona Buscar para consultar las liquidaciones.
+                        </p>
+                    </div>
+                )}
+
                 {/* Tabla */}
+                {haBuscado && liquidaciones && (
+                <div className={cn(filtrosSucios && 'opacity-60 transition-opacity')}>
                 <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, overflow: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                         <thead>
@@ -326,7 +344,7 @@ export default function LiquidacionesIndex({ liquidaciones, colaboradores, filtr
                                     </td>
                                     <td style={{ padding: '8px 12px' }}>{motivoLabels[liq.motivo] ?? liq.motivo}</td>
                                     <td style={{ padding: '8px 12px', color: 'var(--text-muted)' }}>
-                                        {new Date(liq.fecha_salida + 'T12:00:00Z').toLocaleDateString('es-EC', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                        {new Date(liq.fecha_salida).toLocaleDateString('es-EC', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' })}
                                     </td>
                                     <td style={{ padding: '8px 12px', fontWeight: 700, color: '#4C1D95' }}>{fmt(liq.total_liquidacion)}</td>
                                     <td style={{ padding: '8px 12px' }}>
@@ -366,7 +384,7 @@ export default function LiquidacionesIndex({ liquidaciones, colaboradores, filtr
                     <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginTop: 16 }}>
                         {Array.from({ length: liquidaciones.last_page }, (_, i) => i + 1).map(p => (
                             <button key={p}
-                                onClick={() => router.get(route('rrhh.liquidaciones.index'), { ...filtros, page: p })}
+                                onClick={() => router.get(route('rrhh.liquidaciones.index'), { ...filtro, buscado: '1', page: p })}
                                 style={{
                                     padding: '5px 10px', borderRadius: 5, border: '1px solid var(--border)',
                                     background: p === liquidaciones.current_page ? 'var(--primary)' : 'var(--bg-card)',
@@ -375,6 +393,8 @@ export default function LiquidacionesIndex({ liquidaciones, colaboradores, filtr
                                 }}>{p}</button>
                         ))}
                     </div>
+                )}
+                </div>
                 )}
             </div>
 

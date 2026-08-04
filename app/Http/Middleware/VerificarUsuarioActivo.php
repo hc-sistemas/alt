@@ -17,7 +17,7 @@ class VerificarUsuarioActivo
             $request->session()->regenerateToken();
 
             return redirect()->route('login')
-                ->withErrors(['email' => 'Tu cuenta ha sido desactivada. Contacta al administrador.']);
+                ->withErrors(['usuario' => 'Tu cuenta ha sido desactivada. Contacta al administrador.']);
         }
 
         return $next($request);
