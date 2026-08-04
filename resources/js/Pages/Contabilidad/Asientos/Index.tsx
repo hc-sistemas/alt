@@ -65,7 +65,11 @@ export default function AsientosIndex() {
     const [buscar, setBuscar] = useState(filtros.buscar ?? '')
     const [tipo, setTipo] = useState(filtros.tipo ?? '')
     const [estado, setEstado] = useState(filtros.estado ?? '')
-    const [ejercicioId, setEjercicioId] = useState(filtros.ejercicio_id ?? '')
+    // Rango por defecto: el período fiscal abierto en vez de "sin fecha =
+    // todo el historial" — DomPDF no escala bien con el histórico completo
+    // sin filtro (probado real, ver CLAUDE.md); el usuario puede seguir
+    // ampliándolo o quitándolo si quiere esperar por el reporte completo.
+    const [ejercicioId, setEjercicioId] = useState(filtros.ejercicio_id ?? (periodoActivo ? String(periodoActivo.id) : ''))
     const [fechaDesde, setFechaDesde] = useState(filtros.fecha_desde ?? '')
     const [fechaHasta, setFechaHasta] = useState(filtros.fecha_hasta ?? '')
 

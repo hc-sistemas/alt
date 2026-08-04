@@ -30,16 +30,28 @@ interface Props extends PageProps {
 
 export default function ReportesIndex({ ejercicios, cuentas }: Props) {
 
+    // Período fiscal abierto (el primero con estado 'abierto' en la lista ya
+    // ordenada desc. por año/mes) — se usa como rango por defecto en Libro
+    // Diario y Mayor Contable en vez de "sin fecha = todo el historial".
+    // DomPDF no escala bien con el histórico completo sin filtro (probado
+    // real, ver CLAUDE.md); el usuario puede ampliarlo o quitarlo si quiere
+    // esperar por el reporte completo. Los otros 4 reportes de esta pantalla
+    // no lo necesitan: como mucho ~200 filas (una por cuenta), sin importar
+    // el rango de fechas.
+    const periodoActivo = useMemo(() => ejercicios.find(e => e.estado === 'abierto') ?? null, [ejercicios])
+    const primerDia = periodoActivo ? `${periodoActivo.anio}-${String(periodoActivo.mes).padStart(2, '0')}-01` : ''
+    const ultimoDia = periodoActivo ? new Date(periodoActivo.anio, periodoActivo.mes, 0).toISOString().slice(0, 10) : ''
+
     // Estado filtros Libro Diario
-    const [ldEjercicio,  setLdEjercicio]  = useState('')
+    const [ldEjercicio,  setLdEjercicio]  = useState(periodoActivo ? String(periodoActivo.id) : '')
     const [ldFechaDesde, setLdFechaDesde] = useState('')
     const [ldFechaHasta, setLdFechaHasta] = useState('')
 
     // Estado filtros Mayor
     const [mayorCuentaId,   setMayorCuentaId]   = useState('')
     const [mayorBusqueda,   setMayorBusqueda]   = useState('')
-    const [mayorFechaDesde, setMayorFechaDesde] = useState('')
-    const [mayorFechaHasta, setMayorFechaHasta] = useState('')
+    const [mayorFechaDesde, setMayorFechaDesde] = useState(primerDia)
+    const [mayorFechaHasta, setMayorFechaHasta] = useState(ultimoDia)
 
     // Estado filtros Balance Comprobación
     const [bcEjercicio,  setBcEjercicio]  = useState('')
