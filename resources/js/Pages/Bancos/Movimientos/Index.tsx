@@ -44,7 +44,7 @@ interface Props extends PageProps {
     centrosCosto: Pick<CentroCosto, 'id' | 'nombre'>[]
     filtros: {
         banco_caja_id?: string; tipo?: string; fecha_desde?: string; fecha_hasta?: string; buscar?: string
-        centro_costo_id?: string
+        centro_costo_id?: string; persona_tipo?: string; persona_id?: string
     }
     stats: { total_ingresos: number; total_egresos: number; pendientes_conciliar: number } | null
 }
@@ -427,6 +427,16 @@ export default function MovimientosIndex() {
         setFiltrosSucios(true)
     }
 
+    // El filtro de Persona combina proveedores+clientes en un solo select (mismo
+    // criterio que el selector del modal Nuevo Movimiento) — el backend ya
+    // filtraba por persona_tipo/persona_id (queryFiltrada) pero esta página nunca
+    // tuvo el control para mandarlos, así que el filtro era inalcanzable desde la UI.
+    function cambiarPersona(valor: string) {
+        const [tipo, id] = valor ? valor.split(':') : ['', '']
+        setFiltro(f => ({ ...f, persona_tipo: tipo, persona_id: id }))
+        setFiltrosSucios(true)
+    }
+
     function buscar() {
         router.get(route('bancos.movimientos.index'), { ...filtro, buscado: '1' } as any, {
             preserveState: true,
@@ -591,7 +601,7 @@ export default function MovimientosIndex() {
                     Proveedores/Cuentas por Pagar/Anticipos/Devoluciones/Importaciones.
                 */}
                 <div className="overflow-x-auto">
-                <div style={{ minWidth: '950px' }}>
+                <div style={{ minWidth: '1100px' }}>
                 <FilterToolbar
                     search={{
                         value: filtro.buscar ?? '',
@@ -642,6 +652,23 @@ export default function MovimientosIndex() {
                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '132px' }}>
                         <option value="">Centros</option>
                         {centrosCosto.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                    </select>
+
+                    <select value={filtro.persona_tipo && filtro.persona_id ? `${filtro.persona_tipo}:${filtro.persona_id}` : ''}
+                        onChange={e => cambiarPersona(e.target.value)}
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '140px' }}>
+                        <option value="">Persona</option>
+                        {clientes.length > 0 && (
+                            <optgroup label="Clientes">
+                                {clientes.map(c => <option key={`cliente:${c.id}`} value={`cliente:${c.id}`}>{c.nombre}</option>)}
+                            </optgroup>
+                        )}
+                        {proveedores.length > 0 && (
+                            <optgroup label="Proveedores">
+                                {proveedores.map(p => <option key={`proveedor:${p.id}`} value={`proveedor:${p.id}`}>{p.nombre}</option>)}
+                            </optgroup>
+                        )}
                     </select>
 
                     <div className="flex flex-col gap-1 shrink-0 self-end">
