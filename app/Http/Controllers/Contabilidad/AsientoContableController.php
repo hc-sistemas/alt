@@ -9,14 +9,11 @@ use App\Models\Empresa;
 use App\Models\PlanCuenta;
 use App\Services\AsientoService;
 use App\Exports\AsientosExport;
-use App\Jobs\ExportarAsientosJob;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Maatwebsite\Excel\Facades\Excel;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -223,104 +220,27 @@ class AsientoContableController extends Controller
             ->with('success', "Asiento {$numero} eliminado permanentemente.");
     }
 
-    // CORRECCIÓN 5: exportar a Excel
-    public function exportarExcel(Request $request): \Symfony\Component\HttpFoundation\BinaryFileResponse|RedirectResponse
+    public function exportarExcel(Request $request): \Symfony\Component\HttpFoundation\BinaryFileResponse
     {
         $empresaId = session('empresa_activa_id');
 
-        // CORRECCIÓN 6: reenviar TODOS los filtros (antes se perdían tipo/estado
-        // aunque el frontend ya los enviaba y AsientosExport ya sabía filtrarlos).
         $filtros = $request->only([
             'ejercicio_id', 'fecha_desde', 'fecha_hasta', 'tipo', 'estado',
         ]);
 
-        // Con miles de asientos reales, exportar sin ningún filtro intenta generar
-        // el histórico completo (~11 mil registros) y no termina en un tiempo
-        // razonable — exigir al menos un filtro antes de generar el archivo.
-        if (empty(array_filter($filtros))) {
-            return back()->with('error',
-                'Aplica al menos un filtro (período, fechas, tipo o estado) antes de exportar a Excel.');
-        }
+        // Sin filtro genera el histórico completo (~11 mil asientos / ~28 mil
+        // líneas de detalle) — memory_limit elevado con el mismo margen que
+        // antes corría en el worker de colas (ver max_execution_time también
+        // subido para esta ruta en config/php.ini o el servidor web).
+        ini_set('memory_limit', '1536M');
 
-        // CORRECCIÓN 7: un filtro "técnicamente aplicado" (ej. un rango de
-        // fechas muy amplio) puede seguir generando decenas de miles de líneas
-        // de detalle. Aunque el estilado ya se optimizó (duplicateStyle() en
-        // vez de applyFromArray() por celda), medido empíricamente el archivo
-        // completo (query + estilos + escritura real del .xlsx) toma ~3.27ms
-        // por línea de detalle — por encima de MAX_FILAS_DETALLE (3,000) ya no
-        // entra en un tiempo de respuesta razonable (~10s). Se rechaza antes
-        // de intentar construirlo, en vez de dejar que el request cuelgue.
         $asientosExport = new AsientosExport((int)$empresaId, $filtros);
-        $totalDetalles  = $asientosExport->sheets()[1]->contarDetalles();
-        if ($totalDetalles > \App\Exports\AsientosDetalleSheet::MAX_FILAS_DETALLE) {
-            return back()->with('error',
-                "El filtro actual generaría {$totalDetalles} líneas de detalle — demasiadas para exportar de una vez " .
-                '(máximo ' . \App\Exports\AsientosDetalleSheet::MAX_FILAS_DETALLE . '). ' .
-                'Acota el rango de fechas o selecciona un período específico.');
-        }
 
         return Excel::download(
             $asientosExport,
             'asientos-' . now()->format('Y-m-d') . '.xlsx',
             \Maatwebsite\Excel\Excel::XLSX
         );
-    }
-
-    // Chequeo liviano (sin generar nada) para que el frontend decida, ANTES de
-    // pedir la descarga, si el filtro actual entra en el camino rápido
-    // (síncrono) o necesita el camino de segundo plano (Job en cola).
-    public function contarExportables(Request $request): JsonResponse
-    {
-        $empresaId = session('empresa_activa_id');
-        $filtros   = $request->only(['ejercicio_id', 'fecha_desde', 'fecha_hasta', 'tipo', 'estado']);
-
-        $total = (new AsientosExport((int)$empresaId, $filtros))
-            ->sheets()[1]->contarDetalles();
-
-        return response()->json([
-            'total'  => $total,
-            'limite' => \App\Exports\AsientosDetalleSheet::MAX_FILAS_DETALLE,
-            'excede' => $total > \App\Exports\AsientosDetalleSheet::MAX_FILAS_DETALLE,
-        ]);
-    }
-
-    // Camino de segundo plano: sin límite de filas (ExportarAsientosJob no
-    // aplica MAX_FILAS_DETALLE), genera el archivo completo en el worker de
-    // colas y avisa por notificación cuando está listo — ver CLAUDE.md para
-    // el requisito de QUEUE_CONNECTION + `php artisan queue:work`.
-    public function exportarSegundoPlano(Request $request): RedirectResponse
-    {
-        $request->validate(['formato' => 'required|in:excel,pdf']);
-
-        $empresaId = session('empresa_activa_id');
-        $filtros   = $request->only(['ejercicio_id', 'fecha_desde', 'fecha_hasta', 'tipo', 'estado']);
-
-        ExportarAsientosJob::dispatch((int)$empresaId, (int)Auth::id(), $filtros, $request->string('formato')->toString());
-
-        return back()->with('success',
-            'Tu exportación se está procesando en segundo plano. Te avisaremos por notificación cuando esté lista para descargar.');
-    }
-
-    // Sirve el archivo generado por ExportarAsientosJob. Autorización simple:
-    // el nombre de archivo lleva el usuario_id como prefijo (ver el Job), y
-    // basename() descarta cualquier intento de path traversal en la ruta.
-    public function descargarExportacion(string $archivo): \Symfony\Component\HttpFoundation\Response
-    {
-        $archivo = basename($archivo);
-
-        if (!str_starts_with($archivo, Auth::id() . '_')) {
-            abort(403, 'No tienes acceso a este archivo.');
-        }
-
-        $ruta = ExportarAsientosJob::CARPETA . "/{$archivo}";
-        if (!Storage::disk('local')->exists($ruta)) {
-            abort(404, 'El archivo expiró o ya no está disponible (las exportaciones se conservan 48 horas). Genera la exportación nuevamente.');
-        }
-
-        $extension     = pathinfo($archivo, PATHINFO_EXTENSION);
-        $nombreDescarga = 'asientos-' . now()->format('Y-m-d') . ".{$extension}";
-
-        return Storage::disk('local')->download($ruta, $nombreDescarga);
     }
 
     public function reportePdf(Request $request): \Symfony\Component\HttpFoundation\Response
@@ -331,12 +251,7 @@ class AsientoContableController extends Controller
             'ejercicio_id', 'fecha_desde', 'fecha_hasta', 'tipo', 'estado',
         ]);
 
-        // Mismo candado que exportarExcel(): dompdf tampoco puede procesar el
-        // histórico completo en un tiempo razonable sin al menos un filtro.
-        if (empty(array_filter($filtros))) {
-            return back()->with('error',
-                'Aplica al menos un filtro (período, fechas, tipo o estado) antes de generar el PDF.');
-        }
+        ini_set('memory_limit', '1536M');
 
         // pdf.asientos-reporte solo usa $asiento->ejercicio (un renglón por
         // asiento, no por línea de detalle) — eager-cargar creadoPor/

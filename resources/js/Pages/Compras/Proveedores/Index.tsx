@@ -11,7 +11,7 @@ import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
 import {
     Plus, Pencil, ToggleLeft, ToggleRight, X,
-    FileText, Download, ShoppingCart, Search, Loader2,
+    FileText, Download, ShoppingCart, Search,
 } from 'lucide-react'
 import type { Proveedor, PageProps } from '@/types'
 import { usePermiso } from '@/Hooks/usePermiso'
@@ -377,93 +377,14 @@ export default function ProveedoresIndex() {
         setUrlPdf('')
     }
 
-    // ── Excel/PDF grandes (> MAX_FILAS_EXPORT): ofrecer generarlos en
-    //    segundo plano en vez de solo bloquear — mismo patrón que Asientos
-    //    Contables / Facturas de Compra. ──────────────────────────────────
-    const [verificandoExport, setVerificandoExport] = useState<'excel' | 'pdf' | null>(null)
-    const [exportandoFondo, setExportandoFondo] = useState<{ formato: 'excel' | 'pdf'; desde: number } | null>(null)
-
-    const confirmarExportacionSegundoPlano = (formato: 'excel' | 'pdf') => {
-        router.post(route('compras.proveedores.exportar-segundo-plano'), {
-            formato, ...paramsFiltrosActuales(),
-        }, {
-            preserveScroll: true,
-            preserveState: true,
-            onSuccess: () => setExportandoFondo({ formato, desde: Date.now() }),
-        })
-    }
-
-    const iniciarExportacion = async (formato: 'excel' | 'pdf') => {
-        setVerificandoExport(formato)
-        try {
-            const params = new URLSearchParams(paramsFiltrosActuales())
-            const res = await fetch(route('compras.proveedores.contar-exportables') + '?' + params)
-            if (!res.ok) throw new Error()
-            const data = await res.json() as { total: number; limite: number; excede: boolean }
-
-            if (!data.excede) {
-                if (formato === 'excel') {
-                    window.location.href = route('compras.proveedores.excel') + '?' + params
-                } else {
-                    abrirPdf(route('compras.proveedores.pdf') + '?' + params)
-                }
-                return
-            }
-
-            const { isConfirmed } = await Swal.fire({
-                ...swalBase,
-                title: 'Reporte grande',
-                html: `
-                    <div style="text-align:left;color:#374151;font-size:0.875rem;line-height:1.5">
-                        <p>Este reporte tiene <strong>${data.total.toLocaleString('es-EC')}</strong> proveedores con
-                        estos filtros — muy grande para generarse al instante (límite: ${data.limite.toLocaleString('es-EC')}).</p>
-                        <p style="margin-top:8px">Se procesará en segundo plano y te avisaremos por notificación
-                        (campanita) cuando esté listo para descargar.</p>
-                    </div>
-                `,
-                icon: 'info',
-                showCancelButton: true,
-                confirmButtonColor: '#F59E0B',
-                confirmButtonText: 'Procesar en segundo plano',
-                cancelButtonText: 'Cancelar',
-                reverseButtons: true,
-            })
-
-            if (isConfirmed) confirmarExportacionSegundoPlano(formato)
-        } catch {
-            notify.error('No se pudo verificar el tamaño del reporte. Intenta de nuevo.')
-        } finally {
-            setVerificandoExport(null)
+    const iniciarExportacion = (formato: 'excel' | 'pdf') => {
+        const params = new URLSearchParams(paramsFiltrosActuales())
+        if (formato === 'excel') {
+            window.location.href = route('compras.proveedores.excel') + '?' + params
+        } else {
+            abrirPdf(route('compras.proveedores.pdf') + '?' + params)
         }
     }
-
-    // Sin websockets/polling en el backend — se consulta el mismo endpoint
-    // que ya usa la campana de notificaciones (notificaciones.index) cada
-    // 15s, mientras haya una exportación en curso, hasta encontrarla o 10
-    // minutos.
-    useEffect(() => {
-        if (!exportandoFondo) return
-        const intervalo = setInterval(async () => {
-            if (Date.now() - exportandoFondo.desde > 10 * 60 * 1000) {
-                setExportandoFondo(null)
-                return
-            }
-            try {
-                const res = await fetch(route('notificaciones.index'))
-                if (!res.ok) return
-                const data = await res.json() as { notificaciones: { tipo: string; created_at: string }[] }
-                const lista = data.notificaciones.some(n =>
-                    (n.tipo === 'exportacion_proveedores' || n.tipo === 'exportacion_proveedores_error') &&
-                    new Date(n.created_at).getTime() >= exportandoFondo.desde
-                )
-                if (lista) {
-                    notify.ok('Tu exportación terminó de procesarse — revisa la campana de notificaciones para descargarla.')
-                    setExportandoFondo(null)
-                }
-            } catch { /* red momentáneamente caída — se reintenta en el próximo tick */ }
-        }, 15000)
-        return () => clearInterval(intervalo)
-    }, [exportandoFondo])
 
     async function confirmarToggle(p: Proveedor) {
         if (!p.estado && (p.saldo_pendiente ?? 0) > 0) {
@@ -513,17 +434,6 @@ export default function ProveedoresIndex() {
                 }
             />
 
-            {exportandoFondo && (
-                <div className="flex items-center gap-2 text-xs rounded-lg px-3 py-2 mx-6 mt-4"
-                    style={{ background: 'color-mix(in srgb, var(--primary) 12%, var(--bg-main))', color: 'var(--text-main)' }}>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" style={{ color: 'var(--primary)' }} />
-                    <span>
-                        Tu {exportandoFondo.formato === 'excel' ? 'Excel' : 'PDF'} se está procesando en segundo
-                        plano — te avisaremos por notificación cuando esté listo.
-                    </span>
-                </div>
-            )}
-
             <div className="px-6 pt-6 mb-2">
                 {/*
                     Ancho vía `style.width` inline a propósito, NO clases Tailwind: `.input-field`
@@ -544,14 +454,12 @@ export default function ProveedoresIndex() {
                     }}
                     searchWidth="w-[130px]"
                     onExport={() => iniciarExportacion('excel')}
-                    exportDisabled={verificandoExport !== null}
-                    exportTitle={verificandoExport === 'excel' ? 'Verificando tamaño…' : 'Exportar a Excel'}
                     extraActions={
                         <button
                             type="button"
                             onClick={() => iniciarExportacion('pdf')}
-                            disabled={verificandoExport !== null}
-                            title={verificandoExport === 'pdf' ? 'Verificando tamaño…' : 'PDF'}
+                            disabled={cargandoPdf}
+                            title={cargandoPdf ? 'Generando PDF…' : 'PDF'}
                             className="flex items-center justify-center w-9 h-9 rounded-md border text-sm font-medium shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
                             style={{ background: '#EF4444', color: 'white', borderColor: '#EF4444' }}>
                             <FileText className="w-4 h-4" />

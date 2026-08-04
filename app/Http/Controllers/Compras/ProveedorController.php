@@ -3,36 +3,17 @@ namespace App\Http\Controllers\Compras;
 
 use App\Http\Controllers\Controller;
 use App\Exports\ProveedoresExport;
-use App\Jobs\ExportarProveedoresJob;
 use App\Models\Empresa;
 use App\Models\Proveedor;
 use Barryvdh\DomPDF\Facade\Pdf;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 use Maatwebsite\Excel\Facades\Excel;
 
 class ProveedorController extends Controller
 {
-    // DomPDF/PhpSpreadsheet no escalan bien a tablas muy grandes (mismo
-    // hallazgo confirmado con Facturas de Compra: DomPDF agota memory_limit
-    // en Cellmap::resolve_border() en tablas de cientos/miles de filas). Un
-    // solo umbral sirve para Excel y PDF: 1 proveedor = 1 fila en ambos
-    // formatos (a diferencia de Asientos, que cuenta líneas de detalle
-    // distinto de asientos).
-    //
-    // Calibrado con curl real (no tinker) contra esta plantilla específica
-    // (pdf.proveedores), no copiado del valor de Facturas de Compra: 300
-    // filas ~3.7s, 500 filas ~6.7s (aceptable), 800 filas ~13.2s (demasiado
-    // lento para el camino "rápido" — ya no se siente instantáneo), 1200
-    // filas revienta memory_limit igual que en Compras. 500 es el punto
-    // donde el camino síncrono sigue sintiéndose rápido.
-    private const MAX_FILAS_EXPORT = 500;
-
     private function queryFiltrada(Request $request)
     {
         $empresaId = session('empresa_activa_id');
@@ -175,17 +156,11 @@ class ProveedorController extends Controller
         return back()->with('success', "Proveedor {$accion} correctamente.");
     }
 
-    public function pdf(Request $request): \Illuminate\Http\Response|JsonResponse
+    public function pdf(Request $request): \Illuminate\Http\Response
     {
-        $empresaId = session('empresa_activa_id');
+        ini_set('memory_limit', '2560M');
 
-        $total = $this->queryFiltrada($request)->count();
-        if ($total > self::MAX_FILAS_EXPORT) {
-            return response()->json([
-                'message' => "Hay {$total} proveedores con estos filtros — demasiados para generar un PDF de una vez " .
-                    '(máximo ' . self::MAX_FILAS_EXPORT . '). Aplica un filtro más específico.',
-            ], 422);
-        }
+        $empresaId = session('empresa_activa_id');
 
         $proveedores = $this->queryFiltrada($request)->orderBy('razon_social')->get();
         $empresa     = Empresa::find($empresaId);
@@ -194,77 +169,17 @@ class ProveedorController extends Controller
         return $pdf->stream('proveedores-' . now()->format('Y-m-d') . '.pdf');
     }
 
-    public function excel(Request $request): \Symfony\Component\HttpFoundation\BinaryFileResponse|JsonResponse
+    public function excel(Request $request): \Symfony\Component\HttpFoundation\BinaryFileResponse
     {
+        ini_set('memory_limit', '2560M');
+
         $empresaId = session('empresa_activa_id');
         $filtros   = $request->only(['tipo', 'estado', 'credito', 'buscar']);
-
-        $total = $this->queryFiltrada($request)->count();
-        if ($total > self::MAX_FILAS_EXPORT) {
-            return response()->json([
-                'message' => "Hay {$total} proveedores con estos filtros — demasiados para exportar de una vez " .
-                    '(máximo ' . self::MAX_FILAS_EXPORT . '). Aplica un filtro más específico.',
-            ], 422);
-        }
 
         return Excel::download(
             new ProveedoresExport((int) $empresaId, $filtros),
             'proveedores-' . now()->format('Y-m-d') . '.xlsx',
             \Maatwebsite\Excel\Excel::XLSX
         );
-    }
-
-    // Chequeo liviano (sin generar nada) para que el frontend decida, ANTES
-    // de pedir Excel/PDF, si el filtro actual entra en el camino rápido
-    // (síncrono) o necesita el camino de segundo plano (Job en cola) — mismo
-    // patrón que AsientoContableController::contarExportables().
-    public function contarExportables(Request $request): JsonResponse
-    {
-        $total = $this->queryFiltrada($request)->count();
-
-        return response()->json([
-            'total'  => $total,
-            'limite' => self::MAX_FILAS_EXPORT,
-            'excede' => $total > self::MAX_FILAS_EXPORT,
-        ]);
-    }
-
-    // Camino de segundo plano: sin límite de filas (ExportarProveedoresJob
-    // no aplica MAX_FILAS_EXPORT), genera el archivo completo en el worker
-    // de colas y avisa por notificación cuando está listo — ver CLAUDE.md
-    // para el requisito de QUEUE_CONNECTION + `php artisan queue:work`.
-    public function exportarSegundoPlano(Request $request): RedirectResponse
-    {
-        $request->validate(['formato' => 'required|in:excel,pdf']);
-
-        $empresaId = session('empresa_activa_id');
-        $filtros   = $request->only(['tipo', 'estado', 'credito', 'buscar']);
-
-        ExportarProveedoresJob::dispatch((int) $empresaId, (int) Auth::id(), $filtros, $request->string('formato')->toString());
-
-        return back()->with('success',
-            'Tu exportación de Proveedores se está procesando en segundo plano. Te avisaremos por notificación cuando esté lista para descargar.');
-    }
-
-    // Sirve el archivo generado por ExportarProveedoresJob. Autorización
-    // simple: el nombre de archivo lleva el usuario_id como prefijo (ver el
-    // Job), y basename() descarta cualquier intento de path traversal.
-    public function descargarExportacion(string $archivo): \Illuminate\Http\Response
-    {
-        $archivo = basename($archivo);
-
-        if (!str_starts_with($archivo, Auth::id() . '_')) {
-            abort(403, 'No tienes acceso a este archivo.');
-        }
-
-        $ruta = ExportarProveedoresJob::CARPETA . "/{$archivo}";
-        if (!Storage::disk('local')->exists($ruta)) {
-            abort(404, 'El archivo expiró o ya no está disponible (las exportaciones se conservan 48 horas). Genera la exportación nuevamente.');
-        }
-
-        $extension      = pathinfo($archivo, PATHINFO_EXTENSION);
-        $nombreDescarga = 'proveedores-' . now()->format('Y-m-d') . ".{$extension}";
-
-        return Storage::disk('local')->download($ruta, $nombreDescarga);
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Jobs\Concerns\ConstruyeUrlDescargaExportacion;
 use App\Models\Nomina;
 use App\Models\Notificacion;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -17,12 +18,13 @@ use Illuminate\Support\Str;
  * Genera el ZIP con el rol de pago (PDF) de cada colaborador de una nómina
  * en segundo plano — antes se generaba de forma síncrona dentro del propio
  * request HTTP (NominaController::pdfMasivo original), bloqueando la UI
- * mientras DomPDF renderizaba un PDF por colaborador uno por uno. Mismo
- * patrón que ExportarLibroDiarioJob/ExportarMayorJob.
+ * mientras DomPDF renderizaba un PDF por colaborador uno por uno. Es el
+ * único export que sigue en segundo plano (requerimiento explícito del
+ * cliente) tras revertir el resto de exportaciones PDF/Excel a síncronas.
  */
 class ExportarNominaZipJob implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels, ConstruyeUrlDescargaExportacion;
 
     public const CARPETA = 'exportaciones-nomina';
 
@@ -67,15 +69,13 @@ class ExportarNominaZipJob implements ShouldQueue
         array_map('unlink', glob("{$tmpDir}/*.pdf"));
         rmdir($tmpDir);
 
-        $rutaRelativa = route('rrhh.nomina.exportacion.descargar', ['archivo' => $nombreArchivo], false);
-
         Notificacion::create([
             'usuario_id' => $this->usuarioId,
             'tipo'       => 'exportacion_nomina',
             'titulo'     => 'ZIP de roles de pago listo',
             'mensaje'    => "El ZIP con los roles de pago de {$nomina->detalles->count()} colaborador(es) ya está listo para descargar (disponible por 48 horas).",
             'icono'      => 'download',
-            'url'        => $this->baseUrl . $rutaRelativa,
+            'url'        => $this->urlDescarga($this->baseUrl, 'rrhh.nomina.exportacion.descargar', ['archivo' => $nombreArchivo]),
             'leida'      => false,
         ]);
     }

@@ -275,21 +275,32 @@ APP_URL=http://127.0.0.1:8000  # ajustar según entorno
 
 ---
 
-## Colas (queue:work) — requerido para exportación en segundo plano de Asientos
+## Colas (queue:work) — requerido solo para el ZIP de Nómina
+
+**Decisión (2026-08-03):** el patrón "límite de filas + Job en cola +
+notificación" que se había extendido a Facturas de Compra, Cuentas por
+Pagar, Movimientos Bancarios, Reportes Contables (Libro Diario/Mayor),
+Proveedores y Asientos Contables (Excel/PDF) fue revertido — las seis
+exportaciones vuelven a generarse **siempre de forma síncrona**, sin
+límite de filas ni Job, con `ini_set('memory_limit', ...)` en el propio
+controller para cubrir el mismo margen que antes tenía el Job (DomPDF/
+PhpSpreadsheet en tablas grandes no escala bien por debajo de 512M — ver
+comentarios en cada método `pdf()`/`excel()`). El único endpoint que
+sigue en segundo plano es el **ZIP de roles de pago de Nómina**
+(`NominaController::pdfMasivo()` → `App\Jobs\ExportarNominaZipJob`) — así
+lo pidió el cliente explícitamente, no tocar esa decisión sin pedirlo.
 
 `QUEUE_CONNECTION=database` (la tabla `jobs` ya está migrada). A diferencia de
 los 4 Jobs de alertas (`AlertaVencimientoCxP`, `AlertaVouchersNoLiquidados`,
 `AlertaAtrasosRecurrentes`, `RecordatorioCierreNomina`), que solo se disparan
 vía `Schedule::job()` en `routes/console.php` y por eso no necesitan un worker
 persistente para funcionar en desarrollo (el scheduler los ejecuta inline en
-su propio tick), **`App\Jobs\ExportarAsientosJob`** (exportación de Asientos
-Contables cuando el reporte es demasiado grande para generarse al instante —
-ver `AsientoContableController::exportarSegundoPlano()`) se dispara desde una
+su propio tick), **`App\Jobs\ExportarNominaZipJob`** se dispara desde una
 acción real del usuario y **se queda esperando en la tabla `jobs` para
 siempre si no hay un worker corriendo**.
 
 ```bash
-# Requerido para que la exportación en segundo plano de Asientos funcione:
+# Requerido para que el ZIP de roles de pago de Nómina funcione:
 php artisan queue:work
 
 # En producción, correr esto bajo Supervisor (o systemd) para que se
@@ -297,11 +308,46 @@ php artisan queue:work
 # este repo todavía — agregarlo es responsabilidad del deploy.
 ```
 
-El Job de limpieza `LimpiarExportacionesAsientosJob` (borra archivos de
-`storage/app/private/exportaciones-asientos/` con más de 48h) SÍ está
-programado vía `Schedule::job()->dailyAt('03:00')`, así que ese no necesita
+El Job de limpieza `LimpiarExportacionesNominaJob` (borra archivos de
+`storage/app/private/exportaciones-nomina/` con más de 48h) SÍ está
+programado vía `Schedule::job()->dailyAt('03:25')`, así que ese no necesita
 un worker aparte — pero el propio `schedule:run` sí necesita correr (cron o
 `php artisan schedule:work` en desarrollo).
+
+**Link de descarga en la notificación:** se arma con el host REAL de la
+request que disparó el Job (`$request->getSchemeAndHttpHost()`, capturado en
+el controller y pasado al Job), nunca con `route()` a secas ni con
+`config('app.url')` — dentro de un Job no hay request activa, así que
+`route()` cae al host fijo de `config/app.php`, que puede no coincidir con
+el que realmente sirvió la petición. La construcción está centralizada en
+el trait `App\Jobs\Concerns\ConstruyeUrlDescargaExportacion` (método
+`urlDescarga()`) — cualquier Job nuevo que notifique un link de descarga
+debe usar este trait en vez de repetir la concatenación a mano.
+
+**`max_execution_time`:** ya está en 36000s en el php.ini activo de este
+entorno (Laragon) — muy por encima de lo que tarda cualquiera de estas
+exportaciones (peor caso medido: ~3 min con el histórico completo de
+Asientos sin filtro). No fue necesario subirlo. Verificar el valor real en
+el servidor de producción cuando exista, ya que php.ini no viaja con el
+repo.
+
+**Hallazgo residual sin resolver — Mayor Contable / Libro Diario en el caso
+extremo sin ningún filtro:** DomPDF (`Cellmap::resolve_border()`) escala
+peor que lineal con el número de filas de la tabla. Probado con datos
+reales: el Mayor Contable de la cuenta más activa (1.1.4.01, 6,218 líneas,
+histórico completo sin filtro de fecha) agota memory_limit tanto en 2560M
+como en 4096M — no es un problema que más memoria resuelva sin más. Libro
+Diario sin ningún filtro (28,684 líneas totales) tardó más de 13 minutos
+sin terminar en la prueba (no se confirmó si termina o revienta memoria
+igual que Mayor). Esto es un caso de uso extremo (todo el historial
+multi-año de una sola cuenta o de toda la contabilidad, sin acotar ni
+siquiera por año) — con un rango acotado mayor al límite viejo (ej. Mayor
+con 1,176 líneas / 6 meses, o Libro Diario con ~2,700 líneas / 3 meses)
+genera bien en 14-140s. Si el cliente necesita el caso 100% sin filtro
+específicamente, hace falta optimizar el render de DomPDF (paginar la
+tabla, o quitar bordes por celda) o aceptar que ese caso puntual seguirá
+sin funcionar — no se resolvió en esta tarea, reportado explícitamente en
+vez de darlo por bueno.
 
 ---
 

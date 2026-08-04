@@ -3,7 +3,6 @@ namespace App\Http\Controllers\Compras;
 
 use App\Http\Controllers\Controller;
 use App\Exports\ComprasExport;
-use App\Jobs\ExportarComprasJob;
 use App\Models\Bodega;
 use App\Models\Compra;
 use App\Models\CompraDetalle;
@@ -1431,91 +1430,23 @@ class CompraController extends Controller
         return back()->with('success', "Factura {$numero} eliminada correctamente.");
     }
 
-    // DomPDF agota memory_limit (512MB) renderizando tablas grandes — confirmado
-    // que ~1200 filas ya crashean en Cellmap::resolve_border() con un 500 sin
-    // ningún log (el fatal error por memoria ocurre durante el shutdown, antes de
-    // que el logger pueda escribir). Con miles de compras reales en producción,
-    // un reporte sin filtro (o con un rango muy amplio) intentaba renderizar el
-    // histórico completo y crasheaba en silencio — el iframe del modal quedaba en
-    // blanco sin ningún feedback. 800 filas quedó calibrado con margen cómodo
-    // (600 filas ~10s y ~2.2MB de HTML, sin problema).
-    private const MAX_FILAS_PDF = 800;
-
-    public function pdf(Request $request): \Illuminate\Http\Response|JsonResponse
+    public function pdf(Request $request): \Illuminate\Http\Response
     {
+        // DomPDF con el histórico completo sin filtro (~2,239 facturas reales)
+        // midió un pico de ~1,754MB — margen sobre ese pico medido, no un
+        // valor arbitrario (mismo hallazgo que tenía ExportarComprasJob).
+        ini_set('memory_limit', '2560M');
+
         $empresaId = session('empresa_activa_id');
         $query     = Compra::with('proveedor')->where('empresa_id', $empresaId);
         if ($request->filled('estado'))      { $query->where('estado', $request->estado); }
         if ($request->filled('fecha_desde')) { $query->where('fecha_emision', '>=', $request->fecha_desde); }
         if ($request->filled('fecha_hasta')) { $query->where('fecha_emision', '<=', $request->fecha_hasta); }
 
-        $total = (clone $query)->count();
-        if ($total > self::MAX_FILAS_PDF) {
-            return response()->json([
-                'message' => "Hay {$total} facturas con estos filtros — demasiadas para generar un PDF de una vez " .
-                    '(máximo ' . self::MAX_FILAS_PDF . '). Aplica un filtro de estado o un rango de fechas más específico.',
-            ], 422);
-        }
-
         $compras = $query->orderByDesc('fecha_emision')->get();
         $empresa = Empresa::find($empresaId);
         $pdf = Pdf::loadView('pdf.compras', compact('compras', 'empresa'))->setPaper('a4', 'landscape');
         return $pdf->stream('facturas-compra-' . now()->format('Y-m-d') . '.pdf');
-    }
-
-    // Chequeo liviano (sin generar nada) para que el frontend decida, ANTES de
-    // pedir el PDF, si el filtro actual entra en el camino rápido (síncrono)
-    // o necesita el camino de segundo plano (Job en cola) — mismo patrón que
-    // AsientoContableController::contarExportables().
-    public function contarFacturasPdf(Request $request): JsonResponse
-    {
-        $empresaId = session('empresa_activa_id');
-        $query     = Compra::where('empresa_id', $empresaId);
-        if ($request->filled('estado'))      { $query->where('estado', $request->estado); }
-        if ($request->filled('fecha_desde')) { $query->where('fecha_emision', '>=', $request->fecha_desde); }
-        if ($request->filled('fecha_hasta')) { $query->where('fecha_emision', '<=', $request->fecha_hasta); }
-
-        $total = $query->count();
-
-        return response()->json([
-            'total'  => $total,
-            'limite' => self::MAX_FILAS_PDF,
-            'excede' => $total > self::MAX_FILAS_PDF,
-        ]);
-    }
-
-    // Camino de segundo plano: sin límite de filas (ExportarComprasJob no
-    // aplica MAX_FILAS_PDF), genera el archivo completo en el worker de colas
-    // y avisa por notificación cuando está listo — ver CLAUDE.md para el
-    // requisito de QUEUE_CONNECTION + `php artisan queue:work`.
-    public function pdfSegundoPlano(Request $request): RedirectResponse
-    {
-        $empresaId = session('empresa_activa_id');
-        $filtros   = $request->only(['estado', 'fecha_desde', 'fecha_hasta']);
-
-        ExportarComprasJob::dispatch((int) $empresaId, (int) Auth::id(), $filtros);
-
-        return back()->with('success',
-            'Tu PDF de Facturas de Compra se está procesando en segundo plano. Te avisaremos por notificación cuando esté listo para descargar.');
-    }
-
-    // Sirve el archivo generado por ExportarComprasJob. Autorización simple:
-    // el nombre de archivo lleva el usuario_id como prefijo (ver el Job), y
-    // basename() descarta cualquier intento de path traversal en la ruta.
-    public function descargarPdfSegundoPlano(string $archivo): \Illuminate\Http\Response
-    {
-        $archivo = basename($archivo);
-
-        if (!str_starts_with($archivo, Auth::id() . '_')) {
-            abort(403, 'No tienes acceso a este archivo.');
-        }
-
-        $ruta = ExportarComprasJob::CARPETA . "/{$archivo}";
-        if (!Storage::disk('local')->exists($ruta)) {
-            abort(404, 'El archivo expiró o ya no está disponible (las exportaciones se conservan 48 horas). Genera el PDF nuevamente.');
-        }
-
-        return Storage::disk('local')->download($ruta, 'facturas-compra-' . now()->format('Y-m-d') . '.pdf');
     }
 
     public function excel(Request $request): \Symfony\Component\HttpFoundation\BinaryFileResponse

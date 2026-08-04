@@ -11,8 +11,7 @@ use Illuminate\Support\Facades\Storage;
 
 /**
  * Borra los ZIP generados por ExportarNominaZipJob con más de 48 horas.
- * Mismo patrón que LimpiarExportacionesReportesContablesJob/Compras/
- * Proveedores/CxP.
+ * Único Job de exportación que sigue en segundo plano (ver CLAUDE.md).
  */
 class LimpiarExportacionesNominaJob implements ShouldQueue
 {

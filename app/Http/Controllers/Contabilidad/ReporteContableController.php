@@ -2,45 +2,17 @@
 namespace App\Http\Controllers\Contabilidad;
 
 use App\Http\Controllers\Controller;
-use App\Jobs\ExportarLibroDiarioJob;
-use App\Jobs\ExportarMayorJob;
 use App\Models\AsientoContable;
 use App\Models\AsientoDetalle;
 use App\Models\EjercicioContable;
 use App\Models\PlanCuenta;
 use Barryvdh\DomPDF\Facade\Pdf;
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class ReporteContableController extends Controller
 {
-    // Calibrado con curl real (no tinker) contra las plantillas
-    // pdf.libro-diario y pdf.mayor-cuenta — diagnóstico confirmó que el
-    // SQL de ambos reportes es rapidísimo (12-13 queries, <100ms) incluso
-    // con rango de fechas amplio; el 99% del tiempo real es DomPDF
-    // renderizando la tabla HTML, cuyo costo escala peor que lineal (mismo
-    // hallazgo ya documentado en Facturas de Compra/Proveedores/Cuentas
-    // por Pagar). El "row" que importa aquí es la línea de detalle
-    // (asiento_detalles), no el asiento/cuenta — es lo que efectivamente
-    // se pinta como fila de tabla en el PDF.
-    //
-    // Libro Diario (un asiento por movimiento contable, varias líneas por
-    // asiento): 334 líneas→4.9s, 594→8.6s (límite de "se siente rápido"),
-    // 688→13.3s, 1020→15.8s, 1618→34.7s, año completo (~2450+)→no
-    // responde en 90s. Punto de corte: 500 líneas.
-    private const MAX_FILAS_LIBRO_DIARIO = 500;
-
-    // Mayor Contable (todas las líneas de UNA cuenta): 680 líneas→5.0s,
-    // 1055→10.2s, cuenta muy activa sin filtro de fecha (4132 líneas)→500
-    // por memory_limit agotado (confirmado en la tarea anterior). Punto de
-    // corte: 700 líneas.
-    private const MAX_FILAS_MAYOR = 700;
-
     public function index(): Response
     {
         $empresaId  = session('empresa_activa_id');
@@ -92,33 +64,11 @@ class ReporteContableController extends Controller
         return $query;
     }
 
-    private function contarLineasLibroDiario(int $empresaId, Request $request): int
+    public function libroDiario(Request $request): \Illuminate\Http\Response
     {
-        return AsientoDetalle::whereHas('asiento', function ($q) use ($empresaId, $request) {
-            $q->where('empresa_id', $empresaId)->where('estado', 1);
-            if ($request->filled('ejercicio_id')) {
-                $q->where('ejercicio_id', $request->ejercicio_id);
-            }
-            if ($request->filled('fecha_desde')) {
-                $q->where('fecha', '>=', $request->fecha_desde);
-            }
-            if ($request->filled('fecha_hasta')) {
-                $q->where('fecha', '<=', $request->fecha_hasta);
-            }
-        })->count();
-    }
+        ini_set('memory_limit', '2560M');
 
-    public function libroDiario(Request $request): \Illuminate\Http\Response|JsonResponse
-    {
         $empresaId = session('empresa_activa_id');
-
-        $totalLineas = $this->contarLineasLibroDiario($empresaId, $request);
-        if ($totalLineas > self::MAX_FILAS_LIBRO_DIARIO) {
-            return response()->json([
-                'message' => "Este Libro Diario tiene {$totalLineas} líneas de detalle con estos filtros — demasiadas para generarse al instante " .
-                    '(máximo ' . self::MAX_FILAS_LIBRO_DIARIO . '). Acota el período o procésalo en segundo plano.',
-            ], 422);
-        }
 
         $asientos   = $this->queryLibroDiario($empresaId, $request)->orderBy('fecha')->orderBy('id')->get();
         $empresa    = \App\Models\Empresa::find($empresaId);
@@ -133,30 +83,6 @@ class ReporteContableController extends Controller
         return $pdf->stream(
             'libro-diario-' . now()->format('Y-m-d') . '.pdf'
         );
-    }
-
-    public function contarLibroDiario(Request $request): JsonResponse
-    {
-        $empresaId = session('empresa_activa_id');
-        $total = $this->contarLineasLibroDiario($empresaId, $request);
-
-        return response()->json([
-            'total'  => $total,
-            'limite' => self::MAX_FILAS_LIBRO_DIARIO,
-            'excede' => $total > self::MAX_FILAS_LIBRO_DIARIO,
-        ]);
-    }
-
-    public function libroDiarioSegundoPlano(Request $request): RedirectResponse
-    {
-        $empresaId = session('empresa_activa_id');
-        $filtros   = $request->only(['ejercicio_id', 'fecha_desde', 'fecha_hasta']);
-        $baseUrl   = $request->getSchemeAndHttpHost();
-
-        ExportarLibroDiarioJob::dispatch((int) $empresaId, (int) Auth::id(), $filtros, $baseUrl);
-
-        return back()->with('success',
-            'Tu Libro Diario se está procesando en segundo plano. Te avisaremos por notificación cuando esté listo para descargar.');
     }
 
     private function queryMayor(int $cuentaId, int $empresaId, Request $request)
@@ -182,8 +108,15 @@ class ReporteContableController extends Controller
         return $query;
     }
 
-    public function mayor(Request $request): \Illuminate\Http\Response|JsonResponse
+    public function mayor(Request $request): \Illuminate\Http\Response
     {
+        // El Mayor de una cuenta muy activa sin filtro de fecha no tiene tope
+        // natural de filas (a diferencia de Compras/Proveedores/CxP, acotados
+        // por su propio módulo) — probado con la cuenta más activa real
+        // (6,218 líneas de detalle) revienta 2560M; 4096M da margen medido
+        // sobre ese caso real.
+        ini_set('memory_limit', '4096M');
+
         $empresaId = session('empresa_activa_id');
 
         $request->validate([
@@ -192,14 +125,6 @@ class ReporteContableController extends Controller
 
         $cuenta  = PlanCuenta::findOrFail($request->cuenta_id);
         $empresa = \App\Models\Empresa::find($empresaId);
-
-        $total = $this->queryMayor($cuenta->id, $empresaId, $request)->count();
-        if ($total > self::MAX_FILAS_MAYOR) {
-            return response()->json([
-                'message' => "Esta cuenta tiene {$total} líneas de detalle con estos filtros — demasiadas para generarse al instante " .
-                    '(máximo ' . self::MAX_FILAS_MAYOR . '). Acota el rango de fechas o procésalo en segundo plano.',
-            ], 422);
-        }
 
         $detalles   = $this->queryMayor($cuenta->id, $empresaId, $request)->orderBy('id')->get();
         $totalDebe  = $detalles->sum('debe');
@@ -214,57 +139,6 @@ class ReporteContableController extends Controller
         return $pdf->stream(
             'mayor-' . $cuenta->codigo . '-' . now()->format('Y-m-d') . '.pdf'
         );
-    }
-
-    public function contarMayor(Request $request): JsonResponse
-    {
-        $empresaId = session('empresa_activa_id');
-        $request->validate(['cuenta_id' => 'required|exists:plan_cuentas,id']);
-
-        $total = $this->queryMayor((int) $request->cuenta_id, $empresaId, $request)->count();
-
-        return response()->json([
-            'total'  => $total,
-            'limite' => self::MAX_FILAS_MAYOR,
-            'excede' => $total > self::MAX_FILAS_MAYOR,
-        ]);
-    }
-
-    public function mayorSegundoPlano(Request $request): RedirectResponse
-    {
-        $request->validate(['cuenta_id' => 'required|exists:plan_cuentas,id']);
-
-        $empresaId = session('empresa_activa_id');
-        $filtros   = $request->only(['fecha_desde', 'fecha_hasta']);
-        $baseUrl   = $request->getSchemeAndHttpHost();
-
-        ExportarMayorJob::dispatch((int) $empresaId, (int) Auth::id(), (int) $request->cuenta_id, $filtros, $baseUrl);
-
-        return back()->with('success',
-            'Tu Mayor Contable se está procesando en segundo plano. Te avisaremos por notificación cuando esté listo para descargar.');
-    }
-
-    // Sirve los archivos generados por ExportarLibroDiarioJob y
-    // ExportarMayorJob (comparten carpeta y convención de nombre). Mismo
-    // patrón de autorización que Compras/Proveedores/Cuentas por Pagar: el
-    // nombre lleva el usuario_id como prefijo, basename() descarta path
-    // traversal.
-    public function descargarExportacion(string $archivo): \Symfony\Component\HttpFoundation\Response
-    {
-        $archivo = basename($archivo);
-
-        if (!str_starts_with($archivo, Auth::id() . '_')) {
-            abort(403, 'No tienes acceso a este archivo.');
-        }
-
-        $ruta = 'exportaciones-reportes-contables/' . $archivo;
-        if (!Storage::disk('local')->exists($ruta)) {
-            abort(404, 'El archivo expiró o ya no está disponible (las exportaciones se conservan 48 horas). Genera el reporte nuevamente.');
-        }
-
-        $nombreDescarga = preg_replace('/^\d+_/', '', $archivo);
-
-        return Storage::disk('local')->download($ruta, $nombreDescarga);
     }
 
     public function balanceComprobacion(Request $request): \Illuminate\Http\Response

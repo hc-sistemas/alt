@@ -1,38 +1,13 @@
-import { useState, useMemo, useEffect } from 'react'
-import { router } from '@inertiajs/react'
+import { useState, useMemo } from 'react'
 import { toast, ToastContainer } from 'react-toastify'
-import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
 import {
     BookOpen, TrendingUp, FileText,
-    Search, Download, Scale, BarChart3, LineChart, Waves, Loader2,
+    Search, Download, Scale, BarChart3, LineChart, Waves,
 } from 'lucide-react'
 import type { PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
-
-const S = { borderRadius: '14px', fontWeight: '600', color: '#fff' } as const
-const notify = {
-    success: (msg: string) => toast.success(msg, { icon: () => '✅', style: { ...S, background: 'linear-gradient(135deg,#10b981,#059669)' } }),
-    error:   (msg: string) => toast.error(msg,   { icon: () => '❌', autoClose: 6000, style: { ...S, background: 'linear-gradient(135deg,#ef4444,#dc2626)' } }),
-}
-
-const SWAL_CSS = `
-    .swal-pop { border-radius:20px!important; padding:28px!important; box-shadow:0 25px 60px rgba(0,0,0,.25)!important; max-width:460px!important }
-    .swal-title { font-size:1.1rem!important; font-weight:700!important; color:#1f2937!important; margin-bottom:16px!important }
-    .swal-confirm { border-radius:10px!important; padding:10px 20px!important; font-weight:600!important }
-    .swal-cancel  { border-radius:10px!important; padding:10px 20px!important; font-weight:600!important }
-`
-function injectSwalCss() {
-    if (document.getElementById('swal-reportes')) return
-    const s = document.createElement('style'); s.id = 'swal-reportes'; s.textContent = SWAL_CSS
-    document.head.appendChild(s)
-}
-const swalBase = {
-    showCancelButton: true, reverseButtons: true, focusCancel: true,
-    customClass: { popup: 'swal-pop', title: 'swal-title', confirmButton: 'swal-confirm', cancelButton: 'swal-cancel' },
-    didOpen: injectSwalCss,
-}
 
 interface Ejercicio {
     id: number
@@ -89,18 +64,6 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
     const [cargandoPdf, setCargandoPdf] = useState(false)
     const [errorPdf,    setErrorPdf]    = useState('')
 
-    // Libro Diario y Mayor Contable son los únicos 2 reportes de esta
-    // pantalla cuyo PDF puede volverse inherentemente pesado con rangos
-    // amplios (una fila por línea de asiento, no por cuenta) — confirmado
-    // con curl real que el SQL es rapidísimo en los 6 reportes; el costo
-    // real es el renderizado de DomPDF, que escala peor que lineal. Los
-    // otros 4 (Balance de Comprobación, Balance General, Estado de
-    // Resultados, Flujo de Caja) tienen como mucho ~200 filas (una por
-    // cuenta del plan de cuentas) sin importar el rango de fechas, así que
-    // no necesitan este camino.
-    const [verificando, setVerificando] = useState<'libro-diario' | 'mayor' | null>(null)
-    const [exportandoFondo, setExportandoFondo] = useState<{ tipo: 'libro-diario' | 'mayor'; desde: number } | null>(null)
-
     const meses = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio',
                    'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
@@ -149,77 +112,12 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
         setErrorPdf('')
     }
 
-    // Ofrece procesar en segundo plano cuando el reporte supera el límite
-    // síncrono — mismo patrón que Asientos/Compras/Proveedores/Cuentas por
-    // Pagar: se verifica el tamaño real ANTES de intentar generar el PDF,
-    // en vez de dejar que el usuario espere un "Generando…" que nunca
-    // termina.
-    const confirmarSegundoPlano = (tipo: 'libro-diario' | 'mayor', params: URLSearchParams) => {
-        const ruta = tipo === 'libro-diario'
-            ? route('contabilidad.reportes.libro-diario.segundo-plano')
-            : route('contabilidad.reportes.mayor.segundo-plano')
-        router.post(ruta, Object.fromEntries(params), {
-            preserveScroll: true,
-            preserveState: true,
-            onSuccess: () => setExportandoFondo({ tipo, desde: Date.now() }),
-        })
-    }
-
-    const generarConLimite = async (
-        tipo: 'libro-diario' | 'mayor',
-        params: URLSearchParams,
-        titulo: string,
-    ) => {
-        setVerificando(tipo)
-        try {
-            const rutaContar = tipo === 'libro-diario'
-                ? route('contabilidad.reportes.libro-diario.contar')
-                : route('contabilidad.reportes.mayor.contar')
-            const res = await fetch(rutaContar + '?' + params)
-            if (!res.ok) throw new Error()
-            const data = await res.json() as { total: number; limite: number; excede: boolean }
-
-            if (!data.excede) {
-                const rutaGenerar = tipo === 'libro-diario'
-                    ? route('contabilidad.reportes.libro-diario')
-                    : route('contabilidad.reportes.mayor')
-                abrirPdf(rutaGenerar + '?' + params, titulo)
-                return
-            }
-
-            const { isConfirmed } = await Swal.fire({
-                ...swalBase,
-                title: 'Reporte grande',
-                html: `
-                    <div style="text-align:left;color:#374151;font-size:0.875rem;line-height:1.5">
-                        <p>Este reporte tiene <strong>${data.total.toLocaleString('es-EC')}</strong> líneas de detalle con
-                        estos filtros — muy grande para generarse al instante (límite: ${data.limite.toLocaleString('es-EC')}).</p>
-                        <p style="margin-top:8px">Se procesará en segundo plano y te avisaremos por notificación
-                        (campanita) cuando esté listo para descargar.</p>
-                    </div>
-                `,
-                icon: 'info',
-                showCancelButton: true,
-                confirmButtonColor: '#F59E0B',
-                confirmButtonText: 'Procesar en segundo plano',
-                cancelButtonText: 'Cancelar',
-                reverseButtons: true,
-            })
-
-            if (isConfirmed) confirmarSegundoPlano(tipo, params)
-        } catch {
-            notify.error('No se pudo verificar el tamaño del reporte. Intenta de nuevo.')
-        } finally {
-            setVerificando(null)
-        }
-    }
-
     const generarLibroDiario = () => {
         const params = new URLSearchParams()
         if (ldEjercicio)  params.set('ejercicio_id', ldEjercicio)
         if (ldFechaDesde) params.set('fecha_desde',  ldFechaDesde)
         if (ldFechaHasta) params.set('fecha_hasta',  ldFechaHasta)
-        generarConLimite('libro-diario', params, 'Libro Diario')
+        abrirPdf(route('contabilidad.reportes.libro-diario') + '?' + params, 'Libro Diario')
     }
 
     const generarMayor = () => {
@@ -227,36 +125,8 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
         const params = new URLSearchParams({ cuenta_id: mayorCuentaId })
         if (mayorFechaDesde) params.set('fecha_desde', mayorFechaDesde)
         if (mayorFechaHasta) params.set('fecha_hasta', mayorFechaHasta)
-        generarConLimite('mayor', params, 'Mayor Contable')
+        abrirPdf(route('contabilidad.reportes.mayor') + '?' + params, 'Mayor Contable')
     }
-
-    // Sin websockets/polling en el backend — se consulta el mismo endpoint
-    // que ya usa la campana de notificaciones (notificaciones.index) cada
-    // 15s, mientras haya una exportación en curso, hasta encontrarla o 10
-    // minutos.
-    useEffect(() => {
-        if (!exportandoFondo) return
-        const intervalo = setInterval(async () => {
-            if (Date.now() - exportandoFondo.desde > 10 * 60 * 1000) {
-                setExportandoFondo(null)
-                return
-            }
-            try {
-                const res = await fetch(route('notificaciones.index'))
-                if (!res.ok) return
-                const data = await res.json() as { notificaciones: { tipo: string; created_at: string }[] }
-                const lista = data.notificaciones.some(n =>
-                    (n.tipo === 'exportacion_reportes_contables' || n.tipo === 'exportacion_reportes_contables_error') &&
-                    new Date(n.created_at).getTime() >= exportandoFondo.desde
-                )
-                if (lista) {
-                    notify.success('Tu reporte terminó de procesarse — revisa la campana de notificaciones para descargarlo.')
-                    setExportandoFondo(null)
-                }
-            } catch { /* red momentáneamente caída — se reintenta en el próximo tick */ }
-        }, 15000)
-        return () => clearInterval(intervalo)
-    }, [exportandoFondo])
 
     const generarBalanceComprobacion = () => {
         const params = new URLSearchParams()
@@ -300,17 +170,6 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
                 title="Reportes Contables"
                 breadcrumbs={[{ label: 'Contabilidad' }, { label: 'Reportes' }]}
             />
-
-            {exportandoFondo && (
-                <div className="flex items-center gap-2 text-xs rounded-lg px-3 py-2 mx-4 md:mx-6 mt-4"
-                    style={{ background: 'color-mix(in srgb, var(--primary) 12%, var(--bg-main))', color: 'var(--text-main)' }}>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" style={{ color: 'var(--primary)' }} />
-                    <span>
-                        Tu {exportandoFondo.tipo === 'libro-diario' ? 'Libro Diario' : 'Mayor Contable'} se está procesando en
-                        segundo plano — te avisaremos por notificación cuando esté listo.
-                    </span>
-                </div>
-            )}
 
             <div className="p-4 md:p-6 space-y-6"
                  style={{ background: 'var(--bg-main)', minHeight: '100vh' }}>
@@ -390,18 +249,12 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
 
                             <button
                                 onClick={generarLibroDiario}
-                                disabled={verificando === 'libro-diario'}
                                 className="w-full flex items-center justify-center
                                            gap-2 px-4 py-2.5 rounded-xl text-sm
                                            font-semibold text-white transition-all
-                                           hover:opacity-90 hover:-translate-y-0.5
-                                           disabled:opacity-50 disabled:cursor-not-allowed
-                                           disabled:transform-none"
+                                           hover:opacity-90 hover:-translate-y-0.5"
                                 style={{ background: '#1A3A5C' }}>
-                                {verificando === 'libro-diario'
-                                    ? <><Loader2 size={15} className="animate-spin" /> Verificando tamaño…</>
-                                    : <><FileText size={15} /> Generar Libro Diario PDF</>
-                                }
+                                <FileText size={15} /> Generar Libro Diario PDF
                             </button>
                         </div>
                     </div>
@@ -535,7 +388,7 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
 
                             <button
                                 onClick={generarMayor}
-                                disabled={!mayorCuentaId || verificando === 'mayor'}
+                                disabled={!mayorCuentaId}
                                 className="w-full flex items-center justify-center
                                            gap-2 px-4 py-2.5 rounded-xl text-sm
                                            font-semibold text-white transition-all
@@ -544,10 +397,7 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
                                            disabled:cursor-not-allowed
                                            disabled:transform-none"
                                 style={{ background: '#2D6A4F' }}>
-                                {verificando === 'mayor'
-                                    ? <><Loader2 size={15} className="animate-spin" /> Verificando tamaño…</>
-                                    : <><TrendingUp size={15} /> Generar Mayor Contable PDF</>
-                                }
+                                <TrendingUp size={15} /> Generar Mayor Contable PDF
                             </button>
                         </div>
                     </div>

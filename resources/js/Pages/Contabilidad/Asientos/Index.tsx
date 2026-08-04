@@ -10,7 +10,7 @@ import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import {
     BookOpen, Plus, Eye, XCircle, CheckCircle,
-    AlertTriangle, User, X, FileText, Zap, Download, Search, Loader2,
+    AlertTriangle, User, X, FileText, Zap, Download, Search,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { usePermiso } from '@/Hooks/usePermiso'
@@ -143,17 +143,6 @@ export default function AsientosIndex() {
         }, { preserveState: false })
     }
 
-    // ── Exportación (Excel/PDF): camino rápido vs. segundo plano ────────────
-    // Ya no se exige seleccionar un filtro para poder exportar — en vez de eso,
-    // antes de generar nada se consulta contar-exportables (query liviana, sin
-    // cargar modelos) para decidir: si el resultado entra bajo el límite
-    // calibrado (AsientosDetalleSheet::MAX_FILAS_DETALLE), se descarga al
-    // instante como hasta ahora; si lo excede (típicamente sin filtro, o un
-    // rango muy amplio), se ofrece procesarlo en segundo plano (ExportarAsientosJob)
-    // y se avisa por notificación cuando esté listo.
-    const [verificandoExport, setVerificandoExport] = useState<'excel' | 'pdf' | null>(null)
-    const [exportandoFondo, setExportandoFondo] = useState<{ formato: 'excel' | 'pdf'; desde: number } | null>(null)
-
     const paramsFiltrosActuales = () => ({
         ejercicio_id: ejercicioId,
         fecha_desde:  fechaDesde,
@@ -172,84 +161,10 @@ export default function AsientosIndex() {
         return `${route('contabilidad.asientos.reporte-pdf')}?${params}`
     }
 
-    const confirmarExportacionSegundoPlano = (formato: 'excel' | 'pdf') => {
-        router.post(route('contabilidad.asientos.exportar-segundo-plano'), {
-            formato, ...paramsFiltrosActuales(),
-        }, {
-            preserveScroll: true,
-            preserveState: true,
-            onSuccess: () => setExportandoFondo({ formato, desde: Date.now() }),
-        })
+    const iniciarExportacion = (formato: 'excel' | 'pdf') => {
+        if (formato === 'excel') exportarExcelInstantaneo()
+        else abrirPdf(construirUrlPdf())
     }
-
-    const iniciarExportacion = async (formato: 'excel' | 'pdf') => {
-        setVerificandoExport(formato)
-        try {
-            const params = new URLSearchParams(paramsFiltrosActuales())
-            const res = await fetch(route('contabilidad.asientos.contar-exportables') + '?' + params)
-            if (!res.ok) throw new Error()
-            const data = await res.json() as { total: number; limite: number; excede: boolean }
-
-            if (!data.excede) {
-                if (formato === 'excel') exportarExcelInstantaneo()
-                else abrirPdf(construirUrlPdf())
-                return
-            }
-
-            injectSwalStyles()
-            const { isConfirmed } = await Swal.fire({
-                ...swalBase,
-                title: 'Reporte grande',
-                html: `
-                    <div style="text-align:left;color:#374151;font-size:0.875rem;line-height:1.5">
-                        <p>Este reporte generaría <strong>${data.total.toLocaleString('es-EC')}</strong> líneas de
-                        detalle — muy grande para generarse al instante (límite: ${data.limite.toLocaleString('es-EC')}).</p>
-                        <p style="margin-top:8px">Se procesará en segundo plano y te avisaremos por notificación
-                        (campanita) cuando esté listo para descargar.</p>
-                    </div>
-                `,
-                icon: 'info',
-                showCancelButton: true,
-                confirmButtonColor: '#F59E0B',
-                confirmButtonText: 'Procesar en segundo plano',
-                cancelButtonText: 'Cancelar',
-                reverseButtons: true,
-            })
-
-            if (isConfirmed) confirmarExportacionSegundoPlano(formato)
-        } catch {
-            notify.error('No se pudo verificar el tamaño del reporte. Intenta de nuevo.')
-        } finally {
-            setVerificandoExport(null)
-        }
-    }
-
-    // Sin websockets/polling en el backend — se consulta el mismo endpoint que
-    // ya usa la campana de notificaciones (notificaciones.index) cada 15s,
-    // mientras haya una exportación en curso, hasta encontrarla o 10 minutos.
-    useEffect(() => {
-        if (!exportandoFondo) return
-        const intervalo = setInterval(async () => {
-            if (Date.now() - exportandoFondo.desde > 10 * 60 * 1000) {
-                setExportandoFondo(null)
-                return
-            }
-            try {
-                const res = await fetch(route('notificaciones.index'))
-                if (!res.ok) return
-                const data = await res.json() as { notificaciones: { tipo: string; created_at: string }[] }
-                const lista = data.notificaciones.some(n =>
-                    (n.tipo === 'exportacion_asientos' || n.tipo === 'exportacion_asientos_error') &&
-                    new Date(n.created_at).getTime() >= exportandoFondo.desde
-                )
-                if (lista) {
-                    notify.success('Tu exportación terminó de procesarse — revisa la campana de notificaciones para descargarla.')
-                    setExportandoFondo(null)
-                }
-            } catch { /* red momentáneamente caída — se reintenta en el próximo tick */ }
-        }, 15000)
-        return () => clearInterval(intervalo)
-    }, [exportandoFondo])
 
     const actualizarPartida = (idx: number, campo: keyof Partida, valor: string) => {
         setPartidas(p => p.map((row, i) => i === idx ? { ...row, [campo]: valor } : row))
@@ -430,13 +345,11 @@ export default function AsientosIndex() {
                     }}
                     searchWidth="w-[130px]"
                     onExport={() => iniciarExportacion('excel')}
-                    exportDisabled={verificandoExport !== null}
-                    exportTitle={verificandoExport === 'excel' ? 'Verificando tamaño…' : 'Exportar a Excel'}
                     extraActions={
                         <button
                             onClick={() => iniciarExportacion('pdf')}
-                            disabled={verificandoExport !== null}
-                            title={verificandoExport === 'pdf' ? 'Verificando tamaño…' : 'Ver reporte en PDF'}
+                            disabled={cargandoPdf}
+                            title={cargandoPdf ? 'Generando PDF…' : 'Ver reporte en PDF'}
                             className="flex items-center justify-center w-9 h-9 rounded-md border text-sm font-medium shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
                             style={{ background: '#ef4444', color: 'white', borderColor: '#ef4444' }}>
                             <FileText className="w-4 h-4" />
@@ -492,20 +405,6 @@ export default function AsientosIndex() {
                 </div>
                 </div>
 
-                {/* Indicador visible mientras la exportación en segundo plano está en
-                    curso — desaparece solo cuando la notificación de "listo para
-                    descargar" llega (polling cada 15s, ver el useEffect de arriba) o
-                    tras 10 minutos sin novedades. */}
-                {exportandoFondo && (
-                    <div className="flex items-center gap-2 text-xs rounded-lg px-3 py-2 -mt-2 mb-2"
-                        style={{ background: 'color-mix(in srgb, var(--primary) 12%, var(--bg-main))', color: 'var(--text-main)' }}>
-                        <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" style={{ color: 'var(--primary)' }} />
-                        <span>
-                            Tu {exportandoFondo.formato === 'excel' ? 'Excel' : 'PDF'} se está procesando en segundo
-                            plano — te avisaremos por notificación cuando esté listo.
-                        </span>
-                    </div>
-                )}
 
                 {/* Estado inicial: aún no se ha buscado (carga bajo demanda) */}
                 {!haBuscado && (

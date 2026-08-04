@@ -232,12 +232,7 @@ Route::middleware('auth')->group(function () {
         Route::prefix('contabilidad/reportes')->name('contabilidad.reportes.')->group(function () {
             Route::get('/',                      [ReporteContableController::class, 'index'])              ->name('index');
             Route::get('/libro-diario',          [ReporteContableController::class, 'libroDiario'])        ->name('libro-diario');
-            Route::get('/libro-diario/contar',   [ReporteContableController::class, 'contarLibroDiario'])  ->name('libro-diario.contar');
-            Route::post('/libro-diario/segundo-plano', [ReporteContableController::class, 'libroDiarioSegundoPlano'])->name('libro-diario.segundo-plano');
             Route::get('/mayor',                 [ReporteContableController::class, 'mayor'])              ->name('mayor');
-            Route::get('/mayor/contar',          [ReporteContableController::class, 'contarMayor'])        ->name('mayor.contar');
-            Route::post('/mayor/segundo-plano',  [ReporteContableController::class, 'mayorSegundoPlano'])   ->name('mayor.segundo-plano');
-            Route::get('/exportaciones/{archivo}/descargar', [ReporteContableController::class, 'descargarExportacion'])->name('exportacion.descargar');
             Route::get('/balance-comprobacion',  [ReporteContableController::class, 'balanceComprobacion'])->name('balance-comprobacion');
             Route::get('/balance-general',       [ReporteContableController::class, 'balanceGeneral'])     ->name('balance-general');
             Route::get('/estado-resultados',     [ReporteContableController::class, 'estadoResultados'])   ->name('estado-resultados');
@@ -249,9 +244,6 @@ Route::middleware('auth')->group(function () {
             Route::get('/',                    [AsientoContableController::class, 'index'])        ->name('index');
             Route::get('/exportar-excel',      [AsientoContableController::class, 'exportarExcel'])->name('exportar-excel');
             Route::get('/reporte-pdf',         [AsientoContableController::class, 'reportePdf'])   ->name('reporte-pdf');
-            Route::get('/contar-exportables',  [AsientoContableController::class, 'contarExportables'])->name('contar-exportables');
-            Route::post('/exportar-segundo-plano', [AsientoContableController::class, 'exportarSegundoPlano'])->name('exportar-segundo-plano');
-            Route::get('/exportaciones/{archivo}/descargar', [AsientoContableController::class, 'descargarExportacion'])->name('exportacion.descargar');
             Route::get('/libro-diario',        [AsientoContableController::class, 'libroDiario'])  ->name('libro-diario');
             Route::get('/mayor-cuenta',        [AsientoContableController::class, 'mayorCuenta'])  ->name('mayor-cuenta');
             Route::get('/{asiento}',           [AsientoContableController::class, 'show'])         ->name('show');
@@ -274,9 +266,6 @@ Route::middleware('auth')->group(function () {
             Route::get('/',                     [ComprasProveedorController::class, 'index'])       ->name('index');
             Route::get('/pdf',                  [ComprasProveedorController::class, 'pdf'])         ->name('pdf');
             Route::get('/excel',                [ComprasProveedorController::class, 'excel'])       ->name('excel');
-            Route::get('/contar-exportables',   [ComprasProveedorController::class, 'contarExportables'])     ->name('contar-exportables');
-            Route::post('/exportar-segundo-plano', [ComprasProveedorController::class, 'exportarSegundoPlano'])->name('exportar-segundo-plano');
-            Route::get('/exportaciones/{archivo}/descargar', [ComprasProveedorController::class, 'descargarExportacion']) ->name('exportacion.descargar');
             Route::middleware('permiso:compras,crear')->group(function () {
                 Route::post('/',                [ComprasProveedorController::class, 'store'])       ->name('store');
             });
@@ -290,9 +279,6 @@ Route::middleware('auth')->group(function () {
             Route::get('/',                  [CompraController::class, 'index']) ->name('index');
             Route::get('/pdf',               [CompraController::class, 'pdf'])   ->name('pdf');
             Route::get('/excel',             [CompraController::class, 'excel']) ->name('excel');
-            Route::get('/contar-pdf',              [CompraController::class, 'contarFacturasPdf'])      ->name('contar-pdf');
-            Route::post('/pdf-segundo-plano',      [CompraController::class, 'pdfSegundoPlano'])        ->name('pdf-segundo-plano');
-            Route::get('/exportaciones/{archivo}/descargar', [CompraController::class, 'descargarPdfSegundoPlano']) ->name('exportacion.descargar');
             Route::get('/{compra}',                    [CompraController::class, 'show'])              ->name('show');
             Route::get('/{compra}/pdf',               [CompraController::class, 'pdfIndividual'])    ->name('pdf-individual');
             Route::get('/{compra}/detalles',                        [CompraController::class, 'detallesCompra'])          ->name('detalles');
@@ -328,9 +314,6 @@ Route::middleware('auth')->group(function () {
             Route::get('/',                          [CuentaPagarController::class, 'index'])->name('index');
             Route::get('/pdf',                       [CuentaPagarController::class, 'pdf'])  ->name('pdf');
             Route::get('/excel',                     [CuentaPagarController::class, 'excel'])->name('excel');
-            Route::get('/contar-exportables',        [CuentaPagarController::class, 'contarExportables'])->name('contar-exportables');
-            Route::post('/exportar-segundo-plano',   [CuentaPagarController::class, 'exportarSegundoPlano'])->name('exportar-segundo-plano');
-            Route::get('/exportaciones/{archivo}/descargar', [CuentaPagarController::class, 'descargarExportacion'])->name('exportacion.descargar');
             Route::middleware('permiso:compras,editar')->group(function () {
                 Route::post('/{cuentaPagar}/pagar',      [CuentaPagarController::class, 'pagar'])->name('pagar');
             });
@@ -504,9 +487,6 @@ Route::middleware('auth')->group(function () {
             Route::get('/export-excel',          [MovimientoBancarioController::class, 'exportExcel']) ->name('export-excel');
             Route::get('/exportar-xml',          [MovimientoBancarioController::class, 'exportarXml']) ->name('exportar-xml');
             Route::get('/pdf',                   [MovimientoBancarioController::class, 'pdf'])          ->name('pdf');
-            Route::get('/contar-exportables',    [MovimientoBancarioController::class, 'contarExportables']) ->name('contar-exportables');
-            Route::post('/exportar-segundo-plano', [MovimientoBancarioController::class, 'exportarSegundoPlano']) ->name('exportar-segundo-plano');
-            Route::get('/exportaciones/{archivo}/descargar', [MovimientoBancarioController::class, 'descargarExportacion']) ->name('exportacion.descargar');
             Route::middleware('permiso:bancos,crear')->group(function () {
                 Route::post('/',                     [MovimientoBancarioController::class, 'store'])       ->name('store');
             });
