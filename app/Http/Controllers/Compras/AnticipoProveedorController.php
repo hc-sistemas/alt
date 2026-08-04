@@ -276,6 +276,26 @@ class AnticipoProveedorController extends Controller
                 ]);
             }
 
+            // El auto-cruce en ImportacionController::liquidar() genera asiento
+            // vía AsientoService::cruciarAnticipo() (2.1.1.02/2.1.1.01 según tipo
+            // de proveedor); este cruce manual desde la UI no lo hacía, dejando
+            // la cuenta "Anticipos a Proveedores" sin descargar contablemente.
+            $descripcionAsiento = '';
+            try {
+                $referencia = 'CRZ-ANT-' . str_pad($anticipo->id, 4, '0', STR_PAD_LEFT);
+                $asientoCruce = $this->asientoService->cruciarAnticipo(
+                    empresaId:  $anticipo->empresa_id,
+                    anticipoId: $anticipo->id,
+                    referencia: $referencia,
+                    monto:      (float) $request->monto,
+                    fecha:      now()->toDateString(),
+                );
+                $descripcionAsiento = " (asiento #{$asientoCruce->id})";
+            } catch (\Exception) {
+                // No bloquear si período contable cerrado — mismo criterio
+                // que el registro del anticipo (store()) y el auto-cruce.
+            }
+
             DB::table('log_documentos')->insert([
                 'usuario_id'  => Auth::id(),
                 'username'    => Auth::user()?->email ?? '',
@@ -283,8 +303,8 @@ class AnticipoProveedorController extends Controller
                 'modulo'      => 'compras',
                 'tabla'       => 'anticipos_proveedores',
                 'registro_id' => $anticipo->id,
-                'descripcion' => "Cruce anticipo \${$request->monto} con compra ID {$request->compra_id}",
-                'ip'          => $request->ip(),
+                'descripcion' => "Cruce anticipo \${$request->monto} con compra ID {$request->compra_id}{$descripcionAsiento}",
+                'ip_address'  => $request->ip(),
                 'empresa_id'  => $anticipo->empresa_id,
                 'fecha'       => now(),
             ]);
