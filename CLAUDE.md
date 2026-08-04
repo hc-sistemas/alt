@@ -331,23 +331,51 @@ Asientos sin filtro). No fue necesario subirlo. Verificar el valor real en
 el servidor de producción cuando exista, ya que php.ini no viaja con el
 repo.
 
-**Hallazgo residual sin resolver — Mayor Contable / Libro Diario en el caso
-extremo sin ningún filtro:** DomPDF (`Cellmap::resolve_border()`) escala
-peor que lineal con el número de filas de la tabla. Probado con datos
-reales: el Mayor Contable de la cuenta más activa (1.1.4.01, 6,218 líneas,
-histórico completo sin filtro de fecha) agota memory_limit tanto en 2560M
-como en 4096M — no es un problema que más memoria resuelva sin más. Libro
-Diario sin ningún filtro (28,684 líneas totales) tardó más de 13 minutos
-sin terminar en la prueba (no se confirmó si termina o revienta memoria
-igual que Mayor). Esto es un caso de uso extremo (todo el historial
-multi-año de una sola cuenta o de toda la contabilidad, sin acotar ni
-siquiera por año) — con un rango acotado mayor al límite viejo (ej. Mayor
-con 1,176 líneas / 6 meses, o Libro Diario con ~2,700 líneas / 3 meses)
-genera bien en 14-140s. Si el cliente necesita el caso 100% sin filtro
-específicamente, hace falta optimizar el render de DomPDF (paginar la
-tabla, o quitar bordes por celda) o aceptar que ese caso puntual seguirá
-sin funcionar — no se resolvió en esta tarea, reportado explícitamente en
-vez de darlo por bueno.
+**Hallazgo residual sin resolver — Mayor Contable / Libro Diario / Asientos
+Contables (reporte PDF) en el caso extremo sin ningún filtro:** DomPDF
+(`Cellmap::resolve_border()`) escala peor que lineal con el número de FILAS
+DENTRO DE UNA MISMA `<table>`. Confirmado con datos reales y con una prueba
+mínima (tabla de texto plano sin ningún estilo, ~4,800 filas en una sola
+tabla, revienta memory_limit igual) — no es una consulta N+1 ni un índice
+faltante (verificado con `EXPLAIN ANALYZE` real: la query del rango de un
+año de Libro Diario tarda 4-7ms; la hidratación completa vía Eloquent con
+eager load tarda 0.6s para 4,438 asientos). El costo real está 100% en el
+render de DomPDF.
+
+- Mayor Contable de la cuenta más activa (1.1.4.01, 6,218 líneas, histórico
+  completo) agota memory_limit tanto en 2560M como en 4096M.
+- Libro Diario de un año completo (4,438 asientos) no completó en 600s
+  (10 min) con `timeout` real, aun con la plantilla usando el patrón
+  correcto (una `<table>` por asiento — ver nota en
+  `resources/views/pdf/libro-diario.blade.php`).
+- Asientos Contables (reporte PDF, no Excel) sin ningún filtro (11,177
+  asientos) no completó en 300s (5 min) con memory_limit en 4096M.
+
+**IMPORTANTE — no "optimizar" fusionando en una sola tabla:** se intentó
+fusionar `libro-diario.blade.php` en una única `<table>` continua para el
+documento completo (menos objetos que arma DomPDF) y midió MUCHO PEOR que
+el patrón original de muchas tablas chicas (una por asiento) — una tabla
+continua de ~4,800 filas sin ningún estilo ya revienta memory_limit por
+defecto (512M), mientras que 1,051 tablas chicas (3 meses) completan en
+~100s. `Cellmap::resolve_border()` escala con el total de filas de UNA
+tabla, así que partir el documento en muchas tablas chicas es lo que
+realmente lo hace escalar, no al revés — quedó documentado en un comentario
+dentro del propio blade para que no se repita el error.
+
+Con un rango acotado mayor al límite viejo que existía antes de la
+reversión (ej. Mayor con 1,176 líneas / 6 meses: 14s: Libro Diario con
+~2,700 líneas / 3 meses: 98s; Asientos PDF con ~2,100 asientos / 6 meses:
+90s) genera bien. El caso 100% sin filtro (todo el historial multi-año)
+sigue sin funcionar en un tiempo razonable en ninguno de los 3 reportes —
+es un límite real del motor de render (DomPDF), no algo que se resuelva
+con más memoria o restructurando el HTML. Si el cliente necesita
+específicamente ese caso extremo, las opciones son: (a) forzar un rango de
+fechas por defecto razonable en el selector (ej. el ejercicio fiscal
+actual) en vez de "sin fecha = todo el historial" — esto es un valor por
+defecto en el filtro, no un bloqueo, el usuario puede seguir ampliándolo
+si quiere esperar; o (b) cambiar de motor de PDF / paginar el render
+manualmente (trabajo mayor, no evaluado). No se impuso ninguna de las dos
+sin confirmar con el cliente.
 
 ---
 

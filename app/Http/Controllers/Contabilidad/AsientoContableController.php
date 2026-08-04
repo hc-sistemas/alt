@@ -251,7 +251,14 @@ class AsientoContableController extends Controller
             'ejercicio_id', 'fecha_desde', 'fecha_hasta', 'tipo', 'estado',
         ]);
 
-        ini_set('memory_limit', '1536M');
+        // DomPDF (Cellmap::resolve_border) necesita muchísima más memoria por
+        // fila que PhpSpreadsheet (exportarExcel() funciona con 1536M incluso
+        // sin filtro, 11,177 asientos) — probado con datos reales: 1536M
+        // revienta con un rango de apenas 6 meses (~2,100 asientos). 4096M
+        // da margen para rangos grandes reales; el histórico completo sin
+        // ningún filtro puede seguir sin alcanzar (mismo límite de DomPDF que
+        // Mayor Contable — ver CLAUDE.md).
+        ini_set('memory_limit', '4096M');
 
         // pdf.asientos-reporte solo usa $asiento->ejercicio (un renglón por
         // asiento, no por línea de detalle) — eager-cargar creadoPor/
