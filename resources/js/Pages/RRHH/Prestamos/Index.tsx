@@ -6,7 +6,7 @@ import FilterToolbar from '@/Components/shared/FilterToolbar'
 import { Input } from '@/Components/ui/input'
 import { cn } from '@/lib/utils'
 import {
-    Plus, Search, DollarSign, CheckCircle2, Trash2, Filter, X,
+    Plus, Search, DollarSign, CheckCircle2, Trash2, X,
 } from 'lucide-react'
 import { usePermiso } from '@/Hooks/usePermiso'
 import type { PrestamoEmpleado, Colaborador, PageProps, PaginatedData } from '@/types'
@@ -18,9 +18,9 @@ interface ColabItem {
 }
 
 interface Props extends PageProps {
-    prestamos: PaginatedData<PrestamoEmpleado>
+    prestamos: PaginatedData<PrestamoEmpleado> | null
     colaboradores: ColabItem[]
-    filtros: { colaborador_id?: string; tipo?: string; estado?: string; anio?: string; mes?: string }
+    filtros: { colaborador_id?: string; tipo?: string; estado?: string; anio?: string; buscar?: string }
     anios: number[]
     flash?: { success?: string; error?: string }
 }
@@ -69,10 +69,15 @@ export default function PrestamosIndex({ prestamos, colaboradores, filtros, anio
     const [saving, setSaving] = useState(false)
 
     // filtros
-    const [filtroColab, setFiltroColab] = useState(filtros.colaborador_id ?? '')
-    const [filtroTipo,  setFiltroTipo]  = useState(filtros.tipo    ?? '')
-    const [filtroEst,   setFiltroEst]   = useState(filtros.estado  ?? '')
-    const [filtroAnio,  setFiltroAnio]  = useState(filtros.anio    ?? '')
+    const [filtro, setFiltro] = useState(filtros)
+
+    // Cambiar cualquier filtro después de haber buscado no vacía la tabla —
+    // solo la atenúa (opacity-60) hasta que se presione Buscar de nuevo.
+    // Mismo patrón ya usado en el resto del sistema esta sesión.
+    const [filtrosSucios, setFiltrosSucios] = useState(false)
+
+    // Carga bajo demanda: `prestamos` viene null hasta la primera búsqueda.
+    const haBuscado = prestamos !== null
 
     const inputStyle: React.CSSProperties = {
         background: 'var(--bg-card)', color: 'var(--text-main)',
@@ -80,18 +85,17 @@ export default function PrestamosIndex({ prestamos, colaboradores, filtros, anio
         fontSize: 13, outline: 'none',
     }
 
-    function aplicarFiltros() {
-        router.get(route('rrhh.prestamos.index'), {
-            colaborador_id: filtroColab || undefined,
-            tipo:  filtroTipo  || undefined,
-            estado:filtroEst   || undefined,
-            anio:  filtroAnio  || undefined,
-        }, { preserveState: true, replace: true })
+    function cambiarFiltro<K extends keyof typeof filtro>(campo: K, valor: string) {
+        setFiltro(f => ({ ...f, [campo]: valor }))
+        setFiltrosSucios(true)
     }
 
-    function resetFiltros() {
-        setFiltroColab(''); setFiltroTipo(''); setFiltroEst(''); setFiltroAnio('')
-        router.get(route('rrhh.prestamos.index'), {}, { preserveState: true, replace: true })
+    function aplicarFiltros() {
+        router.get(route('rrhh.prestamos.index'), { ...filtro, buscado: '1' }, {
+            preserveState: true,
+            replace: true,
+            onSuccess: () => setFiltrosSucios(false),
+        })
     }
 
     function submitNuevo(e: React.FormEvent) {
@@ -107,7 +111,14 @@ export default function PrestamosIndex({ prestamos, colaboradores, filtros, anio
     }
 
     function confirmarPagar(id: number) {
-        if (!confirm('¿Marcar como pagado? Esta acción no se puede deshacer.')) return
+        if (!confirm(
+            'Marcar como pagado manualmente (fuera de nómina).\n\n' +
+            'Úsalo solo si el colaborador saldó el resto en efectivo/transferencia directa. ' +
+            'Esto NO genera ningún asiento contable ni descuento en nómina: solo cambia el ' +
+            'estado y pone el saldo en $0. Si el saldo restante no fue realmente cobrado, la ' +
+            'cuenta contable de Préstamos y Anticipos quedará descuadrada frente a este registro.\n\n' +
+            '¿Continuar?'
+        )) return
         router.patch(route('rrhh.prestamos.pagar', id))
     }
 
@@ -137,7 +148,6 @@ export default function PrestamosIndex({ prestamos, colaboradores, filtros, anio
 
             <PageHeader
                 title="Préstamos y Anticipos"
-                description="Control de desembolsos a colaboradores con asiento contable automático"
                 breadcrumbs={[{ label: 'RRHH' }, { label: 'Préstamos y Anticipos' }]}
                 actions={
                     puede('crear') ? (
@@ -156,39 +166,51 @@ export default function PrestamosIndex({ prestamos, colaboradores, filtros, anio
                 {/* Toolbar — filtros */}
                 <div style={{ marginTop: 16 }}>
                     <FilterToolbar
-                        extraActions={
-                            <>
-                                <button onClick={aplicarFiltros} style={{ ...inputStyle, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, background: 'var(--primary)', color: '#000', border: 'none', padding: '6px 12px' }}>
-                                    <Filter size={13} /> Filtrar
-                                </button>
-                                <button onClick={resetFiltros} style={{ ...inputStyle, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
-                                    <X size={13} /> Limpiar
-                                </button>
-                            </>
-                        }
+                        search={{
+                            value: filtro.buscar ?? '',
+                            onChange: v => cambiarFiltro('buscar', v),
+                            onSearch: aplicarFiltros,
+                            placeholder: 'Buscar colaborador...',
+                        }}
                     >
-                        <select value={filtroColab} onChange={e => setFiltroColab(e.target.value)} style={inputStyle}>
-                            <option value="">Todos los colaboradores</option>
+                        <select value={filtro.colaborador_id ?? ''} onChange={e => cambiarFiltro('colaborador_id', e.target.value)}
+                            style={{ ...inputStyle, width: '160px' }}>
+                            <option value="">Colaborador</option>
                             {colaboradores.map(c => <option key={c.id} value={c.id}>{colabLabel(c)}</option>)}
                         </select>
-                        <select value={filtroTipo} onChange={e => setFiltroTipo(e.target.value)} style={inputStyle}>
-                            <option value="">Tipo: todos</option>
+                        <select value={filtro.tipo ?? ''} onChange={e => cambiarFiltro('tipo', e.target.value)}
+                            style={{ ...inputStyle, width: '110px' }}>
+                            <option value="">Tipo</option>
                             <option value="prestamo">Préstamo</option>
                             <option value="anticipo">Anticipo</option>
                         </select>
-                        <select value={filtroEst} onChange={e => setFiltroEst(e.target.value)} style={inputStyle}>
-                            <option value="">Estado: todos</option>
+                        <select value={filtro.estado ?? ''} onChange={e => cambiarFiltro('estado', e.target.value)}
+                            style={{ ...inputStyle, width: '110px' }}>
+                            <option value="">Estado</option>
                             <option value="activo">Activo</option>
                             <option value="pagado">Pagado</option>
                         </select>
-                        <select value={filtroAnio} onChange={e => setFiltroAnio(e.target.value)} style={inputStyle}>
+                        <select value={filtro.anio ?? ''} onChange={e => cambiarFiltro('anio', e.target.value)}
+                            style={{ ...inputStyle, width: '90px' }}>
                             <option value="">Año</option>
                             {anios.map(a => <option key={a} value={a}>{a}</option>)}
                         </select>
                     </FilterToolbar>
                 </div>
 
+                {/* Estado inicial: aún no se ha buscado (carga bajo demanda) */}
+                {!haBuscado && (
+                    <div className="text-center py-16">
+                        <Search className="w-12 h-12 mx-auto mb-4 opacity-30" style={{ color: 'var(--text-muted)' }} />
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                            Ajusta los filtros y presiona Buscar para consultar los préstamos y anticipos.
+                        </p>
+                    </div>
+                )}
+
                 {/* Tabla */}
+                {haBuscado && prestamos && (
+                <div className={cn(filtrosSucios && 'opacity-60 transition-opacity')}>
                 <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, overflow: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                         <thead>
@@ -235,20 +257,29 @@ export default function PrestamosIndex({ prestamos, colaboradores, filtros, anio
                                             {p.estado === 'activo' && puede('editar') && (
                                                 <button
                                                     onClick={() => confirmarPagar(p.id)}
-                                                    title="Marcar como pagado"
+                                                    title="Marcar como pagado manualmente (liquidación fuera de nómina, no genera asiento contable)"
                                                     style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#059669', padding: 4, borderRadius: 4 }}
                                                 >
                                                     <CheckCircle2 size={16} />
                                                 </button>
                                             )}
                                             {p.estado === 'activo' && puede('eliminar') && (
-                                                <button
-                                                    onClick={() => confirmarEliminar(p.id)}
-                                                    title="Eliminar"
-                                                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#DC2626', padding: 4, borderRadius: 4 }}
-                                                >
-                                                    <Trash2 size={16} />
-                                                </button>
+                                                Number(p.saldo) < Number(p.monto_total) ? (
+                                                    <span
+                                                        title="No se puede eliminar: ya tiene cuotas descontadas en nómina"
+                                                        style={{ color: 'var(--text-muted)', padding: 4, opacity: 0.4, cursor: 'not-allowed' }}
+                                                    >
+                                                        <Trash2 size={16} />
+                                                    </span>
+                                                ) : (
+                                                    <button
+                                                        onClick={() => confirmarEliminar(p.id)}
+                                                        title="Eliminar"
+                                                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#DC2626', padding: 4, borderRadius: 4 }}
+                                                    >
+                                                        <Trash2 size={16} />
+                                                    </button>
+                                                )
                                             )}
                                         </div>
                                     </td>
@@ -264,7 +295,7 @@ export default function PrestamosIndex({ prestamos, colaboradores, filtros, anio
                         {Array.from({ length: prestamos.last_page }, (_, i) => i + 1).map(p => (
                             <button
                                 key={p}
-                                onClick={() => router.get(route('rrhh.prestamos.index'), { ...filtros, page: p })}
+                                onClick={() => router.get(route('rrhh.prestamos.index'), { ...filtro, buscado: '1', page: p })}
                                 style={{
                                     padding: '5px 10px', borderRadius: 5, border: '1px solid var(--border)',
                                     background: p === prestamos.current_page ? 'var(--primary)' : 'var(--bg-card)',
@@ -274,6 +305,8 @@ export default function PrestamosIndex({ prestamos, colaboradores, filtros, anio
                             >{p}</button>
                         ))}
                     </div>
+                )}
+                </div>
                 )}
             </div>
 
