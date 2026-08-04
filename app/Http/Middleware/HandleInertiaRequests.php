@@ -41,7 +41,7 @@ class HandleInertiaRequests extends Middleware
                     'avatar' => $user->avatar,
                 ] : null,
             ],
-            'permisos' => function () use ($user) {
+            'permisos' => function () use ($user, $empresaActivaId) {
                 if (!$user) return [];
 
                 if ($user->perfil?->nombre === 'super_admin') return '*';
@@ -49,6 +49,7 @@ class HandleInertiaRequests extends Middleware
                 return DB::table('permisos')
                     ->join('modulos', 'modulos.id', '=', 'permisos.modulo_id')
                     ->where('permisos.perfil_id', $user->perfil_id)
+                    ->where('permisos.empresa_id', $empresaActivaId)
                     ->select('modulos.clave', 'permisos.ver', 'permisos.crear', 'permisos.editar', 'permisos.eliminar', 'permisos.anular')
                     ->get()
                     ->mapWithKeys(fn ($p) => [

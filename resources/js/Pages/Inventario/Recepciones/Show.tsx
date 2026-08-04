@@ -6,6 +6,7 @@ import PageHeader from '@/Components/shared/PageHeader'
 import { Button } from '@/Components/ui/button'
 import { PackageCheck, ScanBarcode, Check, Clock } from 'lucide-react'
 import { toastExito, toastError } from '@/lib/toast'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { RecepcionBodega, PageProps } from '@/types'
 
 interface Props extends PageProps {
@@ -73,6 +74,7 @@ function agruparPorProducto(etiquetas: EtiquetaItem[]): GrupoProducto[] {
 
 export default function RecepcionShow() {
     const { recepcion, flash } = usePage<Props>().props
+    const { puede } = usePermiso('inventario')
     const isPendiente = recepcion.estado === 'pendiente'
 
     const [etiquetas, setEtiquetas] = useState<EtiquetaItem[]>([])
@@ -277,7 +279,7 @@ export default function RecepcionShow() {
                 </div>
 
                 {/* Campo de escaneo */}
-                {isPendiente && (
+                {isPendiente && puede('editar') && (
                     <div className="rounded-xl border p-6 space-y-3" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
                         <div className="flex items-center gap-3">
                             <ScanBarcode className="w-6 h-6 shrink-0" style={{ color: 'var(--primary)' }} />
@@ -399,7 +401,7 @@ export default function RecepcionShow() {
 
                 {/* Botones de acción */}
                 <div className="flex gap-3 pt-2">
-                    {isPendiente && (
+                    {isPendiente && puede('editar') && (
                         <Button
                             onClick={ejecutarConfirmar}
                             loading={confirmando}

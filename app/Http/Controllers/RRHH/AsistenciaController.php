@@ -48,7 +48,7 @@ class AsistenciaController extends Controller
 
         // Si es admin/super_admin → ver todas las asistencias del día
         $resumenDia = null;
-        if (Auth::user()?->hasAnyRole(['super_admin', 'admin'])) {
+        if (in_array(Auth::user()?->perfil?->nombre, ['super_admin', 'admin'])) {
             $resumenDia = Asistencia::with('colaborador')
                 ->whereHas('colaborador', fn($q) => $q->where('empresa_id', $empresaId))
                 ->where('fecha', $hoy)
@@ -62,7 +62,7 @@ class AsistenciaController extends Controller
             'historial'      => $historial,
             'resumenDia'     => $resumenDia,
             'server_time'    => $ahora->toIso8601String(),
-            'es_admin'       => Auth::user()?->hasAnyRole(['super_admin', 'admin']) ?? false,
+            'es_admin'       => in_array(Auth::user()?->perfil?->nombre, ['super_admin', 'admin']) ?? false,
         ]);
     }
 

@@ -1,5 +1,5 @@
 import { Head, Link, router, usePage } from '@inertiajs/react'
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
 import PdfPreviewModal from '@/Components/shared/PdfPreviewModal'
@@ -13,7 +13,7 @@ import { confirmarEliminar } from '@/lib/swal'
 import { toastExito, toastError } from '@/lib/toast'
 
 interface Props extends PageProps {
-    clientes: PaginatedData<Cliente>
+    clientes: PaginatedData<Cliente> | null
     filters: { search?: string; estado?: string }
 }
 
@@ -29,19 +29,19 @@ export default function ClientesIndex() {
     const [search, setSearch] = useState(filters.search ?? '')
     const [estado, setEstado] = useState(filters.estado ?? '')
     const [pdfModal, setPdfModal] = useState(false)
-    const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-    const isFirstRender = useRef(true)
 
-    useEffect(() => {
-        if (isFirstRender.current) { isFirstRender.current = false; return }
-        if (debounceRef.current) clearTimeout(debounceRef.current)
-        debounceRef.current = setTimeout(() => {
-            router.get(route('personas.clientes.index'), { search, estado }, { preserveState: true, replace: true })
-        }, 400)
-        return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
-    }, [search, estado])
+    const haBuscado = clientes !== null
+
+    function buscar() {
+        router.get(route('personas.clientes.index'), {
+            search: search || undefined,
+            estado: estado || undefined,
+            buscado: '1',
+        }, { preserveState: false })
+    }
 
     async function exportarExcel() {
+        if (!clientes) return
         const XLSX = await import('xlsx')
         const filas = clientes.data.map(c => ({
             'Tipo':           TIPO_BADGE[c.tipo_identificacion] ?? c.tipo_identificacion,
@@ -74,68 +74,84 @@ export default function ClientesIndex() {
 
             <PageHeader
                 title="Clientes"
-                description="Gestión de clientes del sistema"
                 breadcrumbs={[{ label: 'Personas' }, { label: 'Clientes' }]}
-            />
-
-            <div className="p-6">
-                {/* Barra de acciones */}
-                <div className="flex items-center gap-4 mb-4 flex-wrap">
+                actions={
                     <Link href={route('personas.clientes.create')}>
                         <Button>
                             <Plus className="w-4 h-4" />
                             Nuevo Cliente
                         </Button>
                     </Link>
+                }
+            />
 
-                    <div className="flex items-center gap-2">
-                        <span className="text-sm whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>Buscar:</span>
+            <div className="p-6">
+                {/* Barra de filtros */}
+                <div className="flex items-center gap-3 mb-4 flex-nowrap overflow-x-auto">
+                    <select
+                        value={estado}
+                        onChange={e => setEstado(e.target.value)}
+                        className="input-field shrink-0"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}
+                    >
+                        <option value="">Todos los estados</option>
+                        <option value="activo">Activos</option>
+                        <option value="inactivo">Inactivos</option>
+                    </select>
+
+                    <div className="flex shrink-0 ml-auto" role="group">
                         <div className="relative">
                             <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
                             <Input
                                 value={search}
                                 onChange={e => setSearch(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && buscar()}
                                 placeholder="Identificación o razón social..."
-                                className="pl-9 w-56"
+                                className="pl-9 w-56 rounded-r-none border-r-0"
                             />
                         </div>
+                        <button className="flex items-center justify-center w-9 h-9 rounded-r-md border text-sm font-medium shrink-0"
+                            style={{ background: 'var(--primary)', color: 'black', borderColor: 'var(--primary)' }}
+                            onClick={buscar}
+                            title="Buscar">
+                            <Search className="w-4 h-4" />
+                        </button>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                        <span className="text-sm whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>Estado:</span>
-                        <select
-                            value={estado}
-                            onChange={e => setEstado(e.target.value)}
-                            className="input-field"
-                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}
-                        >
-                            <option value="">Todos</option>
-                            <option value="activo">Activos</option>
-                            <option value="inactivo">Inactivos</option>
-                        </select>
-                    </div>
-
-                    <div className="flex items-center gap-2 ml-auto">
+                    <div className="flex items-center gap-2 shrink-0">
                         <button
                             onClick={() => setPdfModal(true)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium"
-                            style={{ background: '#DC2626', color: 'white', transition: 'background 0.2s' }}
+                            className="flex items-center justify-center w-9 h-9 rounded-md text-sm font-medium border shrink-0"
+                            style={{ background: '#DC2626', color: 'white', borderColor: '#DC2626', transition: 'background 0.2s' }}
                             onMouseEnter={e => (e.currentTarget.style.background = '#B91C1C')}
-                            onMouseLeave={e => (e.currentTarget.style.background = '#DC2626')}>
+                            onMouseLeave={e => (e.currentTarget.style.background = '#DC2626')}
+                            title="PDF">
                             <FileText className="w-4 h-4" />
-                            PDF
                         </button>
-                        <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium"
-                            style={{ background: '#16A34A', color: 'white', transition: 'background 0.2s' }}
+                        <button className="flex items-center justify-center w-9 h-9 rounded-md text-sm font-medium border shrink-0"
+                            style={{ background: '#16A34A', color: 'white', borderColor: '#16A34A', transition: 'background 0.2s' }}
                             onMouseEnter={e => (e.currentTarget.style.background = '#15803D')}
                             onMouseLeave={e => (e.currentTarget.style.background = '#16A34A')}
-                            onClick={exportarExcel}>
+                            onClick={exportarExcel}
+                            disabled={!clientes}
+                            title="Excel">
                             <FileSpreadsheet className="w-4 h-4" />
-                            Excel
                         </button>
                     </div>
                 </div>
 
+                {/* Estado inicial: aún no se ha buscado */}
+                {!haBuscado && (
+                    <div className="text-center py-16">
+                        <Search className="w-12 h-12 mx-auto mb-4 opacity-30" style={{ color: 'var(--text-muted)' }} />
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                            Ajusta los filtros y presiona Buscar para consultar los clientes.
+                        </p>
+                    </div>
+                )}
+
+                {haBuscado && clientes && (
+                <>
                 {/* Tabla */}
                 <div className="rounded-xl border overflow-x-auto" style={{ borderColor: 'var(--border)' }}>
                     <table className="w-full text-xs">
@@ -274,6 +290,8 @@ export default function ClientesIndex() {
                             ))}
                         </div>
                     </div>
+                )}
+                </>
                 )}
             </div>
             <PdfPreviewModal

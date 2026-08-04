@@ -29,6 +29,7 @@ class ListaPrecioController extends Controller
                 DB::raw("COALESCE(m.nombre, '—') as marca_nombre"),
                 'p.pvp as pvp_base',
                 'p.pvd as pvd_base',
+                'p.porcentaje_iva',
                 'lp.id as lista_pvp_id',
                 'lp.precio as lista_pvp_precio',
                 'lp.descuento_max as lista_pvp_descuento_max',
@@ -68,8 +69,10 @@ class ListaPrecioController extends Controller
             ]);
         }
 
+        $busquedaRealizada = $request->boolean('buscado');
+
         return Inertia::render('Inventario/ListasPrecio/Index', [
-            'listas'     => $query->paginate(25)->withQueryString(),
+            'listas'     => $busquedaRealizada ? $query->paginate(25)->withQueryString() : null,
             'filters'    => $request->only(['search', 'marca_id', 'categoria_id']),
             'marcas'     => Marca::where('estado', true)->orderBy('nombre')->get(['id', 'nombre']),
             'categorias' => CategoriaProducto::where('estado', true)->orderBy('nombre')->get(['id', 'nombre']),
@@ -141,8 +144,7 @@ class ListaPrecioController extends Controller
                 continue;
             }
 
-            $producto = Producto::where('empresa_id', $empresaId)
-                ->where('codigo', $codigo)
+            $producto = Producto::where('codigo', $codigo)
                 ->first();
 
             if (!$producto) {

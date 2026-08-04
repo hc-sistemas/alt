@@ -6,6 +6,7 @@ import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { Save, Info } from 'lucide-react'
 import { toastExito, toastError } from '@/lib/toast'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { ActivoFijo, PageProps } from '@/types'
 
 interface Props extends PageProps {
@@ -16,6 +17,7 @@ interface Props extends PageProps {
 export default function ActivoFijoForm() {
     const { activoFijo, cuentas } = usePage<Props>().props
     const esEdicion = !!activoFijo
+    const { puede } = usePermiso('inventario')
 
     const { data, setData, post, put, processing, errors } = useForm({
         codigo: activoFijo?.codigo ?? '',
@@ -196,10 +198,12 @@ export default function ActivoFijoForm() {
 
                 {/* Acciones */}
                 <div className="flex gap-3 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
-                    <Button type="submit" loading={processing} disabled={processing || residualInvalido}>
-                        <Save className="w-4 h-4" />
-                        {esEdicion ? 'Guardar cambios' : 'Crear activo'}
-                    </Button>
+                    {puede(esEdicion ? 'editar' : 'crear') && (
+                        <Button type="submit" loading={processing} disabled={processing || residualInvalido}>
+                            <Save className="w-4 h-4" />
+                            {esEdicion ? 'Guardar cambios' : 'Crear activo'}
+                        </Button>
+                    )}
                     <Button type="button" variant="outline"
                         onClick={() => router.visit(route('inventario.activos.index'))}>
                         Cancelar

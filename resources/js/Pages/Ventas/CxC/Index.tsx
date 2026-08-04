@@ -8,6 +8,7 @@ import { Input } from '@/Components/ui/input'
 import { Badge } from '@/Components/ui/badge'
 import { cn, formatMoneda, formatFecha } from '@/lib/utils'
 import { Search, Eye, FileText, ChevronLeft, ChevronRight, DollarSign, AlertTriangle, X } from 'lucide-react'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { PageProps, PaginatedData, AuthUser } from '@/types'
 
 interface CxCItem {
@@ -85,6 +86,7 @@ function MetricaCard({ label, valor, color }: { label: string; valor: number; co
 
 export default function Index() {
     const { cuentas, metricas, filtros, auth } = usePage<Props>().props
+    const { puede } = usePermiso('ventas')
 
     const [filtro, setFiltro] = useState<Filtros>({
         cliente:           filtros.cliente           ?? '',
@@ -101,12 +103,6 @@ export default function Index() {
 
     const aplicarFiltros = () => {
         router.get(route('ventas.cxc.index'), filtro as Record<string, string | undefined>, { preserveState: true })
-    }
-
-    const limpiarFiltros = () => {
-        const limpio: Filtros = { cliente: '', estado: '', vencimiento_desde: '', vencimiento_hasta: '' }
-        setFiltro(limpio)
-        router.get(route('ventas.cxc.index'), {}, { preserveState: false })
     }
 
     const abrirModalCobro = (cuenta: CxCItem) => {
@@ -198,7 +194,6 @@ export default function Index() {
         }
     }
 
-    const hayFiltros = Object.values(filtro).some(v => v !== '')
     const esSuperAdmin = auth.user?.perfil === 'Super Admin'
 
     return (
@@ -206,7 +201,6 @@ export default function Index() {
             <Head title="Cuentas por Cobrar" />
             <PageHeader
                 title="Cuentas por Cobrar"
-                description="Control de cartera y cobros"
                 breadcrumbs={[{ label: 'Ventas' }, { label: 'Cuentas por Cobrar' }]}
             />
 
@@ -220,68 +214,54 @@ export default function Index() {
                     <MetricaCard label="Vencido 60+ días" valor={metricas.vencido_90} color="rgb(239,68,68)" />
                 </div>
 
-                {/* Filtros */}
-                <div
-                    className="rounded-xl p-4 border"
-                    style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
-                >
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                        <div>
-                            <label className="text-xs mb-1 block" style={{ color: 'var(--text-muted)' }}>Cliente</label>
-                            <div className="relative">
-                                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none" style={{ color: 'var(--text-muted)' }} />
-                                <Input
-                                    className="pl-8"
-                                    placeholder="Nombre o RUC..."
-                                    value={filtro.cliente}
-                                    onChange={e => setFiltro(p => ({ ...p, cliente: e.target.value }))}
-                                    onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
-                                />
-                            </div>
-                        </div>
-                        <div>
-                            <label className="text-xs mb-1 block" style={{ color: 'var(--text-muted)' }}>Estado</label>
-                            <select
-                                className="w-full h-9 rounded-md border px-3 text-sm"
-                                style={{ background: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
-                                value={filtro.estado}
-                                onChange={e => setFiltro(p => ({ ...p, estado: e.target.value }))}
-                            >
-                                <option value="">Todos</option>
-                                <option value="pendiente">Pendiente</option>
-                                <option value="parcial">Parcial</option>
-                                <option value="cobrada">Cobrada</option>
-                                <option value="vencida">Vencida</option>
-                                <option value="castigada">Castigada</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label className="text-xs mb-1 block" style={{ color: 'var(--text-muted)' }}>Vencimiento desde</label>
-                            <Input
-                                type="date"
-                                value={filtro.vencimiento_desde}
-                                onChange={e => setFiltro(p => ({ ...p, vencimiento_desde: e.target.value }))}
-                            />
-                        </div>
-                        <div>
-                            <label className="text-xs mb-1 block" style={{ color: 'var(--text-muted)' }}>Vencimiento hasta</label>
-                            <Input
-                                type="date"
-                                value={filtro.vencimiento_hasta}
-                                onChange={e => setFiltro(p => ({ ...p, vencimiento_hasta: e.target.value }))}
-                            />
-                        </div>
+                {/* Barra de filtros */}
+                <div className="flex items-center gap-3 mb-4 flex-nowrap overflow-x-auto">
+                    <select value={filtro.estado} onChange={e => setFiltro(p => ({ ...p, estado: e.target.value }))}
+                        className="input-field shrink-0"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
+                        <option value="">Todos los estados</option>
+                        <option value="pendiente">Pendiente</option>
+                        <option value="parcial">Parcial</option>
+                        <option value="cobrada">Cobrada</option>
+                        <option value="vencida">Vencida</option>
+                        <option value="castigada">Castigada</option>
+                    </select>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                        <label className="text-xs font-medium whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>VENCE DESDE:</label>
+                        <input type="date" value={filtro.vencimiento_desde}
+                            onChange={e => setFiltro(p => ({ ...p, vencimiento_desde: e.target.value }))}
+                            onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
+                            className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm"
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }} />
                     </div>
-                    <div className="flex justify-end gap-2 mt-3">
-                        {hayFiltros && (
-                            <Button type="button" variant="ghost" size="sm" onClick={limpiarFiltros}>
-                                Limpiar
-                            </Button>
-                        )}
-                        <Button type="button" size="sm" onClick={aplicarFiltros}>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                        <label className="text-xs font-medium whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>AL:</label>
+                        <input type="date" value={filtro.vencimiento_hasta}
+                            onChange={e => setFiltro(p => ({ ...p, vencimiento_hasta: e.target.value }))}
+                            onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
+                            className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm"
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }} />
+                    </div>
+
+                    <div className="flex shrink-0 ml-auto" role="group">
+                        <div className="relative">
+                            <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+                            <Input
+                                value={filtro.cliente}
+                                onChange={e => setFiltro(p => ({ ...p, cliente: e.target.value }))}
+                                onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
+                                placeholder="Nombre o RUC..."
+                                className="pl-9 w-52 rounded-r-none border-r-0"
+                            />
+                        </div>
+                        <button type="button"
+                            className="flex items-center justify-center w-9 h-9 rounded-r-md border text-sm font-medium shrink-0"
+                            style={{ background: 'var(--primary)', color: 'black', borderColor: 'var(--primary)' }}
+                            onClick={aplicarFiltros}
+                            title="Buscar">
                             <Search className="w-4 h-4" />
-                            Buscar
-                        </Button>
+                        </button>
                     </div>
                 </div>
 
@@ -373,7 +353,7 @@ export default function Index() {
                                                                 Ver
                                                             </button>
                                                         </Link>
-                                                        {puedeAccion && (
+                                                        {puedeAccion && puede('editar') && (
                                                             <button
                                                                 type="button"
                                                                 className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors hover:bg-emerald-500/10 text-emerald-400"
@@ -383,7 +363,7 @@ export default function Index() {
                                                                 Cobrar
                                                             </button>
                                                         )}
-                                                        {puedeCastigar && (
+                                                        {puedeCastigar && puede('anular') && (
                                                             <button
                                                                 type="button"
                                                                 className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors hover:bg-slate-500/10"

@@ -11,6 +11,7 @@ import DescuentoEspecialModal from '@/Components/Ventas/DescuentoEspecialModal'
 import { cn, formatMoneda } from '@/lib/utils'
 import { toastError } from '@/lib/toast'
 import { Plus, Save, X, Send, Search } from 'lucide-react'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { PageProps, Empresa, Usuario, Cliente } from '@/types'
 
 // ── Interfaces locales ────────────────────────────────────────────────────────
@@ -161,6 +162,7 @@ export default function Form() {
         limites_descuento,
         auth,
     } = usePage<Props>().props
+    const { puede } = usePermiso('ventas')
 
     const esVendedor = auth.user?.perfil === 'vendedor'
 
@@ -1136,16 +1138,20 @@ export default function Form() {
                         </Button>
                     </Link>
                     <div className="flex gap-3">
-                        <span title="Funcionalidad en desarrollo">
-                            <Button type="button" variant="secondary" disabled>
-                                <Send className="w-4 h-4" />
-                                Enviar al SRI
+                        {puede('editar') && (
+                            <span title="Funcionalidad en desarrollo">
+                                <Button type="button" variant="secondary" disabled>
+                                    <Send className="w-4 h-4" />
+                                    Enviar al SRI
+                                </Button>
+                            </span>
+                        )}
+                        {puede('crear') && (
+                            <Button type="submit" loading={guardando}>
+                                <Save className="w-4 h-4" />
+                                Guardar Factura
                             </Button>
-                        </span>
-                        <Button type="submit" loading={guardando}>
-                            <Save className="w-4 h-4" />
-                            Guardar Factura
-                        </Button>
+                        )}
                     </div>
                 </div>
             </form>

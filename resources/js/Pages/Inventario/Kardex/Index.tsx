@@ -2,7 +2,6 @@ import { Head, Link, router, usePage } from '@inertiajs/react'
 import { useState } from 'react'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
-import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Search, FileSpreadsheet } from 'lucide-react'
 import type { Producto, KardexMovimientoExtendido, PaginatedData, PageProps } from '@/types'
@@ -35,18 +34,28 @@ const TIPO_OPTIONS = [
     { value: 'reserva', label: 'Reserva' },
 ]
 
+const toIsoDate = (d: Date) => d.toISOString().slice(0, 10)
+
 export default function KardexIndex() {
     const { resultados, productos_paginados, bodegas, filters } = usePage<Props>().props
 
     const [buscar, setBuscar] = useState(filters.buscar ?? '')
     const [bodegaId, setBodegaId] = useState(filters.bodega_id ?? '')
-    const [fechaDesde, setFechaDesde] = useState(filters.fecha_desde ?? '')
-    const [fechaHasta, setFechaHasta] = useState(filters.fecha_hasta ?? '')
+    const [fechaDesde, setFechaDesde] = useState(filters.fecha_desde ?? (() => {
+        const d = new Date()
+        d.setDate(d.getDate() - 7)
+        return toIsoDate(d)
+    })())
+    const [fechaHasta, setFechaHasta] = useState(filters.fecha_hasta ?? toIsoDate(new Date()))
     const [tipo, setTipo] = useState(filters.tipo ?? '')
     const [fechaError, setFechaError] = useState<string | null>(null)
 
     const handleBuscar = () => {
-        if (fechaDesde && fechaHasta && fechaDesde > fechaHasta) {
+        if (!fechaDesde || !fechaHasta) {
+            setFechaError('Las fechas "desde" y "al" son obligatorias')
+            return
+        }
+        if (fechaDesde > fechaHasta) {
             setFechaError('La fecha "desde" no puede ser posterior a "hasta"')
             return
         }
@@ -58,6 +67,43 @@ export default function KardexIndex() {
             fecha_hasta: fechaHasta || undefined,
             tipo: tipo || undefined,
         }, { preserveState: false })
+    }
+
+    async function exportarExcel() {
+        const XLSX = await import('xlsx')
+        const filas = resultados.flatMap(({ producto, movimientos, saldo_anterior }) => {
+            const base = {
+                'Código':   producto.codigo,
+                'Producto': producto.nombre,
+            }
+            const filaSaldoAnterior = {
+                ...base,
+                'Fecha': '', 'Tipo Doc.': '', 'Documento No': '', 'Observaciones': 'SALDO ANTERIOR', 'Transacción': '',
+                'Cant. Ingreso': '', 'Costo/U Ingreso': '', 'Costo/T Ingreso': '',
+                'Cant. Egreso': '', 'Costo/U Egreso': '', 'Costo/T Egreso': '',
+                'Saldo': Number(saldo_anterior),
+            }
+            const filasMovimientos = movimientos.map(m => ({
+                ...base,
+                'Fecha':         m.hora ? `${m.fecha} ${m.hora.substring(0, 5)}` : m.fecha,
+                'Tipo Doc.':     m.documento_tipo ?? '',
+                'Documento No':  m.documento_numero ?? (m.documento_id ? `#${m.documento_id}` : ''),
+                'Observaciones': m.observacion ?? '',
+                'Transacción':   m.tipo_descriptivo,
+                'Cant. Ingreso':   m.es_ingreso === true ? Number(m.cantidad) : '',
+                'Costo/U Ingreso': m.es_ingreso === true ? Number(m.costo_unitario) : '',
+                'Costo/T Ingreso': m.es_ingreso === true ? Number(m.costo_total) : '',
+                'Cant. Egreso':    m.es_ingreso === false ? Number(m.cantidad) : '',
+                'Costo/U Egreso':  m.es_ingreso === false ? Number(m.costo_unitario) : '',
+                'Costo/T Egreso':  m.es_ingreso === false ? Number(m.costo_total) : '',
+                'Saldo': Number(m.saldo_posterior),
+            }))
+            return [filaSaldoAnterior, ...filasMovimientos]
+        })
+        const ws = XLSX.utils.json_to_sheet(filas)
+        const wb = XLSX.utils.book_new()
+        XLSX.utils.book_append_sheet(wb, ws, 'Kárdex')
+        XLSX.writeFile(wb, 'kardex_movimientos.xlsx')
     }
 
     const fmtQty = (n: number | string | null | undefined) =>
@@ -76,9 +122,7 @@ export default function KardexIndex() {
     const groupBorder = '2px solid var(--border)'
     const selectStyle = { borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }
 
-    const haBuscado = resultados.length > 0
-        || (productos_paginados !== null && productos_paginados.total > 0)
-        || Object.values(filters).some(v => v !== undefined && v !== '')
+    const haBuscado = !!filters.fecha_desde && !!filters.fecha_hasta
 
     const redirectTo = (() => {
         const params = new URLSearchParams(
@@ -94,15 +138,32 @@ export default function KardexIndex() {
             <Head title="Kardex" />
             <PageHeader
                 title="Kardex de Movimientos"
-                description="Historial de entradas y salidas de stock por producto"
                 breadcrumbs={[{ label: 'Inventario' }, { label: 'Kardex' }]}
             />
 
             <div className="p-6 space-y-6">
                 {/* Cabecera de filtros */}
-                <div className="flex gap-3 flex-wrap items-end">
-                    <div className="flex-1 min-w-55">
-                        <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>BUSCAR POR</label>
+                <div className="flex gap-3 flex-nowrap items-center overflow-x-auto">
+                    <select value={bodegaId} onChange={e => setBodegaId(e.target.value)}
+                        className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm shrink-0" style={selectStyle}>
+                        <option value="">Todas las bodegas</option>
+                        {bodegas.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
+                    </select>
+                    <select value={tipo} onChange={e => setTipo(e.target.value)}
+                        className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm shrink-0" style={selectStyle}>
+                        {TIPO_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                        <label className="text-xs font-medium whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>DESDE:</label>
+                        <input type="date" value={fechaDesde} onChange={e => setFechaDesde(e.target.value)}
+                            className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm" style={selectStyle} />
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                        <label className="text-xs font-medium whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>AL:</label>
+                        <input type="date" value={fechaHasta} onChange={e => setFechaHasta(e.target.value)}
+                            className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm" style={selectStyle} />
+                    </div>
+                    <div className="flex shrink-0 ml-auto" role="group">
                         <div className="relative">
                             <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
                             <Input
@@ -110,44 +171,26 @@ export default function KardexIndex() {
                                 onChange={e => setBuscar(e.target.value)}
                                 onKeyDown={e => e.key === 'Enter' && handleBuscar()}
                                 placeholder="Código o nombre del producto..."
-                                className="pl-9"
+                                className="pl-9 w-52 rounded-r-none border-r-0"
                             />
                         </div>
+                        <button className="flex items-center justify-center w-9 h-9 rounded-r-md border text-sm font-medium shrink-0"
+                            style={{ background: 'var(--primary)', color: 'black', borderColor: 'var(--primary)' }}
+                            onClick={handleBuscar}
+                            title="Buscar">
+                            <Search className="w-4 h-4" />
+                        </button>
                     </div>
-                    <div>
-                        <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>BODEGA</label>
-                        <select value={bodegaId} onChange={e => setBodegaId(e.target.value)}
-                            className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm" style={selectStyle}>
-                            <option value="">Todas las bodegas</option>
-                            {bodegas.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
-                        </select>
-                    </div>
-                    <div>
-                        <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>TIPO</label>
-                        <select value={tipo} onChange={e => setTipo(e.target.value)}
-                            className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm" style={selectStyle}>
-                            {TIPO_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                        </select>
-                    </div>
-                    <div>
-                        <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>DESDE</label>
-                        <input type="date" value={fechaDesde} onChange={e => setFechaDesde(e.target.value)}
-                            className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm" style={selectStyle} />
-                    </div>
-                    <div>
-                        <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>AL</label>
-                        <input type="date" value={fechaHasta} onChange={e => setFechaHasta(e.target.value)}
-                            className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm" style={selectStyle} />
-                    </div>
-                    <div className="flex gap-2">
-                        <Button onClick={handleBuscar}>
-                            <Search className="w-4 h-4 mr-1" />
-                            Buscar
-                        </Button>
-                        <Button variant="outline" disabled title="Próximamente">
-                            <FileSpreadsheet className="w-4 h-4 mr-1" />
-                            Excel
-                        </Button>
+                    <div className="flex items-center gap-2">
+                        <button className="flex items-center justify-center w-9 h-9 rounded-md border text-sm font-medium shrink-0"
+                            style={{ background: '#16A34A', color: 'white', borderColor: '#16A34A', transition: 'background 0.2s' }}
+                            onMouseEnter={e => (e.currentTarget.style.background = '#15803D')}
+                            onMouseLeave={e => (e.currentTarget.style.background = '#16A34A')}
+                            onClick={exportarExcel}
+                            disabled={!haBuscado}
+                            title="Excel">
+                            <FileSpreadsheet className="w-4 h-4" />
+                        </button>
                     </div>
                 </div>
 
@@ -160,12 +203,12 @@ export default function KardexIndex() {
                     <div className="text-center py-16">
                         <Search className="w-12 h-12 mx-auto mb-4 opacity-30" style={{ color: 'var(--text-muted)' }} />
                         <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                            Ingresa un término de búsqueda para consultar el kárdex.
+                            Selecciona el rango de fechas (obligatorio) y presiona Buscar para consultar el kárdex.
                         </p>
                         <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
                             O ve directamente a{' '}
                             <Link href={route('inventario.kardex.saldos')} className="underline" style={{ color: 'var(--primary)' }}>
-                                Saldos de Inventario
+                                Inventario General
                             </Link>
                         </p>
                     </div>

@@ -56,8 +56,8 @@ const navItems: NavItem[] = [
         hijos: [
             { nombre: 'Productos', href: '/inventario/productos' },
             { nombre: 'Kárdex', href: '/inventario/kardex' },
-            { nombre: 'Saldos de inventario', href: '/inventario/kardex/saldos' },
-            { nombre: 'Traslados', href: '/inventario/traslados' },
+            { nombre: 'Inventario General', href: '/inventario/kardex/saldos' },
+            { nombre: 'Movimientos', href: '/inventario/traslados' },
             { nombre: 'Activos Fijos', href: '/inventario/activos' },
             { nombre: 'Listas de Precio', href: '/inventario/listas' },
             { nombre: 'Recepciones', href: '/inventario/recepciones' },
@@ -218,15 +218,13 @@ export default function Sidebar({ collapsed, onCollapse, mobileOpen, onMobileClo
 
             {/* Logo */}
             <div className="flex items-center h-16 px-4 shrink-0 border-b border-slate-700/50">
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-                    style={{ background: 'rgba(245,158,11,0.2)', border: '1px solid rgba(245,158,11,0.3)' }}>
-                    <span className="text-base font-bold" style={{ color: '#F59E0B' }}>A</span>
-                </div>
-                {!collapsed && (
-                    <div className="ml-3 overflow-hidden">
-                        <p className="text-sm font-bold text-white leading-none">Altamira</p>
-                        <p className="text-xs leading-none mt-0.5" style={{ color: '#F59E0B' }}>ERP</p>
+                {collapsed ? (
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                        style={{ background: 'rgba(245,158,11,0.2)', border: '1px solid rgba(245,158,11,0.3)' }}>
+                        <span className="text-base font-bold" style={{ color: '#F59E0B' }}>A</span>
                     </div>
+                ) : (
+                    <img src="/images/logo-altamira.png" alt="Altamira Light & Sound" className="h-9 w-auto" />
                 )}
             </div>
 

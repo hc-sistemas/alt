@@ -28,7 +28,12 @@ const emptyForm = {
 export default function TransportistasIndex() {
     const { transportistas } = usePage<Props>().props
     const [search, setSearch] = useState('')
+    const [busqueda, setBusqueda] = useState('')
     const [pdfModal, setPdfModal] = useState(false)
+
+    function buscar() {
+        setBusqueda(search)
+    }
 
     const [modalOpen, setModalOpen] = useState(false)
     const [editando, setEditando] = useState<Transportista | null>(null)
@@ -117,56 +122,62 @@ export default function TransportistasIndex() {
 
             <PageHeader
                 title="Transportistas"
-                description="Empresas y personas que transportan mercadería"
                 breadcrumbs={[{ label: 'Personas' }, { label: 'Transportistas' }]}
-            />
-
-            <div className="p-6">
-                {/* Barra de acciones */}
-                <div className="flex items-center gap-4 mb-4 flex-wrap">
+                actions={
                     <Button onClick={abrirCrear}>
                         <Plus className="w-4 h-4" />
                         Nuevo Transportista
                     </Button>
+                }
+            />
 
-                    <div className="flex items-center gap-2">
-                        <span className="text-sm whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>Buscar:</span>
+            <div className="p-6">
+                {/* Barra de filtros */}
+                <div className="flex items-center gap-3 mb-4 flex-nowrap overflow-x-auto">
+                    <div className="flex shrink-0 ml-auto" role="group">
                         <div className="relative">
                             <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
                             <Input
                                 value={search}
                                 onChange={e => setSearch(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && buscar()}
                                 placeholder="Razón social o identificación..."
-                                className="pl-9 w-64"
+                                className="pl-9 w-64 rounded-r-none border-r-0"
                             />
                         </div>
+                        <button className="flex items-center justify-center w-9 h-9 rounded-r-md border text-sm font-medium shrink-0"
+                            style={{ background: 'var(--primary)', color: 'black', borderColor: 'var(--primary)' }}
+                            onClick={buscar}
+                            title="Buscar">
+                            <Search className="w-4 h-4" />
+                        </button>
                     </div>
 
-                    <div className="flex items-center gap-2 ml-auto">
+                    <div className="flex items-center gap-2 shrink-0">
                         <button
                             onClick={() => setPdfModal(true)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium"
-                            style={{ background: '#DC2626', color: 'white', transition: 'background 0.2s' }}
+                            className="flex items-center justify-center w-9 h-9 rounded-md text-sm font-medium border shrink-0"
+                            style={{ background: '#DC2626', color: 'white', borderColor: '#DC2626', transition: 'background 0.2s' }}
                             onMouseEnter={e => (e.currentTarget.style.background = '#B91C1C')}
-                            onMouseLeave={e => (e.currentTarget.style.background = '#DC2626')}>
+                            onMouseLeave={e => (e.currentTarget.style.background = '#DC2626')}
+                            title="PDF">
                             <FileText className="w-4 h-4" />
-                            PDF
                         </button>
-                        <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium"
-                            style={{ background: '#16A34A', color: 'white', transition: 'background 0.2s' }}
+                        <button className="flex items-center justify-center w-9 h-9 rounded-md text-sm font-medium border shrink-0"
+                            style={{ background: '#16A34A', color: 'white', borderColor: '#16A34A', transition: 'background 0.2s' }}
                             onMouseEnter={e => (e.currentTarget.style.background = '#15803D')}
                             onMouseLeave={e => (e.currentTarget.style.background = '#16A34A')}
-                            onClick={exportarExcel}>
+                            onClick={exportarExcel}
+                            title="Excel">
                             <FileSpreadsheet className="w-4 h-4" />
-                            Excel
                         </button>
                     </div>
                 </div>
 
                 <div className="rounded-xl border overflow-x-auto" style={{ borderColor: 'var(--border)' }}>
                     {(() => {
-                        const term = search.toLowerCase()
-                        const filtrados = search
+                        const term = busqueda.toLowerCase()
+                        const filtrados = busqueda
                             ? transportistas.filter(t =>
                                 t.razon_social.toLowerCase().includes(term) ||
                                 (t.identificacion ?? '').toLowerCase().includes(term)
@@ -189,8 +200,8 @@ export default function TransportistasIndex() {
                                 {filtrados.length === 0 ? (
                                     <tr>
                                         <td colSpan={8} className="text-center py-12" style={{ color: 'var(--text-muted)' }}>
-                                            {search ? (
-                                                <p className="text-sm">No hay resultados para "{search}".</p>
+                                            {busqueda ? (
+                                                <p className="text-sm">No hay resultados para "{busqueda}".</p>
                                             ) : (
                                                 <>
                                                     <p className="text-sm">No hay transportistas registrados.</p>

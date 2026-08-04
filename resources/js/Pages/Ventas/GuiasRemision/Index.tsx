@@ -52,85 +52,61 @@ export default function Index() {
         router.get(route('ventas.guias-remision.index'), filtro as Record<string, string | undefined>, { preserveState: true })
     }
 
-    const limpiarFiltros = () => {
-        const limpio: Filtros = { fecha_desde: '', fecha_hasta: '', estado: '' }
-        setFiltro(limpio)
-        router.get(route('ventas.guias-remision.index'), {}, { preserveState: false })
-    }
-
-    const hayFiltros = Object.values(filtro).some(v => v !== '')
-
     return (
         <AppLayout>
             <Head title="Guías de Remisión" />
             <PageHeader
                 title="Guías de Remisión"
-                description="Gestión de guías de remisión"
                 breadcrumbs={[{ label: 'Ventas' }, { label: 'Guías de Remisión' }]}
+                actions={
+                    puede('crear') ? (
+                        <Link href={route('ventas.guias-remision.create')}>
+                            <Button>
+                                <Plus className="w-4 h-4" />
+                                Nueva Guía
+                            </Button>
+                        </Link>
+                    ) : undefined
+                }
             />
 
             <div className="p-6 space-y-4">
-                {/* Filtros */}
-                <div
-                    className="rounded-xl p-4 border"
-                    style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
-                >
-                    <div className="flex items-center gap-3 mb-4 flex-wrap">
-                        {puede('crear') && (
-                            <Link href={route('ventas.guias-remision.create')}>
-                                <Button>
-                                    <Plus className="w-4 h-4" />
-                                    Nueva Guía
-                                </Button>
-                            </Link>
-                        )}
+                {/* Barra de filtros */}
+                <div className="flex items-center gap-3 mb-4 flex-nowrap overflow-x-auto">
+                    <select value={filtro.estado} onChange={e => setFiltro(p => ({ ...p, estado: e.target.value }))}
+                        className="input-field shrink-0"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
+                        <option value="">Todos los SRI</option>
+                        <option value="pendiente">Pendiente</option>
+                        <option value="autorizada">Autorizada</option>
+                        <option value="rechazada">Rechazada</option>
+                        <option value="anulada">Anulada</option>
+                    </select>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                        <label className="text-xs font-medium whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>DESDE:</label>
+                        <input type="date" value={filtro.fecha_desde}
+                            onChange={e => setFiltro(p => ({ ...p, fecha_desde: e.target.value }))}
+                            onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
+                            className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm"
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }} />
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        <div>
-                            <label className="text-xs mb-1 block" style={{ color: 'var(--text-muted)' }}>Desde</label>
-                            <Input
-                                type="date"
-                                value={filtro.fecha_desde}
-                                onChange={e => setFiltro(p => ({ ...p, fecha_desde: e.target.value }))}
-                                onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
-                            />
-                        </div>
-                        <div>
-                            <label className="text-xs mb-1 block" style={{ color: 'var(--text-muted)' }}>Hasta</label>
-                            <Input
-                                type="date"
-                                value={filtro.fecha_hasta}
-                                onChange={e => setFiltro(p => ({ ...p, fecha_hasta: e.target.value }))}
-                                onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
-                            />
-                        </div>
-                        <div>
-                            <label className="text-xs mb-1 block" style={{ color: 'var(--text-muted)' }}>Estado SRI</label>
-                            <select
-                                className="w-full h-9 rounded-md border px-3 text-sm"
-                                style={{ background: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
-                                value={filtro.estado}
-                                onChange={e => setFiltro(p => ({ ...p, estado: e.target.value }))}
-                            >
-                                <option value="">Todos</option>
-                                <option value="pendiente">Pendiente</option>
-                                <option value="autorizada">Autorizada</option>
-                                <option value="rechazada">Rechazada</option>
-                                <option value="anulada">Anulada</option>
-                            </select>
-                        </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                        <label className="text-xs font-medium whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>AL:</label>
+                        <input type="date" value={filtro.fecha_hasta}
+                            onChange={e => setFiltro(p => ({ ...p, fecha_hasta: e.target.value }))}
+                            onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
+                            className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm"
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }} />
                     </div>
-                    <div className="flex justify-end gap-2 mt-3">
-                        {hayFiltros && (
-                            <Button type="button" variant="ghost" size="sm" onClick={limpiarFiltros}>
-                                Limpiar
-                            </Button>
-                        )}
-                        <Button type="button" size="sm" onClick={aplicarFiltros}>
-                            <Search className="w-4 h-4" />
-                            Buscar
-                        </Button>
-                    </div>
+
+                    <button type="button"
+                        className="flex items-center justify-center w-9 h-9 rounded-md border text-sm font-medium shrink-0 ml-auto"
+                        style={{ background: 'var(--primary)', color: 'black', borderColor: 'var(--primary)' }}
+                        onClick={aplicarFiltros}
+                        title="Buscar">
+                        <Search className="w-4 h-4" />
+                    </button>
                 </div>
 
                 {/* Tabla */}
@@ -142,12 +118,14 @@ export default function Index() {
                         <div className="flex flex-col items-center justify-center py-20 gap-3">
                             <FileText className="w-12 h-12 opacity-20" style={{ color: 'var(--text-muted)' }} />
                             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No se encontraron guías de remisión</p>
-                            <Link href={route('ventas.guias-remision.create')}>
-                                <Button size="sm">
-                                    <Plus className="w-4 h-4" />
-                                    Nueva Guía
-                                </Button>
-                            </Link>
+                            {puede('crear') && (
+                                <Link href={route('ventas.guias-remision.create')}>
+                                    <Button size="sm">
+                                        <Plus className="w-4 h-4" />
+                                        Nueva Guía
+                                    </Button>
+                                </Link>
+                            )}
                         </div>
                     ) : (
                         <div className="overflow-x-auto">

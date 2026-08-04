@@ -27,23 +27,29 @@ class ProductoController extends Controller
     public function index(Request $request): Response
     {
         $empresaId = session('empresa_activa_id');
+        $busquedaRealizada = $request->boolean('buscado');
 
-        $query = Producto::with(['marca', 'categoria'])
-            ->where('empresa_id', $empresaId)
-            ->when($request->search, fn($q) => $q->where(function ($q) use ($request) {
-                $q->where('codigo', 'ilike', "%{$request->search}%")
-                  ->orWhere('nombre', 'ilike', "%{$request->search}%");
-            }))
-            ->when($request->marca_id, fn($q) => $q->where('marca_id', $request->marca_id))
-            ->when($request->categoria_id, fn($q) => $q->where('categoria_id', $request->categoria_id))
-            ->when($request->tipo, fn($q) => $q->where('tipo', $request->tipo))
-            ->when($request->estado !== null && $request->estado !== '', fn($q) =>
-                $q->where('estado', $request->estado === 'activo')
-            )
-            ->orderBy('nombre');
+        $productos = null;
+
+        if ($busquedaRealizada) {
+            $productos = Producto::with(['marca', 'categoria'])
+                ->when($request->search, fn($q) => $q->where(function ($q) use ($request) {
+                    $q->where('codigo', 'ilike', "%{$request->search}%")
+                      ->orWhere('nombre', 'ilike', "%{$request->search}%");
+                }))
+                ->when($request->marca_id, fn($q) => $q->where('marca_id', $request->marca_id))
+                ->when($request->categoria_id, fn($q) => $q->where('categoria_id', $request->categoria_id))
+                ->when($request->tipo, fn($q) => $q->where('tipo', $request->tipo))
+                ->when($request->estado !== null && $request->estado !== '', fn($q) =>
+                    $q->where('estado', $request->estado === 'activo')
+                )
+                ->orderBy('nombre')
+                ->paginate(20)
+                ->withQueryString();
+        }
 
         return Inertia::render('Inventario/Productos/Index', [
-            'productos'  => $query->paginate(20)->withQueryString(),
+            'productos'  => $productos,
             'filters'    => $request->only(['search', 'marca_id', 'categoria_id', 'tipo', 'estado']),
             'marcas'     => Marca::where('estado', true)->orderBy('nombre')->get(['id', 'nombre']),
             'categorias' => CategoriaProducto::where('estado', true)->orderBy('nombre')->get(['id', 'nombre', 'categoria_padre_id']),
@@ -77,7 +83,6 @@ class ProductoController extends Controller
         }
 
         $productos = Producto::with('marca')
-            ->where('empresa_id', $empresaId)
             ->where('estado', true)
             ->where(function ($q) use ($query) {
                 $q->where('codigo', 'ilike', "%{$query}%")
@@ -111,6 +116,7 @@ class ProductoController extends Controller
             'tipo'               => ['required', 'in:producto,servicio,repuesto,insumo'],
             'unidad'             => ['required', 'string', 'max:20'],
             'marca_id'           => ['nullable', 'integer', 'exists:marcas,id'],
+            'marca_fabricante'   => ['nullable', 'string', 'max:150'],
             'categoria_id'       => ['nullable', 'integer', 'exists:categorias_producto,id'],
             'requiere_serie'     => ['boolean'],
             'pvp'                => ['numeric', 'min:0'],
@@ -178,6 +184,7 @@ class ProductoController extends Controller
             'tipo'               => ['required', 'in:producto,servicio,repuesto,insumo'],
             'unidad'             => ['required', 'string', 'max:20'],
             'marca_id'           => ['nullable', 'integer', 'exists:marcas,id'],
+            'marca_fabricante'   => ['nullable', 'string', 'max:150'],
             'categoria_id'       => ['nullable', 'integer', 'exists:categorias_producto,id'],
             'requiere_serie'     => ['boolean'],
             'pvp'                => ['numeric', 'min:0'],
@@ -214,7 +221,6 @@ class ProductoController extends Controller
         $empresa   = Empresa::findOrFail($empresaId);
 
         $productos = Producto::with(['marca', 'categoria'])
-            ->where('empresa_id', $empresaId)
             ->orderBy('nombre')
             ->get();
 

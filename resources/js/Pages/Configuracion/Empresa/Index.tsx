@@ -7,6 +7,7 @@ import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { Badge } from '@/Components/ui/badge'
 import { Save, AlertTriangle, Building2, FileText, List } from 'lucide-react'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { Empresa, CentroCosto, PageProps } from '@/types'
 
 interface Secuencial {
@@ -25,6 +26,7 @@ interface Props extends PageProps {
 
 export default function EmpresaIndex() {
     const { empresa, centros_costo, secuenciales } = usePage<Props>().props
+    const { puede } = usePermiso('configuracion')
 
     const { data, setData, put, processing, errors } = useForm({
         razon_social: empresa.razon_social ?? '',
@@ -233,10 +235,12 @@ export default function EmpresaIndex() {
 
                 {/* Acciones */}
                 <div className="flex gap-3 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
-                    <Button type="submit" loading={processing}>
-                        <Save className="w-4 h-4" />
-                        Guardar cambios
-                    </Button>
+                    {puede('editar') && (
+                        <Button type="submit" loading={processing}>
+                            <Save className="w-4 h-4" />
+                            Guardar cambios
+                        </Button>
+                    )}
                 </div>
             </form>
         </AppLayout>

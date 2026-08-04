@@ -73,8 +73,7 @@ class PrefacturaController extends Controller
             ->orderBy('razon_social')
             ->get();
 
-        $productos = Producto::where('empresa_id', $empresaId)
-            ->where('estado', true)
+        $productos = Producto::where('estado', true)
             ->select('id', 'codigo', 'nombre', 'pvp', 'pvd', 'costo', 'descuento_maximo as descuento_max', 'porcentaje_iva')
             ->orderBy('nombre')
             ->get();

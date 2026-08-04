@@ -3,6 +3,7 @@ import { useState } from 'react'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
 import { Input } from '@/Components/ui/input'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { Perfil, Modulo, Permiso, LimiteDescuento, PageProps } from '@/types'
 import { cn } from "../../../lib/utils";
 
@@ -11,9 +12,16 @@ interface PerfilConPermisos extends Perfil {
     limite_descuento?: LimiteDescuento[]
 }
 
+interface EmpresaOpcion {
+    id: number
+    nombre_comercial: string
+}
+
 interface Props extends PageProps {
     perfiles: PerfilConPermisos[]
     modulos: Modulo[]
+    empresas: EmpresaOpcion[]
+    empresaId: number
 }
 
 const acciones: { key: keyof Permiso; label: string }[] = [
@@ -25,12 +33,17 @@ const acciones: { key: keyof Permiso; label: string }[] = [
 ]
 
 export default function PermisosIndex() {
-    const { perfiles, modulos } = usePage<Props>().props
+    const { perfiles, modulos, empresas, empresaId } = usePage<Props>().props
+    const { puede } = usePermiso('configuracion')
     const [perfilActivo, setPerfilActivo] = useState(perfiles[0]?.id ?? 0)
     const [guardando, setGuardando] = useState<string | null>(null)
 
     const perfil = perfiles.find(p => p.id === perfilActivo)
     const permisoMap = new Map(perfil?.permisos.map(p => [p.modulo_id, p]) ?? [])
+
+    function cambiarEmpresa(id: number) {
+        router.get(route('configuracion.permisos.index'), { empresa_id: id }, { preserveState: true })
+    }
 
     function actualizarPermiso(moduloId: number, accion: string, valor: boolean) {
         const key = `${moduloId}-${accion}`
@@ -38,6 +51,7 @@ export default function PermisosIndex() {
         router.post(route('configuracion.permisos.actualizar'), {
             perfil_id: perfilActivo,
             modulo_id: moduloId,
+            empresa_id: empresaId,
             accion,
             valor,
         }, {
@@ -57,6 +71,23 @@ export default function PermisosIndex() {
             />
 
             <div className="p-6">
+                {/* Selector de empresa */}
+                <div className={cn('flex', 'flex-wrap', 'gap-1', 'mb-4')}>
+                    {empresas.map(e => (
+                        <button
+                            key={e.id}
+                            onClick={() => cambiarEmpresa(e.id)}
+                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${empresaId === e.id
+                                    ? 'text-black'
+                                    : 'hover:bg-slate-100 dark:hover:bg-slate-800'
+                                }`}
+                            style={empresaId === e.id ? { background: '#F59E0B' } : { color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+                        >
+                            {e.nombre_comercial}
+                        </button>
+                    ))}
+                </div>
+
                 {/* Tabs de perfiles */}
                 <div className={cn('flex', 'flex-wrap', 'gap-1', 'mb-6', 'pb-3', 'border-b')}
                     style={{ borderColor: 'var(--border)' }}>
@@ -109,7 +140,7 @@ export default function PermisosIndex() {
                                                     <input
                                                         type="checkbox"
                                                         checked={valor}
-                                                        disabled={guardando === key}
+                                                        disabled={guardando === key || !puede('editar')}
                                                         onChange={e => actualizarPermiso(modulo.id, a.key, e.target.checked)}
                                                         className={cn('rounded', 'w-4', 'h-4', 'accent-amber-500', 'cursor-pointer')}
                                                     />

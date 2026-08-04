@@ -9,6 +9,7 @@ import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { Plus, Trash2, Save, AlertTriangle, X } from 'lucide-react'
 import { toastExito, toastError } from '@/lib/toast'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { PageProps } from '@/types'
 
 interface ItemForm {
@@ -31,6 +32,7 @@ const emptyItem = (): ItemForm => ({
 
 export default function TrasladoForm() {
     const { bodegas } = usePage<Props>().props
+    const { puede } = usePermiso('inventario')
 
     const { data, setData, post, processing, errors } = useForm({
         bodega_origen_id:  '',
@@ -39,6 +41,7 @@ export default function TrasladoForm() {
     })
 
     const [items, setItems] = useState<ItemForm[]>([emptyItem()])
+    const [enviando, setEnviando] = useState(false)
 
     const mismaBodega = data.bodega_origen_id &&
         data.bodega_destino_id &&
@@ -103,6 +106,7 @@ export default function TrasladoForm() {
         e.preventDefault()
 
         if (mismaBodega) return
+        setEnviando(true)
 
         const payload = {
             ...data,
@@ -127,25 +131,27 @@ export default function TrasladoForm() {
             if (res.status === 422) {
                 const json = await res.json()
                 toastError(json.message ?? 'Error de validación')
+                setEnviando(false)
                 return
             }
 
-            toastExito('Traslado creado correctamente')
+            toastExito('Movimiento creado correctamente')
             router.visit(route('inventario.traslados.index'))
         } catch {
-            toastError('Error al crear el traslado')
+            toastError('Error al crear el movimiento')
+            setEnviando(false)
         }
     }
 
     return (
-        <AppLayout title="Nuevo Traslado">
-            <Head title="Nuevo Traslado" />
+        <AppLayout title="Nuevo Movimiento">
+            <Head title="Nuevo Movimiento" />
             <PageHeader
-                title="Nuevo Traslado"
-                description="Crear traslado de stock entre bodegas"
+                title="Nuevo Movimiento"
+                description="Crear movimiento de stock entre bodegas"
                 breadcrumbs={[
                     { label: 'Inventario' },
-                    { label: 'Traslados', href: route('inventario.traslados.index') },
+                    { label: 'Movimientos', href: route('inventario.traslados.index') },
                     { label: 'Nuevo' },
                 ]}
             />
@@ -303,10 +309,12 @@ export default function TrasladoForm() {
 
                 {/* Acciones */}
                 <div className="flex gap-3">
-                    <Button type="submit" loading={processing} disabled={!!mismaBodega || items.length === 0}>
-                        <Save className="w-4 h-4" />
-                        Crear traslado
-                    </Button>
+                    {puede('crear') && (
+                        <Button type="submit" loading={enviando} disabled={!!mismaBodega || items.length === 0}>
+                            <Save className="w-4 h-4" />
+                            Crear movimiento
+                        </Button>
+                    )}
                     <Button type="button" variant="outline"
                         onClick={() => router.visit(route('inventario.traslados.index'))}>
                         Cancelar

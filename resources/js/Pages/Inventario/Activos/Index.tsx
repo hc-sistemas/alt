@@ -1,5 +1,5 @@
 import { Head, Link, router, usePage } from '@inertiajs/react'
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
 import PdfPreviewModal from '@/Components/shared/PdfPreviewModal'
@@ -8,12 +8,13 @@ import { Input } from '@/Components/ui/input'
 import { Plus, Search, Pencil, Trash2, Eye, FileText, FileSpreadsheet } from 'lucide-react'
 import { confirmarEliminar } from '@/lib/swal'
 import { toastExito, toastError } from '@/lib/toast'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { ActivoFijo, PaginatedData, PageProps } from '@/types'
 
 interface Props extends PageProps {
-    activos: PaginatedData<ActivoFijo>
+    activos: PaginatedData<ActivoFijo> | null
     estados: string[]
-    filters: { search?: string; estado?: string }
+    filters: { search?: string; estado?: string; fecha_desde?: string; fecha_hasta?: string }
 }
 
 const ESTADO_COLORES: Record<string, string> = {
@@ -32,26 +33,28 @@ function fmt(v: number | string) {
 
 export default function ActivosIndex() {
     const { activos, estados, filters } = usePage<Props>().props
+    const { puede } = usePermiso('inventario')
 
     const [search, setSearch] = useState(filters.search ?? '')
     const [estado, setEstado] = useState(filters.estado ?? '')
+    const [fechaDesde, setFechaDesde] = useState(filters.fecha_desde ?? '')
+    const [fechaHasta, setFechaHasta] = useState(filters.fecha_hasta ?? '')
     const [pdfModal, setPdfModal] = useState(false)
-    const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-    const isFirstRender = useRef(true)
 
-    useEffect(() => {
-        if (isFirstRender.current) { isFirstRender.current = false; return }
-        if (debounceRef.current) clearTimeout(debounceRef.current)
-        debounceRef.current = setTimeout(() => {
-            router.get(route('inventario.activos.index'), {
-                search: search || undefined,
-                estado: estado || undefined,
-            }, { preserveState: true, replace: true })
-        }, 400)
-        return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
-    }, [search, estado])
+    const haBuscado = activos !== null
+
+    function buscar() {
+        router.get(route('inventario.activos.index'), {
+            search: search || undefined,
+            estado: estado || undefined,
+            fecha_desde: fechaDesde || undefined,
+            fecha_hasta: fechaHasta || undefined,
+            buscado: '1',
+        }, { preserveState: false })
+    }
 
     async function exportarExcel() {
+        if (!activos) return
         const XLSX = await import('xlsx')
         const filas = activos.data.map(a => ({
             'Código':                 a.codigo,
@@ -97,29 +100,21 @@ export default function ActivosIndex() {
             <Head title="Activos Fijos" />
             <PageHeader
                 title="Activos Fijos"
-                description="Registro y depreciación de activos fijos"
                 breadcrumbs={[{ label: 'Inventario' }, { label: 'Activos Fijos' }]}
+                actions={
+                    puede('crear') ? (
+                        <Link href={route('inventario.activos.create')}>
+                            <Button>
+                                <Plus className="w-4 h-4" />
+                                Nuevo Activo
+                            </Button>
+                        </Link>
+                    ) : undefined
+                }
             />
 
             <div className="p-6">
                 <div className="flex items-center gap-3 mb-4 flex-wrap">
-                    <Link href={route('inventario.activos.create')}>
-                        <Button>
-                            <Plus className="w-4 h-4" />
-                            Nuevo Activo
-                        </Button>
-                    </Link>
-
-                    <div className="relative">
-                        <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
-                        <Input
-                            value={search}
-                            onChange={e => setSearch(e.target.value)}
-                            placeholder="Código o nombre..."
-                            className="pl-9 w-52"
-                        />
-                    </div>
-
                     <select value={estado} onChange={e => setEstado(e.target.value)}
                         className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm"
                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
@@ -129,7 +124,39 @@ export default function ActivosIndex() {
                         ))}
                     </select>
 
-                    <div className="flex items-center gap-2 ml-auto">
+                    <div className="flex items-center gap-1.5 shrink-0">
+                        <label className="text-xs font-medium whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>DESDE:</label>
+                        <input type="date" value={fechaDesde} onChange={e => setFechaDesde(e.target.value)}
+                            className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm"
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }} />
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                        <label className="text-xs font-medium whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>AL:</label>
+                        <input type="date" value={fechaHasta} onChange={e => setFechaHasta(e.target.value)}
+                            className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm"
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }} />
+                    </div>
+
+                    <div className="flex shrink-0 ml-auto" role="group">
+                        <div className="relative">
+                            <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+                            <Input
+                                value={search}
+                                onChange={e => setSearch(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && buscar()}
+                                placeholder="Código o nombre..."
+                                className="pl-9 w-52 rounded-r-none border-r-0"
+                            />
+                        </div>
+                        <button className="flex items-center justify-center w-9 h-9 rounded-r-md border text-sm font-medium shrink-0"
+                            style={{ background: 'var(--primary)', color: 'black', borderColor: 'var(--primary)' }}
+                            onClick={buscar}
+                            title="Buscar">
+                            <Search className="w-4 h-4" />
+                        </button>
+                    </div>
+
+                    <div className="flex items-center gap-2">
                         <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium"
                             style={{ background: '#DC2626', color: 'white', transition: 'background 0.2s' }}
                             onMouseEnter={e => (e.currentTarget.style.background = '#B91C1C')}
@@ -138,17 +165,30 @@ export default function ActivosIndex() {
                             <FileText className="w-4 h-4" />
                             PDF
                         </button>
-                        <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium"
-                            style={{ background: '#16A34A', color: 'white', transition: 'background 0.2s' }}
+                        <button className="flex items-center justify-center w-9 h-9 rounded-md text-sm font-medium border shrink-0"
+                            style={{ background: '#16A34A', color: 'white', borderColor: '#16A34A', transition: 'background 0.2s' }}
                             onMouseEnter={e => (e.currentTarget.style.background = '#15803D')}
                             onMouseLeave={e => (e.currentTarget.style.background = '#16A34A')}
-                            onClick={exportarExcel}>
+                            onClick={exportarExcel}
+                            disabled={!activos}
+                            title="Excel">
                             <FileSpreadsheet className="w-4 h-4" />
-                            Excel
                         </button>
                     </div>
                 </div>
 
+                {/* Estado inicial: aún no se ha buscado */}
+                {!haBuscado && (
+                    <div className="text-center py-16">
+                        <Search className="w-12 h-12 mx-auto mb-4 opacity-30" style={{ color: 'var(--text-muted)' }} />
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                            Ajusta los filtros y presiona Buscar para consultar los activos.
+                        </p>
+                    </div>
+                )}
+
+                {haBuscado && activos && (
+                <>
                 <div className="rounded-xl border overflow-x-auto" style={{ borderColor: 'var(--border)' }}>
                     <table className="w-full text-xs">
                         <thead>
@@ -208,15 +248,19 @@ export default function ActivosIndex() {
                                                         <Eye className="w-3.5 h-3.5" />
                                                     </Button>
                                                 </Link>
-                                                <Link href={route('inventario.activos.edit', activo.id)}>
-                                                    <Button variant="ghost" size="icon" title="Editar">
-                                                        <Pencil className="w-3.5 h-3.5" />
+                                                {puede('editar') && (
+                                                    <Link href={route('inventario.activos.edit', activo.id)}>
+                                                        <Button variant="ghost" size="icon" title="Editar">
+                                                            <Pencil className="w-3.5 h-3.5" />
+                                                        </Button>
+                                                    </Link>
+                                                )}
+                                                {puede('eliminar') && (
+                                                    <Button variant="ghost" size="icon" title="Eliminar"
+                                                        onClick={() => eliminar(activo)}>
+                                                        <Trash2 className="w-3.5 h-3.5 text-red-400" />
                                                     </Button>
-                                                </Link>
-                                                <Button variant="ghost" size="icon" title="Eliminar"
-                                                    onClick={() => eliminar(activo)}>
-                                                    <Trash2 className="w-3.5 h-3.5 text-red-400" />
-                                                </Button>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>
@@ -247,6 +291,8 @@ export default function ActivosIndex() {
                             ))}
                         </div>
                     </div>
+                )}
+                </>
                 )}
             </div>
             <PdfPreviewModal

@@ -33,21 +33,33 @@ class RecepcionController extends Controller
     public function index(Request $request): Response
     {
         $empresaId = session('empresa_activa_id');
+        $busquedaRealizada = $request->boolean('buscado');
 
-        $query = RecepcionBodega::with(['compra.proveedor', 'bodega'])
-            ->where('empresa_id', $empresaId);
+        $recepciones = null;
 
-        if ($request->filled('estado')) {
-            $query->where('estado', $request->estado);
-        }
-        if ($request->filled('fecha_desde')) {
-            $query->where('created_at', '>=', $request->fecha_desde);
-        }
-        if ($request->filled('fecha_hasta')) {
-            $query->where('created_at', '<=', $request->fecha_hasta . ' 23:59:59');
-        }
+        if ($busquedaRealizada) {
+            $query = RecepcionBodega::with(['compra.proveedor', 'bodega'])
+                ->where('empresa_id', $empresaId);
 
-        $recepciones = $query->orderByDesc('created_at')->paginate(20)->withQueryString();
+            if ($request->filled('search')) {
+                $search = $request->search;
+                $query->where(function ($q) use ($search) {
+                    $q->whereHas('compra', fn($q) => $q->where('num_documento', 'ilike', "%{$search}%"))
+                      ->orWhereHas('compra.proveedor', fn($q) => $q->where('razon_social', 'ilike', "%{$search}%"));
+                });
+            }
+            if ($request->filled('estado')) {
+                $query->where('estado', $request->estado);
+            }
+            if ($request->filled('fecha_desde')) {
+                $query->where('created_at', '>=', $request->fecha_desde);
+            }
+            if ($request->filled('fecha_hasta')) {
+                $query->where('created_at', '<=', $request->fecha_hasta . ' 23:59:59');
+            }
+
+            $recepciones = $query->orderByDesc('created_at')->paginate(20)->withQueryString();
+        }
 
         $bodegas = Bodega::where('empresa_id', $empresaId)
             ->where('estado', true)
@@ -56,7 +68,7 @@ class RecepcionController extends Controller
 
         return Inertia::render('Inventario/Recepciones/Index', [
             'recepciones' => $recepciones,
-            'filtros'     => $request->only(['estado', 'fecha_desde', 'fecha_hasta']),
+            'filtros'     => $request->only(['search', 'estado', 'fecha_desde', 'fecha_hasta']),
             'bodegas'     => $bodegas,
         ]);
     }
@@ -168,8 +180,7 @@ class RecepcionController extends Controller
             return response()->json(['encontrado' => false, 'producto' => null]);
         }
 
-        $producto = Producto::where('empresa_id', $empresaId)
-            ->where('estado', true)
+        $producto = Producto::where('estado', true)
             ->where(fn($q) => $q->where('codigo', $codigo)->orWhere('codigo_externo', $codigo))
             ->first(['id', 'codigo', 'nombre', 'unidad']);
 
