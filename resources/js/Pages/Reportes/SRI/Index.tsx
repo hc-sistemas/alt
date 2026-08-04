@@ -26,11 +26,35 @@ export default function SriIndex() {
     const [modalPdf,    setModalPdf]    = useState(false)
     const [urlPdf,      setUrlPdf]      = useState('')
     const [tituloModal, setTituloModal] = useState('')
+    const [cargandoPdf, setCargandoPdf] = useState(false)
+    const [errorPdf,    setErrorPdf]    = useState('')
 
-    const abrirPdf = (url: string, titulo: string) => {
-        setUrlPdf(url)
-        setTituloModal(titulo)
+    const abrirPdf = async (url: string, titulo: string) => {
         setModalPdf(true)
+        setTituloModal(titulo)
+        setCargandoPdf(true)
+        setErrorPdf('')
+        setUrlPdf('')
+        try {
+            const res = await fetch(url, { headers: { Accept: 'application/pdf' } })
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ message: null })) as { message?: string | null }
+                throw new Error(err.message ?? 'No se pudo generar el PDF.')
+            }
+            const blob = await res.blob()
+            setUrlPdf(URL.createObjectURL(blob))
+        } catch (e) {
+            setErrorPdf(e instanceof Error ? e.message : 'No se pudo generar el PDF. Intenta de nuevo.')
+        } finally {
+            setCargandoPdf(false)
+        }
+    }
+
+    const cerrarModalPdf = () => {
+        if (urlPdf) URL.revokeObjectURL(urlPdf)
+        setModalPdf(false)
+        setUrlPdf('')
+        setErrorPdf('')
     }
 
     const descargarXml = () => {
@@ -66,7 +90,6 @@ export default function SriIndex() {
         <AppLayout>
             <PageHeader
                 title="Reportes SRI"
-                description={`ATS, Formulario 103 (Retenciones IR) y Formulario 104 (IVA) · ${empresa.ruc}`}
                 breadcrumbs={[{ label: 'Reportes' }, { label: 'SRI' }]}
             />
 
@@ -269,44 +292,13 @@ export default function SriIndex() {
                 </div>
 
                 </div>{/* cierra grid 2-col */}
-
-                {/* INFO */}
-                <div className="rounded-2xl border p-5"
-                     style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
-                    <h3 className="font-semibold text-sm mb-3" style={{ color: 'var(--text-main)' }}>
-                        ℹ️ Sobre los reportes SRI
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div>
-                            <p className="text-xs font-semibold mb-1" style={{ color: 'var(--text-main)' }}>ATS</p>
-                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                                Generado mensualmente para declarar compras, ventas y retenciones al SRI.
-                                El XML puede subirse directamente al portal sri.gob.ec.
-                            </p>
-                        </div>
-                        <div>
-                            <p className="text-xs font-semibold mb-1" style={{ color: 'var(--text-main)' }}>Formulario 103</p>
-                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                                Declaración mensual de retenciones en la fuente del IR agrupadas por
-                                código SRI y porcentaje. Requiere comprobantes emitidos al día.
-                            </p>
-                        </div>
-                        <div>
-                            <p className="text-xs font-semibold mb-1" style={{ color: 'var(--text-main)' }}>Formulario 104</p>
-                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                                Liquidación del IVA 15%: IVA causado en ventas menos crédito tributario
-                                de compras y retenciones recibidas para calcular el saldo a pagar.
-                            </p>
-                        </div>
-                    </div>
-                </div>
             </div>
 
             {/* MODAL PDF */}
             {modalPdf && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
                      style={{ background: 'rgba(0,0,0,0.85)' }}
-                     onClick={() => setModalPdf(false)}>
+                     onClick={cerrarModalPdf}>
                     <div className="w-full max-w-5xl rounded-2xl overflow-hidden shadow-2xl flex flex-col"
                          style={{ background: 'var(--bg-card)', height: '90vh' }}
                          onClick={e => e.stopPropagation()}>
@@ -317,17 +309,18 @@ export default function SriIndex() {
                                 {tituloModal}
                             </h3>
                             <div className="flex items-center gap-2">
-                                <a href={urlPdf}
-                                   download
-                                   target="_blank"
-                                   className="flex items-center gap-1 px-3 py-1.5 rounded-lg
-                                              text-xs font-semibold text-white hover:opacity-90"
-                                   style={{ background: '#1A3A5C' }}>
-                                    <Download size={13} />
-                                    Descargar
-                                </a>
+                                {urlPdf && (
+                                    <a href={urlPdf}
+                                       download={`${tituloModal.toLowerCase().replace(/\s+/g, '-')}-${new Date().toISOString().slice(0, 10)}.pdf`}
+                                       className="flex items-center gap-1 px-3 py-1.5 rounded-lg
+                                                  text-xs font-semibold text-white hover:opacity-90"
+                                       style={{ background: '#1A3A5C' }}>
+                                        <Download size={13} />
+                                        Descargar
+                                    </a>
+                                )}
                                 <button
-                                    onClick={() => setModalPdf(false)}
+                                    onClick={cerrarModalPdf}
                                     className="px-3 py-1.5 rounded-lg text-xs font-semibold
                                                border hover:opacity-80"
                                     style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
@@ -336,11 +329,23 @@ export default function SriIndex() {
                             </div>
                         </div>
 
-                        <iframe
-                            src={urlPdf}
-                            className="flex-1 w-full border-0"
-                            title={tituloModal}
-                        />
+                        {cargandoPdf ? (
+                            <div className="flex-1 flex items-center justify-center text-sm"
+                                 style={{ color: 'var(--text-muted)' }}>
+                                Generando PDF…
+                            </div>
+                        ) : errorPdf ? (
+                            <div className="flex-1 flex items-center justify-center text-sm px-6 text-center"
+                                 style={{ color: '#dc2626' }}>
+                                {errorPdf}
+                            </div>
+                        ) : (
+                            <iframe
+                                src={urlPdf}
+                                className="flex-1 w-full border-0"
+                                title={tituloModal}
+                            />
+                        )}
                     </div>
                 </div>
             )}
