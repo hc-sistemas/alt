@@ -269,7 +269,7 @@ export default function ListasPrecioIndex() {
         (e: React.ChangeEvent<HTMLInputElement>) =>
             setEditing(prev => prev ? { ...prev, [field]: e.target.value } : null)
 
-    const tdBase = 'px-2 py-2 whitespace-nowrap text-xs'
+    const tdBase = 'px-1.5 py-1.5 whitespace-nowrap text-xs'
     const tdMuted = cn(tdBase, 'font-mono text-right')
 
     function editCell(
@@ -282,24 +282,23 @@ export default function ListasPrecioIndex() {
                     value={editVal(field)}
                     onChange={setEditVal(field)}
                     onKeyDown={handleKeyDown}
-                    className="h-7 text-xs w-24 font-mono"
+                    className="h-6 text-xs w-16 font-mono px-1.5"
                     {...props}
                 />
             </td>
         )
     }
 
-    // Grupo de 3 columnas de promo (Desc. promo % / Desde / Hasta), separado
-    // del resto con un borde izquierdo continuo. Sin datos guardados: botón
-    // ocupando las 3 columnas. Con datos guardados (vigentes o vencidos):
-    // los 3 valores, con el % clickeable para reabrir la misma edición inline.
-    function promoGroupCells(row: ListaPrecioRow) {
+    // Columna única de promo, al final de la tabla. Sin promo guardada: enlace
+    // "Agregar promo". Con promo guardada: % + vigencia compacta, clickeable
+    // para reabrir el panel de edición (Desc. promo % / Desde / Hasta).
+    function promoCell(row: ListaPrecioRow) {
         if (!tienePromoGuardada(row)) {
             if (!puede('editar')) {
-                return <td colSpan={3} className={tdBase} style={{ borderLeft: '1px solid var(--border)' }} />
+                return <td className={tdBase} style={{ borderLeft: '1px solid var(--border)' }} />
             }
             return (
-                <td colSpan={3} className={cn(tdBase, 'text-center')} style={{ borderLeft: '1px solid var(--border)' }}>
+                <td className={tdBase} style={{ borderLeft: '1px solid var(--border)' }}>
                     <button
                         type="button"
                         onClick={() => startPromoEdit(row)}
@@ -312,22 +311,14 @@ export default function ListasPrecioIndex() {
             )
         }
         return (
-            <>
-                <td
-                    className={cn(tdMuted, puede('editar') && 'cursor-pointer hover:underline')}
-                    style={{ color: 'var(--primary)', borderLeft: '1px solid var(--border)' }}
-                    onClick={() => puede('editar') && startPromoEdit(row)}
-                    title={puede('editar') ? 'Clic para editar la promo' : undefined}
-                >
-                    {fmt(row.lista_pvp_descuento_max_promo)}%
-                </td>
-                <td className={tdBase} style={{ color: 'var(--text-muted)' }}>
-                    {fmtDate(row.vigencia_desde) || '—'}
-                </td>
-                <td className={tdBase} style={{ color: 'var(--text-muted)' }}>
-                    {fmtDate(row.vigencia_hasta) || '—'}
-                </td>
-            </>
+            <td
+                className={cn(tdBase, puede('editar') && 'cursor-pointer hover:underline')}
+                style={{ color: 'var(--primary)', borderLeft: '1px solid var(--border)' }}
+                onClick={() => puede('editar') && startPromoEdit(row)}
+                title={puede('editar') ? 'Clic para editar la promo' : undefined}
+            >
+                {fmt(row.lista_pvp_descuento_max_promo)}% · {fmtDate(row.vigencia_desde)} a {fmtDate(row.vigencia_hasta)}
+            </td>
         )
     }
 
@@ -439,24 +430,21 @@ export default function ListasPrecioIndex() {
                                     'PVD+IVA', 'PVD Lista', 'Desc. PVD%',
                                 ].map(h => (
                                     <th key={h}
-                                        className="text-left px-2 py-3 font-medium text-xs uppercase tracking-wider whitespace-nowrap"
+                                        className="text-left px-1.5 py-2 font-medium text-[11px] uppercase tracking-wider whitespace-nowrap"
                                         style={{ color: 'var(--text-muted)' }}>
                                         {h}
                                     </th>
                                 ))}
-                                {['Desc. Promo %', 'Desde', 'Hasta'].map((h, i) => (
-                                    <th key={h}
-                                        className="text-left px-2 py-3 font-medium text-xs uppercase tracking-wider whitespace-nowrap text-amber-400"
-                                        style={i === 0 ? { borderLeft: '1px solid var(--border)' } : undefined}>
-                                        {h}
-                                    </th>
-                                ))}
+                                <th className="text-left px-1.5 py-2 font-medium text-[11px] uppercase tracking-wider whitespace-nowrap text-amber-400"
+                                    style={{ borderLeft: '1px solid var(--border)' }}>
+                                    Promo
+                                </th>
                             </tr>
                         </thead>
                         <tbody>
                             {listas.data.length === 0 ? (
                                 <tr>
-                                    <td colSpan={12} className="text-center py-16" style={{ color: 'var(--text-muted)' }}>
+                                    <td colSpan={10} className="text-center py-16" style={{ color: 'var(--text-muted)' }}>
                                         <p className="font-medium text-sm" style={{ color: 'var(--text-main)' }}>
                                             No hay productos
                                         </p>
@@ -554,11 +542,11 @@ export default function ListasPrecioIndex() {
                                                 </td>
                                             </>
                                         )}
-                                        {promoGroupCells(row)}
+                                        {promoCell(row)}
                                     </tr>
                                     {promoOpen && (
                                         <tr style={{ borderColor: 'var(--border)' }}>
-                                            <td colSpan={12} className="px-4 py-3" style={{ background: 'var(--bg-card)', borderTop: '1px dashed var(--border)' }}>
+                                            <td colSpan={10} className="px-4 py-3" style={{ background: 'var(--bg-card)', borderTop: '1px dashed var(--border)' }}>
                                                 <div className="flex items-end gap-3 flex-wrap">
                                                     <div>
                                                         <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>Desc. promo %</p>
