@@ -3,12 +3,15 @@ import { router, usePage, Head } from '@inertiajs/react'
 import { toast, ToastContainer } from 'react-toastify'
 import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
+import PageHeader from '@/Components/shared/PageHeader'
+import FilterToolbar from '@/Components/shared/FilterToolbar'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { Button } from '@/Components/ui/button'
 import { cn } from '@/lib/utils'
-import { DollarSign, Search, X, FileText, Download, CreditCard, XCircle } from 'lucide-react'
+import { X, FileText, Download, CreditCard, XCircle, Search } from 'lucide-react'
 import type { PageProps, Proveedor, BancoCaja } from '@/types'
+import { usePermiso } from '@/Hooks/usePermiso'
 import 'react-toastify/dist/ReactToastify.css'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -30,6 +33,7 @@ interface CxPRow {
 }
 
 interface Filtros {
+    buscar?: string
     estado?: string
     proveedor_id?: string
     periodo?: string
@@ -38,7 +42,7 @@ interface Filtros {
 }
 
 interface Props extends PageProps {
-    cxp: CxPRow[]
+    cxp: CxPRow[] | null
     proveedores: Pick<Proveedor, 'id' | 'razon_social'>[]
     bancos: Pick<BancoCaja, 'id' | 'nombre' | 'tipo' | 'saldo_actual'>[]
     filtros: Filtros
@@ -232,8 +236,9 @@ function ModalPago({ cxp, bancos, onClose }: {
 
 export default function CuentasPagarIndex() {
     const { cxp, proveedores, bancos, filtros, flash } = usePage<Props>().props
+    const { puede } = usePermiso('compras')
 
-    const [buscar,      setBuscar]      = useState('')
+    const [buscar,      setBuscar]      = useState(filtros.buscar ?? '')
     const [estado,      setEstado]      = useState(filtros.estado ?? '')
     const [proveedorId, setProveedorId] = useState(filtros.proveedor_id ?? '')
     const [periodo,     setPeriodo]     = useState(filtros.periodo ?? '')
@@ -242,27 +247,85 @@ export default function CuentasPagarIndex() {
     const [modalPago,   setModalPago]   = useState<CxPRow | null>(null)
     const [modalPdf,    setModalPdf]    = useState(false)
     const [urlPdf,      setUrlPdf]      = useState('')
-    const abrirPdf = (url: string) => { setUrlPdf(url); setModalPdf(true) }
+    const [cargandoPdf, setCargandoPdf] = useState(false)
+
+    // Carga bajo demanda: `cxp` viene null hasta que el usuario presiona
+    // Buscar (aplicarFiltros manda buscado=1) — mismo patrón que
+    // Asientos/Plan de Cuentas/Facturas de Compra/Proveedores.
+    const haBuscado = cxp !== null
 
     useEffect(() => {
         if (flash?.success) notify.success(flash.success)
         if (flash?.error)   notify.error(flash.error)
     }, [flash?.success, flash?.error])
 
+    // Carga bajo demanda: cambiar CUALQUIER filtro (período, estado,
+    // proveedor, búsqueda) solo actualiza el estado local — no dispara
+    // ninguna consulta al backend. La única forma de pedir datos es
+    // presionar el botón de la lupa (o Enter en el buscador), que llama a
+    // aplicarFiltros() y manda buscado=1 con los valores YA actuales de
+    // cada filtro. (Antes, los botones de período llamaban aplicarFiltros
+    // de inmediato al hacer clic — eso violaba el patrón de carga bajo
+    // demanda: cambiar el filtro visual ya disparaba la consulta sin que
+    // el usuario presionara Buscar.)
     function aplicarFiltros() {
         router.get(route('compras.cxp.index'), {
+            ...(buscar      && { buscar }),
             ...(estado      && { estado }),
             ...(proveedorId && { proveedor_id: proveedorId }),
             ...(periodo     && { periodo }),
             ...(fechaDesde  && { fecha_desde: fechaDesde }),
             ...(fechaHasta  && { fecha_hasta: fechaHasta }),
+            buscado: '1',
         }, { preserveState: true, replace: true })
     }
 
-    function limpiar() {
-        setEstado(''); setProveedorId(''); setPeriodo('')
-        setFechaDesde(''); setFechaHasta('')
-        router.get(route('compras.cxp.index'), {}, { preserveState: false })
+    const paramsFiltrosActuales = () => ({
+        ...(buscar      && { buscar }),
+        ...(estado      && { estado }),
+        ...(proveedorId && { proveedor_id: proveedorId }),
+        ...(periodo     && { periodo }),
+        ...(fechaDesde  && { fecha_desde: fechaDesde }),
+        ...(fechaHasta  && { fecha_hasta: fechaHasta }),
+    })
+
+    // Se trae el PDF como blob (fetch) en vez de apuntar el <iframe> directo
+    // a la URL del backend — mismo patrón que Asientos/Facturas de
+    // Compra/Proveedores: un blob: URL siempre se muestra embebido, sin
+    // depender de si el navegador decide forzar la descarga en el iframe.
+    const abrirPdf = async (url: string) => {
+        setModalPdf(true)
+        setCargandoPdf(true)
+        setUrlPdf('')
+        try {
+            const res = await fetch(url, { headers: { Accept: 'application/pdf' } })
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ message: null })) as { message?: string | null }
+                throw new Error(err.message ?? 'No se pudo generar el PDF.')
+            }
+            const blob = await res.blob()
+            setUrlPdf(URL.createObjectURL(blob))
+        } catch (e) {
+            notify.error(e instanceof Error ? e.message : 'No se pudo generar el PDF. Intenta de nuevo.')
+            setModalPdf(false)
+        } finally {
+            setCargandoPdf(false)
+        }
+    }
+
+    const cerrarModalPdf = () => {
+        if (urlPdf) URL.revokeObjectURL(urlPdf)
+        setModalPdf(false)
+        setUrlPdf('')
+    }
+
+    const iniciarExportacion = (formato: 'excel' | 'pdf') => {
+        const params = new URLSearchParams(paramsFiltrosActuales())
+        if (formato === 'excel') {
+            window.location.href = route('compras.cxp.excel') + '?' + params
+        } else {
+            abrirPdf(route('compras.cxp.pdf') + '?' + params)
+        }
     }
 
     async function iniciarAnulacion(c: CxPRow) {
@@ -369,120 +432,111 @@ export default function CuentasPagarIndex() {
         }
     }
 
-    const hayFiltros = estado || proveedorId
-
-    const filtradas = cxp.filter(c => {
-        if (!buscar.trim()) return true
-        const q = buscar.toLowerCase()
-        return (
-            (c.proveedor ?? '').toLowerCase().includes(q) ||
-            (c.num_documento ?? '').toLowerCase().includes(q)
-        )
-    })
-
-    const pdfUrl   = `${route('compras.cxp.pdf')}?estado=${estado}&proveedor_id=${proveedorId}`
-    const excelUrl = `${route('compras.cxp.excel')}?estado=${estado}&proveedor_id=${proveedorId}`
-
     return (
         <AppLayout title="Cuentas por Pagar" suppressFlash>
             <Head title="Cuentas por Pagar" />
 
-            {/* Header */}
+            <PageHeader
+                title="Cuentas por Pagar"
+                breadcrumbs={[{ label: 'Compras' }, { label: 'Cuentas por Pagar' }]}
+            />
+
             <div className="px-6 pt-6 mb-2">
-                <div className="flex items-center gap-3 mb-4">
-                    <div className="p-2 rounded-xl"
-                         style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
-                        <DollarSign size={24} style={{ color: 'var(--primary)' }} />
-                    </div>
-                    <div>
-                        <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>
-                            Cuentas por Pagar
-                        </h1>
-                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                            Obligaciones pendientes con proveedores ordenadas por vencimiento
-                        </p>
-                    </div>
-                </div>
-
-                {/* Toolbar */}
-                <div className="flex items-center justify-between gap-3 mb-6">
-                    <div className="flex items-center gap-2 flex-wrap">
-                        <div className="input-with-icon">
-                            <Search size={14} className="input-icon" />
-                            <input type="text" value={buscar}
-                                onChange={e => setBuscar(e.target.value)}
-                                placeholder="Buscar proveedor o documento…"
-                                className="input-field w-52" />
-                        </div>
-
-                        <select value={estado} onChange={e => setEstado(e.target.value)}
-                            className="input-field select-field" style={{ width: 'auto' }}>
-                            <option value="">Todas (pendiente + parcial)</option>
-                            <option value="pendiente">Pendiente</option>
-                            <option value="parcial">Parcial</option>
-                            <option value="pagada">Pagada / Anulada</option>
-                        </select>
-
-                        {/* Filtro período */}
-                        <div className="flex items-center gap-1 border rounded-lg p-0.5"
-                             style={{ borderColor: 'var(--border)', background: 'var(--bg-main)' }}>
-                            {[
-                                { val: '',        label: 'Todos' },
-                                { val: 'vencidas', label: 'Vencidas' },
-                                { val: 'hoy',     label: 'Hoy' },
-                                { val: 'semana',  label: 'Semana' },
-                                { val: 'mes',     label: 'Mes' },
-                                { val: 'anio',    label: 'Año' },
-                            ].map(({ val, label }) => (
-                                <button key={val}
-                                    onClick={() => { setPeriodo(val); setTimeout(aplicarFiltros, 0) }}
-                                    className={cn('px-2 py-1 rounded text-xs font-semibold transition-colors whitespace-nowrap',
-                                        periodo === val
-                                            ? 'text-white'
-                                            : 'hover:opacity-80'
-                                    )}
-                                    style={periodo === val
-                                        ? { background: 'var(--primary)', color: '#fff' }
-                                        : { color: 'var(--text-muted)' }}
-                                >
-                                    {label}
-                                </button>
-                            ))}
-                        </div>
-
-                        <select value={proveedorId} onChange={e => setProveedorId(e.target.value)}
-                            className="input-field select-field" style={{ width: 'auto' }}>
-                            <option value="">Todos los proveedores</option>
-                            {proveedores.map(p => (
-                                <option key={p.id} value={p.id}>{p.razon_social}</option>
-                            ))}
-                        </select>
-
-                        <button onClick={aplicarFiltros} className="btn-secondary whitespace-nowrap">
-                            Filtrar
-                        </button>
-                        {hayFiltros && (
-                            <button onClick={limpiar} className="btn-secondary whitespace-nowrap">
-                                Limpiar
-                            </button>
-                        )}
-                    </div>
-
-                    <div className="flex items-center gap-2">
+                {/*
+                    Ancho vía `style.width` inline a propósito, NO clases Tailwind: `.input-field`
+                    (app.css) declara `width:100%` fuera de cualquier @layer, y las utilidades de
+                    Tailwind v4 viven dentro de su @layer utilities interno — por reglas de CSS
+                    Cascade Layers, lo no-layereado siempre gana sobre lo layereado sin importar
+                    especificidad ni orden, así que un w-XX de Tailwind nunca puede ganarle a
+                    `.input-field`. Mismo hallazgo documentado en Asientos/Facturas de Compra/Proveedores.
+                */}
+                <div className="overflow-x-auto">
+                <div style={{ minWidth: '1000px' }}>
+                <FilterToolbar
+                    search={{
+                        value: buscar,
+                        onChange: setBuscar,
+                        onSearch: aplicarFiltros,
+                        placeholder: 'Proveedor o documento...',
+                    }}
+                    searchWidth="w-[150px]"
+                    onExport={() => iniciarExportacion('excel')}
+                    extraActions={
                         <button
-                            onClick={() => abrirPdf(pdfUrl)}
-                            className="btn-pdf flex items-center gap-2 whitespace-nowrap">
-                            <FileText size={15} /> PDF
+                            type="button"
+                            onClick={() => iniciarExportacion('pdf')}
+                            disabled={cargandoPdf}
+                            title={cargandoPdf ? 'Generando PDF…' : 'PDF'}
+                            className="flex items-center justify-center w-9 h-9 rounded-md border text-sm font-medium shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                            style={{ background: '#ef4444', color: 'white', borderColor: '#ef4444' }}>
+                            <FileText className="w-4 h-4" />
                         </button>
-                        <a href={excelUrl}
-                           className="btn-excel flex items-center gap-2 whitespace-nowrap">
-                            <Download size={15} /> Excel
-                        </a>
+                    }
+                >
+                    <select value={estado} onChange={e => setEstado(e.target.value)}
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '190px' }}>
+                        <option value="">Todas (pendiente + parcial)</option>
+                        <option value="pendiente">Pendiente</option>
+                        <option value="parcial">Parcial</option>
+                        <option value="pagada">Pagada / Anulada</option>
+                    </select>
+
+                    {/* Filtro período */}
+                    <div className="flex items-center gap-1 border rounded-lg p-0.5 shrink-0"
+                         style={{ borderColor: 'var(--border)', background: 'var(--bg-main)' }}>
+                        {[
+                            { val: '',        label: 'Todos' },
+                            { val: 'vencidas', label: 'Vencidas' },
+                            { val: 'hoy',     label: 'Hoy' },
+                            { val: 'semana',  label: 'Semana' },
+                            { val: 'mes',     label: 'Mes' },
+                            { val: 'anio',    label: 'Año' },
+                        ].map(({ val, label }) => (
+                            <button key={val}
+                                type="button"
+                                onClick={() => setPeriodo(val)}
+                                className={cn('px-2 py-1 rounded text-xs font-semibold transition-colors whitespace-nowrap',
+                                    periodo === val
+                                        ? 'text-black'
+                                        : 'hover:opacity-80'
+                                )}
+                                style={periodo === val
+                                    ? { background: 'var(--primary)' }
+                                    : { color: 'var(--text-muted)' }}
+                            >
+                                {label}
+                            </button>
+                        ))}
                     </div>
+
+                    <select value={proveedorId} onChange={e => setProveedorId(e.target.value)}
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '190px' }}>
+                        <option value="">Todos los proveedores</option>
+                        {proveedores.map(p => (
+                            <option key={p.id} value={p.id}>{p.razon_social}</option>
+                        ))}
+                    </select>
+                </FilterToolbar>
+                </div>
                 </div>
             </div>
 
+            {/* Estado inicial: aún no se ha buscado (carga bajo demanda) */}
+            {!haBuscado && (
+                <div className="px-6 pb-8">
+                    <div className="text-center py-16">
+                        <Search className="w-12 h-12 mx-auto mb-4 opacity-30" style={{ color: 'var(--text-muted)' }} />
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                            Ajusta los filtros y presiona Buscar para consultar las cuentas por pagar.
+                        </p>
+                    </div>
+                </div>
+            )}
+
             {/* Tabla */}
+            {haBuscado && (
             <div className="px-6 pb-8">
                 <div className="border rounded-xl overflow-hidden"
                     style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
@@ -501,16 +555,16 @@ export default function CuentasPagarIndex() {
                         <span className="col-span-1 text-center">Acciones</span>
                     </div>
 
-                    {filtradas.length === 0 && (
+                    {cxp.length === 0 && (
                         <div className="py-20 text-center">
                             <FileText className="opacity-20 mx-auto mb-3 w-10 h-10" style={{ color: 'var(--text-muted)' }} />
                             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                                No hay cuentas por pagar
+                                No se encontraron cuentas por pagar con estos filtros
                             </p>
                         </div>
                     )}
 
-                    {filtradas.map(c => (
+                    {cxp.map(c => (
                         <div key={c.id}
                             className={cn(
                                 'group grid grid-cols-12 gap-3 px-4 py-3 border-b items-center text-sm transition-colors',
@@ -579,7 +633,7 @@ export default function CuentasPagarIndex() {
                             </div>
                             {/* Acciones: Pagar + Anular (ocultas si la compra ya fue anulada) */}
                             <div className="col-span-1 flex justify-center items-center gap-1">
-                                {!c.compra_anulada && c.estado !== 'pagada' && bancos.length > 0 && (
+                                {!c.compra_anulada && c.estado !== 'pagada' && bancos.length > 0 && puede('editar') && (
                                     <button
                                         onClick={() => setModalPago(c)}
                                         title="Registrar pago"
@@ -587,7 +641,7 @@ export default function CuentasPagarIndex() {
                                         <CreditCard className="w-4 h-4" />
                                     </button>
                                 )}
-                                {!c.compra_anulada && c.compra_id !== null && (
+                                {!c.compra_anulada && c.compra_id !== null && puede('anular') && (
                                     <button
                                         onClick={() => iniciarAnulacion(c)}
                                         title="Anular compra asociada"
@@ -600,6 +654,7 @@ export default function CuentasPagarIndex() {
                     ))}
                 </div>
             </div>
+            )}
 
             {modalPago && (
                 <ModalPago
@@ -613,7 +668,7 @@ export default function CuentasPagarIndex() {
             {modalPdf && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
                      style={{ background: 'rgba(0,0,0,0.85)' }}
-                     onClick={() => setModalPdf(false)}>
+                     onClick={cerrarModalPdf}>
                     <div className="w-full max-w-5xl rounded-2xl overflow-hidden shadow-2xl flex flex-col"
                          style={{ background: 'var(--bg-card)', height: '90vh' }}
                          onClick={e => e.stopPropagation()}>
@@ -625,19 +680,27 @@ export default function CuentasPagarIndex() {
                                 Reporte de Cuentas por Pagar
                             </h3>
                             <div className="flex items-center gap-2">
-                                <a href={urlPdf} download target="_blank"
-                                   className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-all hover:opacity-90"
-                                   style={{ background: '#ef4444' }}>
-                                    <Download size={13} /> Descargar
-                                </a>
-                                <button onClick={() => setModalPdf(false)}
+                                {urlPdf && (
+                                    <a href={urlPdf} download={`cuentas-pagar-${new Date().toISOString().slice(0, 10)}.pdf`}
+                                       className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-all hover:opacity-90"
+                                       style={{ background: '#ef4444' }}>
+                                        <Download size={13} /> Descargar
+                                    </a>
+                                )}
+                                <button onClick={cerrarModalPdf}
                                     className="px-3 py-1.5 rounded-lg text-xs font-semibold border hover:opacity-80"
                                     style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
                                     ✕ Cerrar
                                 </button>
                             </div>
                         </div>
-                        <iframe src={urlPdf} className="flex-1 w-full border-0" title="Reporte PDF CxP" />
+                        {cargandoPdf ? (
+                            <div className="flex-1 flex items-center justify-center text-sm" style={{ color: 'var(--text-muted)' }}>
+                                Generando PDF…
+                            </div>
+                        ) : (
+                            <iframe src={urlPdf} className="flex-1 w-full border-0" title="Reporte PDF CxP" />
+                        )}
                     </div>
                 </div>
             )}

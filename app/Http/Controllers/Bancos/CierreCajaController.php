@@ -16,48 +16,106 @@ use Inertia\Response;
 
 class CierreCajaController extends Controller
 {
+    // Una caja se supone que abre y cierra el mismo día — cualquiera que
+    // siga "abierto" desde el día anterior o antes ya es sospechosa (ver
+    // AlertaCajasAbiertas, que usa el mismo umbral para la notificación).
+    public const UMBRAL_DIAS_SOSPECHOSA = 1;
+
     public function __construct(private AsientoService $asientoService) {}
-    public function index(): Response
+
+    public function index(Request $request): Response
     {
         $empresaId = session('empresa_activa_id');
-        $cajas = BancoCaja::where('empresa_id', $empresaId)
+        $cajas   = BancoCaja::where('empresa_id', $empresaId)
             ->cajas()->activos()->orderBy('nombre')->get();
+        $centros = CentroCosto::where('empresa_id', $empresaId)->get(['id', 'nombre']);
 
-        $cierres = CierreCaja::where('empresa_id', $empresaId)
-            ->with(['bancoCaja', 'centroCosto', 'usuarioApertura', 'usuarioCierre'])
-            ->orderByDesc('fecha')->orderByDesc('id')
-            ->take(30)->get()
-            ->map(fn($c) => [
-                'id'               => $c->id,
-                'caja'             => $c->bancoCaja?->nombre,
-                'centro_costo'     => $c->centroCosto?->nombre,
-                'fecha'            => $c->fecha?->format('d/m/Y'),
-                'monto_inicial'    => $c->monto_inicial,
-                'total_cobrado'    => $c->total_cobrado,
-                'total_efectivo'   => $c->total_efectivo,
-                'total_tarjeta'    => $c->total_tarjeta,
-                'diferencia'       => $c->diferencia,
-                'estado'           => $c->estado,
-                'hora_apertura'    => $c->hora_apertura?->format('H:i'),
-                'hora_cierre'      => $c->hora_cierre?->format('H:i'),
-                'usuario_apertura' => $c->usuarioApertura?->nombre,
-                'usuario_cierre'   => $c->usuarioCierre?->nombre,
-                'tiene_diferencia' => $c->tieneDiferencia(),
-            ]);
+        $cierres = null;
 
-        $cajaAbierta = CierreCaja::where('empresa_id', $empresaId)
+        if ($request->boolean('buscado')) {
+            $query = CierreCaja::where('empresa_id', $empresaId)
+                ->with(['bancoCaja', 'centroCosto', 'usuarioApertura', 'usuarioCierre']);
+
+            if ($request->filled('banco_caja_id')) {
+                $query->where('banco_caja_id', $request->banco_caja_id);
+            }
+            if ($request->filled('estado')) {
+                $query->where('estado', $request->estado);
+            }
+            if ($request->filled('centro_costo_id')) {
+                $query->where('centro_costo_id', $request->centro_costo_id);
+            }
+            if ($request->filled('fecha_desde')) {
+                $query->where('fecha', '>=', $request->fecha_desde);
+            }
+            if ($request->filled('fecha_hasta')) {
+                $query->where('fecha', '<=', $request->fecha_hasta);
+            }
+            if ($request->filled('buscar')) {
+                $q = $request->buscar;
+                $query->where(fn($qb) =>
+                    $qb->where('observaciones', 'ilike', "%{$q}%")
+                       ->orWhereHas('usuarioApertura', fn($u) => $u->where('nombre', 'ilike', "%{$q}%"))
+                       ->orWhereHas('usuarioCierre',   fn($u) => $u->where('nombre', 'ilike', "%{$q}%"))
+                );
+            }
+
+            $cierres = $query->orderByDesc('fecha')->orderByDesc('id')
+                ->take(30)->get()
+                ->map(function ($c) {
+                    // OJO: el orden importa — Carbon\Carbon::diffInDays() no es
+                    // conmutativo, `now()->diffInDays($fecha)` da NEGATIVO cuando
+                    // $fecha es anterior a hoy (confirmado con dato real: -5.85 en
+                    // vez de +5). `$fecha->diffInDays(now())` da el signo correcto;
+                    // abs()+(int) por seguridad extra ante cualquier variación de
+                    // Carbon.
+                    $diasAbierta = $c->estado === 'abierto' ? (int) abs($c->fecha->diffInDays(now())) : 0;
+                    return [
+                        'id'               => $c->id,
+                        'caja'             => $c->bancoCaja?->nombre,
+                        'centro_costo'     => $c->centroCosto?->nombre,
+                        'fecha'            => $c->fecha?->format('d/m/Y'),
+                        'monto_inicial'    => $c->monto_inicial,
+                        'total_cobrado'    => $c->total_cobrado,
+                        'total_efectivo'   => $c->total_efectivo,
+                        'total_tarjeta'    => $c->total_tarjeta,
+                        'diferencia'       => $c->diferencia,
+                        'estado'           => $c->estado,
+                        'hora_apertura'    => $c->hora_apertura?->format('H:i'),
+                        'hora_cierre'      => $c->hora_cierre?->format('H:i'),
+                        'usuario_apertura' => $c->usuarioApertura?->nombre,
+                        'usuario_cierre'   => $c->usuarioCierre?->nombre,
+                        'tiene_diferencia' => $c->tieneDiferencia(),
+                        'dias_abierta'     => $diasAbierta,
+                        'sospechosa'       => $c->estado === 'abierto' && $diasAbierta >= self::UMBRAL_DIAS_SOSPECHOSA,
+                    ];
+                });
+        }
+
+        $cajaAbiertaModel = CierreCaja::where('empresa_id', $empresaId)
             ->where('estado', 'abierto')
             ->where('fecha', now()->toDateString())
             ->with('bancoCaja')
             ->first();
 
-        $centros = CentroCosto::where('empresa_id', $empresaId)->get(['id', 'nombre']);
+        // Igual que en $cierres arriba: hora_apertura se formatea aquí porque
+        // el cast del modelo es 'datetime' — pasar el modelo crudo serializa
+        // un ISO completo (ej. "2026-08-01T02:34:00.000000Z") en vez de "21:34".
+        $cajaAbierta = $cajaAbiertaModel ? [
+            'id'            => $cajaAbiertaModel->id,
+            'banco_caja'    => $cajaAbiertaModel->bancoCaja ? ['nombre' => $cajaAbiertaModel->bancoCaja->nombre] : null,
+            'monto_inicial' => $cajaAbiertaModel->monto_inicial,
+            'hora_apertura' => $cajaAbiertaModel->hora_apertura?->format('H:i'),
+        ] : null;
 
         return Inertia::render('Bancos/Cajas/Index', [
             'cierres'     => $cierres,
             'cajas'       => $cajas,
             'centros'     => $centros,
             'cajaAbierta' => $cajaAbierta,
+            'filtros'     => $request->only([
+                'banco_caja_id', 'estado', 'centro_costo_id', 'fecha_desde', 'fecha_hasta', 'buscar',
+            ]),
         ]);
     }
 

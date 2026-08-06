@@ -82,6 +82,14 @@ export default function Topbar({ onMobileMenu, pageTitle }: Props) {
         router.post(route('logout'))
     }
 
+    function colorEmpresa(ruc?: string | null) {
+        // Matriz (fondo dorado tenue) vs Import (fondo blanco, letras doradas) — para distinguirlas de un vistazo
+        if (ruc === '1755265848001') {
+            return { text: '#F59E0B', bg: '#FFFFFF', border: 'rgba(245,158,11,0.3)' }
+        }
+        return { text: '#F59E0B', bg: 'rgba(245,158,11,0.1)', border: 'rgba(245,158,11,0.3)' }
+    }
+
     function cambiarEmpresa(id: number) {
         setEmpresaMenuOpen(false)
         router.post(route('empresa.cambiar'), { empresa_id: id })
@@ -119,17 +127,34 @@ export default function Topbar({ onMobileMenu, pageTitle }: Props) {
 
             <div className="flex-1" />
 
+            {/* Empresa activa — badge fijo cuando el usuario solo tiene una empresa */}
+            {empresas_usuario.length <= 1 && empresa_activa && (
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm"
+                    style={{
+                        borderColor: colorEmpresa(empresa_activa.ruc).border,
+                        background: colorEmpresa(empresa_activa.ruc).bg,
+                        color: colorEmpresa(empresa_activa.ruc).text,
+                    }}>
+                    <Building2 className="w-4 h-4" />
+                    <span className="max-w-32 truncate font-medium">{empresa_activa.nombre_comercial}</span>
+                </div>
+            )}
+
             {/* Selector empresa */}
             {empresas_usuario.length > 1 && (
                 <div className="relative">
                     <button
                         onClick={() => setEmpresaMenuOpen(!empresaMenuOpen)}
-                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)' }}
+                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm transition-colors hover:opacity-80"
+                        style={{
+                            borderColor: colorEmpresa(empresa_activa?.ruc).border,
+                            background: colorEmpresa(empresa_activa?.ruc).bg,
+                            color: colorEmpresa(empresa_activa?.ruc).text,
+                        }}
                     >
-                        <Building2 className="w-4 h-4" style={{ color: '#F59E0B' }} />
-                        <span className="max-w-32 truncate">{empresa_activa?.nombre_comercial ?? 'Empresa'}</span>
-                        <ChevronDown className="w-3 h-3" style={{ color: 'var(--text-muted)' }} />
+                        <Building2 className="w-4 h-4" />
+                        <span className="max-w-32 truncate font-medium">{empresa_activa?.nombre_comercial ?? 'Empresa'}</span>
+                        <ChevronDown className="w-3 h-3" />
                     </button>
 
                     {empresaMenuOpen && (
@@ -147,9 +172,11 @@ export default function Topbar({ onMobileMenu, pageTitle }: Props) {
                                             'w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800',
                                             e.id === empresa_activa?.id && 'font-medium'
                                         )}
-                                        style={e.id === empresa_activa?.id ? { color: '#F59E0B' } : { color: 'var(--text-main)' }}
+                                        style={e.id === empresa_activa?.id ? { color: colorEmpresa(e.ruc).text } : { color: 'var(--text-main)' }}
                                     >
-                                        {e.id === empresa_activa?.id && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />}
+                                        {e.id === empresa_activa?.id && (
+                                            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: colorEmpresa(e.ruc).text }} />
+                                        )}
                                         <span className="truncate">{e.nombre_comercial}</span>
                                     </button>
                                 ))}
@@ -237,22 +264,41 @@ export default function Topbar({ onMobileMenu, pageTitle }: Props) {
                                                 }
                                             </div>
 
-                                            {/* Contenido */}
-                                            <div className="flex-1 min-w-0">
-                                                <p className="text-xs font-semibold leading-snug truncate"
-                                                    style={{ color: 'var(--text-main)' }}>
-                                                    {n.titulo}
-                                                </p>
-                                                {n.mensaje && (
-                                                    <p className="text-xs mt-0.5 leading-snug line-clamp-2"
-                                                        style={{ color: 'var(--text-muted)' }}>
-                                                        {n.mensaje}
+                                            {/* Contenido — clickeable cuando trae `url` (ej. link de descarga) */}
+                                            {n.url ? (
+                                                <a href={n.url} onClick={() => !n.leida && marcarLeida(n.id)}
+                                                    className="flex-1 min-w-0">
+                                                    <p className="text-xs font-semibold leading-snug truncate underline"
+                                                        style={{ color: 'var(--text-main)' }}>
+                                                        {n.titulo}
                                                     </p>
-                                                )}
-                                                <p className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
-                                                    {formatFechaNotif(n.created_at)}
-                                                </p>
-                                            </div>
+                                                    {n.mensaje && (
+                                                        <p className="text-xs mt-0.5 leading-snug line-clamp-2"
+                                                            style={{ color: 'var(--text-muted)' }}>
+                                                            {n.mensaje}
+                                                        </p>
+                                                    )}
+                                                    <p className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                                                        {formatFechaNotif(n.created_at)}
+                                                    </p>
+                                                </a>
+                                            ) : (
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-xs font-semibold leading-snug truncate"
+                                                        style={{ color: 'var(--text-main)' }}>
+                                                        {n.titulo}
+                                                    </p>
+                                                    {n.mensaje && (
+                                                        <p className="text-xs mt-0.5 leading-snug line-clamp-2"
+                                                            style={{ color: 'var(--text-muted)' }}>
+                                                            {n.mensaje}
+                                                        </p>
+                                                    )}
+                                                    <p className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                                                        {formatFechaNotif(n.created_at)}
+                                                    </p>
+                                                </div>
+                                            )}
 
                                             {/* Acción marcar leída */}
                                             {!n.leida && (

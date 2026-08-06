@@ -5,6 +5,7 @@ namespace App\Http\Controllers\RRHH;
 use App\Http\Controllers\Controller;
 use App\Models\Asistencia;
 use App\Models\Colaborador;
+use App\Models\FeriadoNacional;
 use App\Models\HorasExtrasAprobacion;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
@@ -32,15 +33,22 @@ class AsistenciaController extends Controller
         $asistenciaHoy = null;
 
         if ($colaborador) {
-            $asistenciaHoy = Asistencia::where('colaborador_id', $colaborador->id)
+            $asistenciaHoy = Asistencia::with('horasExtras:id,asistencia_id,estado,horas_aprobadas')
+                ->where('colaborador_id', $colaborador->id)
                 ->where('fecha', $hoy)
                 ->first();
         }
 
         // Historial del mes actual
+        // NOM-06: las horas extra quedan "pendiente" al timbrar y solo cuentan como
+        // aprobadas cuando un Administrador las revisa en Horas Extras — por eso se
+        // trae el estado real de HorasExtrasAprobacion en vez de confiar en el valor
+        // de asistencias.horas_extra a secas (ese campo se llena de inmediato al
+        // marcar salida, sin importar si luego se aprueba o se rechaza).
         $historial = null;
         if ($colaborador) {
-            $historial = Asistencia::where('colaborador_id', $colaborador->id)
+            $historial = Asistencia::with('horasExtras:id,asistencia_id,estado,horas_aprobadas')
+                ->where('colaborador_id', $colaborador->id)
                 ->whereBetween('fecha', [$ahora->copy()->startOfMonth(), $ahora->copy()->endOfMonth()])
                 ->orderByDesc('fecha')
                 ->get();
@@ -48,8 +56,8 @@ class AsistenciaController extends Controller
 
         // Si es admin/super_admin → ver todas las asistencias del día
         $resumenDia = null;
-        if (Auth::user()?->hasAnyRole(['super_admin', 'admin'])) {
-            $resumenDia = Asistencia::with('colaborador')
+        if (in_array(Auth::user()?->perfil?->nombre, ['super_admin', 'admin'], true)) {
+            $resumenDia = Asistencia::with(['colaborador', 'horasExtras:id,asistencia_id,estado,horas_aprobadas'])
                 ->whereHas('colaborador', fn($q) => $q->where('empresa_id', $empresaId))
                 ->where('fecha', $hoy)
                 ->orderBy('hora_entrada')
@@ -62,7 +70,7 @@ class AsistenciaController extends Controller
             'historial'      => $historial,
             'resumenDia'     => $resumenDia,
             'server_time'    => $ahora->toIso8601String(),
-            'es_admin'       => Auth::user()?->hasAnyRole(['super_admin', 'admin']) ?? false,
+            'es_admin'       => in_array(Auth::user()?->perfil?->nombre, ['super_admin', 'admin'], true) ?? false,
         ]);
     }
 
@@ -151,11 +159,14 @@ class AsistenciaController extends Controller
                 // se necesita el valor absoluto de minutos extra.
                 $horasExtra = round(abs($ahora->diffInMinutes($horaSalida)) / 60, 2);
 
-                // Regla NOM-05 Ecuador: suplementarias = días laborables hasta 24:00
+                // Regla NOM-06 Ecuador: extraordinaria (recargo 100%) = sábado,
+                // domingo, feriado nacional o madrugada (00:00-06:00); el resto
+                // (día laborable, fuera de madrugada) = suplementaria (recargo 50%).
                 $esFindeSemana = $ahora->isWeekend();
                 $esMadrugada   = $ahora->hour >= 0 && $ahora->hour < 6;
+                $esFeriado     = FeriadoNacional::esFeriado($hoy);
 
-                $tipoExtra = ($esFindeSemana || $esMadrugada)
+                $tipoExtra = ($esFindeSemana || $esMadrugada || $esFeriado)
                     ? 'extraordinaria'
                     : 'suplementaria';
             }

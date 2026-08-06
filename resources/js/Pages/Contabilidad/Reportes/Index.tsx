@@ -1,5 +1,7 @@
 import { useState, useMemo } from 'react'
+import { toast, ToastContainer } from 'react-toastify'
 import AppLayout from '@/Layouts/AppLayout'
+import PageHeader from '@/Components/shared/PageHeader'
 import {
     BookOpen, TrendingUp, FileText,
     Search, Download, Scale, BarChart3, LineChart, Waves,
@@ -18,7 +20,7 @@ interface Ejercicio {
 interface CuentaSimple {
     id: number
     codigo: string
-    descripcion: string
+    nombre: string
 }
 
 interface Props extends PageProps {
@@ -28,16 +30,28 @@ interface Props extends PageProps {
 
 export default function ReportesIndex({ ejercicios, cuentas }: Props) {
 
+    // Período fiscal abierto (el primero con estado 'abierto' en la lista ya
+    // ordenada desc. por año/mes) — se usa como rango por defecto en Libro
+    // Diario y Mayor Contable en vez de "sin fecha = todo el historial".
+    // DomPDF no escala bien con el histórico completo sin filtro (probado
+    // real, ver CLAUDE.md); el usuario puede ampliarlo o quitarlo si quiere
+    // esperar por el reporte completo. Los otros 4 reportes de esta pantalla
+    // no lo necesitan: como mucho ~200 filas (una por cuenta), sin importar
+    // el rango de fechas.
+    const periodoActivo = useMemo(() => ejercicios.find(e => e.estado === 'abierto') ?? null, [ejercicios])
+    const primerDia = periodoActivo ? `${periodoActivo.anio}-${String(periodoActivo.mes).padStart(2, '0')}-01` : ''
+    const ultimoDia = periodoActivo ? new Date(periodoActivo.anio, periodoActivo.mes, 0).toISOString().slice(0, 10) : ''
+
     // Estado filtros Libro Diario
-    const [ldEjercicio,  setLdEjercicio]  = useState('')
+    const [ldEjercicio,  setLdEjercicio]  = useState(periodoActivo ? String(periodoActivo.id) : '')
     const [ldFechaDesde, setLdFechaDesde] = useState('')
     const [ldFechaHasta, setLdFechaHasta] = useState('')
 
     // Estado filtros Mayor
     const [mayorCuentaId,   setMayorCuentaId]   = useState('')
     const [mayorBusqueda,   setMayorBusqueda]   = useState('')
-    const [mayorFechaDesde, setMayorFechaDesde] = useState('')
-    const [mayorFechaHasta, setMayorFechaHasta] = useState('')
+    const [mayorFechaDesde, setMayorFechaDesde] = useState(primerDia)
+    const [mayorFechaHasta, setMayorFechaHasta] = useState(ultimoDia)
 
     // Estado filtros Balance Comprobación
     const [bcEjercicio,  setBcEjercicio]  = useState('')
@@ -59,6 +73,8 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
     const [modalPdf,    setModalPdf]    = useState(false)
     const [urlPdf,      setUrlPdf]      = useState('')
     const [tituloModal, setTituloModal] = useState('')
+    const [cargandoPdf, setCargandoPdf] = useState(false)
+    const [errorPdf,    setErrorPdf]    = useState('')
 
     const meses = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio',
                    'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
@@ -68,14 +84,44 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
         if (!q) return cuentas.slice(0, 30)
         return cuentas.filter(c =>
             c.codigo.toLowerCase().includes(q) ||
-            c.descripcion.toLowerCase().includes(q)
+            c.nombre.toLowerCase().includes(q)
         ).slice(0, 25)
     }, [mayorBusqueda, cuentas])
 
-    const abrirPdf = (url: string, titulo: string) => {
-        setUrlPdf(url)
-        setTituloModal(titulo)
+    // Se trae el PDF como blob (fetch) en vez de apuntar el <iframe> directo
+    // a la URL del backend — mismo patrón ya corregido en Compras/Asientos/
+    // Proveedores/Cuentas por Pagar: un blob: URL siempre se muestra
+    // embebido, sin depender de si el navegador decide forzar la descarga
+    // en el iframe. Este modal es compartido por los 6 reportes de esta
+    // pantalla, así que corregirlo aquí una sola vez corrige el PDF en
+    // blanco en todos ellos (Libro Diario, Mayor, Balance de Comprobación,
+    // Balance General, Estado de Resultados, Flujo de Caja).
+    const abrirPdf = async (url: string, titulo: string) => {
         setModalPdf(true)
+        setTituloModal(titulo)
+        setCargandoPdf(true)
+        setErrorPdf('')
+        setUrlPdf('')
+        try {
+            const res = await fetch(url, { headers: { Accept: 'application/pdf' } })
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ message: null })) as { message?: string | null }
+                throw new Error(err.message ?? 'No se pudo generar el PDF.')
+            }
+            const blob = await res.blob()
+            setUrlPdf(URL.createObjectURL(blob))
+        } catch (e) {
+            setErrorPdf(e instanceof Error ? e.message : 'No se pudo generar el PDF. Intenta de nuevo.')
+        } finally {
+            setCargandoPdf(false)
+        }
+    }
+
+    const cerrarModalPdf = () => {
+        if (urlPdf) URL.revokeObjectURL(urlPdf)
+        setModalPdf(false)
+        setUrlPdf('')
+        setErrorPdf('')
     }
 
     const generarLibroDiario = () => {
@@ -83,10 +129,7 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
         if (ldEjercicio)  params.set('ejercicio_id', ldEjercicio)
         if (ldFechaDesde) params.set('fecha_desde',  ldFechaDesde)
         if (ldFechaHasta) params.set('fecha_hasta',  ldFechaHasta)
-        abrirPdf(
-            route('contabilidad.reportes.libro-diario') + '?' + params,
-            'Libro Diario'
-        )
+        abrirPdf(route('contabilidad.reportes.libro-diario') + '?' + params, 'Libro Diario')
     }
 
     const generarMayor = () => {
@@ -94,10 +137,7 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
         const params = new URLSearchParams({ cuenta_id: mayorCuentaId })
         if (mayorFechaDesde) params.set('fecha_desde', mayorFechaDesde)
         if (mayorFechaHasta) params.set('fecha_hasta', mayorFechaHasta)
-        abrirPdf(
-            route('contabilidad.reportes.mayor') + '?' + params,
-            'Mayor Contable'
-        )
+        abrirPdf(route('contabilidad.reportes.mayor') + '?' + params, 'Mayor Contable')
     }
 
     const generarBalanceComprobacion = () => {
@@ -138,30 +178,13 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
 
     return (
         <AppLayout>
+            <PageHeader
+                title="Reportes Contables"
+                breadcrumbs={[{ label: 'Contabilidad' }, { label: 'Reportes' }]}
+            />
+
             <div className="p-4 md:p-6 space-y-6"
                  style={{ background: 'var(--bg-main)', minHeight: '100vh' }}>
-
-                {/* HEADER */}
-                <div className="mb-6">
-                    <div className="flex items-center gap-3 mb-2">
-                        <div className="p-2 rounded-xl" style={{
-                            background: 'color-mix(in srgb, var(--primary) 15%, transparent)'
-                        }}>
-                            <FileText size={24}
-                                style={{ color: 'var(--primary)' }} />
-                        </div>
-                        <div>
-                            <h1 className="text-xl font-bold"
-                                style={{ color: 'var(--text-main)' }}>
-                                Reportes Contables
-                            </h1>
-                            <p className="text-sm"
-                               style={{ color: 'var(--text-muted)' }}>
-                                Libro Diario, Mayor, Balance de Comprobación, Balance General y Estado de Resultados
-                            </p>
-                        </div>
-                    </div>
-                </div>
 
                 {/* GRID 2 COLUMNAS — TODOS LOS REPORTES */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -243,8 +266,7 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
                                            font-semibold text-white transition-all
                                            hover:opacity-90 hover:-translate-y-0.5"
                                 style={{ background: '#1A3A5C' }}>
-                                <FileText size={15} />
-                                Generar Libro Diario PDF
+                                <FileText size={15} /> Generar Libro Diario PDF
                             </button>
                         </div>
                     </div>
@@ -295,6 +317,9 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
                                         style={mayorCuentaId ? { borderColor: '#2D6A4F' } : undefined}
                                     />
                                 </div>
+                                <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                                    Escribe parte del código (ej. 1.1.1) o del nombre de la cuenta.
+                                </p>
 
                                 {mayorBusqueda && !mayorCuentaId && (
                                     <div className="border rounded-lg mt-1
@@ -314,7 +339,7 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
                                                 onClick={() => {
                                                     setMayorCuentaId(String(c.id))
                                                     setMayorBusqueda(
-                                                        `${c.codigo} — ${c.descripcion}`
+                                                        `${c.codigo} — ${c.nombre}`
                                                     )
                                                 }}
                                                 className="w-full text-left px-3 py-2
@@ -325,7 +350,7 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
                                                       style={{ color: '#1A3A5C' }}>
                                                     {c.codigo}
                                                 </span>
-                                                {' '}{c.descripcion}
+                                                {' '}{c.nombre}
                                             </button>
                                         ))}
                                     </div>
@@ -384,8 +409,7 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
                                            disabled:cursor-not-allowed
                                            disabled:transform-none"
                                 style={{ background: '#2D6A4F' }}>
-                                <TrendingUp size={15} />
-                                Generar Mayor Contable PDF
+                                <TrendingUp size={15} /> Generar Mayor Contable PDF
                             </button>
                         </div>
                     </div>
@@ -458,8 +482,8 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
                         </div>
                     </div>
 
-                    {/* ── ESTADO DE RESULTADOS — col-span-2 ── */}
-                    <div className="md:col-span-2 rounded-2xl border overflow-hidden"
+                    {/* ── ESTADO DE RESULTADOS ── */}
+                    <div className="rounded-2xl border overflow-hidden"
                          style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
                         <div className="px-5 py-4 border-b flex items-center gap-3"
                              style={{ borderColor: 'var(--border)', borderLeft: '4px solid #059669' }}>
@@ -470,16 +494,16 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
                             </div>
                         </div>
                         <div className="p-5 space-y-3">
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                <div>
-                                    <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>Período contable</label>
-                                    <select value={erEjercicio} onChange={e => setErEjercicio(e.target.value)} className="input-field select-field">
-                                        <option value="">Todos los períodos</option>
-                                        {ejercicios.map(e => (
-                                            <option key={e.id} value={e.id}>{meses[e.mes]} {e.anio}{e.estado === 'abierto' ? ' (Abierto)' : ''}</option>
-                                        ))}
-                                    </select>
-                                </div>
+                            <div>
+                                <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>Período contable</label>
+                                <select value={erEjercicio} onChange={e => setErEjercicio(e.target.value)} className="input-field select-field">
+                                    <option value="">Todos los períodos</option>
+                                    {ejercicios.map(e => (
+                                        <option key={e.id} value={e.id}>{meses[e.mes]} {e.anio}{e.estado === 'abierto' ? ' (Abierto)' : ''}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
                                 <div>
                                     <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>Desde</label>
                                     <input type="date" value={erFechaDesde} onChange={e => setErFechaDesde(e.target.value)} className="input-field" />
@@ -497,8 +521,8 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
                         </div>
                     </div>
 
-                    {/* ── FLUJO DE CAJA — col-span-2 ── */}
-                    <div className="md:col-span-2 rounded-2xl border overflow-hidden"
+                    {/* ── FLUJO DE CAJA ── */}
+                    <div className="rounded-2xl border overflow-hidden"
                          style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
                         <div className="px-5 py-4 border-b flex items-center gap-3"
                              style={{ borderColor: 'var(--border)', borderLeft: '4px solid #dc2626' }}>
@@ -546,44 +570,6 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
                     </div>
 
                 </div>
-
-                {/* INFO REPORTES */}
-                <div className="rounded-2xl border p-5"
-                     style={{ background: 'var(--bg-card)',
-                              borderColor: 'var(--border)' }}>
-                    <h3 className="font-semibold text-sm mb-3"
-                        style={{ color: 'var(--text-main)' }}>
-                        ℹ️ Sobre los reportes
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <p className="text-xs font-semibold mb-1"
-                               style={{ color: 'var(--text-main)' }}>
-                                Libro Diario
-                            </p>
-                            <p className="text-xs"
-                               style={{ color: 'var(--text-muted)' }}>
-                                Registro cronológico de todos los asientos
-                                contables activos. Incluye el detalle de
-                                partidas (debe/haber) de cada asiento.
-                                Útil para auditorías y revisiones del período.
-                            </p>
-                        </div>
-                        <div>
-                            <p className="text-xs font-semibold mb-1"
-                               style={{ color: 'var(--text-main)' }}>
-                                Mayor Contable
-                            </p>
-                            <p className="text-xs"
-                               style={{ color: 'var(--text-muted)' }}>
-                                Movimientos de una cuenta específica con
-                                saldo acumulado. Permite ver el saldo
-                                deudor o acreedor de cualquier cuenta
-                                del Plan de Cuentas en un rango de fechas.
-                            </p>
-                        </div>
-                    </div>
-                </div>
             </div>
 
             {/* MODAL PDF */}
@@ -591,7 +577,7 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
                 <div className="fixed inset-0 z-50 flex items-center
                                 justify-center p-4"
                      style={{ background: 'rgba(0,0,0,0.85)' }}
-                     onClick={() => setModalPdf(false)}>
+                     onClick={cerrarModalPdf}>
                     <div className="w-full max-w-5xl rounded-2xl
                                     overflow-hidden shadow-2xl flex flex-col"
                          style={{ background: 'var(--bg-card)',
@@ -606,18 +592,19 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
                                 {tituloModal}
                             </h3>
                             <div className="flex items-center gap-2">
-                                <a href={urlPdf}
-                                   download
-                                   target="_blank"
-                                   className="flex items-center gap-1 px-3 py-1.5
-                                              rounded-lg text-xs font-semibold
-                                              text-white hover:opacity-90"
-                                   style={{ background: '#1A3A5C' }}>
-                                    <Download size={13} />
-                                    Descargar
-                                </a>
+                                {urlPdf && (
+                                    <a href={urlPdf}
+                                       download={`${tituloModal.toLowerCase().replace(/\s+/g, '-')}-${new Date().toISOString().slice(0, 10)}.pdf`}
+                                       className="flex items-center gap-1 px-3 py-1.5
+                                                  rounded-lg text-xs font-semibold
+                                                  text-white hover:opacity-90"
+                                       style={{ background: '#1A3A5C' }}>
+                                        <Download size={13} />
+                                        Descargar
+                                    </a>
+                                )}
                                 <button
-                                    onClick={() => setModalPdf(false)}
+                                    onClick={cerrarModalPdf}
                                     className="px-3 py-1.5 rounded-lg text-xs
                                                font-semibold border hover:opacity-80"
                                     style={{ borderColor: 'var(--border)',
@@ -627,14 +614,32 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
                             </div>
                         </div>
 
-                        <iframe
-                            src={urlPdf}
-                            className="flex-1 w-full border-0"
-                            title={tituloModal}
-                        />
+                        {cargandoPdf ? (
+                            <div className="flex-1 flex items-center justify-center text-sm"
+                                 style={{ color: 'var(--text-muted)' }}>
+                                Generando PDF…
+                            </div>
+                        ) : errorPdf ? (
+                            <div className="flex-1 flex items-center justify-center text-sm px-6 text-center"
+                                 style={{ color: '#dc2626' }}>
+                                {errorPdf}
+                            </div>
+                        ) : (
+                            <iframe
+                                src={urlPdf}
+                                className="flex-1 w-full border-0"
+                                title={tituloModal}
+                            />
+                        )}
                     </div>
                 </div>
             )}
+
+            <ToastContainer position="top-right" autoClose={3500} hideProgressBar={false}
+                newestOnTop closeOnClick pauseOnHover draggable theme="colored"
+                style={{ zIndex: 9999 }}
+                toastStyle={{ borderRadius: '14px', fontSize: '14px', fontWeight: '500',
+                    boxShadow: '0 8px 32px rgba(0,0,0,.18)', padding: '14px 18px', minWidth: '280px' }} />
         </AppLayout>
     )
 }

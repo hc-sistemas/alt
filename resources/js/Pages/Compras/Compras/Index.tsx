@@ -4,17 +4,19 @@ import { toast, ToastContainer } from 'react-toastify'
 import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
+import FilterToolbar from '@/Components/shared/FilterToolbar'
 import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
 import { formatFecha } from '@/utils/contabilidad'
 import {
-    Plus, Search, X, FileText, Download, ChevronLeft, ChevronRight, ChevronDown,
-    Eye, ShoppingCart, Trash2, CreditCard,
-    Barcode, CheckCircle, XCircle, RefreshCw, Upload,
+    Plus, X, FileText, Download, ChevronLeft, ChevronRight, ChevronDown,
+    Eye, ShoppingCart, Trash2, CreditCard, Pencil, Search,
+    Barcode, CheckCircle, XCircle, RefreshCw, Upload, AlertTriangle,
 } from 'lucide-react'
 import type { Compra, Importacion, Proveedor, CentroCosto, PlanCuenta, Bodega, PageProps, PaginatedData, Producto, EtiquetaDetalleData, EtiquetaGrupoProducto } from '@/types'
+import { usePermiso } from '@/Hooks/usePermiso'
 import 'react-toastify/dist/ReactToastify.css'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -44,7 +46,7 @@ interface PrefillExterior {
 }
 
 interface Props extends PageProps {
-    compras: PaginatedData<Compra>
+    compras: PaginatedData<Compra> | null
     proveedores: Pick<Proveedor, 'id' | 'razon_social' | 'nombre_comercial' | 'identificacion' | 'tiene_credito' | 'dias_credito' | 'tipo'>[]
     centros: Pick<CentroCosto, 'id' | 'nombre' | 'codigo'>[]
     cuentas: Pick<PlanCuenta, 'id' | 'codigo' | 'nombre'>[]
@@ -55,17 +57,39 @@ interface Props extends PageProps {
     filtros: Filtros
 }
 
+interface DetalleEdicion {
+    id: number
+    producto_id: number | null
+    cuenta_id: number | null
+    descripcion: string
+    cantidad: number
+    peso: number | null
+    precio_unitario: number
+    descuento: number
+    porcentaje_iva: number
+    es_activo_fijo: boolean
+}
+
 interface DetalleItem {
     producto_id: number | null
     codigo: string
     descripcion: string
     cantidad: number | string
+    /** Peso real (kg) de esta línea — opcional, no bloquea el guardado si está
+     *  vacío. Alimenta el método de prorrateo "Peso" en Importaciones como
+     *  override del estimado (cantidad × peso unitario del producto) cuando
+     *  el usuario ingresa el peso real facturado/medido de esa línea. */
+    peso: string
     precio_unitario: number | string
     descuento: number | string
     descuento_pct: string
     porcentaje_iva: number | string
     cuenta_id: string | number
     es_activo_fijo: boolean
+    /** Unidad del producto seleccionado ('unidad', 'kg', etc. — ver Productos/Form.tsx)
+     *  solo para mostrar junto a Cantidad; no afecta el cálculo (cantidad × precio_unitario
+     *  funciona igual sin importar la unidad, solo cambia qué representa "cantidad"). */
+    unidad: string
 }
 
 // ─── Notify ───────────────────────────────────────────────────────────────────
@@ -132,7 +156,8 @@ const TIPO_DOC_LABELS: Record<string, string> = {
 
 // ─── Fila detalle editable ────────────────────────────────────────────────────
 
-const DETALLE_COLS = '130px 1fr 70px 90px 80px 70px 80px 70px 80px 36px'
+const DETALLE_COLS = '130px 1fr 70px 85px 90px 80px 70px 80px 70px 80px 36px'
+const ROW_INPUT_HEIGHT = '32px'
 
 interface DetalleRowProps {
     detalle: DetalleItem
@@ -146,7 +171,7 @@ interface DetalleRowProps {
 
 function DetalleRow({ detalle, idx, cuentas, onChange, onRemove, onAbrirModal, tipoDocumento }: DetalleRowProps) {
     const { subtotal, iva, total } = calcDetalle(detalle)
-    const inputStyle = { background: 'var(--bg-card)', color: 'var(--text-main)', borderColor: 'var(--border)' }
+    const inputStyle = { background: 'var(--bg-card)', color: 'var(--text-main)', borderColor: 'var(--border)', height: ROW_INPUT_HEIGHT }
 
     return (
         <div className="border-b text-xs"
@@ -155,19 +180,19 @@ function DetalleRow({ detalle, idx, cuentas, onChange, onRemove, onAbrirModal, t
             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
 
             {/* ── Código ── */}
-            <div className="px-1 py-1.5">
+            <div className="px-2 py-2">
                 <button
                     type="button"
                     onClick={() => onAbrirModal(idx)}
                     title={detalle.codigo ? `${detalle.codigo} — clic para cambiar` : 'Clic para buscar producto'}
-                    className="w-full flex items-center justify-between gap-1 px-2 py-1 border rounded text-xs transition-all"
+                    className="w-full flex items-center justify-between gap-1 px-2 border rounded text-xs transition-all"
                     style={{
                         background: detalle.producto_id
                             ? 'color-mix(in srgb, #10b981 10%, var(--bg-main))'
                             : 'var(--bg-main)',
                         borderColor: detalle.producto_id ? '#10b981' : 'var(--border)',
                         cursor: 'pointer',
-                        minHeight: '28px',
+                        height: ROW_INPUT_HEIGHT,
                     }}>
                     <span style={{
                         fontFamily: detalle.codigo ? 'monospace' : 'inherit',
@@ -193,9 +218,9 @@ function DetalleRow({ detalle, idx, cuentas, onChange, onRemove, onAbrirModal, t
             </div>
 
             {/* ── Descripción ── */}
-            <div className="px-2 py-1.5">
+            <div className="px-2 py-2">
                 <input
-                    className="w-full px-2 py-1 border rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    className="w-full px-2 border rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500"
                     style={inputStyle}
                     value={detalle.descripcion}
                     onChange={e => onChange(idx, 'descripcion', e.target.value)}
@@ -203,25 +228,63 @@ function DetalleRow({ detalle, idx, cuentas, onChange, onRemove, onAbrirModal, t
                 />
             </div>
 
-            {/* ── Cantidad ── */}
-            <div className="px-1 py-1.5">
+            {/* ── Cantidad ──
+                Antes forzaba enteros (step=1, bloqueaba '.'/',' con Math.floor) aunque el
+                backend YA acepta decimales (CompraController::store(), 'detalles.*.cantidad'
+                => 'required|numeric|min:0.0001') — necesario para productos por peso (kg) u
+                otras unidades fraccionables (metro, hora). El cálculo de subtotal (calcDetalle,
+                arriba) ya funciona igual con decimales, no dependía de que fuera entero.
+
+                type="text" en vez de type="number": los inputs number nativos aplican
+                agrupación de miles dependiente de la configuración regional del SO/navegador
+                (p.ej. Windows/Chrome en español-Ecuador puede mostrar "2,070" al escribir
+                "2.07"), lo que corrompe el valor mientras se edita. Con texto + regex se
+                controla el formato explícitamente: solo dígitos y un único punto decimal,
+                nunca comas ni separadores de miles. */}
+            <div className="px-1 py-2">
                 <input
-                    type="number" min="1" step="1" pattern="[0-9]*"
+                    type="text" inputMode="decimal"
                     value={detalle.cantidad}
                     onChange={e => {
-                        const val = Math.floor(Math.abs(parseInt(e.target.value) || 1))
-                        onChange(idx, 'cantidad', String(val))
+                        const raw = e.target.value
+                        if (raw === '' || /^\d*\.?\d*$/.test(raw)) {
+                            onChange(idx, 'cantidad', raw)
+                        }
                     }}
-                    onKeyDown={e => { if (e.key === '.' || e.key === ',') e.preventDefault() }}
-                    className="w-full px-2 py-1 border rounded text-xs text-center focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    placeholder="0.00"
+                    className="w-full px-1.5 border rounded text-xs text-center focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    style={inputStyle}
+                />
+                <p className="text-center mt-1 truncate" style={{ fontSize: '9px', color: 'var(--text-muted)' }} title={detalle.unidad || undefined}>
+                    {detalle.unidad || '—'}
+                </p>
+            </div>
+
+            {/* ── Peso (kg) — opcional, alimenta el prorrateo "Peso" en Importaciones.
+                Columna ensanchada a 85px (antes 70px) porque a 70px el placeholder
+                "Opcional" se truncaba visualmente ("Opdona"); el texto del placeholder
+                se mantiene completo a propósito — el ancho es lo que se ajustó. ── */}
+            <div className="px-1 py-2">
+                <input
+                    type="text" inputMode="decimal"
+                    value={detalle.peso}
+                    onChange={e => {
+                        const raw = e.target.value
+                        if (raw === '' || /^\d*\.?\d*$/.test(raw)) {
+                            onChange(idx, 'peso', raw)
+                        }
+                    }}
+                    placeholder="Opcional"
+                    title="Peso real de esta línea (kg) — opcional"
+                    className="w-full px-1.5 border rounded text-xs text-center focus:outline-none focus:ring-1 focus:ring-amber-500"
                     style={inputStyle}
                 />
             </div>
 
             {/* ── P. Unitario ── */}
-            <div className="px-1 py-1.5">
+            <div className="px-1 py-2">
                 <input type="number" step="0.0001" min={0}
-                    className="w-full px-2 py-1 border rounded text-xs text-right focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    className="w-full px-2 border rounded text-xs text-right focus:outline-none focus:ring-1 focus:ring-amber-500"
                     style={inputStyle}
                     value={detalle.precio_unitario}
                     onChange={e => onChange(idx, 'precio_unitario', e.target.value)}
@@ -229,7 +292,7 @@ function DetalleRow({ detalle, idx, cuentas, onChange, onRemove, onAbrirModal, t
             </div>
 
             {/* ── Descuento ── */}
-            <div className="px-1 py-1 flex flex-col gap-0.5 items-center">
+            <div className="px-1 py-2 flex flex-col gap-1 items-center">
                 <select
                     value={detalle.descuento_pct ?? '0'}
                     onChange={e => {
@@ -240,8 +303,8 @@ function DetalleRow({ detalle, idx, cuentas, onChange, onRemove, onAbrirModal, t
                         onChange(idx, 'descuento_pct', String(pct))
                         onChange(idx, 'descuento',     String(monto))
                     }}
-                    className="w-full rounded px-1 py-1 text-xs border text-center focus:outline-none focus:ring-1 focus:ring-amber-500"
-                    style={{ borderColor: 'var(--border)', background: 'var(--bg-main)', color: 'var(--text-main)' }}
+                    className="w-full rounded px-1 text-xs border text-center focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    style={{ borderColor: 'var(--border)', background: 'var(--bg-main)', color: 'var(--text-main)', height: ROW_INPUT_HEIGHT }}
                 >
                     <option value="0">0%</option>
                     <option value="5">5%</option>
@@ -258,16 +321,16 @@ function DetalleRow({ detalle, idx, cuentas, onChange, onRemove, onAbrirModal, t
             </div>
 
             {/* ── IVA % ── */}
-            <div className="px-1 py-1.5">
+            <div className="px-1 py-2">
                 {tipoDocumento === 'EXT' ? (
-                    <div className="w-full px-1 py-1 border rounded text-xs text-center cursor-not-allowed opacity-60"
+                    <div className="w-full px-1 border rounded text-xs text-center cursor-not-allowed opacity-60 flex items-center justify-center"
                         style={{ ...inputStyle, background: 'var(--bg-main)' }}
                         title="Facturas del exterior no generan IVA local">
                         0%
                     </div>
                 ) : (
                     <select
-                        className="w-full px-1 py-1 border rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500"
+                        className="w-full px-1 border rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500"
                         style={inputStyle}
                         value={detalle.porcentaje_iva}
                         onChange={e => onChange(idx, 'porcentaje_iva', e.target.value)}>
@@ -278,19 +341,19 @@ function DetalleRow({ detalle, idx, cuentas, onChange, onRemove, onAbrirModal, t
             </div>
 
             {/* ── Subtotal ── */}
-            <div className="px-2 py-1.5 text-right font-medium tabular-nums"
+            <div className="px-2 py-2 text-right font-medium tabular-nums"
                 style={{ color: 'var(--text-main)' }}>
                 {subtotal.toFixed(2)}
             </div>
 
             {/* ── IVA ── */}
-            <div className="px-2 py-1.5 text-right tabular-nums"
+            <div className="px-2 py-2 text-right tabular-nums"
                 style={{ color: 'var(--text-muted)' }}>
                 {iva.toFixed(2)}
             </div>
 
             {/* ── Total ── */}
-            <div className="px-2 py-1.5 text-right font-bold tabular-nums"
+            <div className="px-2 py-2 text-right font-bold tabular-nums"
                 style={{ color: 'var(--primary)' }}>
                 {total.toFixed(2)}
             </div>
@@ -318,15 +381,17 @@ interface NuevaCompraModalProps {
     centroMatrizId: number | null
     bodegaDefaultId: number | null
     initialValues?: Partial<PrefillExterior>
+    editando?: Compra
+    detallesEdicion?: DetalleEdicion[]
     onClose: () => void
 }
 
-function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, importacionesActivas, centroMatrizId, bodegaDefaultId, initialValues, onClose }: NuevaCompraModalProps) {
+function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, importacionesActivas, centroMatrizId, bodegaDefaultId, initialValues, editando, detallesEdicion, onClose }: NuevaCompraModalProps) {
     const [tab, setTab] = useState<'datos' | 'detalle' | 'centro'>('datos')
 
-    const isExt = initialValues?.tipo_documento === 'EXT'
+    const isExt = (editando?.tipo_documento ?? initialValues?.tipo_documento) === 'EXT'
 
-    const { data, setData, post, processing, errors } = useForm<{
+    const { data, setData, post, put, processing, errors } = useForm<{
         proveedor_id: string | number
         tipo_documento: string
         num_documento: string
@@ -351,34 +416,54 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
         vigencia_desde: string
         vigencia_hasta: string
     }>({
-        proveedor_id:        initialValues?.proveedor_id ?? '',
-        tipo_documento:      initialValues?.tipo_documento ?? 'FAC',
-        num_documento:       initialValues?.num_documento ?? '',
-        num_autorizacion:    '',
-        fecha_emision:       initialValues?.fecha_emision ?? new Date().toISOString().slice(0, 10),
-        dias_credito:        initialValues?.dias_credito ?? 0,
-        iva_asumido:         false,
-        gasto_no_deducible:  false,
-        retencion_ir:        0,
-        retencion_iva:       0,
-        sustento_tributario: initialValues?.sustento_tributario ?? '01',
-        concepto:            initialValues?.concepto ?? '',
-        centro_costo_id:     centroMatrizId ? String(centroMatrizId) : '',
-        bodega_id:           bodegaDefaultId ? String(bodegaDefaultId) : '',
-        detalles: [{
-            producto_id: null, codigo: '',
-            descripcion: '', cantidad: 1, precio_unitario: '',
-            descuento: 0, descuento_pct: '0', porcentaje_iva: isExt ? 0 : 15,
-            cuenta_id: '', es_activo_fijo: false,
-        }],
-        importacion_id:   initialValues?.importacion_id ?? '',
-        metodo_envio:     initialValues?.metodo_envio ?? 'FOB',
-        divisa:           initialValues?.divisa ?? 'USD',
-        tipo_cambio:      '',
-        num_orden_compra: '',
-        num_contrato:     '',
-        vigencia_desde:   '',
-        vigencia_hasta:   '',
+        proveedor_id:        editando?.proveedor_id ?? initialValues?.proveedor_id ?? '',
+        tipo_documento:      editando?.tipo_documento ?? initialValues?.tipo_documento ?? 'FAC',
+        num_documento:       editando?.num_documento ?? initialValues?.num_documento ?? '',
+        num_autorizacion:    editando?.num_autorizacion ?? '',
+        fecha_emision:       editando?.fecha_emision ?? initialValues?.fecha_emision ?? new Date().toISOString().slice(0, 10),
+        dias_credito:        editando?.dias_credito ?? initialValues?.dias_credito ?? 0,
+        iva_asumido:         editando?.iva_asumido ?? false,
+        gasto_no_deducible:  editando?.gasto_no_deducible ?? false,
+        retencion_ir:        editando?.retencion_ir ?? 0,
+        retencion_iva:       editando?.retencion_iva ?? 0,
+        sustento_tributario: editando?.sustento_tributario != null ? String(editando.sustento_tributario) : (initialValues?.sustento_tributario ?? '01'),
+        concepto:            editando?.concepto ?? initialValues?.concepto ?? '',
+        centro_costo_id:     editando?.centro_costo_id ? String(editando.centro_costo_id) : (centroMatrizId ? String(centroMatrizId) : ''),
+        bodega_id:           editando?.bodega_id ? String(editando.bodega_id) : (bodegaDefaultId ? String(bodegaDefaultId) : ''),
+        detalles: detallesEdicion && detallesEdicion.length > 0
+            ? detallesEdicion.map(d => {
+                const base = d.cantidad * d.precio_unitario
+                const pct  = base > 0 ? String(parseFloat(((d.descuento / base) * 100).toFixed(2))) : '0'
+                const prod = d.producto_id ? productos.find(p => p.id === d.producto_id) : null
+                return {
+                    producto_id:     d.producto_id,
+                    codigo:          prod?.codigo ?? '',
+                    descripcion:     d.descripcion,
+                    cantidad:        d.cantidad,
+                    peso:            d.peso != null ? String(d.peso) : '',
+                    precio_unitario: String(d.precio_unitario),
+                    descuento:       d.descuento,
+                    descuento_pct:   pct,
+                    porcentaje_iva:  d.porcentaje_iva,
+                    cuenta_id:       d.cuenta_id ?? '',
+                    es_activo_fijo:  d.es_activo_fijo,
+                    unidad:          prod?.unidad ?? '',
+                }
+            })
+            : [{
+                producto_id: null, codigo: '',
+                descripcion: '', cantidad: 1, peso: '', precio_unitario: '',
+                descuento: 0, descuento_pct: '0', porcentaje_iva: isExt ? 0 : 15,
+                cuenta_id: '', es_activo_fijo: false, unidad: '',
+            }],
+        importacion_id:   editando?.importacion_id ?? initialValues?.importacion_id ?? '',
+        metodo_envio:     editando?.metodo_envio ?? initialValues?.metodo_envio ?? 'FOB',
+        divisa:           editando?.divisa ?? initialValues?.divisa ?? 'USD',
+        tipo_cambio:      editando?.tipo_cambio ?? '',
+        num_orden_compra: editando?.num_orden_compra ?? '',
+        num_contrato:     editando?.num_contrato ?? '',
+        vigencia_desde:   editando?.vigencia_desde ?? '',
+        vigencia_hasta:   editando?.vigencia_hasta ?? '',
     })
 
     const totales = useMemo(
@@ -446,10 +531,10 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
         ...prev,
         detalles: [...prev.detalles, {
             producto_id: null, codigo: '',
-            descripcion: '', cantidad: 1, precio_unitario: '',
+            descripcion: '', cantidad: 1, peso: '', precio_unitario: '',
             descuento: 0, descuento_pct: '0',
             porcentaje_iva: prev.tipo_documento === 'EXT' ? 0 : 15,
-            cuenta_id: '', es_activo_fijo: false,
+            cuenta_id: '', es_activo_fijo: false, unidad: '',
         }],
     }))
 
@@ -458,7 +543,7 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
             ...prev,
             detalles: prev.detalles.map((d, i) => {
                 if (i !== idx) return d
-                if (!p) return { ...d, producto_id: null }
+                if (!p) return { ...d, producto_id: null, unidad: '' }
                 return {
                     ...d,
                     producto_id:     p.id,
@@ -466,6 +551,7 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
                     descripcion:     p.nombre,
                     precio_unitario: String(p.costo),
                     porcentaje_iva:  prev.tipo_documento === 'EXT' ? 0 : Number(p.porcentaje_iva),
+                    unidad:          p.unidad || 'unidad',
                 }
             }),
         }))
@@ -477,19 +563,29 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
     }))
 
     // ── Modal búsqueda de producto ──────────────────────────
+    // Carga bajo demanda: no se muestra ni filtra nada del catálogo hasta que
+    // el usuario escriba al menos 2 caracteres (mismo patrón que Productos de
+    // Inventario / Asientos Contables) — con debounce para no recalcular en
+    // cada pulsación mientras el usuario sigue escribiendo.
     const [modalProductos,   setModalProductos]   = useState(false)
     const [idxDetalleActivo, setIdxDetalleActivo] = useState(0)
     const [busquedaProducto, setBusquedaProducto] = useState('')
+    const [busquedaDebounced, setBusquedaDebounced] = useState('')
+
+    useEffect(() => {
+        const t = setTimeout(() => setBusquedaDebounced(busquedaProducto), 250)
+        return () => clearTimeout(t)
+    }, [busquedaProducto])
 
     const productosFiltrados = useMemo(() => {
-        const q = busquedaProducto.toLowerCase().trim()
-        if (!q) return productos.slice(0, 20)
+        const q = busquedaDebounced.toLowerCase().trim()
+        if (q.length < 2) return []
         return productos.filter(p =>
             p.codigo.toLowerCase().includes(q) ||
             p.nombre.toLowerCase().includes(q) ||
             p.tipo.toLowerCase().includes(q)
         ).slice(0, 30)
-    }, [busquedaProducto, productos])
+    }, [busquedaDebounced, productos])
 
     const abrirModalProductos = (idx: number) => {
         setIdxDetalleActivo(idx)
@@ -503,8 +599,45 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
         setBusquedaProducto('')
     }
 
-    function submit(e: React.FormEvent) {
+    function enviarActualizacion() {
+        put(route('compras.facturas.update', editando!.id), {
+            onSuccess: (page) => {
+                const flash = (page as any).props?.flash
+                if (flash?.error) {
+                    notify.error(flash.error)
+                } else {
+                    notify.ok(`Compra ${data.num_documento} actualizada`)
+                }
+                onClose()
+            },
+            onError: (errs) => notify.error('Error: ' + Object.values(errs).join(', ')),
+        })
+    }
+
+    async function submit(e: React.FormEvent) {
         e.preventDefault()
+
+        if (editando) {
+            if (editando.estado === 'activa') {
+                const result = await Swal.fire({
+                    ...swalBase,
+                    icon: 'warning',
+                    title: 'Editar factura activa',
+                    html: `<p style="color:#374151;font-size:13px;line-height:1.6">
+                               Esta factura ya generó movimientos contables y de inventario.
+                               Editar revertirá y regenerará esos efectos con los datos corregidos.
+                           </p>`,
+                    confirmButtonText: 'Sí, editar y regenerar',
+                    cancelButtonText:  'Cancelar',
+                    confirmButtonColor: '#f59e0b',
+                    cancelButtonColor:  '#6b7280',
+                })
+                if (!result.isConfirmed) return
+            }
+            enviarActualizacion()
+            return
+        }
+
         post(route('compras.facturas.store'), {
             onSuccess: (page) => {
                 const flash = (page as any).props?.flash
@@ -529,11 +662,11 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
     return (
         <>
         <div className="modal-overlay" onClick={onClose}>
-            <div className="modal-card max-w-4xl max-h-[90vh]" onClick={e => e.stopPropagation()}>
+            <div className="modal-card max-w-5xl max-h-[90vh]" onClick={e => e.stopPropagation()}>
 
                 {/* Header */}
                 <div className="modal-header shrink-0">
-                    <h2>Nueva factura de compra</h2>
+                    <h2>{editando ? `Editar factura ${editando.num_documento}` : 'Nueva factura de compra'}</h2>
                     <button className="modal-close" onClick={onClose}>
                         <X className="w-4 h-4" />
                     </button>
@@ -614,7 +747,7 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
                                         </select>
                                     </div>
                                     <div className="col-span-2 space-y-1.5">
-                                        <Label>N° Documento <span className="text-red-400">*</span></Label>
+                                        <Label># Documento <span className="text-red-400">*</span></Label>
                                         <Input value={data.num_documento}
                                             onChange={e => setData('num_documento', e.target.value)}
                                             error={errors.num_documento}
@@ -858,10 +991,11 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
 
                         {/* ── Tab 2: Detalle ── */}
                         {tab === 'detalle' && (
-                            <div className="space-y-4">
-                                <div className="rounded-lg border overflow-x-auto" style={{ borderColor: 'var(--border)' }}>
-                                    {/* Header */}
-                                    <div className="border-b text-[10px] font-semibold uppercase tracking-wider"
+                            <div className="space-y-5">
+                                <div className="rounded-lg border overflow-x-auto" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
+                                    {/* Header — mismo padding horizontal/vertical que las filas (DetalleRow)
+                                        para que encabezado y columnas queden perfectamente alineados. */}
+                                    <div className="border-b text-xs font-semibold uppercase tracking-wide"
                                         style={{
                                             display: 'grid', gridTemplateColumns: DETALLE_COLS,
                                             alignItems: 'center',
@@ -869,15 +1003,16 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
                                             background: 'rgba(245,158,11,0.05)',
                                             color: 'var(--text-muted)',
                                         }}>
-                                        <div className="px-1 py-2">Código</div>
-                                        <div className="px-2 py-2">Descripción</div>
-                                        <div className="px-1 py-2 text-right">Cant.</div>
-                                        <div className="px-1 py-2 text-right">P. Unit.</div>
-                                        <div className="px-1 py-2 text-center">Desc.</div>
-                                        <div className="px-1 py-2 text-center">IVA%</div>
-                                        <div className="px-2 py-2 text-right">Subtotal</div>
-                                        <div className="px-2 py-2 text-right">IVA</div>
-                                        <div className="px-2 py-2 text-right">Total</div>
+                                        <div className="px-2 py-2.5">Código</div>
+                                        <div className="px-2 py-2.5">Descripción</div>
+                                        <div className="px-1 py-2.5 text-right">Cant.</div>
+                                        <div className="px-1 py-2.5 text-right">Peso (kg)</div>
+                                        <div className="px-1 py-2.5 text-right">P. Unit.</div>
+                                        <div className="px-1 py-2.5 text-center">Desc.</div>
+                                        <div className="px-1 py-2.5 text-center">IVA%</div>
+                                        <div className="px-2 py-2.5 text-right">Subtotal</div>
+                                        <div className="px-2 py-2.5 text-right">IVA</div>
+                                        <div className="px-2 py-2.5 text-right">Total</div>
                                         <div />
                                     </div>
                                     {/* Rows */}
@@ -900,39 +1035,47 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
                                 </button>
 
                                 {/* Totales */}
-                                <div className="ml-auto max-w-xs rounded-xl border p-4 space-y-2"
+                                <div className="ml-auto max-w-sm rounded-xl border overflow-hidden"
                                     style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
-                                    <div className="flex justify-between text-sm">
-                                        <span style={{ color: 'var(--text-muted)' }}>Subtotal 0%</span>
-                                        <span className="font-medium" style={{ color: 'var(--text-main)' }}>
-                                            ${totales.subtotal0.toFixed(2)}
-                                        </span>
-                                    </div>
-                                    <div className="flex justify-between text-sm">
-                                        <span style={{ color: 'var(--text-muted)' }}>Subtotal gravado</span>
-                                        <span className="font-medium" style={{ color: 'var(--text-main)' }}>
-                                            ${totales.subtotalIva.toFixed(2)}
-                                        </span>
-                                    </div>
-                                    <div className="flex justify-between text-sm">
-                                        <span style={{ color: 'var(--text-muted)' }}>
-                                            IVA {data.gasto_no_deducible ? '(no deducible)' : ''}
-                                        </span>
-                                        <span className={cn('font-medium', data.gasto_no_deducible && 'line-through opacity-50')}
-                                            style={{ color: 'var(--text-main)' }}>
-                                            ${totales.totalIva.toFixed(2)}
-                                        </span>
-                                    </div>
-                                    <div className="flex justify-between text-sm font-bold border-t pt-2"
-                                        style={{ borderColor: 'var(--border)', color: 'var(--primary)' }}>
-                                        <span>TOTAL</span>
-                                        <span>${totales.total.toFixed(2)}</span>
-                                    </div>
-                                    {Number(data.dias_credito) > 0 && (
-                                        <p className="text-xs text-center" style={{ color: 'var(--text-muted)' }}>
-                                            CxP: ${totales.total.toFixed(2)} a {data.dias_credito} días
+                                    <div className="px-4 py-2.5 border-b"
+                                        style={{ borderColor: 'var(--border)', background: 'var(--bg-main)' }}>
+                                        <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+                                            Resumen
                                         </p>
-                                    )}
+                                    </div>
+                                    <div className="p-4 space-y-2.5">
+                                        <div className="flex justify-between text-sm">
+                                            <span style={{ color: 'var(--text-muted)' }}>Subtotal 0%</span>
+                                            <span className="font-medium tabular-nums" style={{ color: 'var(--text-main)' }}>
+                                                ${totales.subtotal0.toFixed(2)}
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between text-sm">
+                                            <span style={{ color: 'var(--text-muted)' }}>Subtotal gravado</span>
+                                            <span className="font-medium tabular-nums" style={{ color: 'var(--text-main)' }}>
+                                                ${totales.subtotalIva.toFixed(2)}
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between text-sm">
+                                            <span style={{ color: 'var(--text-muted)' }}>
+                                                IVA {data.gasto_no_deducible ? '(no deducible)' : ''}
+                                            </span>
+                                            <span className={cn('font-medium tabular-nums', data.gasto_no_deducible && 'line-through opacity-50')}
+                                                style={{ color: 'var(--text-main)' }}>
+                                                ${totales.totalIva.toFixed(2)}
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between text-base font-bold border-t pt-3 mt-1 tabular-nums"
+                                            style={{ borderColor: 'var(--border)', color: 'var(--primary)' }}>
+                                            <span>TOTAL</span>
+                                            <span>${totales.total.toFixed(2)}</span>
+                                        </div>
+                                        {Number(data.dias_credito) > 0 && (
+                                            <p className="text-xs text-center pt-1" style={{ color: 'var(--text-muted)' }}>
+                                                CxP: ${totales.total.toFixed(2)} a {data.dias_credito} días
+                                            </p>
+                                        )}
+                                    </div>
                                 </div>
 
                                 {errors.detalles && (
@@ -1032,7 +1175,7 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
                         <div className="flex gap-2">
                             <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
                             <Button type="submit" disabled={processing}>
-                                <Plus className="w-4 h-4" /> Registrar compra
+                                <Plus className="w-4 h-4" /> {editando ? 'Guardar cambios' : 'Registrar compra'}
                             </Button>
                         </div>
                     </div>
@@ -1084,16 +1227,32 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
                                 className="input-field"
                             />
                         </div>
-                        <p style={{ fontSize: '12px', color: 'var(--text-muted)',
-                                    marginTop: '6px' }}>
-                            {productosFiltrados.length} producto(s) encontrado(s)
-                            {busquedaProducto && ` para "${busquedaProducto}"`}
-                        </p>
+                        {busquedaProducto.trim().length >= 2 && (
+                            <p style={{ fontSize: '12px', color: 'var(--text-muted)',
+                                        marginTop: '6px' }}>
+                                {productosFiltrados.length} producto(s) encontrado(s) para "{busquedaProducto}"
+                            </p>
+                        )}
                     </div>
 
                     {/* Lista */}
                     <div style={{ overflowY: 'auto', flex: 1 }}>
-                        {productosFiltrados.length === 0 ? (
+                        {busquedaProducto.trim().length < 2 ? (
+                            <div style={{ textAlign: 'center', padding: '40px 20px',
+                                          color: 'var(--text-muted)' }}>
+                                <svg width="40" height="40" viewBox="0 0 24 24"
+                                     fill="none" stroke="currentColor" strokeWidth="1.5"
+                                     style={{ margin: '0 auto 12px', display: 'block',
+                                              opacity: 0.3 }}>
+                                    <circle cx="11" cy="11" r="8"/>
+                                    <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                                </svg>
+                                <p style={{ fontWeight: 600 }}>Escribe para buscar</p>
+                                <p style={{ fontSize: '12px', marginTop: '4px' }}>
+                                    Ingresa al menos 2 caracteres (código, nombre o tipo)
+                                </p>
+                            </div>
+                        ) : productosFiltrados.length === 0 ? (
                             <div style={{ textAlign: 'center', padding: '40px 20px',
                                           color: 'var(--text-muted)' }}>
                                 <svg width="40" height="40" viewBox="0 0 24 24"
@@ -1439,6 +1598,12 @@ type EscenarioAnulacion =
     | { escenario: 'C';       mensaje: string; productos_vendidos: Array<{ nombre: string; cantidad_salida: number }> }
     | { escenario: 'ANULADA'; mensaje: string }
 
+interface VerificacionEdicion {
+    puede: boolean
+    motivo: string | null
+    es_activa?: boolean
+}
+
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 // ─── Modal Cargar XML SRI ─────────────────────────────────────────────────────
@@ -1509,7 +1674,7 @@ function CargarXmlModal({ onParsed, onClose }: {
                     <div className="modal-footer" style={{ justifyContent: 'space-between' }}>
                         <button type="submit" disabled={!archivo || loading}
                             className="btn-primary flex items-center gap-2"
-                            style={{ background: '#0891b2', opacity: (!archivo || loading) ? 0.6 : 1 }}>
+                            style={{ background: '#0891b2', color: '#fff', opacity: (!archivo || loading) ? 0.6 : 1 }}>
                             <Upload size={15} />
                             {loading ? 'Procesando...' : 'Cargar XML'}
                         </button>
@@ -1524,6 +1689,7 @@ function CargarXmlModal({ onParsed, onClose }: {
 type ModalState =
     | { type: 'none' }
     | { type: 'nueva' }
+    | { type: 'editar'; compra: Compra; detalles: DetalleEdicion[] }
     | { type: 'etiquetas'; compra: Compra }
     | { type: 'reimprimir-etiquetas'; compra: Compra }
 
@@ -1739,14 +1905,19 @@ function ReimprimirEtiquetasModal({ compra, onClose, abrirPdf }: ReimprimirEtiqu
 
 export default function ComprasIndex() {
     const { compras, proveedores, centros, cuentas, bodegas, productos, importacionesActivas, filtros, flash, prefillExterior } = usePage<Props>().props
+    const { puede } = usePermiso('compras')
 
     // Estado local de filas — permite actualizar una fila sin recargar la página
-    const [comprasData, setComprasData] = useState(compras.data)
+    const [comprasData, setComprasData] = useState(compras?.data ?? [])
     const actualizarCompra = (id: number, cambios: Partial<Compra>) =>
         setComprasData(prev => prev.map(c => c.id === id ? { ...c, ...cambios } : c))
 
     // Sincronizar cuando Inertia actualiza los props (filtros, paginación)
-    useEffect(() => { setComprasData(compras.data) }, [compras])
+    useEffect(() => { setComprasData(compras?.data ?? []) }, [compras])
+
+    // Carga bajo demanda: mismo patrón que Asientos Contables — `compras` es
+    // `null` hasta que el usuario presiona Buscar (aplicarFiltros manda `buscado=1`).
+    const haBuscado = compras !== null
 
     const [modal, setModal] = useState<ModalState>(prefillExterior ? { type: 'nueva' } : { type: 'none' })
     const [modalXml, setModalXml] = useState(false)
@@ -1757,7 +1928,49 @@ export default function ComprasIndex() {
     const [fechaHasta, setFechaHasta] = useState(filtros.fecha_hasta ?? '')
     const [modalPdf, setModalPdf] = useState(false)
     const [urlPdf,   setUrlPdf]   = useState('')
-    const abrirPdf = (url: string) => { setUrlPdf(url); setModalPdf(true) }
+    const [cargandoPdf, setCargandoPdf] = useState(false)
+
+    // Se trae el PDF como blob (fetch) en vez de apuntar el <iframe> directo a la
+    // URL del backend: aunque el backend ya responde con Content-Disposition:
+    // inline, algunos navegadores igual fuerzan la descarga o dejan el iframe en
+    // blanco según su propia configuración de manejo de PDF. Un blob: URL siempre
+    // se muestra embebido — mismo patrón que Asientos Contables.
+    // Si `url` ya es un blob: (algunos llamadores, como EtiquetasModal, generan el
+    // PDF vía POST con body y ya convierten a blob ellos mismos), se usa directo.
+    const abrirPdf = async (url: string) => {
+        setModalPdf(true)
+        if (url.startsWith('blob:')) {
+            setUrlPdf(url)
+            return
+        }
+        setCargandoPdf(true)
+        setUrlPdf('')
+        try {
+            const res = await fetch(url, { headers: { Accept: 'application/pdf' } })
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ message: null })) as { message?: string | null }
+                throw new Error(err.message ?? 'No se pudo generar el PDF.')
+            }
+            const blob = await res.blob()
+            setUrlPdf(URL.createObjectURL(blob))
+        } catch (e) {
+            notify.error(e instanceof Error ? e.message : 'No se pudo generar el PDF. Intenta de nuevo.')
+            setModalPdf(false)
+        } finally {
+            setCargandoPdf(false)
+        }
+    }
+
+    const cerrarModalPdf = () => {
+        if (urlPdf) URL.revokeObjectURL(urlPdf)
+        setModalPdf(false)
+        setUrlPdf('')
+    }
+
+    const construirUrlPdf = () =>
+        `${route('compras.facturas.pdf')}?estado=${estado}&fecha_desde=${fechaDesde}&fecha_hasta=${fechaHasta}`
+
+    const iniciarExportacionPdf = () => abrirPdf(construirUrlPdf())
 
     function reimprimir(c: Compra) {
         setModal({ type: 'reimprimir-etiquetas', compra: c })
@@ -1897,10 +2110,111 @@ export default function ComprasIndex() {
         })
     }
 
+    async function verificarEdicionCompra(c: Compra): Promise<VerificacionEdicion | null> {
+        try {
+            const res = await fetch(route('compras.facturas.verificar-edicion', c.id), {
+                headers: { Accept: 'application/json' },
+            })
+            return await res.json() as VerificacionEdicion
+        } catch {
+            notify.error('Error al verificar el estado de la compra.')
+            return null
+        }
+    }
+
+    function mostrarBloqueoEdicion(titulo: string, motivo: string) {
+        void Swal.fire({
+            icon: 'error',
+            title: titulo,
+            html: `<p style="color:#374151;font-size:13px">${motivo}</p>`,
+            confirmButtonText: 'Entendido',
+            confirmButtonColor: '#ef4444',
+            showCancelButton: false,
+            customClass: { popup: 'swal-pop', title: 'swal-title', confirmButton: 'swal-confirm' },
+            didOpen: injectSwalCss,
+        })
+    }
+
+    async function iniciarEdicion(c: Compra) {
+        const verif = await verificarEdicionCompra(c)
+        if (!verif) return
+        if (!verif.puede) {
+            mostrarBloqueoEdicion('No se puede editar', verif.motivo ?? 'No se puede editar esta factura.')
+            return
+        }
+
+        try {
+            const res  = await fetch(route('compras.facturas.detalles', c.id), { headers: { Accept: 'application/json' } })
+            const json = await res.json() as { detalles?: DetalleEdicion[] }
+            setModal({ type: 'editar', compra: c, detalles: json.detalles ?? [] })
+        } catch {
+            notify.error('Error al cargar el detalle de la compra.')
+        }
+    }
+
+    async function iniciarEliminacion(c: Compra) {
+        const verif = await verificarEdicionCompra(c)
+        if (!verif) return
+        if (!verif.puede) {
+            mostrarBloqueoEdicion('No se puede eliminar', verif.motivo ?? 'No se puede eliminar esta factura.')
+            return
+        }
+
+        const result = await Swal.fire({
+            ...swalBase,
+            icon: 'warning',
+            title: 'Eliminar factura',
+            html: `<p style="color:#6b7280;font-size:14px;margin-bottom:10px">
+                       <strong>${c.num_documento}</strong> — $${Number(c.total).toFixed(2)}
+                   </p>
+                   <p style="color:#374151;font-size:13px;line-height:1.6">
+                       ${verif.es_activa
+                            ? verif.motivo
+                            : 'Esta factura está pendiente de recepción; se eliminará directamente.'}
+                   </p>`,
+            confirmButtonText: 'Sí, eliminar',
+            cancelButtonText:  'Cancelar',
+            confirmButtonColor: '#ef4444',
+            cancelButtonColor:  '#6b7280',
+        })
+        if (!result.isConfirmed) return
+
+        router.delete(route('compras.facturas.destroy', c.id), {
+            onSuccess: () => {
+                notify.ok(`Factura ${c.num_documento} eliminada correctamente.`)
+                setComprasData(prev => prev.filter(x => x.id !== c.id))
+            },
+            onError: (e) => notify.error(Object.values(e)[0] ?? 'Error al eliminar'),
+        })
+    }
+
     useEffect(() => {
         if (flash?.success) notify.ok(flash.success)
         if (flash?.error)   notify.error(flash.error)
     }, [flash?.success, flash?.error])
+
+    // Abrir edición automáticamente al llegar desde Show.tsx con ?editar=<id>
+    useEffect(() => {
+        const editarId = new URLSearchParams(window.location.search).get('editar')
+        if (!editarId) return
+
+        const url = new URL(window.location.href)
+        url.searchParams.delete('editar')
+        window.history.replaceState({}, '', url.toString())
+
+        void (async () => {
+            try {
+                const res = await fetch(route('compras.facturas.show', editarId), {
+                    headers: { Accept: 'application/json', 'X-Inertia': 'true' },
+                })
+                const json = await res.json() as { props?: { compra?: Compra } }
+                const c = json?.props?.compra
+                if (c) await iniciarEdicion(c)
+            } catch {
+                notify.error('No se pudo cargar la factura para editar.')
+            }
+        })()
+    }, [])
 
     function aplicarFiltros() {
         router.get(route('compras.facturas.index'), {
@@ -1908,97 +2222,121 @@ export default function ComprasIndex() {
             ...(estado     && { estado }),
             ...(fechaDesde && { fecha_desde: fechaDesde }),
             ...(fechaHasta && { fecha_hasta: fechaHasta }),
+            buscado: '1',
         }, { preserveState: true, replace: true })
     }
 
-    function limpiar() {
-        setBuscar(''); setEstado(''); setFechaDesde(''); setFechaHasta('')
-        router.get(route('compras.facturas.index'), {}, { preserveState: false })
-    }
-
-    const hayFiltros = buscar || estado || fechaDesde || fechaHasta
     const inputStyle = { background: 'var(--bg-card)', color: 'var(--text-main)', borderColor: 'var(--border)' }
 
     return (
         <AppLayout title="Facturas de Compra" suppressFlash>
             <Head title="Facturas de Compra" />
 
-            <div className="px-6 pt-6 mb-2">
-                <div className="flex items-center gap-3 mb-4">
-                    <div className="p-2 rounded-xl"
-                         style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
-                        <ShoppingCart size={24} style={{ color: 'var(--primary)' }} />
-                    </div>
-                    <div>
-                        <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>
-                            Facturas de Compra
-                        </h1>
-                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                            Registro y gestión de facturas, liquidaciones y documentos de compra
-                        </p>
-                    </div>
-                </div>
-                {/* Toolbar */}
-                <div className="flex items-center justify-between gap-3 mb-6">
-                    <div className="flex items-center gap-2 flex-wrap">
-                        <button onClick={() => setModal({ type: 'nueva' })} className="btn-primary flex items-center gap-2 whitespace-nowrap">
-                            <Plus size={15} /> Nueva Factura de Compra
-                        </button>
-                        <button onClick={() => setModalXml(true)}
-                            className="btn-primary flex items-center gap-2 whitespace-nowrap"
-                            style={{ background: '#0891b2' }}>
-                            <Upload size={15} /> Cargar XML SRI
-                        </button>
-
-                        <div className="input-with-icon">
-                            <Search size={14} className="input-icon" />
-                            <input type="text" value={buscar}
-                                onChange={e => setBuscar(e.target.value)}
-                                onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
-                                placeholder="Buscar N° doc, proveedor…"
-                                className="input-field w-52" />
-                        </div>
-
-                        <select value={estado} onChange={e => setEstado(e.target.value)}
-                            className="input-field select-field" style={{ width: 'auto' }}>
-                            <option value="">Todos los estados</option>
-                            <option value="pendiente">Pendiente</option>
-                            <option value="activa">Activa</option>
-                            <option value="anulada">Anulada</option>
-                        </select>
-
-                        <input type="date" value={fechaDesde} onChange={e => setFechaDesde(e.target.value)}
-                            className="input-field" style={{ width: 'auto' }} />
-                        <input type="date" value={fechaHasta} onChange={e => setFechaHasta(e.target.value)}
-                            className="input-field" style={{ width: 'auto' }} />
-
-                        <button onClick={aplicarFiltros} className="btn-secondary whitespace-nowrap">
-                            Filtrar
-                        </button>
-                        {hayFiltros && (
-                            <button onClick={limpiar} className="btn-secondary whitespace-nowrap">
-                                Limpiar
+            <PageHeader
+                title="Facturas de Compra"
+                breadcrumbs={[{ label: 'Compras' }, { label: 'Facturas' }]}
+                actions={
+                    <div className="flex items-center gap-2 flex-wrap shrink-0">
+                        {puede('crear') && (
+                            <button onClick={() => setModal({ type: 'nueva' })}
+                                className="flex items-center gap-2 whitespace-nowrap px-4 py-2 rounded-xl font-semibold text-sm text-black transition-all hover:opacity-90"
+                                style={{ background: 'var(--primary)' }}>
+                                <Plus size={15} /> Nueva Factura
+                            </button>
+                        )}
+                        {puede('crear') && (
+                            <button onClick={() => setModalXml(true)}
+                                className="btn-primary flex items-center gap-2 whitespace-nowrap"
+                                style={{ background: '#0891b2', color: '#fff' }}>
+                                <Upload size={15} /> Cargar XML SRI
                             </button>
                         )}
                     </div>
+                }
+            />
 
-                    <div className="flex items-center gap-2">
+            <div className="px-6 pt-6 mb-2">
+                {/*
+                    Ancho vía `style.width` inline a propósito, NO clases Tailwind (w-36 etc.):
+                    `.input-field` (app.css) declara `width:100%` fuera de cualquier @layer, y
+                    las utilidades de Tailwind v4 viven dentro de su @layer utilities interno —
+                    por reglas de CSS Cascade Layers, lo no-layereado siempre gana sobre lo
+                    layereado sin importar especificidad ni orden, así que un w-36 de Tailwind
+                    nunca puede ganarle a `.input-field`. Solo un estilo inline (fuera de la
+                    cascada) lo puede sobreescribir de forma confiable — mismo hallazgo y mismo
+                    fix que en Asientos Contables.
+
+                    Presupuesto (1 solo select aquí, no 3 como en Asientos, así que hay bastante
+                    margen; sin botón de "Limpiar" — eliminado por completo, mismo criterio que
+                    quedó en Asientos Contables; searchWidth="w-[130px]" para el mismo buscador
+                    compacto que Asientos, en vez del w-52 default):
+                      Estado 200 + Desde 136 + Hasta 136 + buscador (130+36)
+                      + Excel 36 + PDF 36 = 710px + gaps (12px×5=60) = ~770px
+                    Cabe cómodo en el presupuesto de ~1100px con sidebar abierto. Igual se
+                    envuelve en overflow-x-auto + minWidth como red de seguridad ante cambios
+                    futuros, mismo patrón que Asientos.
+                */}
+                <div className="overflow-x-auto">
+                <div style={{ minWidth: '900px' }}>
+                <FilterToolbar
+                    search={{
+                        value: buscar,
+                        onChange: setBuscar,
+                        onSearch: aplicarFiltros,
+                        placeholder: 'N° doc, proveedor...',
+                    }}
+                    searchWidth="w-[130px]"
+                    onExport={() => window.location.href = `${route('compras.facturas.excel')}?estado=${estado}&fecha_desde=${fechaDesde}&fecha_hasta=${fechaHasta}`}
+                    extraActions={
                         <button
-                            onClick={() => abrirPdf(
-                                `${route('compras.facturas.pdf')}?estado=${estado}&fecha_desde=${fechaDesde}&fecha_hasta=${fechaHasta}`
-                            )}
-                            className="btn-pdf flex items-center gap-2 whitespace-nowrap">
-                            <FileText size={15} /> PDF
+                            onClick={iniciarExportacionPdf}
+                            disabled={cargandoPdf}
+                            title={cargandoPdf ? 'Generando PDF…' : 'PDF'}
+                            className="flex items-center justify-center w-9 h-9 rounded-md border text-sm font-medium shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                            style={{ background: '#ef4444', color: 'white', borderColor: '#ef4444' }}>
+                            <FileText className="w-4 h-4" />
                         </button>
-                        <a href={`${route('compras.facturas.excel')}?estado=${estado}&fecha_desde=${fechaDesde}&fecha_hasta=${fechaHasta}`}
-                           className="btn-excel flex items-center gap-2 whitespace-nowrap">
-                            <Download size={15} /> Excel
-                        </a>
+                    }
+                >
+                    <select value={estado} onChange={e => setEstado(e.target.value)}
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '200px' }}>
+                        <option value="">Todos los estados</option>
+                        <option value="pendiente">Pendiente</option>
+                        <option value="activa">Activa</option>
+                        <option value="anulada">Anulada</option>
+                    </select>
+                    <div className="flex flex-col gap-0.5 shrink-0">
+                        <span className="text-[11px] leading-none" style={{ color: 'var(--text-muted)' }}>Desde</span>
+                        <input type="date" value={fechaDesde} onChange={e => setFechaDesde(e.target.value)}
+                            className="input-field text-xs"
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '136px' }} />
                     </div>
+                    <div className="flex flex-col gap-0.5 shrink-0">
+                        <span className="text-[11px] leading-none" style={{ color: 'var(--text-muted)' }}>Hasta</span>
+                        <input type="date" value={fechaHasta} onChange={e => setFechaHasta(e.target.value)}
+                            className="input-field text-xs"
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '136px' }} />
+                    </div>
+                </FilterToolbar>
+                </div>
                 </div>
             </div>
 
+            {/* Estado inicial: aún no se ha buscado (carga bajo demanda) */}
+            {!haBuscado && (
+                <div className="px-6 pb-6">
+                    <div className="text-center py-16">
+                        <Search className="w-12 h-12 mx-auto mb-4 opacity-30" style={{ color: 'var(--text-muted)' }} />
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                            Ajusta los filtros y presiona Buscar para consultar las facturas.
+                        </p>
+                    </div>
+                </div>
+            )}
+
             {/* Tabla */}
+            {haBuscado && (
             <div className="px-6 pb-6">
                 <div className="border rounded-xl overflow-hidden"
                     style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
@@ -2037,8 +2375,13 @@ export default function ComprasIndex() {
                             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                         >
                             <div className="col-span-2 min-w-0">
-                                <p className="font-mono text-xs font-medium truncate" style={{ color: 'var(--text-main)' }}>
+                                <p className="font-mono text-xs font-medium truncate flex items-center gap-1" style={{ color: 'var(--text-main)' }}>
                                     {c.num_documento}
+                                    {!c.asiento_id && c.asiento_error && (
+                                        <span title={`Sin asiento contable: ${c.asiento_error}`} className="shrink-0 cursor-help">
+                                            <AlertTriangle size={12} className="text-orange-500" />
+                                        </span>
+                                    )}
                                 </p>
                             </div>
                             <div className="col-span-1 text-center">
@@ -2105,23 +2448,44 @@ export default function ComprasIndex() {
                                                 )}
                                             </>
                                         )}
-                                        <button
-                                            onClick={() => confirmarRecepcion(c)}
-                                            title="Confirmar recepción manual"
-                                            className="h-7 w-7 flex items-center justify-center rounded hover:bg-green-500/20 text-green-600 dark:text-green-400 transition-colors">
-                                            <CheckCircle className="w-4 h-4" />
-                                        </button>
+                                        {puede('editar') && (
+                                            <button
+                                                onClick={() => confirmarRecepcion(c)}
+                                                title="Confirmar recepción manual"
+                                                className="h-7 w-7 flex items-center justify-center rounded hover:bg-green-500/20 text-green-600 dark:text-green-400 transition-colors">
+                                                <CheckCircle className="w-4 h-4" />
+                                            </button>
+                                        )}
                                         <Link href={route('compras.facturas.show', c.id)}
                                             title="Ver detalle"
                                             className="h-7 w-7 flex items-center justify-center rounded hover:bg-blue-500/20 text-blue-500 dark:text-blue-400 transition-colors">
                                             <Eye className="w-4 h-4" />
                                         </Link>
-                                        <button
-                                            onClick={() => iniciarAnulacion(c)}
-                                            title="Anular compra"
-                                            className="h-7 w-7 flex items-center justify-center rounded hover:bg-red-500/20 text-red-500 dark:text-red-400 transition-colors">
-                                            <XCircle className="w-4 h-4" />
-                                        </button>
+                                        {puede('editar') && (
+                                            <button
+                                                onClick={() => iniciarEdicion(c)}
+                                                title="Editar factura"
+                                                className="h-7 w-7 flex items-center justify-center rounded hover:bg-amber-500/20 transition-colors"
+                                                style={{ color: 'var(--primary)' }}>
+                                                <Pencil className="w-4 h-4" />
+                                            </button>
+                                        )}
+                                        {puede('eliminar') && (
+                                            <button
+                                                onClick={() => iniciarEliminacion(c)}
+                                                title="Eliminar factura"
+                                                className="h-7 w-7 flex items-center justify-center rounded hover:bg-red-500/20 text-red-500 dark:text-red-400 transition-colors">
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        )}
+                                        {puede('anular') && (
+                                            <button
+                                                onClick={() => iniciarAnulacion(c)}
+                                                title="Anular compra"
+                                                className="h-7 w-7 flex items-center justify-center rounded hover:bg-red-500/20 text-red-500 dark:text-red-400 transition-colors">
+                                                <XCircle className="w-4 h-4" />
+                                            </button>
+                                        )}
                                     </>
                                 )}
                                 {c.estado === 'activa' && (
@@ -2140,7 +2504,7 @@ export default function ComprasIndex() {
                                             className="h-7 w-7 flex items-center justify-center rounded hover:bg-blue-500/20 text-blue-500 dark:text-blue-400 transition-colors">
                                             <Eye className="w-4 h-4" />
                                         </Link>
-                                        {c.tiene_pago && (
+                                        {c.tiene_pago && puede('anular') && (
                                             <button
                                                 onClick={() => anularPago(c)}
                                                 title="Anular pago registrado"
@@ -2149,15 +2513,40 @@ export default function ComprasIndex() {
                                                 <CreditCard className="w-4 h-4" />
                                             </button>
                                         )}
-                                        <button
-                                            onClick={() => !c.tiene_pago && iniciarAnulacion(c)}
-                                            disabled={c.tiene_pago}
-                                            title={c.tiene_pago
-                                                ? 'Factura con pago registrado — anula el pago primero (candado CxP-02)'
-                                                : 'Anular factura'}
-                                            className="h-7 w-7 flex items-center justify-center rounded hover:bg-red-500/20 text-red-500 dark:text-red-400 transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent">
-                                            <XCircle className="w-4 h-4" />
-                                        </button>
+                                        {puede('editar') && (
+                                            <button
+                                                onClick={() => !c.tiene_pago && iniciarEdicion(c)}
+                                                disabled={c.tiene_pago}
+                                                title={c.tiene_pago
+                                                    ? 'No se puede editar: tiene un pago registrado. Anule el pago primero.'
+                                                    : 'Editar factura (revertirá y regenerará asiento/inventario/CxP)'}
+                                                className="h-7 w-7 flex items-center justify-center rounded hover:bg-amber-500/20 transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                                                style={{ color: 'var(--primary)' }}>
+                                                <Pencil className="w-4 h-4" />
+                                            </button>
+                                        )}
+                                        {puede('eliminar') && (
+                                            <button
+                                                onClick={() => !c.tiene_pago && iniciarEliminacion(c)}
+                                                disabled={c.tiene_pago}
+                                                title={c.tiene_pago
+                                                    ? 'No se puede eliminar: tiene un pago registrado. Anule el pago primero.'
+                                                    : 'Eliminar factura (revertirá asiento/inventario/CxP)'}
+                                                className="h-7 w-7 flex items-center justify-center rounded hover:bg-red-500/20 text-red-500 dark:text-red-400 transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent">
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        )}
+                                        {puede('anular') && (
+                                            <button
+                                                onClick={() => !c.tiene_pago && iniciarAnulacion(c)}
+                                                disabled={c.tiene_pago}
+                                                title={c.tiene_pago
+                                                    ? 'Factura con pago registrado — anula el pago primero (candado CxP-02)'
+                                                    : 'Anular factura'}
+                                                className="h-7 w-7 flex items-center justify-center rounded hover:bg-red-500/20 text-red-500 dark:text-red-400 transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent">
+                                                <XCircle className="w-4 h-4" />
+                                            </button>
+                                        )}
                                     </>
                                 )}
                                 {c.estado === 'anulada' && (
@@ -2172,9 +2561,10 @@ export default function ComprasIndex() {
                     ))}
                 </div>
             </div>
+            )}
 
             {/* Paginación */}
-            {compras.meta && compras.meta.last_page > 1 && (
+            {compras && compras.meta && compras.meta.last_page > 1 && (
                 <div className="flex items-center justify-between px-6 pb-6">
                     <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
                         Mostrando {compras.meta.from}–{compras.meta.to} de {compras.meta.total} registros
@@ -2231,6 +2621,22 @@ export default function ComprasIndex() {
                     onClose={() => { setModal({ type: 'none' }); setXmlPrefill(null) }}
                 />
             )}
+            {modal.type === 'editar' && (
+                <NuevaCompraModal
+                    key={`editar-${modal.compra.id}`}
+                    proveedores={proveedores}
+                    centros={centros}
+                    cuentas={cuentas}
+                    bodegas={bodegas}
+                    productos={productos}
+                    importacionesActivas={importacionesActivas}
+                    centroMatrizId={centros.find(c => c.codigo === 'MATRIZ')?.id ?? centros[0]?.id ?? null}
+                    bodegaDefaultId={bodegas.find(b => b.tipo === 'general')?.id ?? bodegas[0]?.id ?? null}
+                    editando={modal.compra}
+                    detallesEdicion={modal.detalles}
+                    onClose={() => setModal({ type: 'none' })}
+                />
+            )}
             {modal.type === 'etiquetas' && (
                 <EtiquetasModal
                     compra={modal.compra}
@@ -2251,7 +2657,7 @@ export default function ComprasIndex() {
             {modalPdf && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
                      style={{ background: 'rgba(0,0,0,0.85)' }}
-                     onClick={() => setModalPdf(false)}>
+                     onClick={cerrarModalPdf}>
                     <div className="w-full max-w-5xl rounded-2xl overflow-hidden shadow-2xl flex flex-col"
                          style={{ background: 'var(--bg-card)', height: '90vh' }}
                          onClick={e => e.stopPropagation()}>
@@ -2263,19 +2669,27 @@ export default function ComprasIndex() {
                                 Reporte de Facturas de Compra
                             </h3>
                             <div className="flex items-center gap-2">
-                                <a href={urlPdf} download target="_blank"
-                                   className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-all hover:opacity-90"
-                                   style={{ background: '#ef4444' }}>
-                                    <Download size={13} /> Descargar
-                                </a>
-                                <button onClick={() => setModalPdf(false)}
+                                {urlPdf && (
+                                    <a href={urlPdf} download={`facturas-compra-${new Date().toISOString().slice(0, 10)}.pdf`}
+                                       className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-all hover:opacity-90"
+                                       style={{ background: '#ef4444' }}>
+                                        <Download size={13} /> Descargar
+                                    </a>
+                                )}
+                                <button onClick={cerrarModalPdf}
                                     className="px-3 py-1.5 rounded-lg text-xs font-semibold border hover:opacity-80"
                                     style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
                                     ✕ Cerrar
                                 </button>
                             </div>
                         </div>
-                        <iframe src={urlPdf} className="flex-1 w-full border-0" title="Reporte PDF Compras" />
+                        {cargandoPdf ? (
+                            <div className="flex-1 flex items-center justify-center text-sm" style={{ color: 'var(--text-muted)' }}>
+                                Generando PDF…
+                            </div>
+                        ) : (
+                            <iframe src={urlPdf} className="flex-1 w-full border-0" title="Reporte PDF Compras" />
+                        )}
                     </div>
                 </div>
             )}

@@ -11,8 +11,8 @@ class Producto extends Model
     protected $table = 'productos';
 
     protected $fillable = [
-        'empresa_id', 'marca_id', 'categoria_id',
-        'codigo', 'codigo_externo', 'nombre', 'descripcion', 'unidad', 'tipo',
+        'empresa_id', 'marca_id', 'marca_fabricante', 'categoria_id',
+        'codigo', 'codigo_externo', 'nombre', 'descripcion', 'unidad', 'tipo', 'peso',
         'requiere_serie', 'costo', 'pvp', 'pvd', 'descuento_maximo',
         'porcentaje_iva', 'tiene_ice', 'porcentaje_ice',
         'stock_minimo', 'stock_maximo',
@@ -29,6 +29,7 @@ class Producto extends Model
             'costo'          => 'float',
             'pvp'            => 'float',
             'pvd'            => 'float',
+            'peso'           => 'float',
             'porcentaje_iva' => 'float',
         ];
     }

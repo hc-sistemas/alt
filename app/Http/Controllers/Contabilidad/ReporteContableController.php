@@ -20,11 +20,24 @@ class ReporteContableController extends Controller
             ->orderByDesc('anio')->orderByDesc('mes')
             ->get(['id','anio','mes','descripcion','estado']);
 
-        $cuentas = PlanCuenta::where('empresa_id', $empresaId)
-            ->where('permite_asientos', true)
+        // El plan de cuentas es compartido entre empresas (empresa_id en
+        // plan_cuentas está siempre NULL en los datos reales — mismo
+        // criterio que PlanCuentaController::index() y el resto de métodos
+        // de este controller, ninguno filtra PlanCuenta por empresa_id).
+        // Filtrar por empresa_id aquí dejaba `$cuentas` siempre vacío, que
+        // es la causa real de "Sin resultados" en el buscador de Mayor
+        // Contable — no un problema de mínimo de caracteres ni de LIKE.
+        //
+        // También se seleccionaba `descripcion` (columna secundaria,
+        // vacía en el 100% de las 206 cuentas reales) en vez de `nombre`
+        // (el campo que sí tiene el nombre real, ej. "Caja General") —
+        // aunque `$cuentas` no hubiera estado vacío, el buscador por
+        // nombre nunca habría encontrado nada y el desplegable habría
+        // mostrado cada cuenta sin nombre.
+        $cuentas = PlanCuenta::where('permite_asientos', true)
             ->where('estado', true)
             ->orderBy('codigo')
-            ->get(['id','codigo','descripcion']);
+            ->get(['id','codigo','nombre']);
 
         return Inertia::render('Contabilidad/Reportes/Index', [
             'ejercicios' => $ejercicios,
@@ -32,13 +45,9 @@ class ReporteContableController extends Controller
         ]);
     }
 
-    public function libroDiario(Request $request): \Illuminate\Http\Response
+    private function queryLibroDiario(int $empresaId, Request $request)
     {
-        $empresaId = session('empresa_activa_id');
-
-        $query = AsientoContable::with([
-                'ejercicio','creadoPor','detalles.cuenta'
-            ])
+        $query = AsientoContable::with(['ejercicio','creadoPor','detalles.cuenta'])
             ->where('empresa_id', $empresaId)
             ->where('estado', 1);
 
@@ -52,7 +61,16 @@ class ReporteContableController extends Controller
             $query->where('fecha', '<=', $request->fecha_hasta);
         }
 
-        $asientos   = $query->orderBy('fecha')->orderBy('id')->get();
+        return $query;
+    }
+
+    public function libroDiario(Request $request): \Illuminate\Http\Response
+    {
+        ini_set('memory_limit', '2560M');
+
+        $empresaId = session('empresa_activa_id');
+
+        $asientos   = $this->queryLibroDiario($empresaId, $request)->orderBy('fecha')->orderBy('id')->get();
         $empresa    = \App\Models\Empresa::find($empresaId);
         $totalDebe  = $asientos->sum('total_debe');
         $totalHaber = $asientos->sum('total_haber');
@@ -67,19 +85,10 @@ class ReporteContableController extends Controller
         );
     }
 
-    public function mayor(Request $request): \Illuminate\Http\Response
+    private function queryMayor(int $cuentaId, int $empresaId, Request $request)
     {
-        $empresaId = session('empresa_activa_id');
-
-        $request->validate([
-            'cuenta_id' => 'required|exists:plan_cuentas,id',
-        ]);
-
-        $cuenta  = PlanCuenta::findOrFail($request->cuenta_id);
-        $empresa = \App\Models\Empresa::find($empresaId);
-
         $query = AsientoDetalle::with(['asiento'])
-            ->where('cuenta_id', $cuenta->id)
+            ->where('cuenta_id', $cuentaId)
             ->whereHas('asiento', fn($q) =>
                 $q->where('empresa_id', $empresaId)
                   ->where('estado', 1)
@@ -96,7 +105,28 @@ class ReporteContableController extends Controller
             );
         }
 
-        $detalles   = $query->orderBy('id')->get();
+        return $query;
+    }
+
+    public function mayor(Request $request): \Illuminate\Http\Response
+    {
+        // El Mayor de una cuenta muy activa sin filtro de fecha no tiene tope
+        // natural de filas (a diferencia de Compras/Proveedores/CxP, acotados
+        // por su propio módulo) — probado con la cuenta más activa real
+        // (6,218 líneas de detalle) revienta 2560M; 4096M da margen medido
+        // sobre ese caso real.
+        ini_set('memory_limit', '4096M');
+
+        $empresaId = session('empresa_activa_id');
+
+        $request->validate([
+            'cuenta_id' => 'required|exists:plan_cuentas,id',
+        ]);
+
+        $cuenta  = PlanCuenta::findOrFail($request->cuenta_id);
+        $empresa = \App\Models\Empresa::find($empresaId);
+
+        $detalles   = $this->queryMayor($cuenta->id, $empresaId, $request)->orderBy('id')->get();
         $totalDebe  = $detalles->sum('debe');
         $totalHaber = $detalles->sum('haber');
         $saldo      = $totalDebe - $totalHaber;
@@ -116,26 +146,27 @@ class ReporteContableController extends Controller
         $empresaId = session('empresa_activa_id');
         $empresa   = \App\Models\Empresa::find($empresaId);
 
-        $sumasPorCuenta = AsientoDetalle::query()
-            ->join('asientos_contables', 'asientos_contables.id', '=', 'asiento_detalles.asiento_id')
-            ->where('asientos_contables.empresa_id', $empresaId)
-            ->where('asientos_contables.estado', 1)
-            ->when($request->filled('ejercicio_id'), fn($q) => $q->where('asientos_contables.ejercicio_id', $request->ejercicio_id))
-            ->when($request->filled('fecha_desde'), fn($q) => $q->where('asientos_contables.fecha', '>=', $request->fecha_desde))
-            ->when($request->filled('fecha_hasta'), fn($q) => $q->where('asientos_contables.fecha', '<=', $request->fecha_hasta))
-            ->groupBy('asiento_detalles.cuenta_id')
-            ->selectRaw('asiento_detalles.cuenta_id, SUM(asiento_detalles.debe) as suma_debe, SUM(asiento_detalles.haber) as suma_haber')
-            ->get()
-            ->keyBy('cuenta_id');
-
         $cuentas = PlanCuenta::where('permite_asientos', true)
             ->where('estado', true)
             ->orderBy('codigo')
             ->get()
-            ->map(function ($cuenta) use ($sumasPorCuenta) {
-                $fila      = $sumasPorCuenta->get($cuenta->id);
-                $sumaDebe  = (float) ($fila->suma_debe ?? 0);
-                $sumaHaber = (float) ($fila->suma_haber ?? 0);
+            ->map(function ($cuenta) use ($empresaId, $request) {
+                $query = AsientoDetalle::where('cuenta_id', $cuenta->id)
+                    ->whereHas('asiento', function ($q) use ($empresaId, $request) {
+                        $q->where('empresa_id', $empresaId)->where('estado', 1);
+                        if ($request->filled('ejercicio_id')) {
+                            $q->where('ejercicio_id', $request->ejercicio_id);
+                        }
+                        if ($request->filled('fecha_desde')) {
+                            $q->where('fecha', '>=', $request->fecha_desde);
+                        }
+                        if ($request->filled('fecha_hasta')) {
+                            $q->where('fecha', '<=', $request->fecha_hasta);
+                        }
+                    });
+
+                $sumaDebe  = (float) $query->sum('debe');
+                $sumaHaber = (float) $query->sum('haber');
 
                 if ($sumaDebe == 0 && $sumaHaber == 0) return null;
 
@@ -173,25 +204,22 @@ class ReporteContableController extends Controller
         $empresaId = session('empresa_activa_id');
         $empresa   = \App\Models\Empresa::find($empresaId);
 
-        $sumasPorCuenta = AsientoDetalle::query()
-            ->join('asientos_contables', 'asientos_contables.id', '=', 'asiento_detalles.asiento_id')
-            ->where('asientos_contables.empresa_id', $empresaId)
-            ->where('asientos_contables.estado', 1)
-            ->when($request->filled('ejercicio_id'), fn($q) => $q->where('asientos_contables.ejercicio_id', $request->ejercicio_id))
-            ->groupBy('asiento_detalles.cuenta_id')
-            ->selectRaw('asiento_detalles.cuenta_id, SUM(asiento_detalles.debe) as suma_debe, SUM(asiento_detalles.haber) as suma_haber')
-            ->get()
-            ->keyBy('cuenta_id');
-
         $todasCuentas = PlanCuenta::where('permite_asientos', true)
             ->where('estado', true)
             ->whereIn('tipo', ['activo', 'pasivo', 'patrimonio'])
             ->orderBy('tipo')->orderBy('codigo')
             ->get()
-            ->map(function ($cuenta) use ($sumasPorCuenta) {
-                $fila  = $sumasPorCuenta->get($cuenta->id);
-                $debe  = (float) ($fila->suma_debe ?? 0);
-                $haber = (float) ($fila->suma_haber ?? 0);
+            ->map(function ($cuenta) use ($empresaId, $request) {
+                $query = AsientoDetalle::where('cuenta_id', $cuenta->id)
+                    ->whereHas('asiento', function ($q) use ($empresaId, $request) {
+                        $q->where('empresa_id', $empresaId)->where('estado', 1);
+                        if ($request->filled('ejercicio_id')) {
+                            $q->where('ejercicio_id', $request->ejercicio_id);
+                        }
+                    });
+
+                $debe  = (float) $query->sum('debe');
+                $haber = (float) $query->sum('haber');
 
                 if ($debe == 0 && $haber == 0) return null;
 
@@ -444,27 +472,28 @@ class ReporteContableController extends Controller
         $empresaId = session('empresa_activa_id');
         $empresa   = \App\Models\Empresa::find($empresaId);
 
-        $sumasPorCuenta = AsientoDetalle::query()
-            ->join('asientos_contables', 'asientos_contables.id', '=', 'asiento_detalles.asiento_id')
-            ->where('asientos_contables.empresa_id', $empresaId)
-            ->where('asientos_contables.estado', 1)
-            ->when($request->filled('ejercicio_id'), fn($q) => $q->where('asientos_contables.ejercicio_id', $request->ejercicio_id))
-            ->when($request->filled('fecha_desde'), fn($q) => $q->where('asientos_contables.fecha', '>=', $request->fecha_desde))
-            ->when($request->filled('fecha_hasta'), fn($q) => $q->where('asientos_contables.fecha', '<=', $request->fecha_hasta))
-            ->groupBy('asiento_detalles.cuenta_id')
-            ->selectRaw('asiento_detalles.cuenta_id, SUM(asiento_detalles.debe) as suma_debe, SUM(asiento_detalles.haber) as suma_haber')
-            ->get()
-            ->keyBy('cuenta_id');
-
         $todasCuentas = PlanCuenta::where('permite_asientos', true)
             ->where('estado', true)
             ->whereIn('tipo', ['ingreso', 'gasto'])
             ->orderBy('tipo')->orderBy('codigo')
             ->get()
-            ->map(function ($cuenta) use ($sumasPorCuenta) {
-                $fila  = $sumasPorCuenta->get($cuenta->id);
-                $debe  = (float) ($fila->suma_debe ?? 0);
-                $haber = (float) ($fila->suma_haber ?? 0);
+            ->map(function ($cuenta) use ($empresaId, $request) {
+                $query = AsientoDetalle::where('cuenta_id', $cuenta->id)
+                    ->whereHas('asiento', function ($q) use ($empresaId, $request) {
+                        $q->where('empresa_id', $empresaId)->where('estado', 1);
+                        if ($request->filled('ejercicio_id')) {
+                            $q->where('ejercicio_id', $request->ejercicio_id);
+                        }
+                        if ($request->filled('fecha_desde')) {
+                            $q->where('fecha', '>=', $request->fecha_desde);
+                        }
+                        if ($request->filled('fecha_hasta')) {
+                            $q->where('fecha', '<=', $request->fecha_hasta);
+                        }
+                    });
+
+                $debe  = (float) $query->sum('debe');
+                $haber = (float) $query->sum('haber');
 
                 if ($debe == 0 && $haber == 0) return null;
 

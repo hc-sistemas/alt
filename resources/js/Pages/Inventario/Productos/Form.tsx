@@ -7,6 +7,7 @@ import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { Save, Info } from 'lucide-react'
 import { toastExito, toastError } from '@/lib/toast'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { Producto, PageProps } from '@/types'
 
 interface Props extends PageProps {
@@ -27,14 +28,15 @@ const TABS: { key: Tab; label: string }[] = [
 ]
 
 const TAB_FIELDS: Record<Tab, string[]> = {
-    general: ['codigo', 'nombre', 'tipo', 'unidad', 'descripcion'],
+    general: ['codigo', 'nombre', 'tipo', 'unidad', 'descripcion', 'marca_fabricante'],
     precios: ['pvp', 'pvd', 'costo', 'descuento_maximo', 'porcentaje_iva', 'porcentaje_ice'],
-    inventario: ['stock_minimo', 'stock_maximo'],
+    inventario: ['stock_minimo', 'stock_maximo', 'peso'],
     contabilidad: ['cuenta_inventario', 'cuenta_costo_ventas', 'cuenta_ventas'],
 }
 
 export default function ProductoForm() {
     const { producto, marcas, categorias, cuentas } = usePage<Props>().props
+    const { puede } = usePermiso('inventario')
     const esEdicion = !!producto
 
     const [activeTab, setActiveTab] = useState<Tab>('general')
@@ -46,6 +48,7 @@ export default function ProductoForm() {
         tipo: producto?.tipo ?? 'producto',
         unidad: producto?.unidad ?? 'unidad',
         marca_id: producto?.marca_id?.toString() ?? '',
+        marca_fabricante: producto?.marca_fabricante ?? '',
         categoria_id: producto?.categoria_id?.toString() ?? '',
         requiere_serie: producto?.requiere_serie ?? false,
         pvp: producto?.pvp?.toString() ?? '0',
@@ -56,6 +59,7 @@ export default function ProductoForm() {
         porcentaje_ice: producto?.porcentaje_ice?.toString() ?? '0',
         stock_minimo: producto ? Math.round(Number(producto.stock_minimo)).toString() : '0',
         stock_maximo: producto?.stock_maximo ? Math.round(Number(producto.stock_maximo)).toString() : '',
+        peso: producto?.peso?.toString() ?? '0',
         cuenta_inventario: producto?.cuenta_inventario ?? '1.1.4.1',
         cuenta_costo_ventas: producto?.cuenta_costo_ventas ?? '5.1.1.1',
         cuenta_ventas: producto?.cuenta_ventas ?? '4.1.1.01',
@@ -78,6 +82,7 @@ export default function ProductoForm() {
         const payload = {
             ...data,
             marca_id: data.marca_id || null,
+            marca_fabricante: data.marca_fabricante || null,
             categoria_id: data.categoria_id || null,
             stock_minimo: Math.round(Number(data.stock_minimo)),
             stock_maximo: data.stock_maximo ? Math.round(Number(data.stock_maximo)) : null,
@@ -191,13 +196,13 @@ export default function ProductoForm() {
                                         className="flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
                                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}
                                     >
-                                        {['unidad', 'par', 'caja', 'metro', 'hora', 'kit'].map(u => (
-                                            <option key={u} value={u}>{u.charAt(0).toUpperCase() + u.slice(1)}</option>
+                                        {['unidad', 'par', 'caja', 'metro', 'hora', 'kit', 'kg'].map(u => (
+                                            <option key={u} value={u}>{u === 'kg' ? 'Kilogramo (kg)' : u.charAt(0).toUpperCase() + u.slice(1)}</option>
                                         ))}
                                     </select>
                                 </div>
                                 <div className="space-y-1.5">
-                                    <Label>Marca</Label>
+                                    <Label>Marca comercial</Label>
                                     <select
                                         value={data.marca_id}
                                         onChange={e => setData('marca_id', e.target.value)}
@@ -207,6 +212,15 @@ export default function ProductoForm() {
                                         <option value="">Sin marca</option>
                                         {marcas.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}
                                     </select>
+                                </div>
+                                <div className="space-y-1.5">
+                                    <Label>Marca del fabricante</Label>
+                                    <Input
+                                        value={data.marca_fabricante}
+                                        onChange={e => setData('marca_fabricante', e.target.value)}
+                                        placeholder="Ej: Pioneer"
+                                    />
+                                    {errors.marca_fabricante && <p className="text-xs text-red-400">{errors.marca_fabricante}</p>}
                                 </div>
                                 <div className="space-y-1.5">
                                     <Label>Categoría</Label>
@@ -366,6 +380,17 @@ export default function ProductoForm() {
                                         placeholder="Sin límite" />
                                     {errors.stock_maximo && <p className="text-xs text-red-400">{errors.stock_maximo}</p>}
                                 </div>
+                                <div className="space-y-1.5">
+                                    <Label>Peso unitario (kg)</Label>
+                                    <Input type="number" min={0} step="0.0001"
+                                        value={data.peso}
+                                        onChange={e => setData('peso', e.target.value)}
+                                        placeholder="0.0000" />
+                                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                        Usado para prorratear costos de importación por el método "Peso".
+                                    </p>
+                                    {errors.peso && <p className="text-xs text-red-400">{errors.peso}</p>}
+                                </div>
                             </div>
                         </>
                     )}
@@ -430,10 +455,12 @@ export default function ProductoForm() {
 
                 {/* Acciones */}
                 <div className="flex gap-3 pt-6 mt-6 border-t" style={{ borderColor: 'var(--border)' }}>
-                    <Button type="submit" loading={processing}>
-                        <Save className="w-4 h-4" />
-                        {esEdicion ? 'Guardar cambios' : 'Crear producto'}
-                    </Button>
+                    {puede(esEdicion ? 'editar' : 'crear') && (
+                        <Button type="submit" loading={processing}>
+                            <Save className="w-4 h-4" />
+                            {esEdicion ? 'Guardar cambios' : 'Crear producto'}
+                        </Button>
+                    )}
                     <Button type="button" variant="outline"
                         onClick={() => router.visit(route('inventario.productos.index'))}>
                         Cancelar

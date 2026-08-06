@@ -5,6 +5,8 @@ import PageHeader from '@/Components/shared/PageHeader'
 import { Button } from '@/Components/ui/button'
 import { Plus, Eye, FileSpreadsheet } from 'lucide-react'
 import type { TrasladoBodega, PaginatedData, PageProps } from '@/types'
+import { usePermiso } from '@/Hooks/usePermiso'
+import TrasladoDetalleModal from './DetalleModal'
 
 interface Props extends PageProps {
     traslados: PaginatedData<TrasladoBodega>
@@ -28,10 +30,12 @@ const ESTADO_LABELS: Record<string, string> = {
 
 export default function TrasladosIndex() {
     const { traslados, bodegas, filters } = usePage<Props>().props
+    const { puede } = usePermiso('inventario')
 
     const [estado, setEstado]       = useState(filters.estado ?? '')
     const [origenId, setOrigenId]   = useState(filters.bodega_origen_id ?? '')
     const [destinoId, setDestinoId] = useState(filters.bodega_destino_id ?? '')
+    const [detalleId, setDetalleId] = useState<number | null>(null)
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const isFirstRender = useRef(true)
 
@@ -69,26 +73,29 @@ export default function TrasladosIndex() {
         new Date(dt).toLocaleString('es-EC', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
 
     return (
-        <AppLayout title="Traslados">
-            <Head title="Traslados" />
+        <AppLayout title="Movimientos">
+            <Head title="Movimientos" />
             <PageHeader
-                title="Traslados de Inventario"
+                title="Movimientos de productos"
                 description="Movimiento de stock entre bodegas"
-                breadcrumbs={[{ label: 'Inventario' }, { label: 'Traslados' }]}
+                breadcrumbs={[{ label: 'Inventario' }, { label: 'Movimientos' }]}
+                actions={
+                    puede('crear') ? (
+                        <Link href={route('inventario.traslados.create')}>
+                            <Button>
+                                <Plus className="w-4 h-4" />
+                                Nuevo
+                            </Button>
+                        </Link>
+                    ) : undefined
+                }
             />
 
             <div className="p-6">
                 <div className="flex items-center gap-3 mb-4 flex-wrap">
-                    <Link href={route('inventario.traslados.create')}>
-                        <Button>
-                            <Plus className="w-4 h-4" />
-                            Nuevo Traslado
-                        </Button>
-                    </Link>
-
                     <select value={estado} onChange={e => setEstado(e.target.value)}
-                        className="input-field"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
+                        className="input-field shrink-0"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
                         <option value="">Todos los estados</option>
                         <option value="pendiente">Pendiente</option>
                         <option value="aceptado">Aceptado</option>
@@ -96,27 +103,27 @@ export default function TrasladosIndex() {
                     </select>
 
                     <select value={origenId} onChange={e => setOrigenId(e.target.value)}
-                        className="input-field"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
+                        className="input-field shrink-0"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
                         <option value="">Bodega origen (todas)</option>
                         {bodegas.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
                     </select>
 
                     <select value={destinoId} onChange={e => setDestinoId(e.target.value)}
-                        className="input-field"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
+                        className="input-field shrink-0"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
                         <option value="">Bodega destino (todas)</option>
                         {bodegas.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
                     </select>
 
-                    <div className="flex items-center gap-2 ml-auto">
-                        <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium"
-                            style={{ background: '#16A34A', color: 'white', transition: 'background 0.2s' }}
+                    <div className="flex shrink-0 ml-auto" role="group">
+                        <button className="flex items-center justify-center w-9 h-9 rounded-md text-sm font-medium border shrink-0"
+                            style={{ background: '#16A34A', color: 'white', borderColor: '#16A34A', transition: 'background 0.2s' }}
                             onMouseEnter={e => (e.currentTarget.style.background = '#15803D')}
                             onMouseLeave={e => (e.currentTarget.style.background = '#16A34A')}
-                            onClick={exportarExcel}>
+                            onClick={exportarExcel}
+                            title="Excel">
                             <FileSpreadsheet className="w-4 h-4" />
-                            Excel
                         </button>
                     </div>
                 </div>
@@ -166,11 +173,10 @@ export default function TrasladosIndex() {
                                         </span>
                                     </td>
                                     <td className="px-4 py-3">
-                                        <Link href={route('inventario.traslados.show', t.id)}>
-                                            <Button variant="ghost" size="icon" title="Ver detalle">
-                                                <Eye className="w-4 h-4" />
-                                            </Button>
-                                        </Link>
+                                        <Button variant="ghost" size="icon" title="Ver detalle"
+                                            onClick={() => setDetalleId(t.id)}>
+                                            <Eye className="w-4 h-4" />
+                                        </Button>
                                     </td>
                                 </tr>
                             ))}
@@ -202,6 +208,11 @@ export default function TrasladosIndex() {
                 )}
             </div>
 
+            <TrasladoDetalleModal
+                trasladoId={detalleId}
+                onClose={() => setDetalleId(null)}
+                onChanged={() => router.reload({ only: ['traslados'] })}
+            />
         </AppLayout>
     )
 }

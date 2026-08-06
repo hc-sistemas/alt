@@ -9,6 +9,7 @@ import { Plus, Pencil, Trash2, X, Save } from 'lucide-react'
 import { toastExito, toastError } from '@/lib/toast'
 import { confirmarEliminar } from '@/lib/swal'
 import type { Bodega, CentroCosto, PaginatedData, PageProps } from '@/types'
+import { usePermiso } from '@/Hooks/usePermiso'
 
 interface Props extends PageProps {
     bodegas: PaginatedData<Bodega>
@@ -37,6 +38,7 @@ const emptyForm = {
 
 export default function BodegasIndex() {
     const { bodegas, centrosCosto, filters, tipos } = usePage<Props>().props
+    const { puede } = usePermiso('inventario')
     const [tipoFiltro, setTipoFiltro] = useState(filters.tipo ?? '')
 
     const [modalOpen, setModalOpen] = useState(false)
@@ -132,14 +134,18 @@ export default function BodegasIndex() {
                 title="Bodegas"
                 description="Gestión de bodegas y almacenes de la empresa"
                 breadcrumbs={[{ label: 'Inventario' }, { label: 'Configuración' }, { label: 'Bodegas' }]}
+                actions={
+                    puede('crear') ? (
+                        <Button onClick={abrirCrear}>
+                            <Plus className="w-4 h-4" />
+                            Nueva
+                        </Button>
+                    ) : undefined
+                }
             />
 
             <div className="p-6">
                 <div className="flex items-center gap-4 mb-4 flex-wrap">
-                    <Button onClick={abrirCrear}>
-                        <Plus className="w-4 h-4" />
-                        Nueva Bodega
-                    </Button>
                     <div className="flex items-center gap-2">
                         <span className="text-sm whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>Tipo:</span>
                         <select
@@ -193,12 +199,16 @@ export default function BodegasIndex() {
                                     </td>
                                     <td className="px-4 py-3">
                                         <div className="flex items-center justify-end gap-1">
-                                            <Button variant="ghost" size="icon" title="Editar" onClick={() => abrirEditar(bodega)}>
-                                                <Pencil className="w-4 h-4" />
-                                            </Button>
-                                            <Button variant="ghost" size="icon" title="Eliminar" onClick={() => eliminar(bodega)}>
-                                                <Trash2 className="w-4 h-4 text-red-400" />
-                                            </Button>
+                                            {puede('editar') && (
+                                                <Button variant="ghost" size="icon" title="Editar" onClick={() => abrirEditar(bodega)}>
+                                                    <Pencil className="w-4 h-4" />
+                                                </Button>
+                                            )}
+                                            {puede('eliminar') && (
+                                                <Button variant="ghost" size="icon" title="Eliminar" onClick={() => eliminar(bodega)}>
+                                                    <Trash2 className="w-4 h-4 text-red-400" />
+                                                </Button>
+                                            )}
                                         </div>
                                     </td>
                                 </tr>

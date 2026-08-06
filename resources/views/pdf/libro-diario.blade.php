@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -97,6 +97,21 @@
     </div>
 </div>
 
+{{--
+    Una <table> POR ASIENTO a propósito — se intentó fusionar todo en una
+    sola tabla continua (un <thead>/<tbody> para el documento entero) para
+    reducir la cantidad de objetos que arma DomPDF, pero medido real: eso
+    es MUCHO PEOR. Cellmap::resolve_border() escala mal con el total de
+    FILAS DENTRO DE UNA MISMA TABLA (confirmado con una prueba mínima sin
+    ningún estilo, solo texto plano: una tabla continua de ~4,800 filas
+    revienta memory_limit igual). Muchas tablas chicas (una por asiento,
+    ~2-3 filas cada una) le dan a DomPDF un Cellmap barato de resolver por
+    tabla en vez de uno carísimo para todo el documento — por eso este
+    patrón, aunque parezca menos "limpio", es el que realmente escala.
+    Confirmado real: 1,051 asientos (3 meses) completa en ~140s con este
+    patrón; con una sola tabla no completó ni en 90s+ y coleccionó gigas de
+    memoria en el intento.
+--}}
 @foreach($asientos as $asiento)
 <div class="asiento-header">
     <span class="ah-num">{{ $asiento->numero }}</span>

@@ -1,9 +1,12 @@
 import { useState } from 'react'
 import { Head, router, usePage } from '@inertiajs/react'
 import AppLayout from '@/Layouts/AppLayout'
+import PageHeader from '@/Components/shared/PageHeader'
+import FilterToolbar from '@/Components/shared/FilterToolbar'
 import { cn } from '@/lib/utils'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { Nomina, PageProps, PaginatedData } from '@/types'
-import { Plus, ChevronLeft, ChevronRight, Trash2, Eye, Archive, FileText } from 'lucide-react'
+import { Plus, ChevronLeft, ChevronRight, Trash2, Eye, Archive, FileText, Search } from 'lucide-react'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -130,30 +133,37 @@ function GenerarModal({ onClose }: GenerarModalProps) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface Props extends PageProps {
-    nominas: PaginatedData<Nomina>
-    filtros: { anio?: string; mes?: string; tipo?: string; estado?: string }
+    nominas: PaginatedData<Nomina> | null
+    filtros: { anio?: string; mes?: string; tipo?: string; estado?: string; buscar?: string }
     anios: number[]
 }
 
 export default function NominaIndex() {
     const { nominas, filtros, anios, flash } = usePage<Props>().props
+    const { puede } = usePermiso('rrhh')
 
     const [showGenerar, setShowGenerar] = useState(false)
-    const [filtro, setFiltro] = useState({
-        anio:   filtros.anio   ?? '',
-        mes:    filtros.mes    ?? '',
-        tipo:   filtros.tipo   ?? '',
-        estado: filtros.estado ?? '',
-    })
+    const [filtro, setFiltro] = useState(filtros)
 
-    function aplicarFiltros() {
-        router.get(route('rrhh.nomina.index'), filtro, { preserveState: true })
+    // Cambiar cualquier filtro después de haber buscado no vacía la tabla —
+    // solo la atenúa (opacity-60) hasta que se presione Buscar de nuevo.
+    // Mismo patrón ya usado en el resto del sistema esta sesión.
+    const [filtrosSucios, setFiltrosSucios] = useState(false)
+
+    // Carga bajo demanda: `nominas` viene null hasta la primera búsqueda.
+    const haBuscado = nominas !== null
+
+    function cambiarFiltro<K extends keyof typeof filtro>(campo: K, valor: string) {
+        setFiltro(f => ({ ...f, [campo]: valor }))
+        setFiltrosSucios(true)
     }
 
-    function limpiarFiltros() {
-        const vacio = { anio: '', mes: '', tipo: '', estado: '' }
-        setFiltro(vacio)
-        router.get(route('rrhh.nomina.index'), {})
+    function aplicarFiltros() {
+        router.get(route('rrhh.nomina.index'), { ...filtro, buscado: '1' }, {
+            preserveState: true,
+            replace: true,
+            onSuccess: () => setFiltrosSucios(false),
+        })
     }
 
     function eliminar(n: Nomina) {
@@ -168,33 +178,36 @@ export default function NominaIndex() {
         return `${m} ${n.anio}`
     }
 
-    const selectStyle: React.CSSProperties = {
-        display: 'inline-block',
-        width: 'auto',
-        height: '36px',
-        padding: '0 2.5rem 0 0.75rem',
-        fontSize: '0.85rem',
-        borderRadius: '0.5rem',
-        border: '1px solid var(--border)',
-        background: 'var(--bg-card)',
-        color: 'var(--text-main)',
-        appearance: 'none',
-        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236B7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
-        backgroundRepeat: 'no-repeat',
-        backgroundPosition: 'right 0.75rem center',
-        backgroundSize: '16px',
-        cursor: 'pointer',
-    }
-
-    const hayFiltros = !!(filtro.anio || filtro.mes || filtro.tipo || filtro.estado)
-    const netoTotal  = nominas.data.reduce((s, n) => s + Number(n.total_neto), 0)
+    const netoTotal = haBuscado && nominas ? nominas.data.reduce((s, n) => s + Number(n.total_neto), 0) : 0
 
     return (
         <AppLayout>
             <Head title="Nómina — RRHH" />
             {showGenerar && <GenerarModal onClose={() => setShowGenerar(false)} />}
 
-            <div className="px-6 py-5">
+            <PageHeader
+                title="Nómina"
+                breadcrumbs={[{ label: 'RRHH' }, { label: 'Nómina' }]}
+                actions={
+                    <div className="flex items-center gap-3">
+                        {haBuscado && nominas && nominas.data.length > 0 && (
+                            <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                                {nominas.total} nómina{nominas.total !== 1 ? 's' : ''} · Neto ${fmt(netoTotal)}
+                            </span>
+                        )}
+                        {puede('crear') && (
+                            <button
+                                onClick={() => setShowGenerar(true)}
+                                className="btn-primary flex items-center gap-1.5 whitespace-nowrap shrink-0"
+                            >
+                                <Plus size={15} /> Generar Nómina
+                            </button>
+                        )}
+                    </div>
+                }
+            />
+
+            <div className="p-6">
 
                 {/* Flash */}
                 {flash?.success && (
@@ -208,76 +221,62 @@ export default function NominaIndex() {
                     </div>
                 )}
 
-                {/* Header */}
-                <div className="mb-4">
-                    <div className="text-xs mb-0.5" style={{ color: 'var(--text-muted)' }}>RRHH</div>
-                    <h1 className="text-xl font-semibold" style={{ color: 'var(--text-main)' }}>Nómina</h1>
-                </div>
-
-                {/* Toolbar — btn-primary izquierda + filtros */}
-                <div className="flex items-center gap-2 mb-5 flex-wrap">
-                    <button
-                        onClick={() => setShowGenerar(true)}
-                        className="btn-primary flex items-center gap-1.5 whitespace-nowrap"
-                    >
-                        <Plus size={15} /> Generar Nómina
-                    </button>
-
-                    <select value={filtro.anio} onChange={e => setFiltro(f => ({ ...f, anio: e.target.value }))}
-                        style={selectStyle}>
-                        <option value="">Todos los años</option>
+                {/* Toolbar — filtros */}
+                <FilterToolbar
+                    search={{
+                        value: filtro.buscar ?? '',
+                        onChange: v => cambiarFiltro('buscar', v),
+                        onSearch: aplicarFiltros,
+                        placeholder: 'Año, mes, tipo...',
+                    }}
+                >
+                    <select value={filtro.anio ?? ''} onChange={e => cambiarFiltro('anio', e.target.value)}
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '90px' }}>
+                        <option value="">Año</option>
                         {anios.map(y => <option key={y} value={y}>{y}</option>)}
                     </select>
 
-                    <select value={filtro.mes} onChange={e => setFiltro(f => ({ ...f, mes: e.target.value }))}
-                        style={selectStyle}>
-                        <option value="">Todos los meses</option>
+                    <select value={filtro.mes ?? ''} onChange={e => cambiarFiltro('mes', e.target.value)}
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '110px' }}>
+                        <option value="">Mes</option>
                         {MESES.slice(1).map((m, i) => (
                             <option key={i + 1} value={i + 1}>{m}</option>
                         ))}
                     </select>
 
-                    <select value={filtro.tipo} onChange={e => setFiltro(f => ({ ...f, tipo: e.target.value }))}
-                        style={selectStyle}>
+                    <select value={filtro.tipo ?? ''} onChange={e => cambiarFiltro('tipo', e.target.value)}
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '110px' }}>
                         <option value="">Tipo</option>
                         <option value="mensual">Mensual</option>
                         <option value="quincenal">Quincenal</option>
                     </select>
 
-                    <select value={filtro.estado} onChange={e => setFiltro(f => ({ ...f, estado: e.target.value }))}
-                        style={selectStyle}>
+                    <select value={filtro.estado ?? ''} onChange={e => cambiarFiltro('estado', e.target.value)}
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '110px' }}>
                         <option value="">Estado</option>
                         <option value="borrador">Borrador</option>
                         <option value="procesado">Procesado</option>
                         <option value="pagado">Pagado</option>
                     </select>
+                </FilterToolbar>
 
-                    <button className="btn-secondary whitespace-nowrap" onClick={aplicarFiltros}>
-                        Filtrar
-                    </button>
-                    {hayFiltros && (
-                        <button
-                            onClick={limpiarFiltros}
-                            className="text-sm underline"
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
-                        >
-                            Limpiar
-                        </button>
-                    )}
-                </div>
-
-                {/* Resumen */}
-                {nominas.data.length > 0 && (
-                    <div className="flex gap-6 text-sm mb-3" style={{ color: 'var(--text-muted)' }}>
-                        <span>{nominas.total} nómina{nominas.total !== 1 ? 's' : ''}</span>
-                        <span>
-                            Neto total:&nbsp;
-                            <strong style={{ color: 'var(--text-main)' }}>${fmt(netoTotal)}</strong>
-                        </span>
+                {/* Estado inicial: aún no se ha buscado (carga bajo demanda) */}
+                {!haBuscado && (
+                    <div className="text-center py-16">
+                        <Search className="w-12 h-12 mx-auto mb-4 opacity-30" style={{ color: 'var(--text-muted)' }} />
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                            Ajusta los filtros y presiona Buscar para consultar las nóminas.
+                        </p>
                     </div>
                 )}
 
                 {/* Tabla */}
+                {haBuscado && nominas && (
+                <div className={cn(filtrosSucios && 'opacity-60 transition-opacity')}>
                 <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '12px', overflow: 'hidden' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                         <thead>
@@ -370,18 +369,17 @@ export default function NominaIndex() {
                                             </button>
 
                                             {(n.estado === 'procesado' || n.estado === 'pagado') && (
-                                                <a
-                                                    href={route('rrhh.nomina.pdf-masivo', n.id)}
-                                                    download
-                                                    className="btn-secondary flex items-center gap-1 whitespace-nowrap no-underline"
-                                                    style={{ padding: '0.3rem 0.6rem', fontSize: '0.78rem', color: 'inherit' }}
-                                                    title="Descargar ZIP con todos los roles"
+                                                <button
+                                                    onClick={() => router.post(route('rrhh.nomina.pdf-masivo', n.id), {}, { preserveScroll: true, preserveState: true })}
+                                                    className="btn-secondary flex items-center gap-1 whitespace-nowrap"
+                                                    style={{ padding: '0.3rem 0.6rem', fontSize: '0.78rem' }}
+                                                    title="Generar ZIP con todos los roles (en segundo plano)"
                                                 >
                                                     <Archive size={13} /> ZIP
-                                                </a>
+                                                </button>
                                             )}
 
-                                            {n.estado === 'borrador' && (
+                                            {n.estado === 'borrador' && puede('eliminar') && (
                                                 <button
                                                     onClick={() => eliminar(n)}
                                                     className="flex items-center transition-colors hover:bg-red-50"
@@ -424,6 +422,8 @@ export default function NominaIndex() {
                             </button>
                         </div>
                     </div>
+                )}
+                </div>
                 )}
 
             </div>

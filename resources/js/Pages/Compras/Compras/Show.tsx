@@ -5,12 +5,14 @@ import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
 import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
-import { ChevronLeft, Ban, ShoppingCart, ExternalLink, X, Printer, XCircle, Download, PackageCheck, CreditCard } from 'lucide-react'
+import PageHeader from '@/Components/shared/PageHeader'
+import { ChevronLeft, Ban, ExternalLink, X, Printer, XCircle, Download, PackageCheck, CreditCard, AlertTriangle, Pencil, Trash2 } from 'lucide-react'
 import { formatFecha } from '@/utils/contabilidad'
 import type {
     Compra, Proveedor, CentroCosto, AsientoContable,
     CuentaPagar, CompraDetalle, PageProps,
 } from '@/types'
+import { usePermiso } from '@/Hooks/usePermiso'
 import 'react-toastify/dist/ReactToastify.css'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -99,14 +101,46 @@ function AnularModal({ compra, onClose }: { compra: CompraShow; onClose: () => v
 
 export default function CompraShow() {
     const { compra, flash } = usePage<Props>().props
+    const { puede } = usePermiso('compras')
     const [showAnular, setShowAnular] = useState(false)
     const [modalPdf,   setModalPdf]   = useState(false)
     const [urlPdf,     setUrlPdf]     = useState('')
+    const [cargandoPdf, setCargandoPdf] = useState(false)
 
     useEffect(() => {
         if (flash?.success) notify.ok(flash.success)
         if (flash?.error)   notify.error(flash.error)
     }, [flash?.success, flash?.error])
+
+    // Se trae el PDF como blob (fetch) en vez de apuntar el <iframe> directo a la
+    // URL del backend — mismo patrón que Asientos Contables / el listado de
+    // Facturas de Compra: un blob: URL siempre se muestra embebido, sin
+    // depender de si el navegador decide forzar la descarga en el iframe.
+    const abrirPdf = async (url: string) => {
+        setModalPdf(true)
+        setCargandoPdf(true)
+        setUrlPdf('')
+        try {
+            const res = await fetch(url, { headers: { Accept: 'application/pdf' } })
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ message: null })) as { message?: string | null }
+                throw new Error(err.message ?? 'No se pudo generar el PDF.')
+            }
+            const blob = await res.blob()
+            setUrlPdf(URL.createObjectURL(blob))
+        } catch (e) {
+            notify.error(e instanceof Error ? e.message : 'No se pudo generar el PDF. Intenta de nuevo.')
+            setModalPdf(false)
+        } finally {
+            setCargandoPdf(false)
+        }
+    }
+
+    const cerrarModalPdf = () => {
+        if (urlPdf) URL.revokeObjectURL(urlPdf)
+        setModalPdf(false)
+        setUrlPdf('')
+    }
 
     const confirmarAnulacion = () => setShowAnular(true)
 
@@ -134,6 +168,53 @@ export default function CompraShow() {
         })
     }
 
+    function irAEditar() {
+        router.visit(route('compras.facturas.index') + '?editar=' + compra.id)
+    }
+
+    async function confirmarEliminar() {
+        let verif: { puede: boolean; motivo: string | null; es_activa?: boolean } | null = null
+        try {
+            const res = await fetch(route('compras.facturas.verificar-edicion', compra.id), { headers: { Accept: 'application/json' } })
+            verif = await res.json()
+        } catch {
+            notify.error('Error al verificar el estado de la compra.')
+            return
+        }
+        if (!verif || !verif.puede) {
+            void Swal.fire({
+                icon: 'error',
+                title: 'No se puede eliminar',
+                html: `<p style="color:#374151;font-size:13px">${verif?.motivo ?? 'No se puede eliminar esta factura.'}</p>`,
+                confirmButtonText: 'Entendido',
+                confirmButtonColor: '#ef4444',
+                showCancelButton: false,
+            })
+            return
+        }
+
+        const result = await Swal.fire({
+            showCancelButton: true, reverseButtons: true, focusCancel: true,
+            icon: 'warning',
+            title: 'Eliminar factura',
+            html: `<p style="color:#374151;font-size:13px;line-height:1.6">
+                       ${verif.es_activa
+                            ? verif.motivo
+                            : 'Esta factura está pendiente de recepción; se eliminará directamente.'}
+                   </p>`,
+            confirmButtonText: 'Sí, eliminar',
+            cancelButtonText:  'Cancelar',
+            confirmButtonColor: '#ef4444',
+            cancelButtonColor:  '#6b7280',
+        })
+        if (!result.isConfirmed) return
+
+        router.delete(route('compras.facturas.destroy', compra.id), {
+            onSuccess: () => router.visit(route('compras.facturas.index')),
+            onError:   (e) => notify.error(Object.values(e)[0] ?? 'Error al eliminar'),
+        })
+    }
+
     const detalles    = compra.detalles ?? []
     const subtotal0   = n(compra.subtotal_0)
     const subtotalIva = n(compra.subtotal_iva)
@@ -144,48 +225,44 @@ export default function CompraShow() {
         <AppLayout title={`Compra ${compra.num_documento}`} suppressFlash>
             <Head title={`Compra ${compra.num_documento}`} />
 
-            <div className="px-6 pt-6 pb-8 max-w-5xl">
-
-                {/* ── Header ── */}
-                <div className="flex items-start justify-between gap-4 mb-6">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-xl"
-                            style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
-                            <ShoppingCart size={24} style={{ color: 'var(--primary)' }} />
-                        </div>
-                        <div>
-                            <div className="flex items-center gap-2 flex-wrap">
-                                <h1 className="text-xl font-bold font-mono" style={{ color: 'var(--text-main)' }}>
-                                    {compra.num_documento}
-                                </h1>
-                                {compra.estado === 'pendiente' && (
-                                    <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">Pendiente</span>
-                                )}
-                                {compra.estado === 'activa' && (
-                                    <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">Activa</span>
-                                )}
-                                {compra.estado === 'anulada' && (
-                                    <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400">Anulada</span>
-                                )}
-                            </div>
-                            <p className="text-sm mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                                {compra.tipo_documento} · Emitida {formatFecha(compra.fecha_emision)}
-                            </p>
-                        </div>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
+            <PageHeader
+                title={compra.num_documento}
+                breadcrumbs={[{ label: 'Compras' }, { label: 'Facturas' }]}
+                description={
+                    <>
+                        {compra.tipo_documento} · Emitida {formatFecha(compra.fecha_emision)}
+                        {compra.estado === 'pendiente' && (
+                            <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">Pendiente</span>
+                        )}
+                        {compra.estado === 'activa' && (
+                            <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">Activa</span>
+                        )}
+                        {compra.estado === 'anulada' && (
+                            <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400">Anulada</span>
+                        )}
+                        {!compra.asiento_id && compra.asiento_error && (
+                            <span
+                                title={compra.asiento_error}
+                                className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400 cursor-help">
+                                <AlertTriangle size={11} /> Sin asiento contable
+                            </span>
+                        )}
+                    </>
+                }
+                actions={
+                    <div className="flex items-center gap-2 flex-wrap shrink-0">
                         <Link href={route('compras.facturas.index')}
                             className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border transition-all hover:opacity-80"
                             style={{ borderColor: 'var(--border)', color: 'var(--text-main)' }}>
                             <ChevronLeft size={15} /> Volver
                         </Link>
                         <button
-                            onClick={() => { setUrlPdf(route('compras.facturas.pdf-individual', compra.id)); setModalPdf(true) }}
+                            onClick={() => abrirPdf(route('compras.facturas.pdf-individual', compra.id))}
                             className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90"
                             style={{ background: '#ef4444' }}>
                             <Printer size={15} /> PDF
                         </button>
-                        {compra.estado === 'pendiente' && (
+                        {compra.estado === 'pendiente' && puede('editar') && (
                             <button
                                 onClick={() => {
                                     if (compra.recepcion_bodega) {
@@ -194,19 +271,43 @@ export default function CompraShow() {
                                         notify.error('Esta compra no tiene una recepción de bodega asociada')
                                     }
                                 }}
-                                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90"
+                                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-black transition-all hover:opacity-90"
                                 style={{ background: '#10b981' }}>
                                 <PackageCheck size={15} /> Confirmar recepción
                             </button>
                         )}
-                        {compra.estado === 'activa' && compra.tiene_pago && (
+                        {compra.estado === 'activa' && compra.tiene_pago && puede('anular') && (
                             <button onClick={confirmarAnularPago}
-                                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90"
+                                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-black transition-all hover:opacity-90"
                                 style={{ background: '#f59e0b' }}>
                                 <CreditCard size={15} /> Anular Pago
                             </button>
                         )}
-                        {compra.estado === 'activa' && (
+                        {compra.estado !== 'anulada' && puede('editar') && (
+                            <button
+                                onClick={() => !compra.tiene_pago && irAEditar()}
+                                disabled={compra.tiene_pago}
+                                title={compra.tiene_pago
+                                    ? 'No se puede editar: tiene un pago registrado. Anule el pago primero.'
+                                    : 'Editar factura'}
+                                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-black transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+                                style={{ background: 'var(--primary)' }}>
+                                <Pencil size={15} /> Editar
+                            </button>
+                        )}
+                        {compra.estado !== 'anulada' && puede('eliminar') && (
+                            <button
+                                onClick={() => !compra.tiene_pago && confirmarEliminar()}
+                                disabled={compra.tiene_pago}
+                                title={compra.tiene_pago
+                                    ? 'No se puede eliminar: tiene un pago registrado. Anule el pago primero.'
+                                    : 'Eliminar factura'}
+                                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+                                style={{ background: '#ef4444' }}>
+                                <Trash2 size={15} /> Eliminar
+                            </button>
+                        )}
+                        {compra.estado === 'activa' && puede('anular') && (
                             <button onClick={confirmarAnulacion}
                                 className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90"
                                 style={{ background: '#ef4444' }}>
@@ -214,8 +315,10 @@ export default function CompraShow() {
                             </button>
                         )}
                     </div>
-                </div>
+                }
+            />
 
+            <div className="px-6 pt-6 pb-8 max-w-5xl">
                 {/* ── Info panel ── */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                     {/* Proveedor */}
@@ -456,7 +559,7 @@ export default function CompraShow() {
             {modalPdf && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
                      style={{ background: 'rgba(0,0,0,0.85)' }}
-                     onClick={() => setModalPdf(false)}>
+                     onClick={cerrarModalPdf}>
                     <div className="w-full max-w-4xl rounded-2xl overflow-hidden shadow-2xl flex flex-col"
                          style={{ background: 'var(--bg-card)', height: '90vh' }}
                          onClick={e => e.stopPropagation()}>
@@ -468,19 +571,27 @@ export default function CompraShow() {
                                 Compra {compra.num_documento}
                             </h3>
                             <div className="flex items-center gap-2">
-                                <a href={urlPdf} download target="_blank"
-                                   className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-all hover:opacity-90"
-                                   style={{ background: '#ef4444' }}>
-                                    <Download size={13} /> Descargar
-                                </a>
-                                <button onClick={() => setModalPdf(false)}
+                                {urlPdf && (
+                                    <a href={urlPdf} download={`compra-${compra.num_documento}.pdf`}
+                                       className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-all hover:opacity-90"
+                                       style={{ background: '#ef4444' }}>
+                                        <Download size={13} /> Descargar
+                                    </a>
+                                )}
+                                <button onClick={cerrarModalPdf}
                                     className="px-3 py-1.5 rounded-lg text-xs font-semibold border hover:opacity-80"
                                     style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
                                     ✕ Cerrar
                                 </button>
                             </div>
                         </div>
-                        <iframe src={urlPdf} className="flex-1 w-full border-0" title="PDF Compra" />
+                        {cargandoPdf ? (
+                            <div className="flex-1 flex items-center justify-center text-sm" style={{ color: 'var(--text-muted)' }}>
+                                Generando PDF…
+                            </div>
+                        ) : (
+                            <iframe src={urlPdf} className="flex-1 w-full border-0" title="PDF Compra" />
+                        )}
                     </div>
                 </div>
             )}

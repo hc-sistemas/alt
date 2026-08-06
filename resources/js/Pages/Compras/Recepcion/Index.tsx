@@ -6,6 +6,7 @@ import PageHeader from '@/Components/shared/PageHeader'
 import { cn } from '@/lib/utils'
 import { Package, Scan, CheckCircle2, AlertTriangle, ArrowLeft, Barcode } from 'lucide-react'
 import type { Compra, PageProps } from '@/types'
+import { usePermiso } from '@/Hooks/usePermiso'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -54,6 +55,7 @@ function progresoPorProducto(
 
 export default function RecepcionIndex() {
     const { compra, itemsEsperados } = usePage<Props>().props
+    const { puede } = usePermiso('compras')
 
     const inputRef                  = useRef<HTMLInputElement>(null)
     const [scan, setScan]           = useState('')
@@ -210,20 +212,22 @@ export default function RecepcionIndex() {
                         </div>
                     </div>
 
-                    <input
-                        ref={inputRef}
-                        type="text"
-                        value={scan}
-                        onChange={e => setScan(e.target.value)}
-                        onKeyDown={e => {
-                            if (e.key === 'Enter') { procesarScan(scan) }
-                        }}
-                        onBlur={() => setTimeout(() => inputRef.current?.focus(), 100)}
-                        placeholder="Escanear código de barras… (Enter para confirmar)"
-                        className="input-field w-full text-base font-mono"
-                        style={{ fontSize: '15px', letterSpacing: '0.05em' }}
-                        autoComplete="off"
-                    />
+                    {puede('editar') && (
+                        <input
+                            ref={inputRef}
+                            type="text"
+                            value={scan}
+                            onChange={e => setScan(e.target.value)}
+                            onKeyDown={e => {
+                                if (e.key === 'Enter') { procesarScan(scan) }
+                            }}
+                            onBlur={() => setTimeout(() => inputRef.current?.focus(), 100)}
+                            placeholder="Escanear código de barras… (Enter para confirmar)"
+                            className="input-field w-full text-base font-mono"
+                            style={{ fontSize: '15px', letterSpacing: '0.05em' }}
+                            autoComplete="off"
+                        />
+                    )}
 
                     {/* Feedback del último scan */}
                     {ultimoScan && (
@@ -331,24 +335,26 @@ export default function RecepcionIndex() {
                         </Link>
                     </div>
 
-                    <button
-                        onClick={() => completarRecepcion(false)}
-                        disabled={completando || escaneados.length === 0}
-                        className={cn(
-                            'flex items-center gap-2 px-6 py-2.5 rounded-xl font-semibold text-sm text-white transition-all',
-                            todoCompleto
-                                ? 'bg-green-600 hover:bg-green-700'
-                                : 'bg-amber-500 hover:bg-amber-600',
-                            (completando || escaneados.length === 0) && 'opacity-50 cursor-not-allowed',
-                        )}>
-                        <CheckCircle2 className="w-4 h-4" />
-                        {completando
-                            ? 'Procesando…'
-                            : todoCompleto
-                                ? `Completar Recepción (${totalRecibido}/${totalEsperado})`
-                                : `Completar Recepción (${totalRecibido}/${totalEsperado} — incompleto)`
-                        }
-                    </button>
+                    {puede('editar') && (
+                        <button
+                            onClick={() => completarRecepcion(false)}
+                            disabled={completando || escaneados.length === 0}
+                            className={cn(
+                                'flex items-center gap-2 px-6 py-2.5 rounded-xl font-semibold text-sm text-black transition-all',
+                                todoCompleto
+                                    ? 'bg-green-600 hover:bg-green-700'
+                                    : 'bg-amber-500 hover:bg-amber-600',
+                                (completando || escaneados.length === 0) && 'opacity-50 cursor-not-allowed',
+                            )}>
+                            <CheckCircle2 className="w-4 h-4" />
+                            {completando
+                                ? 'Procesando…'
+                                : todoCompleto
+                                    ? `Completar Recepción (${totalRecibido}/${totalEsperado})`
+                                    : `Completar Recepción (${totalRecibido}/${totalEsperado} — incompleto)`
+                            }
+                        </button>
+                    )}
                 </div>
             </div>
         </AppLayout>

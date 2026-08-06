@@ -22,13 +22,32 @@ class ProveedoresExport implements
 
     private int $totalRows = 0;
 
-    public function __construct(private int $empresaId) {}
+    public function __construct(private int $empresaId, private array $filtros = []) {}
 
     public function collection()
     {
-        $data = Proveedor::where('empresa_id', $this->empresaId)
-            ->orderBy('razon_social')
-            ->get();
+        $query = Proveedor::where('empresa_id', $this->empresaId);
+
+        if (!empty($this->filtros['tipo'])) {
+            $query->where('tipo', $this->filtros['tipo']);
+        }
+        if (!empty($this->filtros['estado'])) {
+            $query->where('estado', $this->filtros['estado'] === 'activo');
+        }
+        if (!empty($this->filtros['credito'])) {
+            $query->where('tiene_credito', $this->filtros['credito'] === 'con');
+        }
+        if (!empty($this->filtros['buscar'])) {
+            $q = $this->filtros['buscar'];
+            $query->where(fn($qb) =>
+                $qb->where('razon_social', 'ilike', "%{$q}%")
+                   ->orWhere('identificacion', 'ilike', "%{$q}%")
+                   ->orWhere('nombre_comercial', 'ilike', "%{$q}%")
+                   ->orWhere('email', 'ilike', "%{$q}%")
+            );
+        }
+
+        $data = $query->orderBy('razon_social')->get();
 
         $this->totalRows = $data->count();
 

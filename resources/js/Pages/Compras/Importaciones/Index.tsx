@@ -2,15 +2,20 @@ import { useState, useEffect } from 'react'
 import { router, usePage, useForm, Head } from '@inertiajs/react'
 import { toast, ToastContainer } from 'react-toastify'
 import AppLayout from '@/Layouts/AppLayout'
+import PageHeader from '@/Components/shared/PageHeader'
+import FilterToolbar from '@/Components/shared/FilterToolbar'
 import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
+import ConfirmModal from '@/Components/shared/ConfirmModal'
+import axios from '@/lib/axios'
 import { cn } from '@/lib/utils'
 import {
     Plus, Pencil, Package, Plane, Anchor, CheckCircle2,
-    X, DollarSign, Loader2, Eye, ExternalLink, AlertCircle,
+    X, DollarSign, Loader2, Eye, ExternalLink, AlertCircle, Copy, Search,
 } from 'lucide-react'
 import type { Importacion, Proveedor, PageProps } from '@/types'
+import { usePermiso } from '@/Hooks/usePermiso'
 import 'react-toastify/dist/ReactToastify.css'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -19,9 +24,18 @@ interface ImportacionRow extends Omit<Importacion, 'proveedor'> {
     proveedor: string | null
 }
 
+interface Filtros {
+    estado?: string
+    proveedor_id?: string
+    fecha_desde?: string
+    fecha_hasta?: string
+    buscar?: string
+}
+
 interface Props extends PageProps {
-    importaciones: ImportacionRow[]
+    importaciones: ImportacionRow[] | null
     proveedores: Pick<Proveedor, 'id' | 'razon_social' | 'pais' | 'divisa' | 'tipo'>[]
+    filtros: Filtros
 }
 
 const CONCEPTOS_COSTO = [
@@ -40,7 +54,7 @@ const CONCEPTOS_COSTO = [
     'Otro',
 ] as const
 
-type TabKey = 'general' | 'productos' | 'gastos' | 'liquidar'
+type TabKey = 'general' | 'productos' | 'gastos' | 'liquidar' | 'resultado'
 
 interface ProductoImportado {
     codigo: string
@@ -63,6 +77,76 @@ interface DetalleData {
     totales: { fob: number; gastos: number; total: number }
 }
 
+// ─── Previsualización de Liquidación (auditoría 2026-07-29, Parte 3.1) ────────
+
+interface ProductoPreview {
+    producto_id: number
+    codigo: string
+    nombre: string
+    cantidad: number
+    pct_peso: number | null
+    costo_actual: number
+    costo_nuevo: number
+    pvd_sugerido: number | null
+    pvp_sugerido: number | null
+}
+
+interface PreviewLiquidacionData {
+    metodo_prorrateo: string
+    costo_fob: number
+    costos_extra_total: number
+    costos_extra_detalle: { concepto: string; num_documento: string; monto: number }[]
+    costo_total_estimado: number
+    factor_importacion: number | null
+    suma_pct_peso: number | null
+    comision_pct: number
+    margen_pvd_pct: number
+    margen_pvp_pct: number
+    productos: ProductoPreview[]
+}
+
+// ─── Resultado de Liquidación ─────────────────────────────────────────────────
+
+interface ProductoResultadoLiquidacion {
+    producto_id: number
+    codigo: string
+    nombre: string
+    cantidad: number
+    costo_anterior: number | null
+    costo_nuevo: number
+    pvp: number
+    pvd: number
+    pvp_sugerido: number | null
+    pvd_sugerido: number | null
+}
+
+interface ResultadoLiquidacionData {
+    metodo_prorrateo: string | null
+    costo_total: number
+    cantidad_productos: number
+    factor_importacion: number | null
+    productos: ProductoResultadoLiquidacion[]
+}
+
+const METODO_LABEL: Record<string, string> = {
+    cantidad: 'Cantidad',
+    precio: 'Precio Unitario',
+    peso: 'Peso',
+    factor_importacion: 'Factor de Importación',
+}
+
+function calcularMargen(precio: number, costo: number): number | null {
+    if (!costo || costo <= 0) return null
+    return ((precio - costo) / costo) * 100
+}
+
+function colorMargen(margen: number | null): string {
+    if (margen === null) return 'var(--text-muted)'
+    if (margen < 0) return '#ef4444'
+    if (margen < 20) return '#f59e0b'
+    return '#10b981'
+}
+
 // ─── Notify ───────────────────────────────────────────────────────────────────
 
 const S = { borderRadius: '14px', fontWeight: '600', color: '#fff' } as const
@@ -70,6 +154,14 @@ const notify = {
     ok:    (msg: string) => toast.success(msg, { icon: () => '✅', style: { ...S, background: 'linear-gradient(135deg,#10b981,#059669)' } }),
     edit:  (msg: string) => toast.success(msg, { icon: () => '✏️', style: { ...S, background: 'linear-gradient(135deg,#3b82f6,#2563eb)' } }),
     error: (msg: string) => toast.error(msg,   { icon: () => '❌', autoClose: 6000, style: { ...S, background: 'linear-gradient(135deg,#ef4444,#dc2626)' } }),
+}
+
+function mensajeError(err: unknown, fallback: string): string {
+    if (typeof err === 'object' && err !== null && 'response' in err) {
+        const data = (err as { response?: { data?: { message?: string } } }).response?.data
+        if (data?.message) return data.message
+    }
+    return fallback
 }
 
 // ─── Estado Badge ─────────────────────────────────────────────────────────────
@@ -212,11 +304,12 @@ function CrearModal({ proveedores, onClose }: {
 
 // ─── Modal Detalle (4 tabs) ───────────────────────────────────────────────────
 
-const TABS: { key: TabKey; label: string }[] = [
+const TABS: { key: TabKey; label: string; soloLiquidada?: boolean }[] = [
     { key: 'general',   label: '1. General' },
     { key: 'productos', label: '2. Productos' },
     { key: 'gastos',    label: '3. Costos Extra' },
     { key: 'liquidar',  label: '4. Liquidación' },
+    { key: 'resultado', label: 'Resultado de Liquidación', soloLiquidada: true },
 ]
 
 function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
@@ -225,9 +318,11 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
     proveedores: Props['proveedores']
     onClose: () => void
 }) {
+    const { puede } = usePermiso('compras')
     const [tab,      setTab]      = useState<TabKey>(initialTab)
     const [cargando, setCargando] = useState(true)
     const [detalle,  setDetalle]  = useState<DetalleData | null>(null)
+    const yaLiquidada = importacion.estado === 'liquidada'
 
     // ── Tab 1: General ──
     const { data, setData, put, processing, errors } = useForm({
@@ -249,21 +344,17 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
     async function crearFacturaExterior() {
         setCreandoFact(true)
         setYaExisteWarn(false)
-        const csrf = (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement | null)?.content ?? ''
         try {
-            const res = await fetch(route('compras.importaciones.crear-factura', importacion.id), {
-                method: 'POST',
-                headers: { 'X-CSRF-TOKEN': csrf, Accept: 'application/json' },
-            })
-            const datos = await res.json() as { ya_existe: boolean }
-            if (!res.ok) { notify.error('Error al verificar factura'); return }
+            const { data: datos } = await axios.post<{ ya_existe: boolean }>(
+                route('compras.importaciones.crear-factura', importacion.id)
+            )
             if (datos.ya_existe) {
                 setYaExisteWarn(true)
             } else {
                 router.get(route('compras.facturas.index'), { iniciar_exterior: String(importacion.id) })
             }
-        } catch {
-            notify.error('Error de conexión')
+        } catch (err) {
+            notify.error(mensajeError(err, 'Error al verificar factura'))
         } finally {
             setCreandoFact(false)
         }
@@ -297,20 +388,17 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
         if (!monto || monto <= 0) { notify.error('Ingresa un monto válido'); return }
 
         setCostoSaving(true)
-        const csrf = (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement | null)?.content ?? ''
         try {
-            const res = await fetch(route('compras.importaciones.agregar-costo', importacion.id), {
-                method:  'POST',
-                headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf, Accept: 'application/json' },
-                body: JSON.stringify({
+            const { data: json } = await axios.post<{ success?: boolean; message?: string }>(
+                route('compras.importaciones.agregar-costo', importacion.id),
+                {
                     concepto:     conceptoFinal,
                     proveedor_id: formCosto.proveedor_id || null,
                     monto,
                     num_factura:  formCosto.num_factura || null,
-                }),
-            })
-            const json = await res.json() as { success?: boolean; message?: string }
-            if (res.ok && json.success) {
+                }
+            )
+            if (json.success) {
                 notify.ok(json.message ?? 'Costo registrado')
                 setFormCosto({ concepto: CONCEPTOS_COSTO[0], conceptoLibre: '', proveedor_id: '', monto: '', num_factura: '' })
                 setShowFormCosto(false)
@@ -318,19 +406,177 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
             } else {
                 notify.error(json.message ?? 'Error al guardar el costo')
             }
-        } catch {
-            notify.error('Error de conexión al guardar el costo')
+        } catch (err) {
+            notify.error(mensajeError(err, 'Error al guardar el costo'))
         } finally {
             setCostoSaving(false)
         }
     }
 
     // ── Tab 4: Liquidar ──
-    const [metodo,        setMetodo]    = useState<'cantidad' | 'precio'>('cantidad')
+    const [metodo,        setMetodo]    = useState<'cantidad' | 'precio' | 'peso' | 'factor_importacion'>('cantidad')
     const [fechaLiq,      setFechaLiq]  = useState(new Date().toISOString().slice(0, 10))
     const [liqProcessing, setLiqProc]   = useState(false)
+    const [comisionPct,  setComisionPct]  = useState('3')
+    const [margenPvdPct, setMargenPvdPct] = useState('20')
+    const [margenPvpPct, setMargenPvpPct] = useState('35')
+
+    // ── Previsualización antes de liquidar (auditoría 2026-07-29, Parte 3.1) ──
+    // `previewData` es null hasta que el usuario pide previsualizar; a partir
+    // de ahí se muestra la vista de solo lectura (con % de peso y PVD/PVP
+    // editables) en vez del formulario, y "Confirmar y Liquidar" hace el
+    // submit real. Cambiar cualquier parámetro (método, comisión, márgenes)
+    // invalida la previsualización — hay que volver a generarla, para no
+    // liquidar con una vista vieja que ya no corresponde a los parámetros
+    // actuales del formulario.
+    const [previewData,      setPreviewData]      = useState<PreviewLiquidacionData | null>(null)
+    const [cargandoPreview,  setCargandoPreview]  = useState(false)
+    const [mostrarDetalleCostos, setMostrarDetalleCostos] = useState(false)
+    // % de peso por producto, editable solo con método "peso" — se
+    // inicializa con el % natural que devuelve la previsualización la
+    // primera vez, y desde ahí el usuario puede ajustarlo a mano.
+    const [pesosManual, setPesosManual] = useState<Record<number, string>>({})
+    // Override individual de PVD/PVP sobre el sugerido "masivo" (comisión +
+    // margen aplicado a TODOS los ítems) — mismo patrón ya usado en el tab
+    // "Resultado de Liquidación" (variable `precios` / `actualizarPrecio`).
+    const [preciosPreview, setPreciosPreview] = useState<Record<number, { pvd: string; pvp: string }>>({})
+
+    function invalidarPreview() {
+        if (previewData) setPreviewData(null)
+    }
+
+    async function fetchPreview() {
+        setCargandoPreview(true)
+        try {
+            const params: Record<string, string | Record<string, string>> = {
+                metodo_prorrateo: metodo,
+                comision_pct:     comisionPct,
+                margen_pvd_pct:   margenPvdPct,
+                margen_pvp_pct:   margenPvpPct,
+            }
+            if (metodo === 'peso' && Object.keys(pesosManual).length > 0) {
+                params.pesos_manual = pesosManual
+            }
+            const { data } = await axios.get<PreviewLiquidacionData>(
+                route('compras.importaciones.previsualizar-liquidacion', importacion.id),
+                { params }
+            )
+            setPreviewData(data)
+            const preciosIniciales: Record<number, { pvd: string; pvp: string }> = {}
+            const pesosIniciales: Record<number, string> = { ...pesosManual }
+            data.productos.forEach(p => {
+                preciosIniciales[p.producto_id] = {
+                    pvd: p.pvd_sugerido !== null ? p.pvd_sugerido.toString() : '',
+                    pvp: p.pvp_sugerido !== null ? p.pvp_sugerido.toString() : '',
+                }
+                if (metodo === 'peso' && p.pct_peso !== null && pesosIniciales[p.producto_id] === undefined) {
+                    pesosIniciales[p.producto_id] = p.pct_peso.toString()
+                }
+            })
+            setPreciosPreview(preciosIniciales)
+            if (metodo === 'peso') setPesosManual(pesosIniciales)
+        } catch (err) {
+            notify.error(mensajeError(err, 'No se pudo generar la previsualización'))
+        } finally {
+            setCargandoPreview(false)
+        }
+    }
+
+    function actualizarPesoManual(productoId: number, valor: string) {
+        setPesosManual(prev => ({ ...prev, [productoId]: valor }))
+    }
+
+    function actualizarPrecioPreview(productoId: number, campo: 'pvd' | 'pvp', valor: string) {
+        setPreciosPreview(prev => ({ ...prev, [productoId]: { ...prev[productoId], [campo]: valor } }))
+    }
+
+    const sumaPesosManual = Object.values(pesosManual).reduce((s, v) => s + (parseFloat(v) || 0), 0)
+    const pesosCuadran = metodo !== 'peso' || Object.keys(pesosManual).length === 0 || Math.abs(sumaPesosManual - 100) <= 0.1
+
+    // ── Tab 4: Revertir ──
+    const [confirmRevertir, setConfirmRevertir] = useState(false)
+    const [revProcessing,   setRevProc]         = useState(false)
+
+    function ejecutarRevertir() {
+        setRevProc(true)
+        router.patch(route('compras.importaciones.revertir', importacion.id), {}, {
+            // back()->with('error', ...) llega como respuesta "exitosa" para Inertia —
+            // hay que mirar el flash para saber si en realidad falló el candado de reversión.
+            onSuccess: (page) => {
+                const flash = page.props.flash as { success?: string; error?: string } | undefined
+                if (flash?.error) {
+                    setConfirmRevertir(false)
+                } else {
+                    onClose()
+                }
+            },
+            onFinish: () => setRevProc(false),
+        })
+    }
+
+    // ── Tab Resultado de Liquidación ──
+    const [resultado,        setResultado]        = useState<ResultadoLiquidacionData | null>(null)
+    const [cargandoResultado, setCargandoResultado] = useState(true)
+    const [precios,          setPrecios]          = useState<Record<number, { pvp: string; pvd: string }>>({})
+    const [guardandoPrecios, setGuardandoPrecios]  = useState(false)
+
+    function fetchResultado() {
+        setCargandoResultado(true)
+        fetch(route('compras.importaciones.resultado-liquidacion', importacion.id), {
+            headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+        })
+            .then(r => r.json())
+            .then((d: ResultadoLiquidacionData) => {
+                setResultado(d)
+                const inicial: Record<number, { pvp: string; pvd: string }> = {}
+                d.productos.forEach(p => {
+                    // Con el método "Factor de Importación" se precargan los precios
+                    // SUGERIDOS por la fórmula (comisión + margen + IVA) en vez del
+                    // precio anterior — el usuario los puede seguir editando aquí mismo.
+                    inicial[p.producto_id] = {
+                        pvp: (p.pvp_sugerido ?? p.pvp).toString(),
+                        pvd: (p.pvd_sugerido ?? p.pvd).toString(),
+                    }
+                })
+                setPrecios(inicial)
+            })
+            .finally(() => setCargandoResultado(false))
+    }
+
+    function actualizarPrecio(productoId: number, campo: 'pvp' | 'pvd', valor: string) {
+        setPrecios(prev => ({ ...prev, [productoId]: { ...prev[productoId], [campo]: valor } }))
+    }
+
+    async function guardarPrecios() {
+        if (!resultado) return
+        setGuardandoPrecios(true)
+        try {
+            const payload = {
+                precios: resultado.productos.map(p => ({
+                    producto_id: p.producto_id,
+                    pvp: parseFloat(precios[p.producto_id]?.pvp ?? String(p.pvp)) || 0,
+                    pvd: parseFloat(precios[p.producto_id]?.pvd ?? String(p.pvd)) || 0,
+                })),
+            }
+            const { data: json } = await axios.patch<{ success?: boolean; message?: string }>(
+                route('compras.importaciones.actualizar-precios-lote', importacion.id),
+                payload
+            )
+            if (json.success) {
+                notify.ok(json.message ?? 'Precios actualizados')
+                fetchResultado()
+            } else {
+                notify.error(json.message ?? 'Error al guardar los precios')
+            }
+        } catch (err) {
+            notify.error(mensajeError(err, 'Error al guardar los precios'))
+        } finally {
+            setGuardandoPrecios(false)
+        }
+    }
 
     useEffect(() => { refetchDetalle(true) }, [importacion.id])
+    useEffect(() => { if (yaLiquidada) fetchResultado() }, [importacion.id])
 
     function submitGeneral(e: React.FormEvent) {
         e.preventDefault()
@@ -340,12 +586,16 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
         })
     }
 
-    function submitLiquidar(e: React.FormEvent) {
-        e.preventDefault()
+    function confirmarLiquidar() {
+        if (metodo === 'peso' && !pesosCuadran) return
         setLiqProc(true)
         router.patch(route('compras.importaciones.liquidar', importacion.id), {
             metodo_prorrateo:  metodo,
             fecha_liquidacion: fechaLiq,
+            comision_pct:      comisionPct,
+            margen_pvd_pct:    margenPvdPct,
+            margen_pvp_pct:    margenPvpPct,
+            ...(metodo === 'peso' && Object.keys(pesosManual).length > 0 ? { pesos_manual: pesosManual } : {}),
         }, {
             onSuccess: () => { notify.ok(`Importación "${importacion.nombre}" liquidada`); onClose() },
             onError:   (errs) => { notify.error('Error: ' + Object.values(errs).join(', ')); setLiqProc(false) },
@@ -353,7 +603,6 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
         })
     }
 
-    const yaLiquidada = importacion.estado === 'liquidada'
     const inputStyle  = { background: 'var(--bg-card)', color: 'var(--text-main)', borderColor: 'var(--border)' }
 
     return (
@@ -376,7 +625,7 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
                 {/* ── Tab nav ── */}
                 <div className="shrink-0 flex gap-0.5 px-4 border-b"
                     style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
-                    {TABS.map(t => (
+                    {TABS.filter(t => !t.soloLiquidada || yaLiquidada).map(t => (
                         <button key={t.key} type="button" onClick={() => setTab(t.key)}
                             className="px-3 py-2.5 text-xs font-semibold transition-colors whitespace-nowrap"
                             style={{
@@ -452,7 +701,7 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
                                 </div>
                                 {errors.estado && <p className="text-red-400 text-xs">{errors.estado}</p>}
                             </div>
-                            {!yaLiquidada && (
+                            {!yaLiquidada && puede('editar') && (
                                 <div className="modal-footer">
                                     <Button type="submit" disabled={processing}>
                                         <Pencil className="w-4 h-4" /> Guardar cambios
@@ -479,17 +728,19 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
                                     <p className="text-xs mb-4 max-w-xs mx-auto">
                                         Crea una factura de compra exterior pre-llenada con los datos de esta importación.
                                     </p>
-                                    <button
-                                        type="button"
-                                        onClick={crearFacturaExterior}
-                                        disabled={creandoFact}
-                                        className="btn-primary inline-flex items-center gap-2 text-sm">
-                                        {creandoFact
-                                            ? <Loader2 className="w-4 h-4 animate-spin" />
-                                            : <ExternalLink className="w-4 h-4" />
-                                        }
-                                        {creandoFact ? 'Verificando...' : 'Crear factura de compra exterior'}
-                                    </button>
+                                    {puede('crear') && (
+                                        <button
+                                            type="button"
+                                            onClick={crearFacturaExterior}
+                                            disabled={creandoFact}
+                                            className="btn-primary inline-flex items-center gap-2 text-sm">
+                                            {creandoFact
+                                                ? <Loader2 className="w-4 h-4 animate-spin" />
+                                                : <ExternalLink className="w-4 h-4" />
+                                            }
+                                            {creandoFact ? 'Verificando...' : 'Crear factura de compra exterior'}
+                                        </button>
+                                    )}
 
                                     {/* Aviso cuando ya existe una factura vinculada */}
                                     {yaExisteWarn && (
@@ -596,7 +847,7 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
                     {tab === 'gastos' && (
                         <div className="p-5 space-y-4">
                             {/* Botón + formulario inline */}
-                            {!yaLiquidada && (
+                            {!yaLiquidada && puede('editar') && (
                                 <div>
                                     {!showFormCosto ? (
                                         <button type="button"
@@ -799,14 +1050,30 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
                                     </div>
                                 </div>
 
-                                <button
-                                    type="button"
-                                    disabled
-                                    title="Contacte al administrador para revertir manualmente"
-                                    className="w-full py-2 px-4 rounded-lg text-sm font-medium border opacity-40 cursor-not-allowed"
-                                    style={{ borderColor: '#ef4444', color: '#ef4444', background: 'transparent' }}>
-                                    Revertir liquidación (no disponible)
-                                </button>
+                                {puede('editar') && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setConfirmRevertir(true)}
+                                        className="w-full py-2 px-4 rounded-lg text-sm font-medium border transition-colors hover:bg-red-500/10"
+                                        style={{ borderColor: '#ef4444', color: '#ef4444', background: 'transparent' }}>
+                                        Revertir liquidación
+                                    </button>
+                                )}
+                                <p className="text-xs text-center" style={{ color: 'var(--text-muted)' }}>
+                                    Restaura el costo anterior de los productos y el estado previo a la liquidación.
+                                    Se bloqueará si ya se vendió o movió stock con el costo actual.
+                                </p>
+
+                                <ConfirmModal
+                                    open={confirmRevertir}
+                                    title="¿Revertir esta liquidación?"
+                                    message={`Se restaurará el costo anterior de los productos de "${importacion.nombre}" y, si hubo cruce de anticipo, se generará un asiento de reversión. Esta acción no se puede deshacer.`}
+                                    confirmLabel="Sí, revertir"
+                                    variant="danger"
+                                    loading={revProcessing}
+                                    onConfirm={ejecutarRevertir}
+                                    onCancel={() => setConfirmRevertir(false)}
+                                />
                             </div>
                         ) : (
                             /* ── Formulario liquidar ── */
@@ -868,8 +1135,148 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
                                     </div>
                                 )
 
+                                if (previewData) return (
+                                    <div>
+                                        <div className="modal-body space-y-4">
+                                            {/* Resumen — costos extra colapsados en un solo total, con detalle expandible */}
+                                            <div className="rounded-lg p-3 space-y-1.5"
+                                                style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)' }}>
+                                                <div className="flex justify-between text-sm">
+                                                    <span style={{ color: 'var(--text-muted)' }}>Costo FOB (Mercadería)</span>
+                                                    <span className="font-medium tabular-nums" style={{ color: 'var(--text-main)' }}>
+                                                        ${previewData.costo_fob.toFixed(2)}
+                                                    </span>
+                                                </div>
+                                                <button type="button"
+                                                    onClick={() => setMostrarDetalleCostos(v => !v)}
+                                                    className="w-full flex justify-between text-sm hover:opacity-80">
+                                                    <span style={{ color: 'var(--text-muted)' }}>
+                                                        Costos extra ({previewData.costos_extra_detalle.length}) {mostrarDetalleCostos ? '▲' : '▼'}
+                                                    </span>
+                                                    <span className="font-medium tabular-nums" style={{ color: 'var(--text-main)' }}>
+                                                        ${previewData.costos_extra_total.toFixed(2)}
+                                                    </span>
+                                                </button>
+                                                {mostrarDetalleCostos && (
+                                                    <div className="pl-3 space-y-1 border-l-2" style={{ borderColor: 'rgba(245,158,11,0.3)' }}>
+                                                        {previewData.costos_extra_detalle.map((g, i) => (
+                                                            <div key={i} className="flex justify-between text-xs">
+                                                                <span style={{ color: 'var(--text-muted)' }}>
+                                                                    {g.concepto}{g.num_documento ? ` — ${g.num_documento}` : ''}
+                                                                </span>
+                                                                <span className="tabular-nums" style={{ color: 'var(--text-main)' }}>
+                                                                    ${g.monto.toFixed(2)}
+                                                                </span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                                <div className="flex justify-between text-sm font-bold border-t pt-1.5"
+                                                    style={{ borderColor: 'rgba(245,158,11,0.3)', color: 'var(--primary)' }}>
+                                                    <span>Costo total estimado</span>
+                                                    <span className="tabular-nums">${previewData.costo_total_estimado.toFixed(2)}</span>
+                                                </div>
+                                                {previewData.factor_importacion !== null && (
+                                                    <div className="flex justify-between text-sm font-bold">
+                                                        <span style={{ color: 'var(--text-muted)' }}>Factor de Importación</span>
+                                                        <span className="tabular-nums" style={{ color: 'var(--primary)' }}>
+                                                            {previewData.factor_importacion.toFixed(6)}
+                                                        </span>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {metodo === 'peso' && (
+                                                <div className={cn('rounded-lg p-2.5 text-xs font-semibold text-center',
+                                                    pesosCuadran ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400')}
+                                                    style={{ background: pesosCuadran ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)' }}>
+                                                    Total % de peso: {sumaPesosManual.toFixed(2)}% {pesosCuadran ? '✓' : '— debe sumar 100%'}
+                                                </div>
+                                            )}
+
+                                            {/* Tabla resumen por ítem — solo lectura salvo % peso y PVD/PVP */}
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-xs">
+                                                    <thead>
+                                                        <tr className="border-b" style={{ borderColor: 'var(--border)' }}>
+                                                            {[
+                                                                'Producto', 'Cant.',
+                                                                ...(metodo === 'peso' ? ['% Peso'] : []),
+                                                                'Costo Actual', 'Costo Nuevo', 'PVD sugerido', 'PVP sugerido',
+                                                            ].map(h => (
+                                                                <th key={h} className="pb-2 pt-1 px-2 font-semibold uppercase text-[10px] tracking-wider text-left whitespace-nowrap"
+                                                                    style={{ color: 'var(--text-muted)' }}>
+                                                                    {h}
+                                                                </th>
+                                                            ))}
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {previewData.productos.map(p => (
+                                                            <tr key={p.producto_id} className="border-b" style={{ borderColor: 'var(--border)' }}>
+                                                                <td className="py-2 px-2 max-w-40">
+                                                                    <p className="font-mono font-bold" style={{ color: 'var(--primary)' }}>{p.codigo}</p>
+                                                                    <p className="truncate" style={{ color: 'var(--text-main)' }}>{p.nombre}</p>
+                                                                </td>
+                                                                <td className="py-2 px-2 tabular-nums" style={{ color: 'var(--text-main)' }}>
+                                                                    {p.cantidad % 1 === 0 ? p.cantidad.toFixed(0) : p.cantidad.toFixed(2)}
+                                                                </td>
+                                                                {metodo === 'peso' && (
+                                                                    <td className="py-2 px-2">
+                                                                        <input type="number" step="0.01" min="0" max="100"
+                                                                            className="input-field text-xs" style={{ width: '5.5rem' }}
+                                                                            value={pesosManual[p.producto_id] ?? ''}
+                                                                            onChange={e => actualizarPesoManual(p.producto_id, e.target.value)} />
+                                                                    </td>
+                                                                )}
+                                                                <td className="py-2 px-2 tabular-nums" style={{ color: 'var(--text-muted)' }}>
+                                                                    ${p.costo_actual.toFixed(4)}
+                                                                </td>
+                                                                <td className="py-2 px-2 tabular-nums font-medium" style={{ color: 'var(--text-main)' }}>
+                                                                    ${p.costo_nuevo.toFixed(4)}
+                                                                </td>
+                                                                <td className="py-2 px-2">
+                                                                    <input type="number" step="0.01" min="0"
+                                                                        className="input-field text-xs" style={{ width: '6rem' }}
+                                                                        value={preciosPreview[p.producto_id]?.pvd ?? ''}
+                                                                        onChange={e => actualizarPrecioPreview(p.producto_id, 'pvd', e.target.value)} />
+                                                                </td>
+                                                                <td className="py-2 px-2">
+                                                                    <input type="number" step="0.01" min="0"
+                                                                        className="input-field text-xs" style={{ width: '6rem' }}
+                                                                        value={preciosPreview[p.producto_id]?.pvp ?? ''}
+                                                                        onChange={e => actualizarPrecioPreview(p.producto_id, 'pvp', e.target.value)} />
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+
+                                            {metodo === 'peso' && (
+                                                <button type="button" onClick={fetchPreview} disabled={cargandoPreview}
+                                                    className="text-xs underline" style={{ color: 'var(--primary)' }}>
+                                                    {cargandoPreview ? 'Recalculando…' : 'Recalcular con estos % de peso'}
+                                                </button>
+                                            )}
+                                        </div>
+                                        <div className="modal-footer">
+                                            {puede('editar') && (
+                                                <Button type="button" onClick={confirmarLiquidar}
+                                                    disabled={liqProcessing || (metodo === 'peso' && !pesosCuadran)}>
+                                                    <CheckCircle2 className="w-4 h-4" /> Confirmar y Liquidar
+                                                </Button>
+                                            )}
+                                            <Button type="button" variant="outline" onClick={() => setPreviewData(null)}>
+                                                Editar parámetros
+                                            </Button>
+                                            <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
+                                        </div>
+                                    </div>
+                                )
+
                                 return (
-                                    <form onSubmit={submitLiquidar}>
+                                    <form onSubmit={e => { e.preventDefault(); fetchPreview() }}>
                                         <div className="modal-body">
                                             {/* Resumen previo */}
                                             <div className="rounded-lg p-3 space-y-1.5"
@@ -897,11 +1304,49 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
 
                                             <div className="space-y-1.5">
                                                 <Label>Método de prorrateo <span className="text-red-400">*</span></Label>
-                                                <select value={metodo} onChange={e => setMetodo(e.target.value as typeof metodo)}
+                                                <select value={metodo}
+                                                    onChange={e => { setMetodo(e.target.value as typeof metodo); invalidarPreview(); setPesosManual({}) }}
                                                     className="input-field select-field">
                                                     <option value="cantidad">Por cantidad (unidades)</option>
                                                     <option value="precio">Por precio (valor FOB)</option>
+                                                    <option value="peso">Por peso (kg)</option>
+                                                    <option value="factor_importacion">Factor de Importación</option>
                                                 </select>
+                                            </div>
+
+                                            {metodo === 'factor_importacion' && (
+                                                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                                    Factor = (Mercadería + todos los costos extra) / Mercadería FOB.
+                                                    Se aplica directamente al costo unitario original de cada producto.
+                                                </p>
+                                            )}
+
+                                            {/* Ganancia sugerida (comisión + márgenes PVD/PVP) — aplica de forma MASIVA
+                                                a todos los ítems de la previsualización, sin importar el método de
+                                                prorrateo elegido (auditoría 2026-07-29, Parte 3.3). Cada ítem se puede
+                                                sobreescribir individualmente ya en la vista de previsualización. */}
+                                            <div className="rounded-lg p-3 space-y-3"
+                                                style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+                                                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                                    Ganancia sugerida (aplica a todos los ítems — editable uno por uno en la previsualización):
+                                                </p>
+                                                <div className="grid grid-cols-3 gap-3">
+                                                    <div className="space-y-1">
+                                                        <label className="input-label">% Comisión</label>
+                                                        <input type="number" step="0.01" min="0" className="input-field text-sm"
+                                                            value={comisionPct} onChange={e => { setComisionPct(e.target.value); invalidarPreview() }} />
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="input-label">% Margen PVD</label>
+                                                        <input type="number" step="0.01" min="0" max="99.99" className="input-field text-sm"
+                                                            value={margenPvdPct} onChange={e => { setMargenPvdPct(e.target.value); invalidarPreview() }} />
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="input-label">% Margen PVP</label>
+                                                        <input type="number" step="0.01" min="0" max="99.99" className="input-field text-sm"
+                                                            value={margenPvpPct} onChange={e => { setMargenPvpPct(e.target.value); invalidarPreview() }} />
+                                                    </div>
+                                                </div>
                                             </div>
 
                                             <div className="space-y-1.5">
@@ -910,14 +1355,154 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
                                             </div>
                                         </div>
                                         <div className="modal-footer">
-                                            <Button type="submit" disabled={liqProcessing}>
-                                                <CheckCircle2 className="w-4 h-4" /> Liquidar importación
+                                            <Button type="submit" disabled={cargandoPreview}>
+                                                {cargandoPreview
+                                                    ? <Loader2 className="w-4 h-4 animate-spin" />
+                                                    : <Eye className="w-4 h-4" />
+                                                }
+                                                Previsualizar
                                             </Button>
                                             <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
                                         </div>
                                     </form>
                                 )
                             })()
+                        )
+                    )}
+
+                    {/* ════ TAB: RESULTADO DE LIQUIDACIÓN ════ */}
+                    {tab === 'resultado' && (
+                        cargandoResultado ? (
+                            <div className="flex items-center justify-center py-20 gap-2"
+                                style={{ color: 'var(--text-muted)' }}>
+                                <Loader2 className="w-5 h-5 animate-spin" /> Cargando resultado de liquidación...
+                            </div>
+                        ) : !resultado ? (
+                            <div className="py-12 text-center" style={{ color: 'var(--text-muted)' }}>
+                                <AlertCircle className="w-10 h-10 mx-auto mb-3 opacity-20" />
+                                <p className="text-sm">No se pudo cargar el resultado de la liquidación.</p>
+                            </div>
+                        ) : (
+                            <div className="p-5 space-y-4">
+                                {/* Resumen */}
+                                <div className={cn('rounded-lg p-3 grid gap-3 text-sm', resultado.factor_importacion !== null ? 'grid-cols-4' : 'grid-cols-3')}
+                                    style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)' }}>
+                                    <div>
+                                        <p className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+                                            Costo total liquidado
+                                        </p>
+                                        <p className="font-bold tabular-nums" style={{ color: 'var(--primary)' }}>
+                                            ${resultado.costo_total.toFixed(2)}
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <p className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+                                            Productos afectados
+                                        </p>
+                                        <p className="font-bold tabular-nums" style={{ color: 'var(--text-main)' }}>
+                                            {resultado.cantidad_productos}
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <p className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+                                            Método de prorrateo
+                                        </p>
+                                        <p className="font-bold" style={{ color: 'var(--text-main)' }}>
+                                            {resultado.metodo_prorrateo
+                                                ? (METODO_LABEL[resultado.metodo_prorrateo] ?? resultado.metodo_prorrateo)
+                                                : '—'}
+                                        </p>
+                                    </div>
+                                    {resultado.factor_importacion !== null && (
+                                        <div>
+                                            <p className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+                                                Factor de Importación
+                                            </p>
+                                            <p className="font-bold tabular-nums" style={{ color: 'var(--text-main)' }}>
+                                                {resultado.factor_importacion.toFixed(6)}
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Tabla editable */}
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-xs">
+                                        <thead>
+                                            <tr className="border-b" style={{ borderColor: 'var(--border)' }}>
+                                                {['Producto', 'Cant.', 'Costo Anterior', 'Costo Nuevo', 'PVP', 'Margen PVP', 'PVD', 'Margen PVD'].map(h => (
+                                                    <th key={h}
+                                                        className="pb-2 pt-1 px-2 font-semibold uppercase text-[10px] tracking-wider text-left whitespace-nowrap"
+                                                        style={{ color: 'var(--text-muted)' }}>
+                                                        {h}
+                                                    </th>
+                                                ))}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {resultado.productos.map(p => {
+                                                const pvpActual  = parseFloat(precios[p.producto_id]?.pvp ?? String(p.pvp)) || 0
+                                                const pvdActual  = parseFloat(precios[p.producto_id]?.pvd ?? String(p.pvd)) || 0
+                                                const margenPvp  = calcularMargen(pvpActual, p.costo_nuevo)
+                                                const margenPvd  = calcularMargen(pvdActual, p.costo_nuevo)
+                                                return (
+                                                    <tr key={p.producto_id} className="border-b"
+                                                        style={{ borderColor: 'var(--border)' }}>
+                                                        <td className="py-2 px-2 max-w-40">
+                                                            <p className="font-mono font-bold" style={{ color: 'var(--primary)' }}>{p.codigo}</p>
+                                                            <p className="truncate" style={{ color: 'var(--text-main)' }}>{p.nombre}</p>
+                                                        </td>
+                                                        <td className="py-2 px-2 tabular-nums" style={{ color: 'var(--text-main)' }}>
+                                                            {p.cantidad % 1 === 0 ? p.cantidad.toFixed(0) : p.cantidad.toFixed(2)}
+                                                        </td>
+                                                        <td className="py-2 px-2 tabular-nums" style={{ color: 'var(--text-muted)' }}>
+                                                            {p.costo_anterior !== null ? `$${p.costo_anterior.toFixed(4)}` : '—'}
+                                                        </td>
+                                                        <td className="py-2 px-2 tabular-nums font-medium" style={{ color: 'var(--text-main)' }}>
+                                                            ${p.costo_nuevo.toFixed(4)}
+                                                        </td>
+                                                        <td className="py-2 px-2">
+                                                            <input type="number" step="0.01" min="0"
+                                                                className="input-field text-xs"
+                                                                style={{ width: '6.5rem' }}
+                                                                value={precios[p.producto_id]?.pvp ?? ''}
+                                                                onChange={e => actualizarPrecio(p.producto_id, 'pvp', e.target.value)} />
+                                                        </td>
+                                                        <td className="py-2 px-2 font-semibold tabular-nums"
+                                                            style={{ color: colorMargen(margenPvp) }}>
+                                                            {margenPvp !== null ? `${margenPvp.toFixed(1)}%` : '—'}
+                                                        </td>
+                                                        <td className="py-2 px-2">
+                                                            <input type="number" step="0.01" min="0"
+                                                                className="input-field text-xs"
+                                                                style={{ width: '6.5rem' }}
+                                                                value={precios[p.producto_id]?.pvd ?? ''}
+                                                                onChange={e => actualizarPrecio(p.producto_id, 'pvd', e.target.value)} />
+                                                        </td>
+                                                        <td className="py-2 px-2 font-semibold tabular-nums"
+                                                            style={{ color: colorMargen(margenPvd) }}>
+                                                            {margenPvd !== null ? `${margenPvd.toFixed(1)}%` : '—'}
+                                                        </td>
+                                                    </tr>
+                                                )
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                {puede('editar') && (
+                                    <div className="flex justify-start">
+                                        <button type="button" onClick={guardarPrecios} disabled={guardandoPrecios}
+                                            className="btn-primary flex items-center gap-2 text-sm">
+                                            {guardandoPrecios
+                                                ? <Loader2 className="w-4 h-4 animate-spin" />
+                                                : <DollarSign className="w-4 h-4" />
+                                            }
+                                            Guardar cambios de precios
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
                         )
                     )}
 
@@ -935,45 +1520,149 @@ type ModalState =
     | { type: 'detalle'; importacion: ImportacionRow; tab: TabKey }
 
 export default function ImportacionesIndex() {
-    const { importaciones, proveedores, flash } = usePage<Props>().props
+    const { importaciones, proveedores, filtros, flash } = usePage<Props>().props
+    const { puede } = usePermiso('compras')
     const [modal, setModal] = useState<ModalState>({ type: 'none' })
+
+    const [buscar,      setBuscar]      = useState(filtros.buscar       ?? '')
+    const [estado,      setEstado]      = useState(filtros.estado       ?? '')
+    const [proveedorId, setProveedorId] = useState(filtros.proveedor_id ?? '')
+    const [fechaDesde,  setFechaDesde]  = useState(filtros.fecha_desde  ?? '')
+    const [fechaHasta,  setFechaHasta]  = useState(filtros.fecha_hasta  ?? '')
+
+    // Cambiar cualquier filtro después de haber buscado marca los
+    // resultados como "obsoletos" respecto al filtro actual — la tabla NO
+    // se vacía (se sigue mostrando la última búsqueda, atenuada vía esta
+    // misma bandera) hasta que se presione Buscar de nuevo. Antes esto
+    // forzaba el estado vacío inmediatamente al cambiar cualquier filtro,
+    // generando un parpadeo datos→vacío→datos.
+    const [filtrosSucios, setFiltrosSucios] = useState(false)
+
+    // Carga bajo demanda: `importaciones` viene null hasta que el usuario
+    // presiona Buscar por primera vez. Una vez que hay resultados, se
+    // siguen mostrando aunque el usuario cambie un filtro sin volver a
+    // buscar.
+    const haBuscado = importaciones !== null
 
     useEffect(() => {
         if (flash?.success) notify.ok(flash.success)
         if (flash?.error)   notify.error(flash.error)
     }, [flash?.success, flash?.error])
 
+    function cambiarBuscar(v: string)      { setBuscar(v);      setFiltrosSucios(true) }
+    function cambiarEstado(v: string)      { setEstado(v);      setFiltrosSucios(true) }
+    function cambiarProveedorId(v: string) { setProveedorId(v); setFiltrosSucios(true) }
+    function cambiarFechaDesde(v: string)  { setFechaDesde(v);  setFiltrosSucios(true) }
+    function cambiarFechaHasta(v: string)  { setFechaHasta(v);  setFiltrosSucios(true) }
+
+    function aplicarFiltros() {
+        router.get(route('compras.importaciones.index'), {
+            estado, proveedor_id: proveedorId, fecha_desde: fechaDesde, fecha_hasta: fechaHasta, buscar,
+            buscado: '1',
+        }, {
+            preserveState: true,
+            replace: true,
+            onSuccess: () => setFiltrosSucios(false),
+        })
+    }
+
     function cerrar() { setModal({ type: 'none' }) }
+
+    function copiarImportacion(i: ImportacionRow) {
+        router.post(route('compras.importaciones.copiar', i.id), {}, {
+            preserveScroll: true,
+        })
+    }
 
     return (
         <AppLayout title="Importaciones" suppressFlash>
             <Head title="Importaciones" />
 
+            <PageHeader
+                title="Importaciones COMEX"
+                breadcrumbs={[{ label: 'Compras' }, { label: 'Importaciones' }]}
+                actions={
+                    puede('crear') ? (
+                        <button onClick={() => setModal({ type: 'crear' })}
+                            className="flex items-center gap-2 whitespace-nowrap px-4 py-2 rounded-xl font-semibold text-sm text-black transition-all hover:opacity-90"
+                            style={{ background: 'var(--primary)' }}>
+                            <Plus size={15} /> Nueva Importación
+                        </button>
+                    ) : undefined
+                }
+            />
+
             <div className="px-6 pt-6 mb-2">
-                <div className="flex items-center gap-3 mb-4">
-                    <div className="p-2 rounded-xl"
-                         style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
-                        <Package size={24} style={{ color: 'var(--primary)' }} />
+                {/*
+                    Ancho vía `style.width` inline a propósito, NO clases Tailwind: `.input-field`
+                    (app.css) declara `width:100%` fuera de cualquier @layer, y las utilidades de
+                    Tailwind v4 viven dentro de su @layer utilities interno — por reglas de CSS
+                    Cascade Layers, lo no-layereado siempre gana sobre lo layereado sin importar
+                    especificidad ni orden, así que un w-XX de Tailwind nunca puede ganarle a
+                    `.input-field`. Mismo hallazgo documentado en Asientos/Facturas de Compra/
+                    Proveedores/Cuentas por Pagar/Anticipos/Devoluciones.
+                */}
+                <div className="overflow-x-auto">
+                <div style={{ minWidth: '1050px' }}>
+                <FilterToolbar
+                    search={{
+                        value: buscar,
+                        onChange: cambiarBuscar,
+                        onSearch: aplicarFiltros,
+                        placeholder: 'Nombre, proveedor, invoice...',
+                    }}
+                    searchWidth="w-[170px]"
+                >
+                    <select value={estado} onChange={e => cambiarEstado(e.target.value)}
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '160px' }}>
+                        <option value="">Todos los estados</option>
+                        <option value="en_transito">En Tránsito</option>
+                        <option value="en_aduana">En Aduana</option>
+                        <option value="liquidada">Liquidada</option>
+                    </select>
+
+                    <select value={proveedorId} onChange={e => cambiarProveedorId(e.target.value)}
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '190px' }}>
+                        <option value="">Todos los proveedores</option>
+                        {proveedores.map(p => (
+                            <option key={p.id} value={p.id}>{p.razon_social}</option>
+                        ))}
+                    </select>
+
+                    <div className="flex flex-col gap-1 shrink-0 self-end">
+                        <label className="text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>Desde</label>
+                        <input type="date" value={fechaDesde} onChange={e => cambiarFechaDesde(e.target.value)}
+                            className="input-field text-xs"
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '150px' }} />
                     </div>
-                    <div>
-                        <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>
-                            Importaciones COMEX
-                        </h1>
-                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                            Seguimiento de importaciones internacionales y liquidación de costos
-                        </p>
+                    <div className="flex flex-col gap-1 shrink-0 self-end">
+                        <label className="text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>Hasta</label>
+                        <input type="date" value={fechaHasta} onChange={e => cambiarFechaHasta(e.target.value)}
+                            className="input-field text-xs"
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '150px' }} />
                     </div>
+                </FilterToolbar>
                 </div>
-                <div className="flex items-center justify-between gap-3 mb-6">
-                    <button onClick={() => setModal({ type: 'crear' })}
-                        className="btn-primary flex items-center gap-2 whitespace-nowrap">
-                        <Plus size={15} /> Nueva Importación
-                    </button>
                 </div>
             </div>
 
+            {/* Estado inicial: aún no se ha buscado (carga bajo demanda) */}
+            {!haBuscado && (
+                <div className="px-6 pb-8">
+                    <div className="text-center py-16">
+                        <Search className="w-12 h-12 mx-auto mb-4 opacity-30" style={{ color: 'var(--text-muted)' }} />
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                            Ajusta los filtros y presiona Buscar para consultar las importaciones.
+                        </p>
+                    </div>
+                </div>
+            )}
+
             {/* Tabla */}
-            <div className="px-6 pb-8">
+            {haBuscado && (
+            <div className={cn('px-6 pb-8 transition-opacity', filtrosSucios && 'opacity-60')}>
                 <div className="border rounded-xl overflow-hidden"
                     style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
 
@@ -994,7 +1683,7 @@ export default function ImportacionesIndex() {
                         <div className="py-20 text-center">
                             <Package className="opacity-20 mx-auto mb-3 w-10 h-10" style={{ color: 'var(--text-muted)' }} />
                             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                                No hay importaciones registradas
+                                No se encontraron importaciones con estos filtros
                             </p>
                         </div>
                     )}
@@ -1039,23 +1728,25 @@ export default function ImportacionesIndex() {
                                 <EstadoBadge estado={i.estado} />
                             </div>
                             <div className="col-span-2 flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                {/* Ver / Editar → siempre visible */}
-                                <button
-                                    onClick={() => setModal({ type: 'detalle', importacion: i, tab: 'general' })}
-                                    title={i.estado === 'liquidada' ? 'Ver detalle' : 'Editar importación'}
-                                    className={cn(
-                                        'p-1.5 rounded transition-colors',
-                                        i.estado === 'liquidada'
-                                            ? 'text-gray-500 dark:text-gray-400 hover:bg-gray-500/20'
-                                            : 'text-blue-500 dark:text-blue-400 hover:bg-blue-500/20',
-                                    )}>
-                                    {i.estado === 'liquidada'
-                                        ? <Eye className="w-3.5 h-3.5" />
-                                        : <Pencil className="w-3.5 h-3.5" />
-                                    }
-                                </button>
+                                {/* Ver / Editar → siempre visible si es solo ver; editar requiere permiso */}
+                                {(i.estado === 'liquidada' || puede('editar')) && (
+                                    <button
+                                        onClick={() => setModal({ type: 'detalle', importacion: i, tab: 'general' })}
+                                        title={i.estado === 'liquidada' ? 'Ver detalle' : 'Editar importación'}
+                                        className={cn(
+                                            'p-1.5 rounded transition-colors',
+                                            i.estado === 'liquidada'
+                                                ? 'text-gray-500 dark:text-gray-400 hover:bg-gray-500/20'
+                                                : 'text-blue-500 dark:text-blue-400 hover:bg-blue-500/20',
+                                        )}>
+                                        {i.estado === 'liquidada'
+                                            ? <Eye className="w-3.5 h-3.5" />
+                                            : <Pencil className="w-3.5 h-3.5" />
+                                        }
+                                    </button>
+                                )}
                                 {/* Liquidar → solo si no está liquidada */}
-                                {i.estado !== 'liquidada' && (
+                                {i.estado !== 'liquidada' && puede('editar') && (
                                     <button
                                         onClick={() => setModal({ type: 'detalle', importacion: i, tab: 'liquidar' })}
                                         title="Liquidar importación"
@@ -1063,11 +1754,21 @@ export default function ImportacionesIndex() {
                                         <DollarSign className="w-3.5 h-3.5" />
                                     </button>
                                 )}
+                                {/* Copiar → siempre disponible, como plantilla de una nueva */}
+                                {puede('crear') && (
+                                    <button
+                                        onClick={() => copiarImportacion(i)}
+                                        title="Copiar como plantilla de una nueva importación"
+                                        className="p-1.5 rounded transition-colors text-amber-600 dark:text-amber-400 hover:bg-amber-500/20">
+                                        <Copy className="w-3.5 h-3.5" />
+                                    </button>
+                                )}
                             </div>
                         </div>
                     ))}
                 </div>
             </div>
+            )}
 
             {modal.type === 'crear' && (
                 <CrearModal proveedores={proveedores} onClose={cerrar} />

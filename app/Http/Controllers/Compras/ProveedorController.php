@@ -8,40 +8,73 @@ use App\Models\Proveedor;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 use Inertia\Response;
 use Maatwebsite\Excel\Facades\Excel;
 
 class ProveedorController extends Controller
 {
-    public function index(): Response
+    private function queryFiltrada(Request $request)
     {
-        $empresaId   = session('empresa_activa_id');
-        $proveedores = Proveedor::where('empresa_id', $empresaId)
-            ->orderBy('razon_social')
-            ->get()
-            ->map(fn($p) => [
-                'id'               => $p->id,
-                'tipo'             => $p->tipo,
-                'tipo_identificacion' => $p->tipo_identificacion,
-                'identificacion'   => $p->identificacion,
-                'razon_social'     => $p->razon_social,
-                'nombre_comercial' => $p->nombre_comercial,
-                'email'            => $p->email,
-                'telefono'         => $p->telefono,
-                'direccion'        => $p->direccion,
-                'ciudad'           => $p->ciudad,
-                'pais'             => $p->pais,
-                'divisa'           => $p->divisa,
-                'tiene_credito'    => $p->tiene_credito,
-                'dias_credito'     => $p->dias_credito,
-                'estado'           => $p->estado,
-                'saldo_pendiente'  => $p->saldo_pendiente,
-            ]);
+        $empresaId = session('empresa_activa_id');
+        $query = Proveedor::where('empresa_id', $empresaId);
+
+        if ($request->filled('tipo')) {
+            $query->where('tipo', $request->tipo);
+        }
+        if ($request->filled('estado')) {
+            $query->where('estado', $request->estado === 'activo');
+        }
+        if ($request->filled('credito')) {
+            $query->where('tiene_credito', $request->credito === 'con');
+        }
+        if ($request->filled('buscar')) {
+            $q = $request->buscar;
+            $query->where(fn($qb) =>
+                $qb->where('razon_social', 'ilike', "%{$q}%")
+                   ->orWhere('identificacion', 'ilike', "%{$q}%")
+                   ->orWhere('nombre_comercial', 'ilike', "%{$q}%")
+                   ->orWhere('email', 'ilike', "%{$q}%")
+            );
+        }
+
+        return $query;
+    }
+
+    public function index(Request $request): Response
+    {
+        // Carga bajo demanda: mismo patrón que Asientos/Plan de Cuentas/
+        // Facturas de Compra — la query solo se ejecuta cuando el usuario
+        // dispara una búsqueda explícita (botón lupa del FilterToolbar).
+        $proveedores = null;
+
+        if ($request->boolean('buscado')) {
+            $proveedores = $this->queryFiltrada($request)
+                ->orderBy('razon_social')
+                ->get()
+                ->map(fn($p) => [
+                    'id'               => $p->id,
+                    'tipo'             => $p->tipo,
+                    'tipo_identificacion' => $p->tipo_identificacion,
+                    'identificacion'   => $p->identificacion,
+                    'razon_social'     => $p->razon_social,
+                    'nombre_comercial' => $p->nombre_comercial,
+                    'email'            => $p->email,
+                    'telefono'         => $p->telefono,
+                    'direccion'        => $p->direccion,
+                    'ciudad'           => $p->ciudad,
+                    'pais'             => $p->pais,
+                    'divisa'           => $p->divisa,
+                    'tiene_credito'    => $p->tiene_credito,
+                    'dias_credito'     => $p->dias_credito,
+                    'estado'           => $p->estado,
+                    'saldo_pendiente'  => $p->saldo_pendiente,
+                ]);
+        }
 
         return Inertia::render('Compras/Proveedores/Index', [
             'proveedores' => $proveedores,
+            'filtros'     => $request->only(['buscar', 'tipo', 'estado', 'credito']),
         ]);
     }
 
@@ -123,21 +156,28 @@ class ProveedorController extends Controller
         return back()->with('success', "Proveedor {$accion} correctamente.");
     }
 
-    public function pdf(): \Illuminate\Http\Response
+    public function pdf(Request $request): \Illuminate\Http\Response
     {
-        $empresaId   = session('empresa_activa_id');
-        $proveedores = Proveedor::where('empresa_id', $empresaId)->orderBy('razon_social')->get();
+        ini_set('memory_limit', '2560M');
+
+        $empresaId = session('empresa_activa_id');
+
+        $proveedores = $this->queryFiltrada($request)->orderBy('razon_social')->get();
         $empresa     = Empresa::find($empresaId);
         $pdf = Pdf::loadView('pdf.proveedores', compact('proveedores', 'empresa'))
             ->setPaper('a4', 'landscape');
         return $pdf->stream('proveedores-' . now()->format('Y-m-d') . '.pdf');
     }
 
-    public function excel(): \Symfony\Component\HttpFoundation\BinaryFileResponse
+    public function excel(Request $request): \Symfony\Component\HttpFoundation\BinaryFileResponse
     {
+        ini_set('memory_limit', '2560M');
+
         $empresaId = session('empresa_activa_id');
+        $filtros   = $request->only(['tipo', 'estado', 'credito', 'buscar']);
+
         return Excel::download(
-            new ProveedoresExport((int) $empresaId),
+            new ProveedoresExport((int) $empresaId, $filtros),
             'proveedores-' . now()->format('Y-m-d') . '.xlsx',
             \Maatwebsite\Excel\Excel::XLSX
         );

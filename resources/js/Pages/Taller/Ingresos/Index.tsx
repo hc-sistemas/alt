@@ -8,6 +8,7 @@ import { Badge } from '@/Components/ui/badge'
 import PdfPreviewModal from '@/Components/shared/PdfPreviewModal'
 import { formatFecha } from '@/lib/utils'
 import { Plus, Search, Eye, FileText, Wrench } from 'lucide-react'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { PageProps, PaginatedData, TallerIngreso } from '@/types'
 
 interface Props extends PageProps {
@@ -25,6 +26,7 @@ const ESTADO_CONFIG: Record<number, { label: string; variant: 'info' | 'warning'
 
 export default function IngresosIndex() {
     const { ingresos, filtros } = usePage<Props>().props
+    const { puede } = usePermiso('taller')
     const [search, setSearch] = useState(filtros.search ?? '')
     const [estado, setEstado] = useState(filtros.estado ?? '')
     const [pdfIngresoId, setPdfIngresoId] = useState<number | null>(null)
@@ -50,18 +52,21 @@ export default function IngresosIndex() {
                 title="Ingresos al Taller"
                 description="Registro de equipos ingresados para reparación"
                 breadcrumbs={[{ label: 'Taller' }, { label: 'Ingresos' }]}
+                actions={
+                    puede('crear') ? (
+                        <Link href={route('taller.ingresos.create')}>
+                            <Button>
+                                <Plus className="w-4 h-4" />
+                                Nuevo
+                            </Button>
+                        </Link>
+                    ) : undefined
+                }
             />
 
             <div className="p-6">
                 {/* Barra de filtros */}
                 <div className="flex items-center gap-3 mb-4 flex-wrap">
-                    <Link href={route('taller.ingresos.create')}>
-                        <Button>
-                            <Plus className="w-4 h-4" />
-                            Nuevo Ingreso
-                        </Button>
-                    </Link>
-
                     <div className="relative">
                         <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
                         <Input

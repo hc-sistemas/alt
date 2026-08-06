@@ -2,16 +2,26 @@ import { useState, useEffect, useMemo } from 'react'
 import { router, usePage, Head } from '@inertiajs/react'
 import { toast, ToastContainer } from 'react-toastify'
 import AppLayout from '@/Layouts/AppLayout'
+import PageHeader from '@/Components/shared/PageHeader'
+import FilterToolbar from '@/Components/shared/FilterToolbar'
 import {
-    RotateCcw, Plus, Search, X, CheckCircle, XCircle, Clock, PackageX,
+    RotateCcw, Plus, X, CheckCircle, XCircle, Clock, PackageX, Search,
 } from 'lucide-react'
 import type { PageProps } from '@/types'
+import { usePermiso } from '@/Hooks/usePermiso'
+import { cn } from '@/lib/utils'
 import 'react-toastify/dist/ReactToastify.css'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface Proveedor { id: number; razon_social: string }
-interface CompraRef  { id: number; num_documento: string; proveedor_id: number }
+interface CompraRef  {
+    id: number
+    num_documento: string
+    proveedor_id: number
+    total: number
+    saldo_cxp: number | null
+}
 
 interface Devolucion {
     id: number
@@ -49,10 +59,11 @@ interface Filtros {
     proveedor_id?: string
     fecha_desde?: string
     fecha_hasta?: string
+    buscar?: string
 }
 
 interface Props extends PageProps {
-    devoluciones: Devolucion[]
+    devoluciones: Devolucion[] | null
     proveedores:  Proveedor[]
     compras:      CompraRef[]
     filtros:      Filtros
@@ -164,11 +175,11 @@ function NuevaDevolucionModal({ proveedores, compras, onClose }: {
 
     function submit(e: React.FormEvent) {
         e.preventDefault()
-        if (!proveedorId || !motivo.trim()) return
+        if (!proveedorId || !compraId || !motivo.trim()) return
         setProcessing(true)
         router.post(route('compras.devoluciones.store'), {
             proveedor_id:   proveedorId,
-            compra_id:      compraId || null,
+            compra_id:      compraId,
             num_documento:  numDoc || null,
             fecha,
             motivo,
@@ -180,8 +191,21 @@ function NuevaDevolucionModal({ proveedores, compras, onClose }: {
                 precio_unitario: Number(d.precio_unitario),
             })),
         }, {
-            onSuccess: () => onClose(),
-            onError:   () => { notify.error('Error al guardar la devolución'); setProcessing(false) },
+            // El candado (b/c/d) rechaza con back()->with('error', ...), que
+            // Inertia trata como redirect exitoso (onSuccess), no como error
+            // de validación (onError) — mismo patrón que
+            // Compras/Index.tsx::enviarActualizacion() para el candado
+            // CxP-02: hay que revisar flash.error dentro de onSuccess.
+            onSuccess: (page) => {
+                const flash = (page.props as { flash?: { error?: string } }).flash
+                if (flash?.error) {
+                    notify.error(flash.error)
+                } else {
+                    notify.ok('Devolución registrada correctamente')
+                }
+                onClose()
+            },
+            onError:   (errs) => { notify.error(Object.values(errs).flat().join(' | ') || 'Error al guardar la devolución'); setProcessing(false) },
             onFinish:  () => setProcessing(false),
         })
     }
@@ -210,14 +234,30 @@ function NuevaDevolucionModal({ proveedores, compras, onClose }: {
                                 </select>
                             </div>
                             <div className="space-y-1.5">
-                                <label className="input-label">Compra de origen (opcional)</label>
+                                <label className="input-label">Compra de origen <span className="text-red-400">*</span></label>
                                 <select value={compraId} onChange={e => setCompraId(e.target.value)}
-                                    className="input-field select-field">
-                                    <option value="">— Sin compra vinculada —</option>
-                                    {comprasDelProveedor.map(c => (
-                                        <option key={c.id} value={c.id}>{c.num_documento}</option>
-                                    ))}
+                                    className="input-field select-field" required>
+                                    <option value="">— Seleccionar compra —</option>
+                                    {comprasDelProveedor.map(c => {
+                                        const pagadaCompleto = c.saldo_cxp !== null && c.saldo_cxp <= 0.0001
+                                        return (
+                                            <option key={c.id} value={c.id} disabled={pagadaCompleto}
+                                                title={pagadaCompleto
+                                                    ? 'Esta factura ya está pagada al 100% — anule el pago en Bancos antes de poder devolver contra ella'
+                                                    : undefined}>
+                                                {c.num_documento}{pagadaCompleto ? ' — Pagada al 100% (no disponible)' : ''}
+                                            </option>
+                                        )
+                                    })}
                                 </select>
+                                {compraId && (() => {
+                                    const c = comprasDelProveedor.find(x => String(x.id) === compraId)
+                                    return c && c.saldo_cxp !== null ? (
+                                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                            Saldo pendiente de esta factura: <strong>${c.saldo_cxp.toFixed(2)}</strong>
+                                        </p>
+                                    ) : null
+                                })()}
                             </div>
                         </div>
 
@@ -234,7 +274,7 @@ function NuevaDevolucionModal({ proveedores, compras, onClose }: {
                                     </span>
                                     <button type="button" onClick={usarDetallesCompra}
                                         className="text-xs px-2 py-1 rounded-lg font-medium"
-                                        style={{ background: 'var(--primary)', color: '#fff' }}>
+                                        style={{ background: 'var(--primary)', color: '#000' }}>
                                         Usar seleccionados ↓
                                     </button>
                                 </div>
@@ -353,9 +393,9 @@ function NuevaDevolucionModal({ proveedores, compras, onClose }: {
                     </div>
 
                     <div className="modal-footer" style={{ justifyContent: 'space-between' }}>
-                        <button type="submit" disabled={processing || !proveedorId || !motivo.trim()}
+                        <button type="submit" disabled={processing || !proveedorId || !compraId || !motivo.trim()}
                             className="btn-primary flex items-center gap-2"
-                            style={{ opacity: (!proveedorId || !motivo.trim() || processing) ? 0.6 : 1 }}>
+                            style={{ opacity: (!proveedorId || !compraId || !motivo.trim() || processing) ? 0.6 : 1 }}>
                             <RotateCcw size={15} />
                             {processing ? 'Guardando...' : 'Registrar Devolución'}
                         </button>
@@ -371,23 +411,49 @@ function NuevaDevolucionModal({ proveedores, compras, onClose }: {
 
 export default function DevolucionesIndex() {
     const { devoluciones, proveedores, compras, filtros, flash } = usePage<Props>().props
+    const { puede } = usePermiso('compras')
 
     const [showModal, setShowModal] = useState(false)
-    const [buscar, setBuscar]         = useState('')
+    const [buscar, setBuscar]         = useState(filtros.buscar ?? '')
     const [estado, setEstado]         = useState(filtros.estado ?? '')
     const [proveedorId, setProveedorId] = useState(filtros.proveedor_id ?? '')
     const [fechaDesde, setFechaDesde] = useState(filtros.fecha_desde ?? '')
     const [fechaHasta, setFechaHasta] = useState(filtros.fecha_hasta ?? '')
+
+    // Cambiar cualquier filtro después de haber buscado marca los
+    // resultados como "obsoletos" respecto al filtro actual — la tabla NO
+    // se vacía (se sigue mostrando la última búsqueda, atenuada vía esta
+    // misma bandera) hasta que se presione Buscar de nuevo. Antes esto
+    // forzaba el estado vacío inmediatamente al cambiar cualquier filtro,
+    // generando un parpadeo datos→vacío→datos.
+    const [filtrosSucios, setFiltrosSucios] = useState(false)
+
+    // Carga bajo demanda: `devoluciones` viene null hasta que el usuario
+    // presiona Buscar por primera vez. Una vez que hay resultados, se
+    // siguen mostrando aunque el usuario cambie un filtro sin volver a
+    // buscar.
+    const haBuscado = devoluciones !== null
 
     useEffect(() => {
         if (flash?.success) notify.ok(flash.success)
         if (flash?.error)   notify.error(flash.error)
     }, [flash])
 
+    function cambiarBuscar(v: string)      { setBuscar(v);      setFiltrosSucios(true) }
+    function cambiarEstado(v: string)      { setEstado(v);      setFiltrosSucios(true) }
+    function cambiarProveedorId(v: string) { setProveedorId(v); setFiltrosSucios(true) }
+    function cambiarFechaDesde(v: string)  { setFechaDesde(v);  setFiltrosSucios(true) }
+    function cambiarFechaHasta(v: string)  { setFechaHasta(v);  setFiltrosSucios(true) }
+
     function aplicarFiltros() {
         router.get(route('compras.devoluciones.index'), {
-            estado, proveedor_id: proveedorId, fecha_desde: fechaDesde, fecha_hasta: fechaHasta,
-        }, { preserveState: true, replace: true })
+            estado, proveedor_id: proveedorId, fecha_desde: fechaDesde, fecha_hasta: fechaHasta, buscar,
+            buscado: '1',
+        }, {
+            preserveState: true,
+            replace: true,
+            onSuccess: () => setFiltrosSucios(false),
+        })
     }
 
     function limpiar() {
@@ -395,17 +461,7 @@ export default function DevolucionesIndex() {
         router.get(route('compras.devoluciones.index'), {}, { preserveState: false })
     }
 
-    const filtradas = useMemo(() => {
-        if (!buscar.trim()) return devoluciones
-        const q = buscar.toLowerCase()
-        return devoluciones.filter(d =>
-            d.proveedor?.toLowerCase().includes(q) ||
-            d.num_documento?.toLowerCase().includes(q) ||
-            d.motivo?.toLowerCase().includes(q)
-        )
-    }, [devoluciones, buscar])
-
-    const hayFiltros = !!(estado || proveedorId || fechaDesde || fechaHasta)
+    const hayFiltros = !!(estado || proveedorId || fechaDesde || fechaHasta || buscar)
 
     function confirmarAnular(dev: Devolucion) {
         const motivo = window.prompt('Motivo de la anulación (mínimo 5 caracteres):')
@@ -420,69 +476,101 @@ export default function DevolucionesIndex() {
         <AppLayout title="Devoluciones de Compra" suppressFlash>
             <Head title="Devoluciones de Compra" />
 
-            <div className="p-4 md:p-6 space-y-5" style={{ background: 'var(--bg-main)', minHeight: '100vh' }}>
-
-                {/* Header */}
-                <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-xl"
-                        style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
-                        <RotateCcw size={24} style={{ color: 'var(--primary)' }} />
-                    </div>
-                    <div>
-                        <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>
-                            Devoluciones de Compra
-                        </h1>
-                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                            {filtradas.length} devolución(es)
-                        </p>
-                    </div>
-                </div>
-
-                {/* Toolbar */}
-                <div className="flex items-center justify-between gap-3 flex-wrap">
-                    <div className="flex flex-wrap items-center gap-2">
+            <PageHeader
+                title="Devoluciones de Compra"
+                breadcrumbs={[{ label: 'Compras' }, { label: 'Devoluciones' }]}
+                actions={
+                    puede('crear') ? (
                         <button onClick={() => setShowModal(true)}
-                            className="btn-primary flex items-center gap-2 whitespace-nowrap">
+                            className="flex items-center gap-2 whitespace-nowrap shrink-0 px-4 py-2 rounded-xl font-semibold text-sm text-black transition-all hover:opacity-90"
+                            style={{ background: 'var(--primary)' }}>
                             <Plus size={15} /> Nueva Devolución
                         </button>
+                    ) : undefined
+                }
+            />
 
-                        <div className="relative">
-                            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none"
-                                style={{ color: 'var(--text-muted)' }} />
-                            <input type="text" placeholder="Buscar proveedor, N°doc..."
-                                value={buscar} onChange={e => setBuscar(e.target.value)}
-                                className="input-field" style={{ paddingLeft: '2rem', width: '200px' }} />
-                        </div>
+            <div className="p-4 md:p-6 space-y-5" style={{ background: 'var(--bg-main)', minHeight: '100vh' }}>
 
-                        <select value={estado} onChange={e => setEstado(e.target.value)}
-                            className="input-field select-field" style={{ width: 'auto' }}>
-                            <option value="">Todos los estados</option>
-                            <option value="pendiente">Pendiente</option>
-                            <option value="procesada">Procesada</option>
-                            <option value="anulada">Anulada</option>
-                        </select>
+                {/*
+                    Ancho vía `style.width` inline a propósito, NO clases Tailwind: `.input-field`
+                    (app.css) declara `width:100%` fuera de cualquier @layer, y las utilidades de
+                    Tailwind v4 viven dentro de su @layer utilities interno — por reglas de CSS
+                    Cascade Layers, lo no-layereado siempre gana sobre lo layereado sin importar
+                    especificidad ni orden, así que un w-XX de Tailwind nunca puede ganarle a
+                    `.input-field`. Mismo hallazgo documentado en Asientos/Facturas de Compra/
+                    Proveedores/Cuentas por Pagar/Anticipos Proveedores.
+                */}
+                <div className="overflow-x-auto">
+                <div style={{ minWidth: '1100px' }}>
+                <FilterToolbar
+                    search={{
+                        value: buscar,
+                        onChange: cambiarBuscar,
+                        onSearch: aplicarFiltros,
+                        placeholder: 'Proveedor, N° doc...',
+                    }}
+                    searchWidth="w-[150px]"
+                >
+                    <select value={estado} onChange={e => cambiarEstado(e.target.value)}
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '160px' }}>
+                        <option value="">Todos los estados</option>
+                        <option value="pendiente">Pendiente</option>
+                        <option value="procesada">Procesada</option>
+                        <option value="anulada">Anulada</option>
+                    </select>
 
-                        <select value={proveedorId} onChange={e => setProveedorId(e.target.value)}
-                            className="input-field select-field" style={{ width: 'auto' }}>
-                            <option value="">Todos los proveedores</option>
-                            {proveedores.map(p => <option key={p.id} value={p.id}>{p.razon_social}</option>)}
-                        </select>
+                    <select value={proveedorId} onChange={e => cambiarProveedorId(e.target.value)}
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '190px' }}>
+                        <option value="">Todos los proveedores</option>
+                        {proveedores.map(p => <option key={p.id} value={p.id}>{p.razon_social}</option>)}
+                    </select>
 
-                        <input type="date" value={fechaDesde} onChange={e => setFechaDesde(e.target.value)}
-                            className="input-field" style={{ width: 'auto' }} />
-                        <input type="date" value={fechaHasta} onChange={e => setFechaHasta(e.target.value)}
-                            className="input-field" style={{ width: 'auto' }} />
-
-                        <button onClick={aplicarFiltros} className="btn-secondary whitespace-nowrap">Filtrar</button>
-                        {hayFiltros && (
-                            <button onClick={limpiar} className="btn-secondary flex items-center gap-1 whitespace-nowrap">
-                                <X size={13} /> Limpiar
-                            </button>
-                        )}
+                    {/* Labels "Desde"/"Hasta" apilados sobre el input: el bloque
+                        queda más alto que los selects de al lado (sin label), así
+                        que se alinean al final de la fila (self-end) en vez de al
+                        centro por defecto del FilterToolbar (items-center) — evita
+                        que el input de fecha quede descolgado respecto al resto. */}
+                    <div className="flex flex-col gap-1 shrink-0 self-end">
+                        <label className="text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>Desde</label>
+                        <input type="date" value={fechaDesde} onChange={e => cambiarFechaDesde(e.target.value)}
+                            className="input-field text-xs"
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '150px' }} />
                     </div>
+                    <div className="flex flex-col gap-1 shrink-0 self-end">
+                        <label className="text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>Hasta</label>
+                        <input type="date" value={fechaHasta} onChange={e => cambiarFechaHasta(e.target.value)}
+                            className="input-field text-xs"
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '150px' }} />
+                    </div>
+
+                    {hayFiltros && (
+                        <button type="button" onClick={limpiar} className="text-sm underline shrink-0 self-end" style={{ color: 'var(--text-muted)' }}>
+                            Limpiar
+                        </button>
+                    )}
+                </FilterToolbar>
+                </div>
                 </div>
 
+                {/* Estado inicial: aún no se ha buscado (carga bajo demanda) */}
+                {!haBuscado && (
+                    <div className="text-center py-16">
+                        <Search className="w-12 h-12 mx-auto mb-4 opacity-30" style={{ color: 'var(--text-muted)' }} />
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                            Ajusta los filtros y presiona Buscar para consultar las devoluciones.
+                        </p>
+                    </div>
+                )}
+
                 {/* Tabla */}
+                {haBuscado && (
+                <div className={cn('transition-opacity', filtrosSucios && 'opacity-60')}>
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                    {devoluciones.length} devolución(es) encontrada(s)
+                </p>
                 <div className="rounded-2xl border overflow-hidden"
                     style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
                     <div className="grid gap-2 px-4 py-3 border-b text-[11px] font-semibold uppercase tracking-wider"
@@ -502,14 +590,14 @@ export default function DevolucionesIndex() {
                         <span>Acc.</span>
                     </div>
 
-                    {filtradas.length === 0 ? (
+                    {devoluciones.length === 0 ? (
                         <div className="py-16 text-center">
                             <RotateCcw className="w-10 h-10 mx-auto mb-3 opacity-20" style={{ color: 'var(--text-muted)' }} />
                             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                                No hay devoluciones registradas
+                                No se encontraron devoluciones con estos filtros
                             </p>
                         </div>
-                    ) : filtradas.map((dev, i) => (
+                    ) : devoluciones.map((dev, i) => (
                         <div key={dev.id}
                             className="grid gap-2 px-4 py-3 border-b items-center text-sm"
                             style={{
@@ -541,7 +629,7 @@ export default function DevolucionesIndex() {
                             </p>
                             <EstadoBadge estado={dev.estado} />
                             <div>
-                                {dev.estado !== 'anulada' && (
+                                {dev.estado !== 'anulada' && puede('anular') && (
                                     <button onClick={() => confirmarAnular(dev)}
                                         title="Anular devolución"
                                         className="p-1.5 rounded-lg transition-colors hover:bg-red-100 dark:hover:bg-red-900/30">
@@ -552,6 +640,8 @@ export default function DevolucionesIndex() {
                         </div>
                     ))}
                 </div>
+                </div>
+                )}
             </div>
 
             {showModal && (

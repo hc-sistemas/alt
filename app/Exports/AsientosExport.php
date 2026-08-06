@@ -14,6 +14,7 @@ use Maatwebsite\Excel\Events\AfterSheet;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
+use PhpOffice\PhpSpreadsheet\Style\Style;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 // ── Hoja 1: Resumen ────────────────────────────────────────────
@@ -198,12 +199,25 @@ class AsientosDetalleSheet implements
         private array $filtros = []
     ) {}
 
-    public function collection()
-    {
-        $query = AsientoContable::with(['detalles.cuenta'])
-            ->where('empresa_id', $this->empresaId)
-            ->where('estado', 1);
+    /** Límite de líneas de detalle para exportar de forma síncrona en un solo
+     *  request — calibrado empíricamente (~3.27ms por línea end-to-end,
+     *  incluyendo la escritura real del .xlsx): 3,000 líneas se generan en
+     *  ~10s. Por encima de eso, ExportacionController debe rechazar el
+     *  request antes de intentar generarlo. */
+    public const MAX_FILAS_DETALLE = 3000;
 
+    private function queryAsientos()
+    {
+        $query = AsientoContable::where('empresa_id', $this->empresaId);
+
+        if (!empty($this->filtros['estado'])) {
+            $query->where('estado', $this->filtros['estado'] === 'activo' ? 1 : 0);
+        } else {
+            $query->where('estado', 1);
+        }
+        if (!empty($this->filtros['tipo'])) {
+            $query->where('es_automatico', $this->filtros['tipo'] === 'automatico');
+        }
         if (!empty($this->filtros['ejercicio_id'])) {
             $query->where('ejercicio_id', $this->filtros['ejercicio_id']);
         }
@@ -214,20 +228,36 @@ class AsientosDetalleSheet implements
             $query->where('fecha', '<=', $this->filtros['fecha_hasta']);
         }
 
+        return $query;
+    }
+
+    /** Cuenta las líneas de detalle que generarían los filtros actuales, sin
+     *  cargar los modelos — para que el controller pueda rechazar filtros
+     *  demasiado amplios ANTES de intentar construir el archivo. */
+    public function contarDetalles(): int
+    {
+        return \App\Models\AsientoDetalle::whereIn(
+            'asiento_id', $this->queryAsientos()->select('id')
+        )->count();
+    }
+
+    public function collection()
+    {
         $rows = collect();
-        $query->orderByDesc('fecha')->each(function ($asiento) use (&$rows) {
-            foreach ($asiento->detalles as $d) {
-                $rows->push([
-                    $asiento->numero,
-                    $asiento->fecha?->format('d/m/Y') ?? '',
-                    $d->cuenta?->codigo ?? '—',
-                    $d->cuenta?->nombre ?? '—',
-                    $d->descripcion ?? '',
-                    (float)$d->debe,
-                    (float)$d->haber,
-                ]);
-            }
-        });
+        $this->queryAsientos()->with(['detalles.cuenta'])
+            ->orderByDesc('fecha')->each(function ($asiento) use (&$rows) {
+                foreach ($asiento->detalles as $d) {
+                    $rows->push([
+                        $asiento->numero,
+                        $asiento->fecha?->format('d/m/Y') ?? '',
+                        $d->cuenta?->codigo ?? '—',
+                        $d->cuenta?->nombre ?? '—',
+                        $d->descripcion ?? '',
+                        (float)$d->debe,
+                        (float)$d->haber,
+                    ]);
+                }
+            });
 
         $this->totalRows = $rows->count();
         return $rows;
@@ -283,49 +313,70 @@ class AsientosDetalleSheet implements
                 $sheet->getStyle('A3:G3')->applyFromArray($this->estiloHeaderAcad());
                 $sheet->getRowDimension(3)->setRowHeight(20);
 
-                // Filas agrupadas por asiento
-                $asientoActual = '';
-                for ($row = 4; $row <= $lastRow; $row++) {
-                    $numero        = $sheet->getCell("A{$row}")->getValue();
-                    $esNuevo       = $numero !== $asientoActual;
-                    $asientoActual = $numero;
+                if ($this->totalRows > 0) {
+                    // Con miles de líneas de detalle, aplicar un estilo nuevo por CELDA
+                    // (como hacía antes este método) es lo que colgaba el export: cada
+                    // llamada a applyFromArray() reconstruye y registra un estilo desde
+                    // cero. Aquí se construye cada estilo posible UNA sola vez y se
+                    // reutiliza el mismo objeto vía duplicateStyle(), que internamente
+                    // solo busca el estilo ya registrado (por hash) y asigna su índice a
+                    // cada celda — muchísimo más barato por llamada.
+                    $sheet->getDefaultRowDimension()->setRowHeight(15);
 
-                    $bg = $esNuevo ? 'EEF1F5' : (($row % 2 === 0) ? self::H_PAR : self::H_IMP);
-                    $sheet->getStyle("A{$row}:G{$row}")->getFill()
-                        ->setFillType(Fill::FILL_SOLID)
-                        ->getStartColor()->setRGB($bg);
-
-                    // N° Asiento — acento azul
-                    $sheet->getStyle("A{$row}")->applyFromArray([
-                        'font' => ['bold' => true, 'color' => ['rgb' => self::H_ACENTO]],
+                    $estiloFillNuevo = (new Style())->applyFromArray([
+                        'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'EEF1F5']],
+                    ]);
+                    $estiloFillPar = (new Style())->applyFromArray([
+                        'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => self::H_PAR]],
+                    ]);
+                    $estiloFillImpar = (new Style())->applyFromArray([
+                        'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => self::H_IMP]],
+                    ]);
+                    $estiloValor = (new Style())->applyFromArray([
+                        'font'         => ['color' => ['rgb' => self::H_TEXTO]],
+                        'alignment'    => ['horizontal' => Alignment::HORIZONTAL_RIGHT],
+                        'numberFormat' => ['formatCode' => '#,##0.00'],
+                    ]);
+                    $estiloCero = (new Style())->applyFromArray([
+                        'font'         => ['color' => ['rgb' => 'AAAAAA']],
+                        'alignment'    => ['horizontal' => Alignment::HORIZONTAL_RIGHT],
+                        'numberFormat' => ['formatCode' => '"-"'],
                     ]);
 
-                    // Código cuenta — texto principal bold
-                    $sheet->getStyle("C{$row}")->applyFromArray([
+                    $asientoActual = '';
+                    for ($row = 4; $row <= $lastRow; $row++) {
+                        $numero        = $sheet->getCell("A{$row}")->getValue();
+                        $esNuevo       = $numero !== $asientoActual;
+                        $asientoActual = $numero;
+
+                        $estiloFill = $esNuevo
+                            ? $estiloFillNuevo
+                            : (($row % 2 === 0) ? $estiloFillPar : $estiloFillImpar);
+                        $sheet->duplicateStyle($estiloFill, "A{$row}:G{$row}");
+
+                        $debe = (float) $sheet->getCell("F{$row}")->getValue();
+                        $sheet->duplicateStyle($debe > 0 ? $estiloValor : $estiloCero, "F{$row}");
+
+                        $haber = (float) $sheet->getCell("G{$row}")->getValue();
+                        $sheet->duplicateStyle($haber > 0 ? $estiloValor : $estiloCero, "G{$row}");
+                    }
+
+                    // Columnas A y C: mismo estilo para todas las filas de datos — un
+                    // solo llamado para todo el rango en vez de uno por fila.
+                    $sheet->getStyle("A4:A{$lastRow}")->applyFromArray([
+                        'font' => ['bold' => true, 'color' => ['rgb' => self::H_ACENTO]],
+                    ]);
+                    $sheet->getStyle("C4:C{$lastRow}")->applyFromArray([
                         'font' => ['bold' => true, 'color' => ['rgb' => self::H_TEXTO]],
                     ]);
 
-                    // Debe — oscuro o gris si cero
-                    $debe = (float) $sheet->getCell("F{$row}")->getValue();
-                    $sheet->getStyle("F{$row}")->applyFromArray([
-                        'font'         => ['color' => ['rgb' => $debe > 0 ? self::H_TEXTO : 'AAAAAA']],
-                        'alignment'    => ['horizontal' => Alignment::HORIZONTAL_RIGHT],
-                        'numberFormat' => ['formatCode' => $debe > 0 ? '#,##0.00' : '"-"'],
+                    // Bordes horizontales entre filas — un solo llamado para todo el
+                    // rango (antes era un llamado de borde por fila).
+                    $sheet->getStyle("A4:G{$lastRow}")->applyFromArray([
+                        'borders' => [
+                            'horizontal' => ['borderStyle' => Border::BORDER_HAIR, 'color' => ['rgb' => self::H_BORDE]],
+                        ],
                     ]);
-
-                    // Haber — oscuro o gris si cero
-                    $haber = (float) $sheet->getCell("G{$row}")->getValue();
-                    $sheet->getStyle("G{$row}")->applyFromArray([
-                        'font'         => ['color' => ['rgb' => $haber > 0 ? self::H_TEXTO : 'AAAAAA']],
-                        'alignment'    => ['horizontal' => Alignment::HORIZONTAL_RIGHT],
-                        'numberFormat' => ['formatCode' => $haber > 0 ? '#,##0.00' : '"-"'],
-                    ]);
-
-                    $sheet->getStyle("A{$row}:G{$row}")->getBorders()
-                        ->getBottom()->setBorderStyle(Border::BORDER_HAIR)
-                        ->getColor()->setRGB(self::H_BORDE);
-
-                    $sheet->getRowDimension($row)->setRowHeight(15);
                 }
 
                 // Borde exterior

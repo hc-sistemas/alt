@@ -1,12 +1,15 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { router, usePage, useForm, Head } from '@inertiajs/react'
 import { toast, ToastContainer } from 'react-toastify'
 import AppLayout from '@/Layouts/AppLayout'
+import PageHeader from '@/Components/shared/PageHeader'
+import FilterToolbar from '@/Components/shared/FilterToolbar'
 import { cn } from '@/lib/utils'
 import {
     Plus, X, CheckCircle, XCircle,
-    CreditCard
+    CreditCard, Search
 } from 'lucide-react'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { BancoCaja, PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
 
@@ -29,7 +32,7 @@ interface Cheque {
 }
 
 interface Props extends PageProps {
-    cheques: Cheque[]
+    cheques: Cheque[] | null
     bancos: Pick<BancoCaja, 'id' | 'nombre' | 'num_cuenta'>[]
     filtros: { estado?: string; banco_caja_id?: string; buscar?: string }
 }
@@ -305,6 +308,7 @@ function CambioEstadoModal({ cheque, estadoNuevo, onClose }: {
                         className="btn-primary flex items-center gap-2"
                         style={{
                             background: estadoNuevo === 'cobrado' ? '#059669' : '#dc2626',
+                            color: '#fff',
                             boxShadow: 'none',
                         }}>
                         {estadoNuevo === 'cobrado'
@@ -323,12 +327,21 @@ function CambioEstadoModal({ cheque, estadoNuevo, onClose }: {
 
 export default function ChequesIndex() {
     const { cheques, bancos, filtros, flash } = usePage<Props>().props
+    const { puede } = usePermiso('bancos')
 
     const [showModal, setShowModal] = useState(false)
     const [estadoModal, setEstadoModal] = useState<{ cheque: Cheque; estado: 'cobrado' | 'protestado' } | null>(null)
-    const [buscar, setBuscar] = useState(filtros.buscar ?? '')
-    const [estado, setEstado] = useState(filtros.estado ?? '')
-    const [bancoId, setBancoId] = useState(filtros.banco_caja_id ?? '')
+
+    const [filtro, setFiltro] = useState(filtros)
+
+    // Cambiar cualquier filtro después de haber buscado no vacía la tabla —
+    // solo la atenúa (opacity-60) hasta que se presione Buscar de nuevo.
+    // Mismo patrón ya usado en Movimientos Bancarios/Anticipos/Devoluciones/
+    // Importaciones/Cajas/Datafast/Conciliaciones.
+    const [filtrosSucios, setFiltrosSucios] = useState(false)
+
+    // Carga bajo demanda: `cheques` viene null hasta la primera búsqueda.
+    const haBuscado = cheques !== null
 
     useEffect(() => {
         if (flash?.success) notify.success(flash.success)
@@ -336,20 +349,18 @@ export default function ChequesIndex() {
         if (flash?.error)   notify.error(flash.error as string)
     }, [flash])
 
-    const filtrados = useMemo(() => {
-        let list = [...cheques]
-        if (buscar.trim()) {
-            const q = buscar.toLowerCase()
-            list = list.filter(c =>
-                c.numero.toLowerCase().includes(q) ||
-                c.beneficiario.toLowerCase().includes(q) ||
-                (c.banco_nombre ?? '').toLowerCase().includes(q)
-            )
-        }
-        if (estado) list = list.filter(c => c.estado === estado)
-        if (bancoId) list = list.filter(c => String(c.banco_caja_id) === bancoId)
-        return list
-    }, [cheques, buscar, estado, bancoId])
+    function cambiarFiltro<K extends keyof typeof filtro>(campo: K, valor: string) {
+        setFiltro(f => ({ ...f, [campo]: valor }))
+        setFiltrosSucios(true)
+    }
+
+    function buscar() {
+        router.get(route('bancos.cheques.index'), { ...filtro, buscado: '1' } as any, {
+            preserveState: true,
+            replace: true,
+            onSuccess: () => setFiltrosSucios(false),
+        })
+    }
 
     function abrirCambioEstado(cheque: Cheque, nuevoEstado: 'cobrado' | 'protestado') {
         setEstadoModal({ cheque, estado: nuevoEstado })
@@ -362,61 +373,62 @@ export default function ChequesIndex() {
             <div className="p-4 md:p-6 space-y-5"
                  style={{ background: 'var(--bg-main)', minHeight: '100vh' }}>
 
-                {/* Header */}
-                <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-xl"
-                         style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
-                        <CreditCard size={24} style={{ color: 'var(--primary)' }} />
-                    </div>
-                    <div>
-                        <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>
-                            Cheques
-                        </h1>
+                <PageHeader
+                    title="Cheques"
+                    breadcrumbs={[{ label: 'Bancos' }, { label: 'Cheques' }]}
+                    actions={
+                        puede('crear') ? (
+                            <button onClick={() => setShowModal(true)}
+                                className="flex items-center gap-2 whitespace-nowrap shrink-0 px-4 py-2 rounded-xl font-semibold text-sm text-black transition-all hover:opacity-90"
+                                style={{ background: 'var(--primary)' }}>
+                                <Plus className="w-4 h-4" /> Nuevo
+                            </button>
+                        ) : undefined
+                    }
+                />
+
+                <FilterToolbar
+                    search={{
+                        value: filtro.buscar ?? '',
+                        onChange: v => cambiarFiltro('buscar', v),
+                        onSearch: buscar,
+                        placeholder: 'N°, beneficiario...',
+                    }}
+                    searchWidth="w-[150px]"
+                >
+                    <select value={filtro.estado ?? ''} onChange={e => cambiarFiltro('estado', e.target.value)}
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '120px' }}>
+                        <option value="">Estado</option>
+                        <option value="emitido">Emitido</option>
+                        <option value="cobrado">Cobrado</option>
+                        <option value="protestado">Protestado</option>
+                        <option value="anulado">Anulado</option>
+                    </select>
+                    <select value={filtro.banco_caja_id ?? ''} onChange={e => cambiarFiltro('banco_caja_id', e.target.value)}
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '150px' }}>
+                        <option value="">Banco</option>
+                        {bancos.map(b => (
+                            <option key={b.id} value={b.id}>{b.nombre}</option>
+                        ))}
+                    </select>
+                </FilterToolbar>
+
+                {/* Estado inicial: aún no se ha buscado (carga bajo demanda) */}
+                {!haBuscado && (
+                    <div className="text-center py-16">
+                        <Search className="w-12 h-12 mx-auto mb-4 opacity-30" style={{ color: 'var(--text-muted)' }} />
                         <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                            {filtrados.length} de {cheques.length} cheques
+                            Ajusta los filtros y presiona Buscar para consultar los cheques.
                         </p>
                     </div>
-                </div>
-
-                {/* Toolbar */}
-                <div className="flex items-center justify-between gap-3">
-                    <div className="flex flex-wrap gap-2 items-center">
-                        <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-2 whitespace-nowrap">
-                            <Plus className="w-4 h-4" /> Nuevo Cheque
-                        </button>
-                        <div className="relative">
-                            <input type="text" placeholder="Buscar N°, beneficiario..."
-                                value={buscar} onChange={e => setBuscar(e.target.value)}
-                                className="input-field"
-                                style={{ width: '220px', paddingLeft: '0.875rem' }} />
-                        </div>
-                        <select value={estado} onChange={e => setEstado(e.target.value)}
-                            className="input-field select-field"
-                            style={{ width: 'auto' }}>
-                            <option value="">Todos los estados</option>
-                            <option value="emitido">Emitido</option>
-                            <option value="cobrado">Cobrado</option>
-                            <option value="protestado">Protestado</option>
-                            <option value="anulado">Anulado</option>
-                        </select>
-                        <select value={bancoId} onChange={e => setBancoId(e.target.value)}
-                            className="input-field select-field"
-                            style={{ width: 'auto' }}>
-                            <option value="">Todos los bancos</option>
-                            {bancos.map(b => (
-                                <option key={b.id} value={b.id}>{b.nombre}</option>
-                            ))}
-                        </select>
-                        {(buscar || estado || bancoId) && (
-                            <button onClick={() => { setBuscar(''); setEstado(''); setBancoId('') }}
-                                className="btn-secondary flex items-center gap-1 whitespace-nowrap">
-                                <X className="w-3 h-3" /> Limpiar
-                            </button>
-                        )}
-                    </div>
-                </div>
+                )}
 
                 {/* Tabla */}
+                {haBuscado && cheques && (
+                <div className={cn('space-y-2', filtrosSucios && 'opacity-60 transition-opacity')}>
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{cheques.length} cheque(s)</p>
                 <div className="rounded-2xl border overflow-hidden"
                      style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
                     {/* Encabezado tabla */}
@@ -437,18 +449,21 @@ export default function ChequesIndex() {
                         <span>Acciones</span>
                     </div>
 
-                    {filtrados.length === 0 ? (
+                    {cheques.length === 0 ? (
                         <div className="py-16 text-center">
                             <CreditCard className="w-10 h-10 mx-auto mb-3 opacity-20"
                                         style={{ color: 'var(--text-muted)' }} />
                             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                                No hay cheques que coincidan con los filtros
+                                No se encontraron cheques con estos filtros
                             </p>
                         </div>
                     ) : (
-                        filtrados.map((cheque, i) => (
+                        cheques.map((cheque, i) => (
                             <div key={cheque.id}
-                                 className="grid gap-2 px-4 py-3 border-b items-center text-sm transition-colors hover:opacity-90"
+                                 className={cn(
+                                     'grid gap-2 px-4 py-3 border-b items-center text-sm transition-colors hover:opacity-90',
+                                     cheque.estado === 'anulado' && 'opacity-50',
+                                 )}
                                  style={{
                                      gridTemplateColumns: '1fr 2fr 3fr 1fr 1fr 1fr 1fr auto',
                                      borderColor: 'var(--border)',
@@ -496,7 +511,7 @@ export default function ChequesIndex() {
                                     <EstadoBadge estado={cheque.estado} />
                                 </div>
                                 <div className="flex items-center gap-1">
-                                    {cheque.estado === 'emitido' && (
+                                    {cheque.estado === 'emitido' && puede('editar') && (
                                         <>
                                             <button
                                                 onClick={() => abrirCambioEstado(cheque, 'cobrado')}
@@ -526,6 +541,8 @@ export default function ChequesIndex() {
                         ))
                     )}
                 </div>
+                </div>
+                )}
             </div>
 
             {showModal && (

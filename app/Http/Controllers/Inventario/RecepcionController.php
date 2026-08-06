@@ -168,8 +168,7 @@ class RecepcionController extends Controller
             return response()->json(['encontrado' => false, 'producto' => null]);
         }
 
-        $producto = Producto::where('empresa_id', $empresaId)
-            ->where('estado', true)
+        $producto = Producto::where('estado', true)
             ->where(fn($q) => $q->where('codigo', $codigo)->orWhere('codigo_externo', $codigo))
             ->first(['id', 'codigo', 'nombre', 'unidad']);
 
@@ -368,10 +367,19 @@ class RecepcionController extends Controller
                             subtotal:   $compra->subtotal_0 + $compra->subtotal_iva,
                             iva:        $compra->total_iva,
                             tipo:       $compra->gasto_no_deducible ? 'gasto' : 'inventario',
+                            fecha:      $compra->fecha_emision?->toDateString(),
                         );
-                        $compra->update(['asiento_id' => $asiento->id]);
+                        $compra->update(['asiento_id' => $asiento->id, 'asiento_error' => null]);
                     } catch (\Throwable $e) {
                         \Log::warning("Asiento compra {$compra->num_documento}: {$e->getMessage()}");
+                        $compra->update(['asiento_error' => $e->getMessage()]);
+                        $this->asientoService->notificarAsientoFallido(
+                            empresaId:  (int) $empresaId,
+                            tabla:      'compras',
+                            registroId: $compra->id,
+                            referencia: "Compra {$compra->num_documento}",
+                            mensaje:    $e->getMessage(),
+                        );
                     }
                 }
             }

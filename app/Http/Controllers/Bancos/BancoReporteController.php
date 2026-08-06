@@ -39,6 +39,8 @@ class BancoReporteController extends Controller
 
     public function estadoCuenta(Request $request): \Illuminate\Http\Response
     {
+        ini_set('memory_limit', '2560M');
+
         $empresaId = session('empresa_activa_id');
 
         $request->validate([
@@ -100,6 +102,8 @@ class BancoReporteController extends Controller
 
     public function reporteMovimientos(Request $request): \Illuminate\Http\Response
     {
+        ini_set('memory_limit', '2560M');
+
         $empresaId = session('empresa_activa_id');
 
         $query = MovimientoBancario::with('bancoCaja')
@@ -260,6 +264,8 @@ class BancoReporteController extends Controller
     // ── Exportar consulta a PDF ────────────────────────────────────────────────
     public function consultaPdf(Request $request): \Illuminate\Http\Response
     {
+        ini_set('memory_limit', '2560M');
+
         $empresaId   = session('empresa_activa_id');
         $movimientos = $this->consultaQuery($request, $empresaId);
         $empresa     = Empresa::find($empresaId);

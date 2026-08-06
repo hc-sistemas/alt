@@ -76,18 +76,19 @@ export default function ClientesIndex() {
                 title="Clientes"
                 description="Gestión de clientes del sistema"
                 breadcrumbs={[{ label: 'Personas' }, { label: 'Clientes' }]}
+                actions={
+                    <Link href={route('personas.clientes.create')}>
+                        <Button>
+                            <Plus className="w-4 h-4" />
+                            Nuevo
+                        </Button>
+                    </Link>
+                }
             />
 
             <div className="p-6">
                 {/* Barra de acciones */}
                 <div className="flex items-center gap-4 mb-4 flex-wrap">
-                    <Link href={route('personas.clientes.create')}>
-                        <Button>
-                            <Plus className="w-4 h-4" />
-                            Nuevo Cliente
-                        </Button>
-                    </Link>
-
                     <div className="flex items-center gap-2">
                         <span className="text-sm whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>Buscar:</span>
                         <div className="relative">
@@ -107,7 +108,7 @@ export default function ClientesIndex() {
                             value={estado}
                             onChange={e => setEstado(e.target.value)}
                             className="input-field"
-                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}
                         >
                             <option value="">Todos</option>
                             <option value="activo">Activos</option>

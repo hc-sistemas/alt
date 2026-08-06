@@ -268,10 +268,114 @@ DB_USERNAME=postgres
 DB_PASSWORD=gbyte              # contraseña local
 
 SESSION_DRIVER=file            # NO usar database — la tabla sessions no existe en el schema legacy
-QUEUE_CONNECTION=sync          # o redis si está disponible
+QUEUE_CONNECTION=database      # requiere un worker corriendo — ver sección "Colas" más abajo
 
 APP_URL=http://127.0.0.1:8000  # ajustar según entorno
 ```
+
+---
+
+## Colas (queue:work) — requerido solo para el ZIP de Nómina
+
+**Decisión (2026-08-03):** el patrón "límite de filas + Job en cola +
+notificación" que se había extendido a Facturas de Compra, Cuentas por
+Pagar, Movimientos Bancarios, Reportes Contables (Libro Diario/Mayor),
+Proveedores y Asientos Contables (Excel/PDF) fue revertido — las seis
+exportaciones vuelven a generarse **siempre de forma síncrona**, sin
+límite de filas ni Job, con `ini_set('memory_limit', ...)` en el propio
+controller para cubrir el mismo margen que antes tenía el Job (DomPDF/
+PhpSpreadsheet en tablas grandes no escala bien por debajo de 512M — ver
+comentarios en cada método `pdf()`/`excel()`). El único endpoint que
+sigue en segundo plano es el **ZIP de roles de pago de Nómina**
+(`NominaController::pdfMasivo()` → `App\Jobs\ExportarNominaZipJob`) — así
+lo pidió el cliente explícitamente, no tocar esa decisión sin pedirlo.
+
+`QUEUE_CONNECTION=database` (la tabla `jobs` ya está migrada). A diferencia de
+los 4 Jobs de alertas (`AlertaVencimientoCxP`, `AlertaVouchersNoLiquidados`,
+`AlertaAtrasosRecurrentes`, `RecordatorioCierreNomina`), que solo se disparan
+vía `Schedule::job()` en `routes/console.php` y por eso no necesitan un worker
+persistente para funcionar en desarrollo (el scheduler los ejecuta inline en
+su propio tick), **`App\Jobs\ExportarNominaZipJob`** se dispara desde una
+acción real del usuario y **se queda esperando en la tabla `jobs` para
+siempre si no hay un worker corriendo**.
+
+```bash
+# Requerido para que el ZIP de roles de pago de Nómina funcione:
+php artisan queue:work
+
+# En producción, correr esto bajo Supervisor (o systemd) para que se
+# reinicie solo si el proceso muere. No hay Procfile ni supervisor.conf en
+# este repo todavía — agregarlo es responsabilidad del deploy.
+```
+
+El Job de limpieza `LimpiarExportacionesNominaJob` (borra archivos de
+`storage/app/private/exportaciones-nomina/` con más de 48h) SÍ está
+programado vía `Schedule::job()->dailyAt('03:25')`, así que ese no necesita
+un worker aparte — pero el propio `schedule:run` sí necesita correr (cron o
+`php artisan schedule:work` en desarrollo).
+
+**Link de descarga en la notificación:** se arma con el host REAL de la
+request que disparó el Job (`$request->getSchemeAndHttpHost()`, capturado en
+el controller y pasado al Job), nunca con `route()` a secas ni con
+`config('app.url')` — dentro de un Job no hay request activa, así que
+`route()` cae al host fijo de `config/app.php`, que puede no coincidir con
+el que realmente sirvió la petición. La construcción está centralizada en
+el trait `App\Jobs\Concerns\ConstruyeUrlDescargaExportacion` (método
+`urlDescarga()`) — cualquier Job nuevo que notifique un link de descarga
+debe usar este trait en vez de repetir la concatenación a mano.
+
+**`max_execution_time`:** ya está en 36000s en el php.ini activo de este
+entorno (Laragon) — muy por encima de lo que tarda cualquiera de estas
+exportaciones (peor caso medido: ~3 min con el histórico completo de
+Asientos sin filtro). No fue necesario subirlo. Verificar el valor real en
+el servidor de producción cuando exista, ya que php.ini no viaja con el
+repo.
+
+**Hallazgo residual sin resolver — Mayor Contable / Libro Diario / Asientos
+Contables (reporte PDF) en el caso extremo sin ningún filtro:** DomPDF
+(`Cellmap::resolve_border()`) escala peor que lineal con el número de FILAS
+DENTRO DE UNA MISMA `<table>`. Confirmado con datos reales y con una prueba
+mínima (tabla de texto plano sin ningún estilo, ~4,800 filas en una sola
+tabla, revienta memory_limit igual) — no es una consulta N+1 ni un índice
+faltante (verificado con `EXPLAIN ANALYZE` real: la query del rango de un
+año de Libro Diario tarda 4-7ms; la hidratación completa vía Eloquent con
+eager load tarda 0.6s para 4,438 asientos). El costo real está 100% en el
+render de DomPDF.
+
+- Mayor Contable de la cuenta más activa (1.1.4.01, 6,218 líneas, histórico
+  completo) agota memory_limit tanto en 2560M como en 4096M.
+- Libro Diario de un año completo (4,438 asientos) no completó en 600s
+  (10 min) con `timeout` real, aun con la plantilla usando el patrón
+  correcto (una `<table>` por asiento — ver nota en
+  `resources/views/pdf/libro-diario.blade.php`).
+- Asientos Contables (reporte PDF, no Excel) sin ningún filtro (11,177
+  asientos) no completó en 300s (5 min) con memory_limit en 4096M.
+
+**IMPORTANTE — no "optimizar" fusionando en una sola tabla:** se intentó
+fusionar `libro-diario.blade.php` en una única `<table>` continua para el
+documento completo (menos objetos que arma DomPDF) y midió MUCHO PEOR que
+el patrón original de muchas tablas chicas (una por asiento) — una tabla
+continua de ~4,800 filas sin ningún estilo ya revienta memory_limit por
+defecto (512M), mientras que 1,051 tablas chicas (3 meses) completan en
+~100s. `Cellmap::resolve_border()` escala con el total de filas de UNA
+tabla, así que partir el documento en muchas tablas chicas es lo que
+realmente lo hace escalar, no al revés — quedó documentado en un comentario
+dentro del propio blade para que no se repita el error.
+
+Con un rango acotado mayor al límite viejo que existía antes de la
+reversión (ej. Mayor con 1,176 líneas / 6 meses: 14s: Libro Diario con
+~2,700 líneas / 3 meses: 98s; Asientos PDF con ~2,100 asientos / 6 meses:
+90s) genera bien. El caso 100% sin filtro (todo el historial multi-año)
+sigue sin funcionar en un tiempo razonable en ninguno de los 3 reportes —
+es un límite real del motor de render (DomPDF), no algo que se resuelva
+con más memoria o restructurando el HTML. Si el cliente necesita
+específicamente ese caso extremo, las opciones son: (a) forzar un rango de
+fechas por defecto razonable en el selector (ej. el ejercicio fiscal
+actual) en vez de "sin fecha = todo el historial" — esto es un valor por
+defecto en el filtro, no un bloqueo, el usuario puede seguir ampliándolo
+si quiere esperar; o (b) cambiar de motor de PDF / paginar el render
+manualmente (trabajo mayor, no evaluado). No se impuso ninguna de las dos
+sin confirmar con el cliente.
 
 ---
 
@@ -327,3 +431,20 @@ Vendedor:
 | `PHP version >= 8.2.0 required` | PATH apunta a PHP 8.1 | Usar terminal de Laragon o ruta completa a PHP 8.2 |
 | `empresa_id NOT NULL en log_sesiones` | log_sesiones no tiene esa columna | No insertar empresa_id en log_sesiones |
 | `updated_at en perfiles` | perfiles no tiene timestamps | Agregar `public $timestamps = false` |
+
+---
+
+## Decisiones de diseño intencionales (no son bugs)
+
+### Compra sin asiento contable si el período está cerrado
+
+**Comportamiento:** en `CompraController::store()` y en el flujo de confirmación de recepción (`RecepcionController`), la generación del asiento contable automático (`AsientoService::compraRegistrada()`) está envuelta en un `try/catch` que **no bloquea la operación**. Si el asiento falla — típicamente porque la `fecha_emision` de la Compra cae dentro de un período contable ya cerrado (ver `Ejercicios Contables` y `AsientoService::crear()`) — la Compra se guarda igual, con `asiento_id = null`.
+
+**Por qué es intencional:** no se quiere que un problema de configuración/candado contable bloquee por completo la operación comercial (recibir mercadería, registrar la factura del proveedor). Esta decisión fue confirmada explícitamente por el cliente/usuario del sistema (2026-07-26) — **no cambiar esta lógica** sin que te lo pidan explícitamente.
+
+**Cómo queda visible (para que no sea un huérfano silencioso):**
+1. La columna `compras.asiento_error` (texto, nullable) guarda el mensaje de la excepción cuando esto ocurre. Se limpia (`null`) si el asiento se genera exitosamente después.
+2. `AsientoService::notificarAsientoFallido()` inserta una notificación (tabla `notificaciones`, campanita del Topbar) para cada usuario con perfil `super_admin` o `contador` con acceso a la empresa, y una entrada en `log_documentos` (acción `asiento_fallido`) para auditoría.
+3. La UI muestra un badge naranja "Sin asiento contable" (con el motivo en tooltip) tanto en `Compras/Compras/Index.tsx` (icono junto al número de documento) como en `Compras/Compras/Show.tsx` (badge junto al estado + línea de detalle).
+
+**Alcance real de esta excepción — NO se extiende a Pagos ni a Nómina:** `CuentaPagarController::pagar()` (pago a proveedor) y `NominaController::procesar()` **no** tienen este patrón de "guardar igual si falla" — ahí la generación del asiento ocurre dentro de un único `DB::transaction()` sin `catch` silencioso, así que si el período está cerrado la operación completa se revierte y el usuario ve un error inmediato (no queda un pago o una nómina huérfana sin asiento). Si en el futuro se decide extender el patrón "guardar sin asiento" a Pagos o Nómina, es una decisión de diseño nueva — no asumir que ya funciona igual que Compras.

@@ -119,16 +119,17 @@ export default function TransportistasIndex() {
                 title="Transportistas"
                 description="Empresas y personas que transportan mercadería"
                 breadcrumbs={[{ label: 'Personas' }, { label: 'Transportistas' }]}
+                actions={
+                    <Button onClick={abrirCrear}>
+                        <Plus className="w-4 h-4" />
+                        Nuevo
+                    </Button>
+                }
             />
 
             <div className="p-6">
                 {/* Barra de acciones */}
                 <div className="flex items-center gap-4 mb-4 flex-wrap">
-                    <Button onClick={abrirCrear}>
-                        <Plus className="w-4 h-4" />
-                        Nuevo Transportista
-                    </Button>
-
                     <div className="flex items-center gap-2">
                         <span className="text-sm whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>Buscar:</span>
                         <div className="relative">

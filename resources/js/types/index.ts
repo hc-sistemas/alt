@@ -238,6 +238,7 @@ export interface Producto {
     id: number
     empresa_id: number
     marca_id: number | null
+    marca_fabricante: string | null
     categoria_id: number | null
     codigo: string
     codigo_externo: string | null
@@ -246,6 +247,7 @@ export interface Producto {
     unidad: string
     tipo: 'producto' | 'servicio' | 'repuesto' | 'insumo'
     requiere_serie: boolean
+    peso: number | null
     costo: number
     pvp: number
     pvd: number
@@ -533,6 +535,7 @@ export interface CompraDetalle {
     cuenta?: PlanCuenta
     descripcion: string
     cantidad: number
+    peso: number | null
     precio_unitario: number
     descuento: number
     subtotal: number
@@ -549,6 +552,7 @@ export interface Compra {
     proveedor?: Proveedor
     centro_costo_id: number | null
     importacion_id: number | null
+    bodega_id: number | null
     tipo_documento: string
     num_documento: string
     num_autorizacion: string | null
@@ -563,8 +567,11 @@ export interface Compra {
     total: number
     iva_asumido: boolean
     gasto_no_deducible: boolean
+    retencion_ir: number
+    retencion_iva: number
     sustento_tributario: number | null
     asiento_id: number | null
+    asiento_error: string | null
     tiene_pago: boolean
     concepto: string | null
     estado: 'pendiente' | 'activa' | 'anulada'
@@ -663,6 +670,8 @@ export interface BancoCaja {
     empresa_id: number
     cuenta_id: number | null
     cuenta?: PlanCuenta
+    centro_costo_id: number | null
+    centro_costo?: CentroCosto
     tipo: 'banco' | 'caja' | 'caja_chica' | 'tarjeta'
     tipo_label?: string
     tipo_color?: string
@@ -853,6 +862,7 @@ export interface Asistencia {
     ip_salida: string | null
     observacion: string | null
     colaborador?: Colaborador
+    horas_extras?: Pick<HorasExtrasAprobacion, 'id' | 'asistencia_id' | 'estado' | 'horas_aprobadas'> | null
 }
 
 export interface HorasExtrasAprobacion {

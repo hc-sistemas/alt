@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Search, X } from 'lucide-react'
 
@@ -11,6 +11,10 @@ export interface Resultado {
     disponible?: number
 }
 
+export interface BuscadorProductoModalHandle {
+    focus: () => void
+}
+
 interface Props {
     onSelect: (producto: Resultado) => void
     placeholder?: string
@@ -18,7 +22,10 @@ interface Props {
     urlBusqueda?: string
 }
 
-export default function BuscadorProductoModal({ onSelect, placeholder, disabled, urlBusqueda }: Props) {
+const BuscadorProductoModal = forwardRef<BuscadorProductoModalHandle, Props>(function BuscadorProductoModal(
+    { onSelect, placeholder, disabled, urlBusqueda }: Props,
+    ref
+) {
     const [queryInput, setQueryInput]   = useState('')
     const [resultados, setResultados]   = useState<Resultado[]>([])
     const [buscando, setBuscando]       = useState(false)
@@ -29,6 +36,10 @@ export default function BuscadorProductoModal({ onSelect, placeholder, disabled,
     const inputExternoRef = useRef<HTMLInputElement>(null)
     const inputModalRef   = useRef<HTMLInputElement>(null)
 
+    useImperativeHandle(ref, () => ({
+        focus: () => inputExternoRef.current?.focus(),
+    }))
+
     // Filtrado local dentro del modal
     const resultadosFiltrados = filtroModal.trim()
         ? resultados.filter(r =>
@@ -38,8 +49,7 @@ export default function BuscadorProductoModal({ onSelect, placeholder, disabled,
           )
         : resultados
 
-    async function buscar() {
-        const q = queryInput.trim()
+    async function buscar(q: string) {
         if (!q) return
         setError('')
         setBuscando(true)
@@ -53,11 +63,14 @@ export default function BuscadorProductoModal({ onSelect, placeholder, disabled,
             const json = await res.json()
             const items: Resultado[] = json.resultados ?? []
 
+            const exacto = items.find(r => r.codigo.toLowerCase() === q.toLowerCase())
+
             if (items.length === 0) {
                 setError('Sin coincidencias')
-            } else if (items.length === 1) {
-                onSelect(items[0])
+            } else if (items.length === 1 || exacto) {
+                onSelect(exacto ?? items[0])
                 setQueryInput('')
+                cerrarModal()
             } else {
                 setResultados(items)
                 setFiltroModal('')
@@ -73,9 +86,18 @@ export default function BuscadorProductoModal({ onSelect, placeholder, disabled,
     function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
         if (e.key === 'Enter') {
             e.preventDefault()
-            buscar()
+            buscar(queryInput.trim())
         }
     }
+
+    // Búsqueda automática mientras se escribe (debounce)
+    useEffect(() => {
+        const q = queryInput.trim()
+        if (q.length < 2) return
+        const t = setTimeout(() => buscar(q), 350)
+        return () => clearTimeout(t)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [queryInput])
 
     function seleccionar(r: Resultado) {
         onSelect(r)
@@ -235,47 +257,36 @@ export default function BuscadorProductoModal({ onSelect, placeholder, disabled,
 
     return (
         <>
-            <div className="flex gap-2">
-                {/* Input principal */}
-                <div className="relative flex-1">
-                    <Search
-                        className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none"
-                        style={{ color: 'var(--text-muted)' }}
-                    />
-                    <input
-                        ref={inputExternoRef}
-                        value={queryInput}
-                        onChange={e => { setQueryInput(e.target.value); setError('') }}
-                        onKeyDown={handleKeyDown}
-                        placeholder={placeholder ?? 'Buscar por código, nombre o marca...'}
-                        disabled={disabled || buscando}
-                        className="w-full h-9 pl-9 pr-3 rounded-md border text-sm outline-none"
-                        style={{
-                            background: 'var(--bg-card)',
-                            borderColor: error ? '#ef4444' : 'var(--border)',
-                            color: 'var(--text-main)',
-                            opacity: disabled ? 0.5 : 1,
-                            cursor: disabled ? 'not-allowed' : 'text',
-                        }}
-                    />
-                </div>
-
-                {/* Botón buscar */}
-                <button
-                    type="button"
-                    onClick={buscar}
-                    disabled={disabled || buscando || !queryInput.trim()}
-                    className="h-9 px-3 rounded-md border text-sm font-medium transition-colors shrink-0"
+            {/* Input principal */}
+            <div className="relative">
+                <Search
+                    className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none"
+                    style={{ color: 'var(--text-muted)' }}
+                />
+                <input
+                    ref={inputExternoRef}
+                    value={queryInput}
+                    onChange={e => { setQueryInput(e.target.value); setError('') }}
+                    onKeyDown={handleKeyDown}
+                    placeholder={placeholder ?? 'Buscar por código, nombre o marca...'}
+                    disabled={disabled}
+                    className="w-full h-9 pl-9 pr-9 rounded-md border text-sm outline-none"
                     style={{
-                        background: 'var(--primary)',
-                        borderColor: 'var(--primary)',
-                        color: '#000',
-                        opacity: disabled || buscando || !queryInput.trim() ? 0.5 : 1,
-                        cursor: disabled || buscando || !queryInput.trim() ? 'not-allowed' : 'pointer',
+                        background: 'var(--bg-card)',
+                        borderColor: error ? '#ef4444' : 'var(--border)',
+                        color: 'var(--text-main)',
+                        opacity: disabled ? 0.5 : 1,
+                        cursor: disabled ? 'not-allowed' : 'text',
                     }}
-                >
-                    {buscando ? '...' : 'Buscar'}
-                </button>
+                />
+                {buscando && (
+                    <span
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-xs"
+                        style={{ color: 'var(--text-muted)' }}
+                    >
+                        ...
+                    </span>
+                )}
             </div>
 
             {/* Error inline */}
@@ -288,4 +299,6 @@ export default function BuscadorProductoModal({ onSelect, placeholder, disabled,
             {createPortal(modal, document.body)}
         </>
     )
-}
+})
+
+export default BuscadorProductoModal

@@ -7,6 +7,7 @@ import { Label } from '@/Components/ui/label'
 import { Input } from '@/Components/ui/input'
 import { Pencil, TrendingDown } from 'lucide-react'
 import { toastExito, toastError } from '@/lib/toast'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { ActivoFijo, PageProps } from '@/types'
 
 interface Props extends PageProps {
@@ -39,6 +40,7 @@ function Card({ label, value, accent }: { label: string; value: string; accent?:
 
 export default function ActivoFijoShow() {
     const { activo } = usePage<Props>().props
+    const { puede } = usePermiso('inventario')
 
     const now = new Date()
     const ultimaDep = activo.depreciaciones?.[0]
@@ -68,7 +70,7 @@ export default function ActivoFijoShow() {
         ? ((valorAdq - valorRes) / (activo.vida_util_anios * 12)).toFixed(2)
         : '0.00'
 
-    const puedeDepreciar = activo.estado === 'activo' && (valorLibro - valorRes) > 0
+    const puedeDepreciar = activo.estado === 'activo' && (valorLibro - valorRes) > 0 && puede('editar')
 
     const anioSeleccionado = parseInt(data.periodo_año)
     const mesMaximo = anioSeleccionado === now.getFullYear() ? now.getMonth() + 1 : 12
@@ -267,7 +269,7 @@ export default function ActivoFijoShow() {
                         onClick={() => router.visit(route('inventario.activos.index'))}>
                         Volver
                     </Button>
-                    {activo.estado === 'activo' && (
+                    {activo.estado === 'activo' && puede('editar') && (
                         <Link href={route('inventario.activos.edit', activo.id)}>
                             <Button variant="outline">
                                 <Pencil className="w-4 h-4" />

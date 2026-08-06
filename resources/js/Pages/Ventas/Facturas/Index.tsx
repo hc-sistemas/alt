@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Head, usePage, router, Link } from '@inertiajs/react'
 import Swal from 'sweetalert2'
+import axios from '@/lib/axios'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
 import { Button } from '@/Components/ui/button'
@@ -77,10 +78,6 @@ function esMismoDia(fecha: string): boolean {
     return fecha.startsWith(hoyLocal)
 }
 
-function getCsrf(): string {
-    return (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement | null)?.content ?? ''
-}
-
 // ── Componente ────────────────────────────────────────────────────────────────
 
 export default function Index() {
@@ -133,31 +130,23 @@ export default function Index() {
         if (!formValues) return
 
         try {
-            const res = await fetch(route('ventas.aprobacion.validar'), {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': getCsrf(),
-                    Accept: 'application/json',
-                },
-                body: JSON.stringify({
-                    tipo: 'anulacion_factura',
-                    codigo: formValues.codigo,
-                    motivo: formValues.motivo,
-                }),
-            })
-            const data = await res.json() as { valido: boolean; aprobacion_id?: number; mensaje?: string }
+            const { data } = await axios.post<{ valido: boolean; aprobacion_id?: number; mensaje?: string }>(
+                route('ventas.aprobacion.validar'),
+                { tipo: 'anulacion_factura', codigo: formValues.codigo, motivo: formValues.motivo },
+            )
+
             if (!data.valido || !data.aprobacion_id) {
-                void Swal.fire('Código inválido', data.mensaje ?? 'Código incorrecto.', 'error')
+                void Swal.fire('Código incorrecto', data.mensaje ?? 'La aprobación no es válida.', 'error')
                 return
             }
+
             router.patch(
                 route('ventas.facturas.anular', factura.id),
                 { aprobacion_especial_id: data.aprobacion_id },
                 { preserveState: true },
             )
         } catch {
-            void Swal.fire('Error', 'Error de conexión. Intente nuevamente.', 'error')
+            void Swal.fire('Error', 'No se pudo validar el código de aprobación.', 'error')
         }
     }
 

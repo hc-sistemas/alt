@@ -254,7 +254,7 @@
     </div>
     <div class="firma-cel">
         <div class="firma-linea">
-            Firma de Conformidad
+            Firma de Conformidad del Empleado
             <div class="firma-sub">{{ $col->apellidos }} {{ $col->nombres }}</div>
         </div>
     </div>

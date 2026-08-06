@@ -8,6 +8,7 @@ import { Label } from '@/Components/ui/label'
 import { Plus, Pencil, Trash2, X, Save, Search } from 'lucide-react'
 import { toastExito, toastError } from '@/lib/toast'
 import { confirmarEliminar } from '@/lib/swal'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { PaginatedData, PageProps } from '@/types'
 
 interface TipoEquipo {
@@ -25,6 +26,7 @@ const emptyForm = { descripcion: '', estado: true }
 
 export default function TiposEquipoIndex() {
     const { tiposEquipo, filters } = usePage<Props>().props
+    const { puede } = usePermiso('taller')
     const [search, setSearch] = useState(filters.search ?? '')
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const isFirstRender = useRef(true)
@@ -121,6 +123,14 @@ export default function TiposEquipoIndex() {
                 title="Tipos de Equipo"
                 description="Gestión de tipos de equipo del taller"
                 breadcrumbs={[{ label: 'Taller' }, { label: 'Tipos de Equipo' }]}
+                actions={
+                    puede('crear') ? (
+                        <Button onClick={abrirCrear}>
+                            <Plus className="w-4 h-4" />
+                            Nuevo
+                        </Button>
+                    ) : undefined
+                }
             />
 
             <div className="p-6">
@@ -132,10 +142,6 @@ export default function TiposEquipoIndex() {
                 )}
 
                 <div className="flex items-center gap-4 mb-4 flex-wrap">
-                    <Button onClick={abrirCrear}>
-                        <Plus className="w-4 h-4" />
-                        Nuevo Tipo de Equipo
-                    </Button>
                     <div className="relative">
                         <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
                         <Input
@@ -182,12 +188,16 @@ export default function TiposEquipoIndex() {
                                     </td>
                                     <td className="px-4 py-3">
                                         <div className="flex items-center justify-end gap-1">
-                                            <Button variant="ghost" size="icon" title="Editar" onClick={() => abrirEditar(tipoEquipo)}>
-                                                <Pencil className="w-4 h-4" />
-                                            </Button>
-                                            <Button variant="ghost" size="icon" title="Eliminar" onClick={() => eliminar(tipoEquipo)}>
-                                                <Trash2 className="w-4 h-4 text-red-400" />
-                                            </Button>
+                                            {puede('editar') && (
+                                                <Button variant="ghost" size="icon" title="Editar" onClick={() => abrirEditar(tipoEquipo)}>
+                                                    <Pencil className="w-4 h-4" />
+                                                </Button>
+                                            )}
+                                            {puede('eliminar') && (
+                                                <Button variant="ghost" size="icon" title="Eliminar" onClick={() => eliminar(tipoEquipo)}>
+                                                    <Trash2 className="w-4 h-4 text-red-400" />
+                                                </Button>
+                                            )}
                                         </div>
                                     </td>
                                 </tr>

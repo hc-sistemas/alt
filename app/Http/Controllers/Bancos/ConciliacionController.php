@@ -24,35 +24,65 @@ class ConciliacionController extends Controller
     {
         $empresaId = session('empresa_activa_id');
 
-        $query = ConciliacionBancaria::where('empresa_id', $empresaId)
-            ->with('bancoCaja')
-            ->orderByDesc('fecha_corte');
+        $conciliaciones = null;
 
-        if ($request->filled('banco_caja_id')) {
-            $query->where('banco_caja_id', $request->banco_caja_id);
-        }
-        if ($request->filled('fecha_desde')) {
-            $query->where('fecha_corte', '>=', $request->fecha_desde);
-        }
-        if ($request->filled('fecha_hasta')) {
-            $query->where('fecha_corte', '<=', $request->fecha_hasta);
-        }
-        if ($request->filled('estado')) {
-            $query->where('estado', $request->estado);
-        }
+        if ($request->boolean('buscado')) {
+            $query = ConciliacionBancaria::where('empresa_id', $empresaId)
+                ->with('bancoCaja')
+                ->orderByDesc('fecha_corte');
 
-        $conciliaciones = $query->get()->map(fn($c) => [
-            'id'            => $c->id,
-            'banco_caja_id' => $c->banco_caja_id,
-            'banco'         => $c->bancoCaja?->nombre,
-            'fecha_corte'   => $c->fecha_corte?->format('d/m/Y'),
-            'saldo_banco'   => $c->saldo_banco,
-            'saldo_sistema' => $c->saldo_sistema,
-            'diferencia'    => $c->diferencia,
-            'estado'        => $c->estado,
-            'tiene_dif'     => $c->tieneDiferencia(),
-            'created_at'    => $c->created_at?->format('d/m/Y'),
-        ]);
+            if ($request->filled('banco_caja_id')) {
+                $query->where('banco_caja_id', $request->banco_caja_id);
+            }
+            if ($request->filled('fecha_desde')) {
+                $query->where('fecha_corte', '>=', $request->fecha_desde);
+            }
+            if ($request->filled('fecha_hasta')) {
+                $query->where('fecha_corte', '<=', $request->fecha_hasta);
+            }
+            if ($request->filled('estado')) {
+                $query->where('estado', $request->estado);
+            }
+            if ($request->filled('buscar')) {
+                $q = $request->buscar;
+                $query->where(fn($qb) =>
+                    $qb->where('descripcion', 'ilike', "%{$q}%")
+                       ->orWhereHas('bancoCaja', fn($b) => $b->where('nombre', 'ilike', "%{$q}%"))
+                );
+            }
+
+            $conciliaciones = $query->get()->map(function ($c) {
+                // Una conciliación "pendiente" todavía no está congelada: si el saldo
+                // del banco se movió por movimientos ajenos a esta conciliación desde
+                // que se creó (o desde la última acción que la sincronizó), el valor
+                // guardado en saldo_sistema/diferencia queda desactualizado. Para
+                // pendientes se recalcula al vuelo contra el saldo vivo del banco —
+                // solo al mostrarlo, sin persistirlo (eso lo siguen haciendo las
+                // acciones explícitas: conciliarPartida/generarAsientoAjuste/
+                // generarAsientoPartida/cerrar). Una vez 'conciliada' el valor
+                // guardado SÍ es el histórico correcto y no se toca.
+                if ($c->estado === 'pendiente' && $c->bancoCaja) {
+                    $saldoSistema = (float) $c->bancoCaja->saldo_actual;
+                    $diferencia   = (float) $c->saldo_banco - $saldoSistema;
+                } else {
+                    $saldoSistema = (float) $c->saldo_sistema;
+                    $diferencia   = (float) $c->diferencia;
+                }
+
+                return [
+                    'id'            => $c->id,
+                    'banco_caja_id' => $c->banco_caja_id,
+                    'banco'         => $c->bancoCaja?->nombre,
+                    'fecha_corte'   => $c->fecha_corte?->format('d/m/Y'),
+                    'saldo_banco'   => $c->saldo_banco,
+                    'saldo_sistema' => $saldoSistema,
+                    'diferencia'    => $diferencia,
+                    'estado'        => $c->estado,
+                    'tiene_dif'     => abs($diferencia) > 0.01,
+                    'created_at'    => $c->created_at?->format('d/m/Y'),
+                ];
+            });
+        }
 
         $bancos = BancoCaja::where('empresa_id', $empresaId)
             ->bancos()->activos()->orderBy('nombre')
@@ -61,7 +91,7 @@ class ConciliacionController extends Controller
         return Inertia::render('Bancos/Conciliaciones/Index', [
             'conciliaciones' => $conciliaciones,
             'bancos'         => $bancos,
-            'filtros'        => $request->only(['banco_caja_id', 'fecha_desde', 'fecha_hasta', 'estado']),
+            'filtros'        => $request->only(['banco_caja_id', 'fecha_desde', 'fecha_hasta', 'estado', 'buscar']),
         ]);
     }
 
@@ -677,9 +707,6 @@ class ConciliacionController extends Controller
             ->where('tipo', 'sistema')->where('conciliada', false)->get();
 
         $usadosIds = [];
-        $bancoIdsMatch = [];
-        $sistemaIdsMatch = [];
-        $movimientoIdsMatch = [];
 
         foreach ($partidasBanco as $pBanco) {
             $montoB = (float) $pBanco->monto;
@@ -698,24 +725,17 @@ class ConciliacionController extends Controller
                 $pSistema = $candidatos->first();
                 $usadosIds[] = $pSistema->id;
 
-                $bancoIdsMatch[] = $pBanco->id;
-                $sistemaIdsMatch[] = $pSistema->id;
-                if ($pSistema->movimiento_id) {
-                    $movimientoIdsMatch[] = $pSistema->movimiento_id;
-                }
+                DB::transaction(function () use ($pBanco, $pSistema) {
+                    $pBanco->update(['conciliada' => true]);
+                    $pSistema->update(['conciliada' => true]);
+                    if ($pSistema->movimiento_id) {
+                        MovimientoBancario::where('id', $pSistema->movimiento_id)
+                            ->update(['conciliado' => true]);
+                    }
+                });
 
                 $matched++;
             }
-        }
-
-        if ($matched > 0) {
-            DB::transaction(function () use ($bancoIdsMatch, $sistemaIdsMatch, $movimientoIdsMatch) {
-                PartidaTransito::whereIn('id', $bancoIdsMatch)->update(['conciliada' => true]);
-                PartidaTransito::whereIn('id', $sistemaIdsMatch)->update(['conciliada' => true]);
-                if (!empty($movimientoIdsMatch)) {
-                    MovimientoBancario::whereIn('id', $movimientoIdsMatch)->update(['conciliado' => true]);
-                }
-            });
         }
 
         return $matched;

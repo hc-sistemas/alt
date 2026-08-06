@@ -6,11 +6,14 @@ use App\Exports\MovimientosExport;
 use App\Http\Controllers\Controller;
 use App\Models\AsientoContable;
 use App\Models\BancoCaja;
+use App\Models\CentroCosto;
 use App\Models\Cliente;
+use App\Models\Empresa;
 use App\Models\MovimientoBancario;
 use App\Models\PlanCuenta;
 use App\Models\Proveedor;
 use App\Services\AsientoService;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -21,12 +24,16 @@ use Maatwebsite\Excel\Facades\Excel;
 
 class MovimientoBancarioController extends Controller
 {
+    private const FILTROS_KEYS = [
+        'banco_caja_id', 'tipo', 'fecha_desde', 'fecha_hasta', 'buscar',
+        'centro_costo_id', 'persona_tipo', 'persona_id',
+    ];
+
     public function __construct(private AsientoService $asientoService) {}
 
-    public function index(Request $request): Response
+    private function queryFiltrada(Request $request)
     {
         $empresaId = session('empresa_activa_id');
-
         $query = MovimientoBancario::with(['bancoCaja', 'cuentaContrapartida', 'creadoPor'])
             ->where('empresa_id', $empresaId);
 
@@ -42,6 +49,13 @@ class MovimientoBancarioController extends Controller
         if ($request->filled('fecha_hasta')) {
             $query->where('fecha', '<=', $request->fecha_hasta);
         }
+        if ($request->filled('centro_costo_id')) {
+            $query->where('centro_costo_id', $request->centro_costo_id);
+        }
+        if ($request->filled('persona_id') && $request->filled('persona_tipo')) {
+            $query->where('persona_tipo', $request->persona_tipo)
+                  ->where('persona_id', $request->persona_id);
+        }
         if ($request->filled('buscar')) {
             $q = $request->buscar;
             $query->where(fn($qb) =>
@@ -51,10 +65,33 @@ class MovimientoBancarioController extends Controller
             );
         }
 
-        $movimientos = $query->orderByDesc('fecha')
-                             ->orderByDesc('id')
-                             ->paginate(25)
-                             ->withQueryString();
+        return $query;
+    }
+
+    public function index(Request $request): Response
+    {
+        $empresaId = session('empresa_activa_id');
+        $haBuscado = $request->boolean('buscado');
+
+        $movimientos = null;
+        $stats       = null;
+
+        if ($haBuscado) {
+            $movimientos = $this->queryFiltrada($request)
+                                 ->orderByDesc('fecha')
+                                 ->orderByDesc('id')
+                                 ->paginate(25)
+                                 ->withQueryString();
+
+            $stats = [
+                'total_ingresos'       => MovimientoBancario::where('empresa_id', $empresaId)
+                    ->where('tipo', 'ingreso')->where('anulado', false)->sum('monto'),
+                'total_egresos'        => MovimientoBancario::where('empresa_id', $empresaId)
+                    ->where('tipo', 'egreso')->where('anulado', false)->sum('monto'),
+                'pendientes_conciliar' => MovimientoBancario::where('empresa_id', $empresaId)
+                    ->where('conciliado', false)->where('anulado', false)->count(),
+            ];
+        }
 
         $bancos  = BancoCaja::where('empresa_id', $empresaId)
                     ->activos()->orderBy('nombre')
@@ -69,24 +106,19 @@ class MovimientoBancarioController extends Controller
         $clientes = Cliente::where('empresa_id', $empresaId)
             ->activos()->orderBy('razon_social')
             ->get(['id', 'razon_social as nombre', 'identificacion']);
+        $centrosCosto = CentroCosto::where('empresa_id', $empresaId)
+            ->where('estado', true)->orderBy('nombre')
+            ->get(['id', 'nombre']);
 
         return Inertia::render('Bancos/Movimientos/Index', [
-            'movimientos' => $movimientos,
-            'bancos'      => $bancos,
-            'cuentas'     => $cuentas,
-            'proveedores' => $proveedores,
-            'clientes'    => $clientes,
-            'filtros'     => $request->only([
-                'banco_caja_id', 'tipo', 'fecha_desde', 'fecha_hasta', 'buscar',
-            ]),
-            'stats' => [
-                'total_ingresos'       => MovimientoBancario::where('empresa_id', $empresaId)
-                    ->where('tipo', 'ingreso')->where('anulado', false)->sum('monto'),
-                'total_egresos'        => MovimientoBancario::where('empresa_id', $empresaId)
-                    ->where('tipo', 'egreso')->where('anulado', false)->sum('monto'),
-                'pendientes_conciliar' => MovimientoBancario::where('empresa_id', $empresaId)
-                    ->where('conciliado', false)->where('anulado', false)->count(),
-            ],
+            'movimientos'  => $movimientos,
+            'bancos'       => $bancos,
+            'cuentas'      => $cuentas,
+            'proveedores'  => $proveedores,
+            'clientes'     => $clientes,
+            'centrosCosto' => $centrosCosto,
+            'filtros'      => $request->only(self::FILTROS_KEYS),
+            'stats' => $stats,
         ]);
     }
 
@@ -176,12 +208,8 @@ class MovimientoBancarioController extends Controller
     public function exportExcel(Request $request): \Symfony\Component\HttpFoundation\BinaryFileResponse
     {
         $empresaId = session('empresa_activa_id');
-
-        $filtros = $request->only([
-            'banco_caja_id', 'tipo', 'fecha_desde', 'fecha_hasta', 'buscar',
-        ]);
-
-        $fecha = now()->format('Y-m-d');
+        $filtros   = $request->only(self::FILTROS_KEYS);
+        $fecha     = now()->format('Y-m-d');
 
         return Excel::download(
             new MovimientosExport($empresaId, $filtros),
@@ -189,11 +217,13 @@ class MovimientoBancarioController extends Controller
         );
     }
 
+    // Respeta los mismos filtros que el listado y la exportación Excel — antes
+    // este endpoint ignoraba cualquier filtro aplicado en pantalla y siempre
+    // exportaba TODOS los movimientos no anulados de la empresa.
     public function exportarXml(Request $request): \Illuminate\Http\Response
     {
         $empresaId   = session('empresa_activa_id');
-        $movimientos = MovimientoBancario::with(['bancoCaja', 'cuentaContrapartida'])
-            ->where('empresa_id', $empresaId)
+        $movimientos = $this->queryFiltrada($request)
             ->where('anulado', false)
             ->orderByDesc('fecha')
             ->get();
@@ -225,6 +255,30 @@ class MovimientoBancarioController extends Controller
             'Content-Type'        => 'application/xml',
             'Content-Disposition' => 'attachment; filename="movimientos-' . now()->format('Y-m-d') . '.xml"',
         ]);
+    }
+
+    public function pdf(Request $request): \Illuminate\Http\Response
+    {
+        ini_set('memory_limit', '2560M');
+
+        $empresaId = session('empresa_activa_id');
+
+        $movimientos = $this->queryFiltrada($request)
+            ->orderByDesc('fecha')->orderByDesc('id')->get();
+
+        // Ingresos/egresos del resumen excluyen anulados (igual que las tarjetas de
+        // stats del listado) aunque la tabla del PDF sí incluye anulados con su badge
+        // de Estado — misma distinción que ya existe entre index()'s `stats` (excluye
+        // anulados) y sus filas (los muestra atenuados).
+        $totalIngresos = $this->queryFiltrada($request)
+            ->where('tipo', 'ingreso')->where('anulado', false)->sum('monto');
+        $totalEgresos = $this->queryFiltrada($request)
+            ->where('tipo', 'egreso')->where('anulado', false)->sum('monto');
+
+        $empresa = Empresa::find($empresaId);
+        $pdf = Pdf::loadView('pdf.bancos-movimientos', compact('movimientos', 'empresa', 'totalIngresos', 'totalEgresos'))
+            ->setPaper('a4');
+        return $pdf->stream('movimientos-bancarios-' . now()->format('Y-m-d') . '.pdf');
     }
 
     public function anular(Request $request, MovimientoBancario $movimiento): RedirectResponse

@@ -11,6 +11,7 @@ import BuscadorClienteModal from '@/Components/shared/BuscadorClienteModal'
 import { cn, formatMoneda } from '@/lib/utils'
 import { toastError } from '@/lib/toast'
 import { Plus, Trash2, Search, Save, X, AlertTriangle } from 'lucide-react'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { PageProps, Empresa, Usuario, Cliente } from '@/types'
 
 interface ProductoVenta {
@@ -117,6 +118,7 @@ function ClienteField({ label, value, onChange, type = 'text', onKeyDown }: {
 
 export default function Form() {
     const { clientes, productos, vendedores, siguiente_numero, errors } = usePage<Props>().props
+    const { puede } = usePermiso('ventas')
 
     // — Cliente
     const [clienteSeleccionado, setClienteSeleccionado] = useState<Cliente | null>(null)
@@ -741,10 +743,12 @@ export default function Form() {
                             Cancelar
                         </Button>
                     </Link>
-                    <Button type="submit" loading={guardando}>
-                        <Save className="w-4 h-4" />
-                        Guardar Prefactura
-                    </Button>
+                    {puede('crear') && (
+                        <Button type="submit" loading={guardando}>
+                            <Save className="w-4 h-4" />
+                            Guardar Prefactura
+                        </Button>
+                    )}
                 </div>
             </form>
 

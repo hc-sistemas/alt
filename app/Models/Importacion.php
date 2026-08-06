@@ -16,18 +16,19 @@ class Importacion extends Model
         'agente_aduanero', 'pais_embarque', 'costo_fob', 'divisa',
         'fecha_partida', 'fecha_llegada', 'fecha_liquidacion',
         'total_costos_extra', 'costo_total', 'metodo_prorrateo',
-        'estado', 'observaciones', 'created_by',
+        'estado', 'observaciones', 'created_by', 'snapshot_liquidacion',
     ];
 
     protected function casts(): array
     {
         return [
-            'costo_fob'          => 'decimal:4',
-            'total_costos_extra' => 'decimal:4',
-            'costo_total'        => 'decimal:4',
-            'fecha_partida'      => 'date',
-            'fecha_llegada'      => 'date',
-            'fecha_liquidacion'  => 'date',
+            'costo_fob'            => 'decimal:4',
+            'total_costos_extra'   => 'decimal:4',
+            'costo_total'          => 'decimal:4',
+            'fecha_partida'        => 'date',
+            'fecha_llegada'        => 'date',
+            'fecha_liquidacion'    => 'date',
+            'snapshot_liquidacion' => 'array',
         ];
     }
 

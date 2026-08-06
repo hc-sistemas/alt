@@ -43,6 +43,37 @@ class CxPExport implements
             $query->where('proveedor_id', $this->filtros['proveedor_id']);
         }
 
+        if (!empty($this->filtros['periodo'])) {
+            $hoy = now();
+            match ($this->filtros['periodo']) {
+                'hoy'    => $query->whereDate('fecha_vencimiento', $hoy),
+                'semana' => $query->whereBetween('fecha_vencimiento', [
+                    $hoy->copy()->startOfWeek(), $hoy->copy()->endOfWeek()
+                ]),
+                'mes'    => $query->whereBetween('fecha_vencimiento', [
+                    $hoy->copy()->startOfMonth(), $hoy->copy()->endOfMonth()
+                ]),
+                'anio'   => $query->whereBetween('fecha_vencimiento', [
+                    $hoy->copy()->startOfYear(), $hoy->copy()->endOfYear()
+                ]),
+                'vencidas' => $query->where('fecha_vencimiento', '<', $hoy),
+                default  => null,
+            };
+        }
+        if (!empty($this->filtros['fecha_desde'])) {
+            $query->where('fecha_vencimiento', '>=', $this->filtros['fecha_desde']);
+        }
+        if (!empty($this->filtros['fecha_hasta'])) {
+            $query->where('fecha_vencimiento', '<=', $this->filtros['fecha_hasta']);
+        }
+        if (!empty($this->filtros['buscar'])) {
+            $q = $this->filtros['buscar'];
+            $query->where(fn($qb) =>
+                $qb->whereHas('proveedor', fn($p) => $p->where('razon_social', 'ilike', "%{$q}%"))
+                   ->orWhereHas('compra', fn($c) => $c->where('num_documento', 'ilike', "%{$q}%"))
+            );
+        }
+
         $data = $query->orderBy('fecha_vencimiento')->get();
         $this->totalRows  = $data->count();
         $this->totalSaldo = (float) $data->sum('saldo');

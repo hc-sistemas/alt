@@ -72,8 +72,7 @@ class OrdenTrabajoController extends Controller
      */
     private function productosConStockTaller(): Collection
     {
-        $query = Producto::where('empresa_id', session('empresa_activa_id'))
-            ->where('estado', true)
+        $query = Producto::where('estado', true)
             ->select('id', 'codigo', 'nombre', 'costo', 'pvp')
             ->orderBy('nombre');
 

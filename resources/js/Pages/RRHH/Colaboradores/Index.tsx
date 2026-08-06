@@ -4,13 +4,15 @@ import { toast, ToastContainer } from 'react-toastify'
 import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
+import FilterToolbar from '@/Components/shared/FilterToolbar'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
 import {
-    Plus, Pencil, ToggleLeft, ToggleRight, Search, X,
+    Plus, Pencil, ToggleLeft, ToggleRight, X, Search,
     User, Briefcase, DollarSign, CreditCard, Phone, Lock, Clock,
 } from 'lucide-react'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { Colaborador, PuestoTrabajo, Horario, PageProps, PaginatedData } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
 
@@ -26,8 +28,18 @@ const PERFIL_LABEL: Record<string, string> = {
     bodeguero: 'Bodeguero',
 }
 
+// Instituciones bancarias del Ecuador — lista desplegable pedida por el
+// cliente (antes era texto libre). "Otro…" revela un campo de texto para
+// bancos/cooperativas fuera de esta lista, sin perder flexibilidad.
+const BANCOS_ECUADOR = [
+    'Banco Pichincha', 'Banco del Pacífico', 'Banco Guayaquil', 'Produbanco',
+    'Banco Internacional', 'Banco Bolivariano', 'Banco de Loja', 'Banco Solidario',
+    'Banco General Rumiñahui', 'Banco ProCredit', 'Diners Club',
+    'Cooperativa JEP', 'Cooperativa Policía Nacional',
+]
+
 interface Props extends PageProps {
-    colaboradores: PaginatedData<Colaborador>
+    colaboradores: PaginatedData<Colaborador> | null
     puestos: PuestoTrabajo[]
     horarios: Horario[]
     usuarios: UsuarioItem[]
@@ -136,6 +148,13 @@ function ColaboradorModal({ colaborador, puestos, horarios, usuarios, perfiles, 
         perfil_id:           '',
         estado_usuario:      colaborador?.usuario?.estado ?? true,
     })
+
+    // Si el banco guardado no está en la lista conocida (dato viejo o
+    // institución no listada), arranca en modo "Otro…" para no perder el
+    // valor ya capturado.
+    const [bancoOtro, setBancoOtro] = useState(
+        !!colaborador?.banco && !BANCOS_ECUADOR.includes(colaborador.banco)
+    )
 
     const tieneUsuarioVinculado = isEditar && !!colaborador?.usuario
 
@@ -419,7 +438,35 @@ function ColaboradorModal({ colaborador, puestos, horarios, usuarios, perfiles, 
                         {/* Tab: Datos Bancarios */}
                         {tab === 'bancarios' && (
                             <div className="grid grid-cols-2 gap-4">
-                                {field('Banco', 'banco')}
+                                <div>
+                                    <Label className="input-label">Institución Bancaria</Label>
+                                    <select
+                                        className="input-field"
+                                        value={bancoOtro ? '__otro__' : data.banco}
+                                        onChange={e => {
+                                            if (e.target.value === '__otro__') {
+                                                setBancoOtro(true)
+                                                setData('banco', '')
+                                            } else {
+                                                setBancoOtro(false)
+                                                setData('banco', e.target.value)
+                                            }
+                                        }}
+                                    >
+                                        <option value="">— Seleccionar —</option>
+                                        {BANCOS_ECUADOR.map(b => <option key={b} value={b}>{b}</option>)}
+                                        <option value="__otro__">Otro…</option>
+                                    </select>
+                                    {bancoOtro && (
+                                        <Input
+                                            className="input-field mt-2"
+                                            placeholder="Nombre de la institución"
+                                            value={data.banco}
+                                            onChange={e => setData('banco', e.target.value)}
+                                        />
+                                    )}
+                                    {errors.banco && <p className="mt-1 text-xs text-red-500">{errors.banco}</p>}
+                                </div>
                                 <div>
                                     <Label className="input-label">Tipo de Cuenta</Label>
                                     <select className="input-field" value={data.tipo_cuenta} onChange={e => setData('tipo_cuenta', e.target.value)}>
@@ -534,18 +581,31 @@ function ColaboradorModal({ colaborador, puestos, horarios, usuarios, perfiles, 
 export default function ColaboradoresIndex() {
     const { colaboradores, puestos, horarios, usuarios, perfiles, departamentos, filtros } =
         usePage<Props>().props
+    const { puede } = usePermiso('rrhh')
 
     const [modal, setModal] = useState<{ type: 'nuevo' | 'editar'; colaborador?: Colaborador } | null>(null)
-    const [buscar, setBuscar] = useState(filtros.buscar ?? '')
-    const [departamento, setDepartamento] = useState(filtros.departamento ?? '')
-    const [estado, setEstado] = useState(filtros.estado ?? '')
+    const [filtro, setFiltro] = useState(filtros)
+
+    // Cambiar cualquier filtro después de haber buscado no vacía la tabla —
+    // solo la atenúa (opacity-60) hasta que se presione Buscar de nuevo.
+    // Mismo patrón ya usado en Movimientos Bancarios/Anticipos/Devoluciones/
+    // Importaciones/Cajas/Datafast/Conciliaciones/Cheques.
+    const [filtrosSucios, setFiltrosSucios] = useState(false)
+
+    // Carga bajo demanda: `colaboradores` viene null hasta la primera búsqueda.
+    const haBuscado = colaboradores !== null
+
+    function cambiarFiltro<K extends keyof typeof filtro>(campo: K, valor: string) {
+        setFiltro(f => ({ ...f, [campo]: valor }))
+        setFiltrosSucios(true)
+    }
 
     function filtrar() {
-        router.get(route('rrhh.colaboradores.index'), {
-            buscar:      buscar || undefined,
-            departamento: departamento || undefined,
-            estado:       estado || undefined,
-        }, { preserveState: true, replace: true })
+        router.get(route('rrhh.colaboradores.index'), { ...filtro, buscado: '1' }, {
+            preserveState: true,
+            replace: true,
+            onSuccess: () => setFiltrosSucios(false),
+        })
     }
 
     function toggleEstado(c: Colaborador) {
@@ -574,63 +634,60 @@ export default function ColaboradoresIndex() {
 
             <PageHeader
                 title="Colaboradores"
-                description="Gestión de la ficha laboral del personal"
                 breadcrumbs={[{ label: 'RRHH' }, { label: 'Colaboradores' }]}
+                actions={
+                    puede('crear') ? (
+                        <button onClick={() => setModal({ type: 'nuevo' })} className="btn-primary flex items-center gap-2">
+                            <Plus className="w-4 h-4" /> Nuevo
+                        </button>
+                    ) : undefined
+                }
             />
 
             <div className="p-6 space-y-4">
-                {/* Toolbar */}
-                <div className="flex items-center justify-between gap-3 mb-4 px-6">
-                    <div className="flex flex-wrap items-center gap-3">
-                        <button onClick={() => setModal({ type: 'nuevo' })} className="btn-primary flex items-center gap-2">
-                            <Plus className="w-4 h-4" /> Nuevo Colaborador
-                        </button>
+                <FilterToolbar
+                    search={{
+                        value: filtro.buscar ?? '',
+                        onChange: v => cambiarFiltro('buscar', v),
+                        onSearch: filtrar,
+                        placeholder: 'Nombre, cédula, cargo...',
+                    }}
+                >
+                    <select
+                        value={filtro.departamento ?? ''}
+                        onChange={e => cambiarFiltro('departamento', e.target.value)}
+                        className="input-field shrink-0"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}
+                    >
+                        <option value="">Departamento</option>
+                        {departamentos.map(d => <option key={d} value={d}>{d}</option>)}
+                    </select>
 
-                        <div className="relative">
-                            <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
-                            <Input
-                                value={buscar}
-                                onChange={e => setBuscar(e.target.value)}
-                                onKeyDown={e => e.key === 'Enter' && filtrar()}
-                                placeholder="Nombre, cédula, cargo…"
-                                className="pl-9 w-56"
-                            />
-                        </div>
+                    <select
+                        value={filtro.estado ?? ''}
+                        onChange={e => cambiarFiltro('estado', e.target.value)}
+                        className="input-field shrink-0"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}
+                    >
+                        <option value="">Estado</option>
+                        <option value="activo">Activos</option>
+                        <option value="inactivo">Inactivos</option>
+                    </select>
+                </FilterToolbar>
 
-                        <select
-                            value={departamento}
-                            onChange={e => { setDepartamento(e.target.value); }}
-                            className="input-field w-44"
-                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}
-                        >
-                            <option value="">Todos los depto.</option>
-                            {departamentos.map(d => <option key={d} value={d}>{d}</option>)}
-                        </select>
-
-                        <select
-                            value={estado}
-                            onChange={e => setEstado(e.target.value)}
-                            className="input-field w-36"
-                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}
-                        >
-                            <option value="">Todos</option>
-                            <option value="activo">Activos</option>
-                            <option value="inactivo">Inactivos</option>
-                        </select>
-
-                        <button onClick={filtrar} className="btn-secondary whitespace-nowrap">Buscar</button>
-
-                        {(buscar || departamento || estado) && (
-                            <button
-                                onClick={() => { setBuscar(''); setDepartamento(''); setEstado(''); router.get(route('rrhh.colaboradores.index')); }}
-                                className="btn-secondary flex items-center gap-1 whitespace-nowrap">
-                                <X className="w-3 h-3" /> Limpiar
-                            </button>
-                        )}
+                {/* Estado inicial: aún no se ha buscado (carga bajo demanda) */}
+                {!haBuscado && (
+                    <div className="text-center py-16">
+                        <Search className="w-12 h-12 mx-auto mb-4 opacity-30" style={{ color: 'var(--text-muted)' }} />
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                            Ajusta los filtros y presiona Buscar para consultar los colaboradores.
+                        </p>
                     </div>
-                </div>
+                )}
 
                 {/* Tabla */}
+                {haBuscado && colaboradores && (
+                <div className={cn('space-y-4', filtrosSucios && 'opacity-60 transition-opacity')}>
                 <div className="rounded-xl border overflow-x-auto" style={{ borderColor: 'var(--border)' }}>
                     <table className="w-full text-xs">
                         <thead>
@@ -645,7 +702,7 @@ export default function ColaboradoresIndex() {
                             {colaboradores.data.length === 0 ? (
                                 <tr>
                                     <td colSpan={8} className="text-center py-16 text-sm" style={{ color: 'var(--text-muted)' }}>
-                                        No hay colaboradores registrados.
+                                        No se encontraron colaboradores con estos filtros.
                                     </td>
                                 </tr>
                             ) : colaboradores.data.map(c => (
@@ -682,23 +739,27 @@ export default function ColaboradoresIndex() {
                                     </td>
                                     <td className="px-3 py-2.5">
                                         <div className="flex items-center gap-1">
-                                            <button
-                                                onClick={() => setModal({ type: 'editar', colaborador: c })}
-                                                className="p-1.5 rounded-lg transition-colors hover:bg-blue-100 dark:hover:bg-blue-900/30"
-                                                title="Editar"
-                                            >
-                                                <Pencil className="w-3.5 h-3.5 text-blue-500" />
-                                            </button>
-                                            <button
-                                                onClick={() => toggleEstado(c)}
-                                                className="p-1.5 rounded-lg transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
-                                                title={c.estado ? 'Desactivar' : 'Activar'}
-                                            >
-                                                {c.estado
-                                                    ? <ToggleRight className="w-4 h-4 text-emerald-500" />
-                                                    : <ToggleLeft  className="w-4 h-4 text-gray-400" />
-                                                }
-                                            </button>
+                                            {puede('editar') && (
+                                                <button
+                                                    onClick={() => setModal({ type: 'editar', colaborador: c })}
+                                                    className="p-1.5 rounded-lg transition-colors hover:bg-blue-100 dark:hover:bg-blue-900/30"
+                                                    title="Editar"
+                                                >
+                                                    <Pencil className="w-3.5 h-3.5 text-blue-500" />
+                                                </button>
+                                            )}
+                                            {puede('editar') && (
+                                                <button
+                                                    onClick={() => toggleEstado(c)}
+                                                    className="p-1.5 rounded-lg transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
+                                                    title={c.estado ? 'Desactivar' : 'Activar'}
+                                                >
+                                                    {c.estado
+                                                        ? <ToggleRight className="w-4 h-4 text-emerald-500" />
+                                                        : <ToggleLeft  className="w-4 h-4 text-gray-400" />
+                                                    }
+                                                </button>
+                                            )}
                                         </div>
                                     </td>
                                 </tr>
@@ -734,6 +795,8 @@ export default function ColaboradoresIndex() {
                             ))}
                         </div>
                     </div>
+                )}
+                </div>
                 )}
             </div>
 

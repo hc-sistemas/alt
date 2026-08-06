@@ -3,6 +3,7 @@ import { router, usePage, useForm, Head } from '@inertiajs/react'
 import { toast, ToastContainer } from 'react-toastify'
 import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
+import PageHeader from '@/Components/shared/PageHeader'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
@@ -10,14 +11,18 @@ import {
     Plus, Pencil, ToggleLeft, ToggleRight, X, Trash2,
     Landmark, Wallet, CreditCard, PiggyBank, TrendingUp, Search,
 } from 'lucide-react'
-import type { BancoCaja, PlanCuenta, PageProps } from '@/types'
+import { usePermiso } from '@/Hooks/usePermiso'
+import type { BancoCaja, PlanCuenta, CentroCosto, PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Props extends PageProps {
-    bancos: (BancoCaja & { cuenta: string | null })[]
+    bancos: (BancoCaja & { cuenta: string | null; centro_costo: string | null })[]
     cuentas: Pick<PlanCuenta, 'id' | 'codigo' | 'nombre'>[]
+    centrosCosto: Pick<CentroCosto, 'id' | 'nombre' | 'codigo'>[]
+    cuentasAutoMap: Record<string, string>
+    tiposRequierenCentroCosto: string[]
     stats: { total_bancos: number; total_cajas: number; saldo_bancos: number; saldo_cajas: number }
 }
 
@@ -72,14 +77,17 @@ function StatCard({ label, value, icon: Icon, cls, valueCls }: {
 
 // ─── BancoCajaCard ────────────────────────────────────────────────────────────
 
-function BancoCard({ banco, onEdit, onToggle, onDelete }: {
-    banco: BancoCaja & { cuenta: string | null }
+function BancoCard({ banco, onEdit, onToggle, onDelete, puedeEditar, puedeEliminar: puedeEliminarPermiso }: {
+    banco: BancoCaja & { cuenta: string | null; centro_costo: string | null }
     onEdit: () => void
     onToggle: () => void
     onDelete: () => void
+    puedeEditar: boolean
+    puedeEliminar: boolean
 }) {
     const Icon = tipoIcon[banco.tipo] ?? Landmark
     const saldoCero = Math.abs(Number(banco.saldo_actual)) <= 0.01
+    const requiereCentroCosto = banco.tipo === 'caja' || banco.tipo === 'caja_chica'
 
     return (
         <div className={cn(
@@ -96,39 +104,53 @@ function BancoCard({ banco, onEdit, onToggle, onDelete }: {
                         <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{banco.tipo_label}</p>
                     </div>
                 </div>
-                <div className="flex gap-1">
-                    <button onClick={onEdit} title="Editar"
-                        className="p-1.5 rounded hover:bg-blue-500/20 text-blue-500 transition-colors">
-                        <Pencil className="w-3.5 h-3.5" />
-                    </button>
-                    <button onClick={onToggle} title={banco.estado ? 'Desactivar' : 'Activar'}
-                        className={cn('p-1.5 rounded transition-colors',
-                            banco.estado ? 'hover:bg-red-500/20 text-red-500' : 'hover:bg-green-500/20 text-green-600')}>
-                        {banco.estado ? <ToggleRight className="w-3.5 h-3.5" /> : <ToggleLeft className="w-3.5 h-3.5" />}
-                    </button>
-                    <button
-                        onClick={saldoCero ? onDelete : undefined}
-                        title={saldoCero ? 'Eliminar permanentemente' : `Tiene saldo de ${fmt(banco.saldo_actual)}. Solo puedes inactivarlo`}
-                        disabled={!saldoCero}
-                        className={cn(
-                            'p-1.5 rounded transition-colors',
-                            saldoCero
-                                ? 'hover:bg-red-500/20 text-red-400 cursor-pointer'
-                                : 'opacity-25 cursor-not-allowed text-gray-400'
-                        )}>
-                        <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                <div className="flex items-center gap-1.5 shrink-0">
+                    {puedeEditar && (
+                        <button onClick={onEdit} title="Editar"
+                            className="p-1.5 rounded hover:bg-blue-500/20 text-blue-500 transition-colors">
+                            <Pencil className="w-4 h-4" />
+                        </button>
+                    )}
+                    {puedeEditar && (
+                        <button onClick={onToggle} title={banco.estado ? 'Desactivar' : 'Activar'}
+                            className={cn('p-1.5 rounded transition-colors',
+                                banco.estado ? 'hover:bg-red-500/20 text-red-500' : 'hover:bg-green-500/20 text-green-600')}>
+                            {banco.estado ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
+                        </button>
+                    )}
+                    {puedeEliminarPermiso && (
+                        <button
+                            onClick={saldoCero ? onDelete : undefined}
+                            title={saldoCero ? 'Eliminar permanentemente' : `Tiene saldo de ${fmt(banco.saldo_actual)}. Solo puedes inactivarlo`}
+                            disabled={!saldoCero}
+                            className={cn('p-1.5 rounded transition-colors',
+                                saldoCero ? 'hover:bg-red-500/20 text-red-400 cursor-pointer' : 'cursor-not-allowed')}
+                            style={saldoCero ? undefined : { color: 'var(--text-muted)', opacity: 0.4 }}>
+                            <Trash2 className="w-4 h-4" />
+                        </button>
+                    )}
                 </div>
             </div>
 
             {banco.num_cuenta && (
                 <p className="font-mono text-xs px-2 py-1 rounded-md"
-                    style={{ background: 'rgba(0,0,0,0.05)', color: 'var(--text-muted)' }}>
+                    style={{ background: 'var(--bg-main)', color: 'var(--text-muted)' }}>
                     {banco.num_cuenta} {banco.tipo_cuenta && `· ${banco.tipo_cuenta}`}
                 </p>
             )}
 
-            <div className="flex items-end justify-between border-t pt-3" style={{ borderColor: 'var(--border)' }}>
+            {requiereCentroCosto && (
+                banco.centro_costo
+                    ? <p className="text-xs px-2 py-1 rounded-md w-fit"
+                        style={{ background: 'color-mix(in srgb, var(--primary) 12%, transparent)', color: 'var(--primary)' }}>
+                        🏢 {banco.centro_costo}
+                    </p>
+                    : <p className="text-xs px-2 py-1 rounded-md w-fit font-semibold bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400">
+                        ⚠ Centro de costo sin asignar
+                    </p>
+            )}
+
+            <div className="flex items-end justify-between border-t pt-3 mt-auto" style={{ borderColor: 'var(--border)' }}>
                 <div>
                     <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Saldo actual</p>
                     <p className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>{fmt(banco.saldo_actual)}</p>
@@ -215,20 +237,16 @@ function CuentaSearchModal({ cuentas, onSelect, onClose }: {
 
 // ─── Modal Banco/Caja ─────────────────────────────────────────────────────────
 
-const CUENTAS_AUTO: Record<string, string> = {
-    banco:      '1.1.1.3',
-    caja:       '1.1.1.1',
-    caja_chica: '1.1.1.2',
-    tarjeta:    '1.1.1.5',
-}
-
 interface ModalProps {
-    banco?: BancoCaja & { cuenta: string | null }
+    banco?: BancoCaja & { cuenta: string | null; centro_costo: string | null }
     cuentas: Props['cuentas']
+    centrosCosto: Props['centrosCosto']
+    cuentasAutoMap: Props['cuentasAutoMap']
+    tiposRequierenCentroCosto: Props['tiposRequierenCentroCosto']
     onClose: () => void
 }
 
-function BancoModal({ banco, cuentas, onClose }: ModalProps) {
+function BancoModal({ banco, cuentas, centrosCosto, cuentasAutoMap, tiposRequierenCentroCosto, onClose }: ModalProps) {
     const isEdit = !!banco
     const [showCuentaModal, setShowCuentaModal] = useState(false)
 
@@ -237,30 +255,36 @@ function BancoModal({ banco, cuentas, onClose }: ModalProps) {
     // Cuenta inicial: si tiene asignada la usa, si es nuevo busca la auto
     const initialCuenta = (() => {
         if (banco?.cuenta_id) return cuentas.find(c => c.id === Number(banco.cuenta_id)) ?? null
-        return cuentas.find(c => c.codigo === CUENTAS_AUTO[initialTipo]) ?? null
+        return cuentas.find(c => c.codigo === cuentasAutoMap[initialTipo]) ?? null
     })()
 
     const [cuentaSeleccionada, setCuentaSeleccionada] = useState<Props['cuentas'][0] | null>(initialCuenta)
 
     const { data, setData, post, put, processing, errors } = useForm({
-        tipo:          initialTipo,
-        nombre:        banco?.nombre ?? '',
-        num_cuenta:    banco?.num_cuenta ?? '',
-        tipo_cuenta:   banco?.tipo_cuenta ?? '',
-        cuenta_id:     (initialCuenta?.id ?? banco?.cuenta_id ?? '') as string | number,
-        saldo_inicial: banco?.saldo_inicial ?? 0,
+        tipo:             initialTipo,
+        nombre:           banco?.nombre ?? '',
+        num_cuenta:       banco?.num_cuenta ?? '',
+        tipo_cuenta:      banco?.tipo_cuenta ?? '',
+        cuenta_id:        (initialCuenta?.id ?? banco?.cuenta_id ?? '') as string | number,
+        centro_costo_id:  (banco?.centro_costo_id ?? '') as string | number,
+        saldo_inicial:    banco?.saldo_inicial ?? 0,
     })
+
+    const requiereCentroCosto = tiposRequierenCentroCosto.includes(data.tipo)
 
     function handleTipoChange(tipo: string) {
         setData('tipo', tipo)
         // Cambiar cuenta auto solo si la cuenta actual también es una auto (o no hay)
         const esAutoActual = cuentaSeleccionada
-            ? Object.values(CUENTAS_AUTO).includes(cuentaSeleccionada.codigo)
+            ? Object.values(cuentasAutoMap).includes(cuentaSeleccionada.codigo)
             : true
         if (esAutoActual) {
-            const auto = cuentas.find(c => c.codigo === CUENTAS_AUTO[tipo]) ?? null
+            const auto = cuentas.find(c => c.codigo === cuentasAutoMap[tipo]) ?? null
             setCuentaSeleccionada(auto)
             setData('cuenta_id', auto ? (auto.id as any) : '')
+        }
+        if (!tiposRequierenCentroCosto.includes(tipo)) {
+            setData('centro_costo_id', '')
         }
     }
 
@@ -307,7 +331,7 @@ function BancoModal({ banco, cuentas, onClose }: ModalProps) {
                                             onClick={() => handleTipoChange(t)}
                                             className={cn(
                                                 'py-2 px-3 rounded-lg text-sm font-medium border transition-colors',
-                                                data.tipo === t ? 'text-white border-transparent' : 'hover:opacity-80'
+                                                data.tipo === t ? 'text-black border-transparent' : 'hover:opacity-80'
                                             )}
                                             style={data.tipo === t
                                                 ? { background: 'var(--primary)' }
@@ -351,7 +375,7 @@ function BancoModal({ banco, cuentas, onClose }: ModalProps) {
                         <div className="space-y-1.5">
                             <div className="flex items-center justify-between">
                                 <Label>Cuenta contable</Label>
-                                {cuentaSeleccionada && CUENTAS_AUTO[data.tipo] === cuentaSeleccionada.codigo && (
+                                {cuentaSeleccionada && cuentasAutoMap[data.tipo] === cuentaSeleccionada.codigo && (
                                     <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
                                         style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)', color: 'var(--primary)' }}>
                                         Auto
@@ -379,7 +403,26 @@ function BancoModal({ banco, cuentas, onClose }: ModalProps) {
                                     <X size={11} /> Quitar cuenta
                                 </button>
                             )}
+                            {!cuentaSeleccionada && (
+                                <p className="text-xs px-2.5 py-1.5 rounded-md font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400">
+                                    ⚠ No se encontró una cuenta contable automática — selecciónala manualmente para no dejar este registro sin vínculo contable.
+                                </p>
+                            )}
                         </div>
+
+                        {requiereCentroCosto && (
+                            <div className="space-y-1.5">
+                                <Label>Centro de Costo <span className="text-red-400">*</span></Label>
+                                <select value={data.centro_costo_id} onChange={e => setData('centro_costo_id', e.target.value)}
+                                    required className="input-field select-field">
+                                    <option value="">— Seleccionar —</option>
+                                    {centrosCosto.map(c => (
+                                        <option key={c.id} value={c.id}>{c.nombre}</option>
+                                    ))}
+                                </select>
+                                {errors.centro_costo_id && <p className="text-red-400 text-xs">{errors.centro_costo_id}</p>}
+                            </div>
+                        )}
 
                         {!isEdit && (
                             <div className="space-y-1.5">
@@ -417,7 +460,8 @@ function BancoModal({ banco, cuentas, onClose }: ModalProps) {
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function BancosCajasIndex() {
-    const { bancos, cuentas, stats, flash } = usePage<Props>().props
+    const { bancos, cuentas, centrosCosto, cuentasAutoMap, tiposRequierenCentroCosto, stats, flash } = usePage<Props>().props
+    const { puede } = usePermiso('bancos')
     const [modal, setModal] = useState<{ open: boolean; banco?: Props['bancos'][0] }>({ open: false })
 
 
@@ -500,25 +544,19 @@ export default function BancosCajasIndex() {
         <AppLayout title="Bancos y Cajas" suppressFlash>
             <Head title="Bancos y Cajas" />
 
-            <div className="px-6 pt-6 mb-2">
-                <div className="flex items-center gap-3 mb-4">
-                    <div className="p-2 rounded-xl" style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
-                        <Landmark size={24} style={{ color: 'var(--primary)' }} />
-                    </div>
-                    <div>
-                        <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>Bancos y Cajas</h1>
-                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Catálogo de cuentas bancarias y cajas</p>
-                    </div>
-                </div>
-                <div className="flex items-center gap-2 flex-wrap mb-6">
-                    <button onClick={() => setModal({ open: true })}
-                        className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5"
-                        style={{ background: 'var(--primary)' }}>
-                        <Plus size={15} /> Nuevo Banco/Caja
-                    </button>
-
-                </div>
-            </div>
+            <PageHeader
+                title="Bancos y Cajas"
+                breadcrumbs={[{ label: 'Bancos' }, { label: 'Bancos y Cajas' }]}
+                actions={
+                    puede('crear') ? (
+                        <button onClick={() => setModal({ open: true })}
+                            className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-black whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5 shrink-0"
+                            style={{ background: 'var(--primary)' }}>
+                            <Plus size={15} /> Nuevo
+                        </button>
+                    ) : undefined
+                }
+            />
 
             {/* Stats */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 px-6 py-4">
@@ -550,7 +588,9 @@ export default function BancosCajasIndex() {
                                     <BancoCard key={b.id} banco={b}
                                         onEdit={() => setModal({ open: true, banco: b })}
                                         onToggle={() => confirmarToggle(b)}
-                                        onDelete={() => confirmarEliminar(b)} />
+                                        onDelete={() => confirmarEliminar(b)}
+                                        puedeEditar={puede('editar')}
+                                        puedeEliminar={puede('eliminar')} />
                                 ))}
                             </div>
                         </div>
@@ -566,7 +606,9 @@ export default function BancosCajasIndex() {
             </div>
 
             {modal.open && (
-                <BancoModal banco={modal.banco} cuentas={cuentas} onClose={() => setModal({ open: false })} />
+                <BancoModal banco={modal.banco} cuentas={cuentas} centrosCosto={centrosCosto}
+                    cuentasAutoMap={cuentasAutoMap} tiposRequierenCentroCosto={tiposRequierenCentroCosto}
+                    onClose={() => setModal({ open: false })} />
             )}
 
 

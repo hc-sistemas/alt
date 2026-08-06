@@ -9,6 +9,7 @@ import { Plus, Search, Pencil, Trash2, Eye, FileText, FileSpreadsheet } from 'lu
 import { confirmarEliminar } from '@/lib/swal'
 import { toastExito, toastError } from '@/lib/toast'
 import type { ActivoFijo, PaginatedData, PageProps } from '@/types'
+import { usePermiso } from '@/Hooks/usePermiso'
 
 interface Props extends PageProps {
     activos: PaginatedData<ActivoFijo>
@@ -32,6 +33,7 @@ function fmt(v: number | string) {
 
 export default function ActivosIndex() {
     const { activos, estados, filters } = usePage<Props>().props
+    const { puede } = usePermiso('inventario')
 
     const [search, setSearch] = useState(filters.search ?? '')
     const [estado, setEstado] = useState(filters.estado ?? '')
@@ -99,17 +101,20 @@ export default function ActivosIndex() {
                 title="Activos Fijos"
                 description="Registro y depreciación de activos fijos"
                 breadcrumbs={[{ label: 'Inventario' }, { label: 'Activos Fijos' }]}
+                actions={
+                    puede('crear') ? (
+                        <Link href={route('inventario.activos.create')}>
+                            <Button>
+                                <Plus className="w-4 h-4" />
+                                Nuevo
+                            </Button>
+                        </Link>
+                    ) : undefined
+                }
             />
 
             <div className="p-6">
                 <div className="flex items-center gap-3 mb-4 flex-wrap">
-                    <Link href={route('inventario.activos.create')}>
-                        <Button>
-                            <Plus className="w-4 h-4" />
-                            Nuevo Activo
-                        </Button>
-                    </Link>
-
                     <div className="relative">
                         <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
                         <Input
@@ -208,15 +213,19 @@ export default function ActivosIndex() {
                                                         <Eye className="w-3.5 h-3.5" />
                                                     </Button>
                                                 </Link>
-                                                <Link href={route('inventario.activos.edit', activo.id)}>
-                                                    <Button variant="ghost" size="icon" title="Editar">
-                                                        <Pencil className="w-3.5 h-3.5" />
+                                                {puede('editar') && (
+                                                    <Link href={route('inventario.activos.edit', activo.id)}>
+                                                        <Button variant="ghost" size="icon" title="Editar">
+                                                            <Pencil className="w-3.5 h-3.5" />
+                                                        </Button>
+                                                    </Link>
+                                                )}
+                                                {puede('eliminar') && (
+                                                    <Button variant="ghost" size="icon" title="Eliminar"
+                                                        onClick={() => eliminar(activo)}>
+                                                        <Trash2 className="w-3.5 h-3.5 text-red-400" />
                                                     </Button>
-                                                </Link>
-                                                <Button variant="ghost" size="icon" title="Eliminar"
-                                                    onClick={() => eliminar(activo)}>
-                                                    <Trash2 className="w-3.5 h-3.5 text-red-400" />
-                                                </Button>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>

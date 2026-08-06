@@ -3,11 +3,14 @@ import { router, usePage, useForm, Head } from '@inertiajs/react'
 import { toast, ToastContainer } from 'react-toastify'
 import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
+import PageHeader from '@/Components/shared/PageHeader'
+import FilterToolbar from '@/Components/shared/FilterToolbar'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
-import { Plus, X, Wallet, AlertTriangle, CheckCircle, Lock } from 'lucide-react'
-import type { BancoCaja, CierreCaja, CentroCosto, PageProps } from '@/types'
+import { Plus, X, Wallet, AlertTriangle, CheckCircle, Lock, Search, Clock } from 'lucide-react'
+import { usePermiso } from '@/Hooks/usePermiso'
+import type { BancoCaja, CentroCosto, PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -19,13 +22,24 @@ interface CierreRow {
     hora_apertura: string | null; hora_cierre: string | null
     usuario_apertura: string | null; usuario_cierre: string | null
     tiene_diferencia: boolean
+    dias_abierta: number
+    sospechosa: boolean
 }
 
 interface Props extends PageProps {
-    cierres: CierreRow[]
+    cierres: CierreRow[] | null
     cajas: BancoCaja[]
     centros: Pick<CentroCosto, 'id' | 'nombre'>[]
-    cajaAbierta: (CierreCaja & { banco_caja?: BancoCaja }) | null
+    cajaAbierta: {
+        id: number
+        banco_caja: { nombre: string } | null
+        monto_inicial: number
+        hora_apertura: string | null
+    } | null
+    filtros: {
+        banco_caja_id?: string; estado?: string; centro_costo_id?: string
+        fecha_desde?: string; fecha_hasta?: string; buscar?: string
+    }
 }
 
 // ─── Notify ───────────────────────────────────────────────────────────────────
@@ -217,7 +231,7 @@ function CerrarModal({ cierre, onClose }: { cierre: CierreRow; onClose: () => vo
                 <div className="modal-footer">
                     <button type="submit" disabled={processing}
                         className={cn('btn-primary', Math.abs(diferencia) > 0.01 ? 'bg-orange-500' : '')}
-                        style={Math.abs(diferencia) <= 0.01 ? {} : { background: '#F97316', boxShadow: 'none' }}>
+                        style={Math.abs(diferencia) <= 0.01 ? {} : { background: '#F97316', color: '#fff', boxShadow: 'none' }}>
                         <Lock className="w-4 h-4" /> Cerrar Caja
                     </button>
                     <button type="button" onClick={onClose} className="btn-secondary">
@@ -233,9 +247,23 @@ function CerrarModal({ cierre, onClose }: { cierre: CierreRow; onClose: () => vo
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function CajasIndex() {
-    const { cierres, cajas, centros, cajaAbierta, flash } = usePage<Props>().props
+    const { cierres, cajas, centros, cajaAbierta, filtros, flash } = usePage<Props>().props
+    const { puede } = usePermiso('bancos')
     const [showAbrir, setShowAbrir] = useState(false)
     const [cerrarCierre, setCerrarCierre] = useState<CierreRow | null>(null)
+
+    const [filtro, setFiltro] = useState(filtros)
+
+    // Cambiar cualquier filtro después de haber buscado marca los resultados
+    // como "obsoletos" respecto al filtro actual — la tabla NO se vacía (se
+    // sigue mostrando la última búsqueda, atenuada) hasta que se presione
+    // Buscar de nuevo (mismo patrón ya corregido en Movimientos Bancarios/
+    // Anticipos/Devoluciones/Importaciones).
+    const [filtrosSucios, setFiltrosSucios] = useState(false)
+
+    // Carga bajo demanda: `cierres` viene null hasta que el usuario presiona
+    // Buscar por primera vez.
+    const haBuscado = cierres !== null
 
     useEffect(() => {
         if (flash?.success) notify.ok(flash.success)
@@ -243,76 +271,150 @@ export default function CajasIndex() {
         if (flash?.warning) notify.warn(flash.warning as string)
     }, [flash?.success, flash?.error])
 
+    function cambiarFiltro<K extends keyof typeof filtro>(campo: K, valor: string) {
+        setFiltro(f => ({ ...f, [campo]: valor }))
+        setFiltrosSucios(true)
+    }
+
+    function buscar() {
+        router.get(route('bancos.cajas.index'), { ...filtro, buscado: '1' } as any, {
+            preserveState: true,
+            replace: true,
+            onSuccess: () => setFiltrosSucios(false),
+        })
+    }
+
     return (
         <AppLayout title="Control de Cajas" suppressFlash>
             <Head title="Control de Cajas" />
 
+            <PageHeader
+                title="Control de Cajas"
+                breadcrumbs={[{ label: 'Bancos' }, { label: 'Cajas' }]}
+                description={
+                    cajaAbierta ? (
+                        <span className="flex items-center gap-1.5 text-green-600 dark:text-green-400">
+                            <CheckCircle size={12} className="shrink-0" />
+                            Caja abierta: {cajaAbierta.banco_caja?.nombre}
+                            {' '}· Desde las {cajaAbierta.hora_apertura}
+                            {' '}· Saldo inicial {fmt(Number(cajaAbierta.monto_inicial))}
+                        </span>
+                    ) : (
+                        <span className="flex items-center gap-1.5 text-red-600 dark:text-red-400">
+                            <AlertTriangle size={12} className="shrink-0" />
+                            No hay caja abierta hoy · Abre una caja para registrar movimientos de efectivo.
+                        </span>
+                    )
+                }
+                actions={
+                    <div className="flex items-center gap-2 flex-wrap shrink-0">
+                        {!cajaAbierta && puede('crear') && (
+                            <button onClick={() => setShowAbrir(true)}
+                                className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-black whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5 shrink-0"
+                                style={{ background: 'var(--primary)' }}>
+                                <Plus size={15} /> Abrir Caja
+                            </button>
+                        )}
+                        {cajaAbierta && puede('editar') && (
+                            <button
+                                onClick={() => setCerrarCierre({
+                                    id: cajaAbierta.id,
+                                    caja: cajaAbierta.banco_caja?.nombre ?? '',
+                                    centro_costo: null, fecha: '',
+                                    monto_inicial: Number(cajaAbierta.monto_inicial),
+                                    total_cobrado: 0, total_efectivo: 0, total_tarjeta: 0,
+                                    diferencia: 0, estado: 'abierto',
+                                    hora_apertura: null, hora_cierre: null,
+                                    usuario_apertura: null, usuario_cierre: null,
+                                    tiene_diferencia: false, total_facturado: 0,
+                                    dias_abierta: 0, sospechosa: false,
+                                } as any)}
+                                className="flex items-center gap-1.5 px-4 py-2 rounded-xl font-semibold text-sm text-black whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5 shrink-0 bg-green-600">
+                                <Lock className="w-4 h-4" /> Cerrar Caja
+                            </button>
+                        )}
+                    </div>
+                }
+            />
+
             <div className="px-6 pt-6 mb-2">
-                <div className="flex items-center gap-3 mb-4">
-                    <div className="p-2 rounded-xl" style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
-                        <Wallet size={24} style={{ color: 'var(--primary)' }} />
+                {/*
+                    Ancho vía `style.width` inline a propósito, NO clases Tailwind: `.input-field`
+                    (app.css) declara `width:100%` fuera de cualquier @layer, y las utilidades de
+                    Tailwind v4 viven dentro de su @layer utilities interno — por reglas de CSS
+                    Cascade Layers, lo no-layereado siempre gana sobre lo layereado sin importar
+                    especificidad ni orden, así que un w-XX de Tailwind nunca puede ganarle a
+                    `.input-field`. Mismo hallazgo documentado en Movimientos Bancarios/Asientos/
+                    Facturas de Compra/Proveedores/Cuentas por Pagar/Anticipos/Devoluciones/
+                    Importaciones.
+                */}
+                <div className="overflow-x-auto">
+                <div style={{ minWidth: '1050px' }}>
+                <FilterToolbar
+                    search={{
+                        value: filtro.buscar ?? '',
+                        onChange: v => cambiarFiltro('buscar', v),
+                        onSearch: buscar,
+                        placeholder: 'Usuario, observaciones...',
+                    }}
+                    searchWidth="w-[130px]"
+                >
+                    <select value={filtro.banco_caja_id ?? ''} onChange={e => cambiarFiltro('banco_caja_id', e.target.value)}
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '160px' }}>
+                        <option value="">Caja</option>
+                        {cajas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                    </select>
+
+                    <select value={filtro.estado ?? ''} onChange={e => cambiarFiltro('estado', e.target.value)}
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '110px' }}>
+                        <option value="">Estado</option>
+                        <option value="abierto">Abierta</option>
+                        <option value="cerrado">Cerrada</option>
+                    </select>
+
+                    <select value={filtro.centro_costo_id ?? ''} onChange={e => cambiarFiltro('centro_costo_id', e.target.value)}
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '140px' }}>
+                        <option value="">Centro</option>
+                        {centros.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                    </select>
+
+                    <div className="flex flex-col gap-1 shrink-0 self-end">
+                        <label className="text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>Desde</label>
+                        <input type="date" value={filtro.fecha_desde ?? ''}
+                            onChange={e => cambiarFiltro('fecha_desde', e.target.value)}
+                            className="input-field text-xs"
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '140px' }} />
                     </div>
-                    <div>
-                        <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>Control de Cajas</h1>
-                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Apertura y cierre de cajas diarias</p>
+                    <div className="flex flex-col gap-1 shrink-0 self-end">
+                        <label className="text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>Hasta</label>
+                        <input type="date" value={filtro.fecha_hasta ?? ''}
+                            onChange={e => cambiarFiltro('fecha_hasta', e.target.value)}
+                            className="input-field text-xs"
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '140px' }} />
                     </div>
+                </FilterToolbar>
                 </div>
-                <div className="flex items-center gap-2 flex-wrap mb-6">
-                    {!cajaAbierta && (
-                        <button onClick={() => setShowAbrir(true)}
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5"
-                            style={{ background: 'var(--primary)' }}>
-                            <Plus size={15} /> Abrir Caja
-                        </button>
-                    )}
                 </div>
             </div>
 
-            {/* Banner caja abierta */}
-            <div className="px-6 pb-4">
-                {cajaAbierta ? (
-                    <div className="rounded-xl p-4 flex items-center justify-between"
-                        style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)' }}>
-                        <div className="flex items-center gap-3">
-                            <CheckCircle className="w-6 h-6 text-green-500" />
-                            <div>
-                                <p className="font-semibold text-sm text-green-700 dark:text-green-400">
-                                    Caja abierta hoy — {(cajaAbierta as any).banco_caja?.nombre}
-                                </p>
-                                <p className="text-xs text-green-600 dark:text-green-500">
-                                    Apertura: {cajaAbierta.hora_apertura} · Monto inicial: {fmt(Number(cajaAbierta.monto_inicial))}
-                                </p>
-                            </div>
-                        </div>
-                        <button
-                            onClick={() => setCerrarCierre({
-                                id: cajaAbierta.id,
-                                caja: (cajaAbierta as any).banco_caja?.nombre ?? '',
-                                centro_costo: null, fecha: '',
-                                monto_inicial: Number(cajaAbierta.monto_inicial),
-                                total_cobrado: 0, total_efectivo: 0, total_tarjeta: 0,
-                                diferencia: 0, estado: 'abierto',
-                                hora_apertura: null, hora_cierre: null,
-                                usuario_apertura: null, usuario_cierre: null,
-                                tiene_diferencia: false, total_facturado: 0,
-                            } as any)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white bg-green-600 hover:bg-green-700">
-                            <Lock className="w-4 h-4" /> Cerrar Caja
-                        </button>
-                    </div>
-                ) : (
-                    <div className="rounded-xl p-4 flex items-center gap-3"
-                        style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)' }}>
-                        <AlertTriangle className="w-6 h-6 text-red-500" />
-                        <p className="text-sm text-red-700 dark:text-red-400 font-medium">
-                            No hay caja abierta hoy. Abre una caja para registrar movimientos de efectivo.
+            {/* Estado inicial: aún no se ha buscado (carga bajo demanda) */}
+            {!haBuscado && (
+                <div className="px-6 pb-8">
+                    <div className="text-center py-16">
+                        <Search className="w-12 h-12 mx-auto mb-4 opacity-30" style={{ color: 'var(--text-muted)' }} />
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                            Ajusta los filtros y presiona Buscar para consultar el historial de cierres.
                         </p>
                     </div>
-                )}
-            </div>
+                </div>
+            )}
 
             {/* Historial */}
-            <div className="px-6 pb-8">
+            {haBuscado && cierres && (
+            <div className={cn('px-6 pb-8', filtrosSucios && 'opacity-60 transition-opacity')}>
                 <h2 className="text-sm font-semibold mb-3 uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
                     Historial de cierres
                 </h2>
@@ -334,7 +436,7 @@ export default function CajasIndex() {
                     {cierres.length === 0 && (
                         <div className="py-16 text-center">
                             <Wallet className="w-10 h-10 opacity-20 mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
-                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Sin historial de cierres</p>
+                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No se encontraron cierres con estos filtros</p>
                         </div>
                     )}
 
@@ -368,14 +470,20 @@ export default function CajasIndex() {
                                     {fmt(c.diferencia)}
                                 </p>
                             </div>
-                            <div className="col-span-1 flex justify-center">
+                            <div className="col-span-1 flex flex-col items-center gap-1">
                                 {c.estado === 'abierto'
                                     ? <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">Abierta</span>
                                     : <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700 dark:bg-slate-700/40 dark:text-slate-300">Cerrada</span>
                                 }
+                                {c.sospechosa && (
+                                    <span title={`Abierta desde hace ${c.dias_abierta} día(s) sin cerrar — se supone que las cajas cierran el mismo día`}
+                                        className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 whitespace-nowrap">
+                                        <Clock className="w-2.5 h-2.5" /> {c.dias_abierta}d
+                                    </span>
+                                )}
                             </div>
                             <div className="col-span-1 flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                                {c.estado === 'abierto' && (
+                                {c.estado === 'abierto' && puede('editar') && (
                                     <button onClick={() => setCerrarCierre(c)}
                                         className="p-1.5 rounded hover:bg-orange-500/20 text-orange-500 transition-colors" title="Cerrar caja">
                                         <Lock className="w-3.5 h-3.5" />
@@ -386,6 +494,7 @@ export default function CajasIndex() {
                     ))}
                 </div>
             </div>
+            )}
 
             {showAbrir && <AbrirModal cajas={cajas} centros={centros} onClose={() => setShowAbrir(false)} />}
             {cerrarCierre && <CerrarModal cierre={cerrarCierre} onClose={() => setCerrarCierre(null)} />}

@@ -25,34 +25,42 @@ class AsientoContableController extends Controller
     {
         $empresaId = session('empresa_activa_id');
 
-        $query = AsientoContable::with(['ejercicio','creadoPor'])
-            ->where('empresa_id', $empresaId);
+        // Carga bajo demanda: con miles de asientos en producción, la query pesada
+        // solo se ejecuta cuando el usuario dispara una búsqueda explícita (botón
+        // lupa en el FilterToolbar), nunca en la carga inicial de la página.
+        $asientos = null;
 
-        if ($request->filled('buscar')) {
-            $q = $request->buscar;
-            $query->where(fn($qb) =>
-                $qb->where('numero',         'ilike', "%{$q}%")
-                   ->orWhere('concepto',     'ilike', "%{$q}%")
-                   ->orWhere('documento_ref','ilike', "%{$q}%")
-            );
-        }
-        if ($request->filled('tipo')) {
-            $query->where('es_automatico', $request->tipo === 'automatico');
-        }
-        if ($request->filled('estado')) {
-            $query->where('estado', $request->estado === 'activo' ? 1 : 0);
-        }
-        if ($request->filled('ejercicio_id')) {
-            $query->where('ejercicio_id', $request->ejercicio_id);
-        }
-        if ($request->filled('fecha_desde')) {
-            $query->where('fecha', '>=', $request->fecha_desde);
-        }
-        if ($request->filled('fecha_hasta')) {
-            $query->where('fecha', '<=', $request->fecha_hasta);
+        if ($request->boolean('buscado')) {
+            $query = AsientoContable::with(['ejercicio','creadoPor'])
+                ->where('empresa_id', $empresaId);
+
+            if ($request->filled('buscar')) {
+                $q = $request->buscar;
+                $query->where(fn($qb) =>
+                    $qb->where('numero',         'ilike', "%{$q}%")
+                       ->orWhere('concepto',     'ilike', "%{$q}%")
+                       ->orWhere('documento_ref','ilike', "%{$q}%")
+                );
+            }
+            if ($request->filled('tipo')) {
+                $query->where('es_automatico', $request->tipo === 'automatico');
+            }
+            if ($request->filled('estado')) {
+                $query->where('estado', $request->estado === 'activo' ? 1 : 0);
+            }
+            if ($request->filled('ejercicio_id')) {
+                $query->where('ejercicio_id', $request->ejercicio_id);
+            }
+            if ($request->filled('fecha_desde')) {
+                $query->where('fecha', '>=', $request->fecha_desde);
+            }
+            if ($request->filled('fecha_hasta')) {
+                $query->where('fecha', '<=', $request->fecha_hasta);
+            }
+
+            $asientos = $query->orderByDesc('created_at')->paginate(25)->withQueryString();
         }
 
-        $asientos   = $query->orderByDesc('created_at')->paginate(25)->withQueryString();
         $ejercicios = EjercicioContable::where('empresa_id', $empresaId)
                         ->orderByDesc('anio')->orderByDesc('mes')->get();
 
@@ -190,6 +198,12 @@ class AsientoContableController extends Controller
             return back()->with('error', 'El asiento ya está anulado. No es necesario eliminarlo.');
         }
 
+        $asiento->loadMissing('ejercicio');
+        if ($asiento->ejercicio && $asiento->ejercicio->estaCerrado()) {
+            return back()->with('error',
+                "El período {$asiento->ejercicio->periodo_label} está cerrado. No se puede eliminar el asiento.");
+        }
+
         // Comparación directa (no diffInHours) para no depender del signo: en Carbon 3
         // diffInHours() es firmado por defecto y now()->diffInHours($pasado) da negativo,
         // lo que nunca superaba el umbral de 24 y dejaba el candado inoperante.
@@ -206,24 +220,53 @@ class AsientoContableController extends Controller
             ->with('success', "Asiento {$numero} eliminado permanentemente.");
     }
 
-    // CORRECCIÓN 5: exportar a Excel
     public function exportarExcel(Request $request): \Symfony\Component\HttpFoundation\BinaryFileResponse
     {
         $empresaId = session('empresa_activa_id');
+
+        $filtros = $request->only([
+            'ejercicio_id', 'fecha_desde', 'fecha_hasta', 'tipo', 'estado',
+        ]);
+
+        // Sin filtro genera el histórico completo (~11 mil asientos / ~28 mil
+        // líneas de detalle) — memory_limit elevado con el mismo margen que
+        // antes corría en el worker de colas (ver max_execution_time también
+        // subido para esta ruta en config/php.ini o el servidor web).
+        ini_set('memory_limit', '1536M');
+
+        $asientosExport = new AsientosExport((int)$empresaId, $filtros);
+
         return Excel::download(
-            new AsientosExport((int)$empresaId, $request->only([
-                'ejercicio_id','fecha_desde','fecha_hasta'
-            ])),
+            $asientosExport,
             'asientos-' . now()->format('Y-m-d') . '.xlsx',
             \Maatwebsite\Excel\Excel::XLSX
         );
     }
 
-    public function reportePdf(Request $request): \Illuminate\Http\Response
+    public function reportePdf(Request $request): \Symfony\Component\HttpFoundation\Response
     {
         $empresaId = session('empresa_activa_id');
 
-        $query = AsientoContable::with(['ejercicio', 'creadoPor', 'detalles.cuenta'])
+        $filtros = $request->only([
+            'ejercicio_id', 'fecha_desde', 'fecha_hasta', 'tipo', 'estado',
+        ]);
+
+        // DomPDF (Cellmap::resolve_border) necesita muchísima más memoria por
+        // fila que PhpSpreadsheet (exportarExcel() funciona con 1536M incluso
+        // sin filtro, 11,177 asientos) — probado con datos reales: 1536M
+        // revienta con un rango de apenas 6 meses (~2,100 asientos). 4096M
+        // da margen para rangos grandes reales; el histórico completo sin
+        // ningún filtro puede seguir sin alcanzar (mismo límite de DomPDF que
+        // Mayor Contable — ver CLAUDE.md).
+        ini_set('memory_limit', '4096M');
+
+        // pdf.asientos-reporte solo usa $asiento->ejercicio (un renglón por
+        // asiento, no por línea de detalle) — eager-cargar creadoPor/
+        // detalles.cuenta aquí no se usa nunca en la vista y solo infla memoria
+        // sin necesidad (encontrado al probar ExportarAsientosJob con ~1,100
+        // asientos: dompdf agotó los 512MB del límite de memoria de PHP
+        // procesando relaciones que la vista ni toca).
+        $query = AsientoContable::with(['ejercicio'])
             ->where('empresa_id', $empresaId);
 
         if ($request->filled('ejercicio_id')) {
@@ -234,6 +277,12 @@ class AsientoContableController extends Controller
         }
         if ($request->filled('fecha_hasta')) {
             $query->where('fecha', '<=', $request->fecha_hasta);
+        }
+        if ($request->filled('tipo')) {
+            $query->where('es_automatico', $request->tipo === 'automatico');
+        }
+        if ($request->filled('estado')) {
+            $query->where('estado', $request->estado === 'activo' ? 1 : 0);
         }
 
         $asientos = $query->orderByDesc('fecha')->get();

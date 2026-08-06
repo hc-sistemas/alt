@@ -3,14 +3,17 @@ import { router, usePage, Link } from '@inertiajs/react'
 import { ToastContainer } from 'react-toastify'
 import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
+import PageHeader from '@/Components/shared/PageHeader'
+import FilterToolbar from '@/Components/shared/FilterToolbar'
 import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import {
-    BookOpen, Plus, Search, Eye, XCircle, CheckCircle,
-    AlertTriangle, User, X, FileText, Zap, Download,
+    BookOpen, Plus, Eye, XCircle, CheckCircle,
+    AlertTriangle, User, X, FileText, Zap, Download, Search,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { AsientoContable, CentroCosto, EjercicioContable, PlanCuenta, PageProps } from '@/types'
 import { notify, formatMoney, formatFecha, swalBase, injectSwalStyles } from '@/utils/contabilidad'
 import 'react-toastify/dist/ReactToastify.css'
@@ -36,7 +39,7 @@ interface PaginatedAsiento {
 }
 
 interface Props extends PageProps {
-    asientos:      PaginatedAsiento
+    asientos:      PaginatedAsiento | null
     ejercicios:    EjercicioContable[]
     cuentas:       PlanCuenta[]
     centros:       CentroCosto[]
@@ -54,23 +57,57 @@ const TIPO_BADGE = {
 export default function AsientosIndex() {
     const { asientos, ejercicios, cuentas, centros, periodoActivo, filtros, flash, auth }
         = usePage<Props>().props
-    const perfil = auth.user?.perfil ?? ''
-    const puedeCrear = ['super_admin', 'admin', 'contador'].includes(perfil)
-    const puedeAnular = perfil === 'super_admin'
+    const { puede } = usePermiso('contabilidad')
+    const puedeCrear = puede('crear')
+    const puedeAnular = puede('anular')
 
     // Filtros
     const [buscar, setBuscar] = useState(filtros.buscar ?? '')
     const [tipo, setTipo] = useState(filtros.tipo ?? '')
     const [estado, setEstado] = useState(filtros.estado ?? '')
-    const [ejercicioId, setEjercicioId] = useState(filtros.ejercicio_id ?? '')
+    // Rango por defecto: el período fiscal abierto en vez de "sin fecha =
+    // todo el historial" — DomPDF no escala bien con el histórico completo
+    // sin filtro (probado real, ver CLAUDE.md); el usuario puede seguir
+    // ampliándolo o quitándolo si quiere esperar por el reporte completo.
+    const [ejercicioId, setEjercicioId] = useState(filtros.ejercicio_id ?? (periodoActivo ? String(periodoActivo.id) : ''))
     const [fechaDesde, setFechaDesde] = useState(filtros.fecha_desde ?? '')
     const [fechaHasta, setFechaHasta] = useState(filtros.fecha_hasta ?? '')
+
+    // Carga bajo demanda: `asientos` viene null hasta que se dispare una búsqueda explícita
+    const haBuscado = asientos !== null
 
     // Modal PDF
     const [modalPdf, setModalPdf] = useState(false)
     const [urlPdf,   setUrlPdf]   = useState('')
+    const [cargandoPdf, setCargandoPdf] = useState(false)
 
-    const abrirPdf = (url: string) => { setUrlPdf(url); setModalPdf(true) }
+    // Se trae el PDF como blob (fetch) en vez de apuntar el <iframe> directo a la
+    // URL del backend: aunque el backend ya responde con Content-Disposition:
+    // inline, algunos navegadores igual fuerzan la descarga en una navegación de
+    // iframe según su propia configuración de manejo de PDF. Un blob: URL siempre
+    // se muestra embebido, sin depender de esa configuración.
+    const abrirPdf = async (url: string) => {
+        setModalPdf(true)
+        setCargandoPdf(true)
+        setUrlPdf('')
+        try {
+            const res = await fetch(url)
+            if (!res.ok) throw new Error('No se pudo generar el PDF.')
+            const blob = await res.blob()
+            setUrlPdf(URL.createObjectURL(blob))
+        } catch {
+            notify.error('No se pudo generar el PDF. Intenta de nuevo.')
+            setModalPdf(false)
+        } finally {
+            setCargandoPdf(false)
+        }
+    }
+
+    const cerrarModalPdf = () => {
+        if (urlPdf) URL.revokeObjectURL(urlPdf)
+        setModalPdf(false)
+        setUrlPdf('')
+    }
 
     // Modal nuevo asiento
     const [modalAbierto, setModalAbierto] = useState(false)
@@ -106,13 +143,31 @@ export default function AsientosIndex() {
         router.get(route('contabilidad.asientos.index'), {
             buscar, tipo, estado, ejercicio_id: ejercicioId,
             fecha_desde: fechaDesde, fecha_hasta: fechaHasta,
-        }, { preserveState: true, replace: true })
+            buscado: '1',
+        }, { preserveState: false })
     }
 
-    const limpiarFiltros = () => {
-        setBuscar(''); setTipo(''); setEstado('')
-        setEjercicioId(''); setFechaDesde(''); setFechaHasta('')
-        router.get(route('contabilidad.asientos.index'))
+    const paramsFiltrosActuales = () => ({
+        ejercicio_id: ejercicioId,
+        fecha_desde:  fechaDesde,
+        fecha_hasta:  fechaHasta,
+        tipo:         tipo,
+        estado:       estado,
+    })
+
+    const exportarExcelInstantaneo = () => {
+        const params = new URLSearchParams(paramsFiltrosActuales())
+        window.location.href = route('contabilidad.asientos.exportar-excel') + '?' + params
+    }
+
+    const construirUrlPdf = () => {
+        const params = new URLSearchParams(paramsFiltrosActuales())
+        return `${route('contabilidad.asientos.reporte-pdf')}?${params}`
+    }
+
+    const iniciarExportacion = (formato: 'excel' | 'pdf') => {
+        if (formato === 'excel') exportarExcelInstantaneo()
+        else abrirPdf(construirUrlPdf())
     }
 
     const actualizarPartida = (idx: number, campo: keyof Partida, valor: string) => {
@@ -222,165 +277,151 @@ export default function AsientosIndex() {
 
     return (
         <AppLayout title="Asientos Contables" suppressFlash>
-            <div className={cn('space-y-5', 'p-6')}>
-
-                <div className="mb-6">
-                    {/* Fila 1 — Solo título e ícono */}
-                    <div className="flex items-center gap-3 mb-4">
-                        <div className="p-2 rounded-xl"
-                             style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
-                            <BookOpen size={24} style={{ color: 'var(--primary)' }} />
-                        </div>
-                        <div>
-                            <h1 className="text-xl font-bold"
-                                style={{ color: 'var(--text-main)' }}>
-                                Asientos Contables
-                            </h1>
-                            <p className="text-sm"
-                               style={{ color: 'var(--text-muted)' }}>
-                                Registro de movimientos contables (partida doble)
-                            </p>
-                        </div>
-                    </div>
-
-                    {/* Toolbar */}
-                    <div className="flex items-center justify-between gap-3 mb-6">
-                        <div className="flex items-center gap-2 flex-wrap">
-                            {/* Nuevo asiento */}
-                            {puedeCrear && (
-                                <button
-                                    onClick={() => {
-                                        if (!periodoActivo) {
-                                            notify.error('No hay período activo.')
-                                            return
-                                        }
-                                        setModalAbierto(true)
-                                    }}
-                                    className="btn-primary flex items-center gap-2 whitespace-nowrap"
-                                >
-                                    <Plus size={15} />
-                                    Nuevo Asiento Manual
-                                </button>
-                            )}
-
-                            {/* Buscar */}
-                            <div className="input-with-icon">
-                                <Search size={14} className="input-icon" />
-                                <input type="text" value={buscar}
-                                    onChange={e => setBuscar(e.target.value)}
-                                    onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
-                                    placeholder="Número, concepto, referencia…"
-                                    className="input-field w-52" />
-                            </div>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                            {/* PDF */}
-                            <button
-                                onClick={() => abrirPdf(
-                                    `${route('contabilidad.asientos.reporte-pdf')}` +
-                                    `?ejercicio_id=${ejercicioId}` +
-                                    `&fecha_desde=${fechaDesde}` +
-                                    `&fecha_hasta=${fechaHasta}`
-                                )}
-                                className="btn-pdf flex items-center gap-2 whitespace-nowrap">
-                                <FileText size={15} />
-                                PDF
-                            </button>
-
-                            {/* Excel */}
-                            <button
-                                onClick={() => {
-                                    const params = new URLSearchParams({
-                                        ejercicio_id: ejercicioId,
-                                        fecha_desde:  fechaDesde,
-                                        fecha_hasta:  fechaHasta,
-                                        tipo:         tipo,
-                                        estado:       estado,
-                                    })
-                                    window.location.href =
-                                        route('contabilidad.asientos.exportar-excel') + '?' + params
-                                }}
-                                className="btn-excel flex items-center gap-2 whitespace-nowrap">
-                                <Download size={15} />
-                                Excel
-                            </button>
-                        </div>
-                    </div>
-                </div>
-                {/* Banner período */}
-                {periodoActivo ? (
-                    <div className={cn('flex', 'items-center', 'gap-2', 'px-4', 'py-2', 'border', 'rounded-xl', 'text-sm')}
-                        style={{
-                            background: 'color-mix(in srgb, #10b981 8%, var(--bg-card))',
-                            borderColor: '#10b981', color: '#059669'
-                        }}>
-                        <CheckCircle size={14} />
-                        <span className="font-semibold">
-                            Período activo: <strong>{periodoActivo.periodo_label}</strong>
+            <PageHeader
+                title="Asientos Contables"
+                breadcrumbs={[{ label: 'Contabilidad' }, { label: 'Asientos Contables' }]}
+                description={
+                    periodoActivo ? (
+                        <span className="flex items-center gap-1.5 text-green-600 dark:text-green-400">
+                            <CheckCircle size={12} className="shrink-0" />
+                            Período activo: {periodoActivo.periodo_label}
                             {periodoActivo.fecha_apertura && (
                                 <> · Abierto desde {formatFecha(periodoActivo.fecha_apertura)}</>
                             )}
                         </span>
+                    ) : (
+                        <span className="flex items-center gap-1.5 text-red-600 dark:text-red-400">
+                            <AlertTriangle size={12} className="shrink-0" />
+                            Sin período activo — no se pueden crear asientos.
+                        </span>
+                    )
+                }
+                actions={
+                    puedeCrear ? (
+                        <button
+                            onClick={() => {
+                                if (!periodoActivo) {
+                                    notify.error('No hay período activo.')
+                                    return
+                                }
+                                setModalAbierto(true)
+                            }}
+                            className="btn-primary flex items-center gap-2 whitespace-nowrap shrink-0"
+                        >
+                            <Plus size={15} />
+                            Nuevo Asiento
+                        </button>
+                    ) : undefined
+                }
+            />
+
+            <div className={cn('space-y-5', 'p-6')}>
+
+                {/*
+                    searchWidth="w-[130px]": utilidad Tailwind de valor arbitrario (compila a
+                    `width: 130px` literal, no la escala fija w-44/w-48/etc.) — mismo efecto que
+                    un style inline, sin tocar FilterToolbar.tsx. El <Input> ahí se combina con
+                    `cn()` (twMerge), que sí resuelve bien conflictos entre utilidades Tailwind
+                    (a diferencia del bug de `.input-field` con las cascade layers, que no aplica
+                    a este componente).
+
+                    Suma de anchos en el estado MÁS ANCHO posible (8 elementos — sin botón de
+                    "Limpiar", eliminado por completo):
+                      Tipo 145 + Estado 125 + Período 175 + Desde 136 + Hasta 136
+                      + buscador (130+36) + Excel 36 + PDF 36 = 955px
+                      + gaps (gap-3 = 12px × 7 espacios entre 8 elementos) = 84px
+                      = 1039px
+
+                    Cabe con margen cómodo en el presupuesto de ~1098px disponible a 1366px con
+                    sidebar abierto (1366 - 220 sidebar - 48 padding). El contenedor de abajo
+                    igual fuerza un ancho mínimo de 1100px y solo permite scroll horizontal (nunca
+                    salto de línea desordenado) si el viewport real es más angosto que eso —
+                    resiliente a futuros cambios sin tener que volver a recalcular píxeles cada vez.
+                */}
+                <div className="overflow-x-auto">
+                <div style={{ minWidth: '1100px' }}>
+                <FilterToolbar
+                    search={{
+                        value: buscar,
+                        onChange: setBuscar,
+                        onSearch: aplicarFiltros,
+                        placeholder: 'Buscar...',
+                    }}
+                    searchWidth="w-[130px]"
+                    onExport={() => iniciarExportacion('excel')}
+                    extraActions={
+                        <button
+                            onClick={() => iniciarExportacion('pdf')}
+                            disabled={cargandoPdf}
+                            title={cargandoPdf ? 'Generando PDF…' : 'Ver reporte en PDF'}
+                            className="flex items-center justify-center w-9 h-9 rounded-md border text-sm font-medium shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                            style={{ background: '#ef4444', color: 'white', borderColor: '#ef4444' }}>
+                            <FileText className="w-4 h-4" />
+                        </button>
+                    }
+                >
+                    {/*
+                        Ancho vía `style.width` inline a propósito, NO clases Tailwind (w-28/w-32):
+                        `.input-field` (app.css) declara `width:100%` fuera de cualquier @layer, y
+                        las utilidades de Tailwind v4 viven dentro de su @layer utilities interno —
+                        por reglas de CSS Cascade Layers, lo no-layereado siempre gana sobre lo
+                        layereado sin importar especificidad ni orden, así que un w-28/w-32 de
+                        Tailwind nunca puede ganarle a `.input-field`. Solo un estilo inline
+                        (fuera de la cascada) lo puede sobreescribir de forma confiable.
+                    */}
+                    <select value={tipo} onChange={e => setTipo(e.target.value)}
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '145px' }}>
+                        <option value="">Tipo</option>
+                        <option value="manual">Manuales</option>
+                        <option value="automatico">Automáticos</option>
+                    </select>
+                    <select value={estado} onChange={e => setEstado(e.target.value)}
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '125px' }}>
+                        <option value="">Estado</option>
+                        <option value="activo">Activos</option>
+                        <option value="anulado">Anulados</option>
+                    </select>
+                    <select value={ejercicioId} onChange={e => setEjercicioId(e.target.value)}
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '175px' }}>
+                        <option value="">Período</option>
+                        {ejercicios.map(e => (
+                            <option key={e.id} value={e.id}>{e.periodo_label}</option>
+                        ))}
+                    </select>
+                    <div className="flex flex-col gap-0.5 shrink-0">
+                        <span className="text-[11px] leading-none" style={{ color: 'var(--text-muted)' }}>Desde</span>
+                        <input type="date" value={fechaDesde}
+                            onChange={e => setFechaDesde(e.target.value)}
+                            className="input-field text-xs"
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '136px' }} />
                     </div>
-                ) : (
-                    <div className={cn('flex', 'items-center', 'gap-2', 'px-4', 'py-2', 'border', 'rounded-xl', 'text-sm')}
-                        style={{
-                            background: 'color-mix(in srgb, #ef4444 8%, var(--bg-card))',
-                            borderColor: '#ef4444', color: '#dc2626'
-                        }}>
-                        <AlertTriangle size={14} />
-                        <span className="font-semibold">Sin período activo — no se pueden crear asientos</span>
+                    <div className="flex flex-col gap-0.5 shrink-0">
+                        <span className="text-[11px] leading-none" style={{ color: 'var(--text-muted)' }}>Hasta</span>
+                        <input type="date" value={fechaHasta}
+                            onChange={e => setFechaHasta(e.target.value)}
+                            className="input-field text-xs"
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '136px' }} />
+                    </div>
+                </FilterToolbar>
+                </div>
+                </div>
+
+
+                {/* Estado inicial: aún no se ha buscado (carga bajo demanda) */}
+                {!haBuscado && (
+                    <div className="text-center py-16">
+                        <Search className="w-12 h-12 mx-auto mb-4 opacity-30" style={{ color: 'var(--text-muted)' }} />
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                            Ajusta los filtros y presiona Buscar para consultar los asientos.
+                        </p>
                     </div>
                 )}
 
-                {/* Filtros */}
-                <div className={cn('space-y-3', 'p-4', 'border', 'rounded-xl')}
-                    style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
-                    <div className={cn('gap-3', 'grid', 'grid-cols-1', 'md:grid-cols-2', 'lg:grid-cols-4')}>
-                        <select value={tipo} onChange={e => setTipo(e.target.value)}
-                            className="input-field select-field">
-                            <option value="">Todos los tipos</option>
-                            <option value="manual">Manuales</option>
-                            <option value="automatico">Automáticos</option>
-                        </select>
-                        <select value={estado} onChange={e => setEstado(e.target.value)}
-                            className="input-field select-field">
-                            <option value="">Todos los estados</option>
-                            <option value="activo">Activos</option>
-                            <option value="anulado">Anulados</option>
-                        </select>
-                        <select value={ejercicioId} onChange={e => setEjercicioId(e.target.value)}
-                            className="input-field select-field">
-                            <option value="">Todos los períodos</option>
-                            {ejercicios.map(e => (
-                                <option key={e.id} value={e.id}>{e.periodo_label}</option>
-                            ))}
-                        </select>
-                        <div className={cn('flex', 'gap-2')}>
-                            <Button onClick={aplicarFiltros} className="flex-1">Filtrar</Button>
-                            <Button variant="outline" onClick={limpiarFiltros} className="px-3">
-                                <X size={14} />
-                            </Button>
-                        </div>
-                    </div>
-                    <div className={cn('flex', 'flex-wrap', 'gap-3')}>
-                        <div className={cn('flex', 'items-center', 'gap-2')}>
-                            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Desde:</span>
-                            <input type="date" value={fechaDesde}
-                                onChange={e => setFechaDesde(e.target.value)}
-                                className="input-field" style={{ width: 'auto' }} />
-                        </div>
-                        <div className={cn('flex', 'items-center', 'gap-2')}>
-                            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Hasta:</span>
-                            <input type="date" value={fechaHasta}
-                                onChange={e => setFechaHasta(e.target.value)}
-                                className="input-field" style={{ width: 'auto' }} />
-                        </div>
-                    </div>
-                </div>
-
                 {/* Tabla */}
+                {haBuscado && asientos && (
                 <div className={cn('border', 'rounded-xl', 'overflow-hidden')}
                     style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
                     <div className="overflow-x-auto">
@@ -533,6 +574,7 @@ export default function AsientosIndex() {
                         </div>
                     )}
                 </div>
+                )}
             </div>
 
             {/* MODAL NUEVO ASIENTO MANUAL */}
@@ -816,7 +858,7 @@ export default function AsientosIndex() {
 
             {/* ── Modal PDF ── */}
             {modalPdf && (
-                <div className="modal-overlay" style={{ background: 'rgba(0,0,0,0.85)' }} onClick={() => setModalPdf(false)}>
+                <div className="modal-overlay" style={{ background: 'rgba(0,0,0,0.85)' }} onClick={cerrarModalPdf}>
                     <div className="modal-card max-w-5xl flex flex-col" style={{ height: '90vh' }} onClick={e => e.stopPropagation()}>
                         <div className="modal-header shrink-0">
                             <h2>
@@ -824,17 +866,25 @@ export default function AsientosIndex() {
                                 Reporte de Asientos Contables
                             </h2>
                             <div className="flex items-center gap-2">
-                                <a href={urlPdf} download target="_blank"
-                                   className="btn-primary text-xs py-1.5 px-3"
-                                   style={{ background: '#ef4444', boxShadow: 'none', textDecoration: 'none' }}>
-                                    <Download size={13} /> Descargar
-                                </a>
-                                <button onClick={() => setModalPdf(false)} className="btn-secondary text-xs py-1.5 px-3">
+                                {urlPdf && (
+                                    <a href={urlPdf} download={`reporte-asientos-${new Date().toISOString().slice(0, 10)}.pdf`}
+                                       className="btn-primary text-xs py-1.5 px-3"
+                                       style={{ background: '#ef4444', color: '#fff', boxShadow: 'none', textDecoration: 'none' }}>
+                                        <Download size={13} /> Descargar
+                                    </a>
+                                )}
+                                <button onClick={cerrarModalPdf} className="btn-secondary text-xs py-1.5 px-3">
                                     ✕ Cerrar
                                 </button>
                             </div>
                         </div>
-                        <iframe src={urlPdf} className="flex-1 w-full border-0" title="Reporte PDF Asientos" />
+                        {cargandoPdf ? (
+                            <div className="flex-1 flex items-center justify-center text-sm" style={{ color: 'var(--text-muted)' }}>
+                                Generando PDF…
+                            </div>
+                        ) : (
+                            <iframe src={urlPdf} className="flex-1 w-full border-0" title="Reporte PDF Asientos" />
+                        )}
                     </div>
                 </div>
             )}

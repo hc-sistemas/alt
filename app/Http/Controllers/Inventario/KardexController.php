@@ -31,32 +31,35 @@ class KardexController extends Controller
         $empresaId = session('empresa_activa_id');
         $buscar    = $request->string('buscar')->trim()->toString();
         $bodegaId  = $request->integer('bodega_id') ?: null;
+        $busquedaRealizada = $request->filled('fecha_desde') && $request->filled('fecha_hasta');
 
         $resultados = [];
+        $productosPaginados = null;
 
-        $productosPaginados = Producto::where('empresa_id', $empresaId)
-            ->where('estado', true)
-            ->when($buscar !== '', fn($q) => $q->where(fn($q2) => $q2
-                ->where('codigo', 'ilike', "%{$buscar}%")
-                ->orWhere('nombre', 'ilike', "%{$buscar}%")
-            ))
-            ->when(
-                $bodegaId || $request->fecha_desde || $request->fecha_hasta || $request->tipo,
-                fn($q) => $q->whereExists(fn($sub) => $sub
+        $bodegaIdsEmpresa = Bodega::where('empresa_id', $empresaId)->pluck('id');
+
+        if ($busquedaRealizada) {
+            $productosPaginados = Producto::where('estado', true)
+                ->when($buscar !== '', fn($q) => $q->where(fn($q2) => $q2
+                    ->where('codigo', 'ilike', "%{$buscar}%")
+                    ->orWhere('nombre', 'ilike', "%{$buscar}%")
+                ))
+                ->whereExists(fn($sub) => $sub
                     ->from('inventario_movimientos')
                     ->whereColumn('producto_id', 'productos.id')
+                    ->whereIn('bodega_id', $bodegaIdsEmpresa)
                     ->when($bodegaId, fn($s) => $s->where('bodega_id', $bodegaId))
-                    ->when($request->fecha_desde, fn($s) => $s->whereDate('created_at', '>=', $request->fecha_desde))
-                    ->when($request->fecha_hasta, fn($s) => $s->whereDate('created_at', '<=', $request->fecha_hasta))
+                    ->whereDate('created_at', '>=', $request->fecha_desde)
+                    ->whereDate('created_at', '<=', $request->fecha_hasta)
                     ->when($request->tipo, fn($s) => $s->where('tipo', $request->tipo))
                 )
-            )
-            ->orderByRaw('(EXISTS (SELECT 1 FROM inventario_movimientos WHERE producto_id = productos.id)) DESC')
-            ->orderBy('nombre')
-            ->paginate(5)
-            ->withQueryString();
+                ->orderByRaw('(EXISTS (SELECT 1 FROM inventario_movimientos WHERE producto_id = productos.id)) DESC')
+                ->orderBy('nombre')
+                ->paginate(5)
+                ->withQueryString();
+        }
 
-        $productosPage = $productosPaginados->getCollection();
+        $productosPage = $productosPaginados?->getCollection() ?? collect();
         $productoIds   = $productosPage->pluck('id')->all();
 
         if (count($productoIds) > 0) {
@@ -64,6 +67,7 @@ class KardexController extends Controller
             if ($request->fecha_desde) {
                 $saldoQuery = InventarioMovimiento::query()
                     ->whereIn('producto_id', $productoIds)
+                    ->whereIn('bodega_id', $bodegaIdsEmpresa)
                     ->whereDate('created_at', '<', $request->fecha_desde)
                     ->when($bodegaId, fn($q) => $q->where('bodega_id', $bodegaId));
 
@@ -82,6 +86,7 @@ class KardexController extends Controller
 
             $todosMovimientos = InventarioMovimiento::with(['bodega', 'usuario'])
                 ->whereIn('producto_id', $productoIds)
+                ->whereIn('bodega_id', $bodegaIdsEmpresa)
                 ->when($bodegaId, fn($q) => $q->where('bodega_id', $bodegaId))
                 ->when($request->fecha_desde, fn($q) => $q->whereDate('created_at', '>=', $request->fecha_desde))
                 ->when($request->fecha_hasta, fn($q) => $q->whereDate('created_at', '<=', $request->fecha_hasta))
@@ -181,7 +186,7 @@ class KardexController extends Controller
         $saldos = InventarioSaldo::with(['producto', 'bodega'])
             ->join('productos', 'inventario_saldos.producto_id', '=', 'productos.id')
             ->join('bodegas', 'inventario_saldos.bodega_id', '=', 'bodegas.id')
-            ->where('productos.empresa_id', $empresaId)
+            ->where('bodegas.empresa_id', $empresaId)
             ->when($request->bodega_id, fn($q) => $q->where('inventario_saldos.bodega_id', $request->bodega_id))
             ->when($request->search, fn($q) => $q->where(function ($q) use ($request) {
                 $q->where('productos.codigo', 'ilike', "%{$request->search}%")
@@ -220,7 +225,7 @@ class KardexController extends Controller
         $saldos = InventarioSaldo::with(['producto', 'bodega'])
             ->join('productos', 'inventario_saldos.producto_id', '=', 'productos.id')
             ->join('bodegas', 'inventario_saldos.bodega_id', '=', 'bodegas.id')
-            ->where('productos.empresa_id', $empresaId)
+            ->where('bodegas.empresa_id', $empresaId)
             ->select('inventario_saldos.*')
             ->orderBy('productos.nombre')
             ->get();
@@ -241,8 +246,7 @@ class KardexController extends Controller
         $empresaId = session('empresa_activa_id');
 
         return Inertia::render('Inventario/Kardex/Ajuste', [
-            'productos'  => Producto::where('empresa_id', $empresaId)
-                ->where('estado', true)
+            'productos'  => Producto::where('estado', true)
                 ->orderBy('nombre')
                 ->get(['id', 'codigo', 'nombre']),
             'bodegas'    => Bodega::where('empresa_id', $empresaId)
@@ -257,8 +261,6 @@ class KardexController extends Controller
 
     public function storeAjuste(Request $request): RedirectResponse
     {
-        $empresaId = session('empresa_activa_id');
-
         $data = $request->validate([
             'bodega_id'                  => ['required', 'integer', 'exists:bodegas,id'],
             'motivo'                     => ['required', 'string', 'max:255'],

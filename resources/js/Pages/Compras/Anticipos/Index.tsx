@@ -3,16 +3,19 @@ import { router, usePage, Head } from '@inertiajs/react'
 import { toast, ToastContainer } from 'react-toastify'
 import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
+import PageHeader from '@/Components/shared/PageHeader'
+import FilterToolbar from '@/Components/shared/FilterToolbar'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { Button } from '@/Components/ui/button'
 import { cn } from '@/lib/utils'
 import {
-    CreditCard, Plus, Search, CheckCircle,
-    Clock, AlertTriangle, X, ArrowLeftRight
+    CreditCard, Plus, CheckCircle,
+    Clock, AlertTriangle, X, ArrowLeftRight, Search
 } from 'lucide-react'
 import type { PageProps, Proveedor, BancoCaja } from '@/types'
 import { notify, formatMoney, swalBase, injectSwalStyles } from '@/utils/contabilidad'
+import { usePermiso } from '@/Hooks/usePermiso'
 import 'react-toastify/dist/ReactToastify.css'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -50,8 +53,14 @@ interface CxpRow {
 }
 
 interface Props extends PageProps {
-    anticipos:     Anticipo[]
-    proveedores:   Pick<Proveedor, 'id' | 'razon_social' | 'tipo'>[]
+    anticipos:                  Anticipo[] | null
+    proveedores:                Pick<Proveedor, 'id' | 'razon_social' | 'tipo'>[]
+    // Solo proveedores tipo='internacional' — este módulo es únicamente
+    // para Anticipos a Proveedores Extranjeros/Importaciones (auditoría
+    // 2026-07-29). `proveedores` (arriba) NO se filtra, para no romper el
+    // filtro del listado sobre anticipos históricos ya registrados a
+    // proveedores nacionales.
+    proveedoresInternacionales: Pick<Proveedor, 'id' | 'razon_social' | 'tipo'>[]
     importaciones: ImportacionRow[]
     bancos:        Pick<BancoCaja, 'id' | 'nombre' | 'tipo' | 'saldo_actual'>[]
     filtros:       Record<string, string>
@@ -60,7 +69,7 @@ interface Props extends PageProps {
 // ─── Modal Nuevo Anticipo ─────────────────────────────────────────────────────
 
 function ModalNuevo({ proveedores, importaciones, bancos, onClose }: {
-    proveedores:   Props['proveedores']
+    proveedores:   Props['proveedoresInternacionales']
     importaciones: Props['importaciones']
     bancos:        Props['bancos']
     onClose:       () => void
@@ -81,7 +90,21 @@ function ModalNuevo({ proveedores, importaciones, bancos, onClose }: {
         e.preventDefault()
         setProcessing(true)
         router.post(route('compras.anticipos.store'), form, {
-            onSuccess: () => { notify.success('Anticipo registrado correctamente'); onClose() },
+            // El candado de tipo de proveedor (y otros rechazos de negocio,
+            // ej. saldo insuficiente) usan back()->with('error', ...), que
+            // Inertia trata como un redirect exitoso (onSuccess), no como
+            // error de validación (onError) — mismo patrón ya corregido en
+            // Devoluciones de Compra: hay que revisar flash.error dentro
+            // de onSuccess en vez de asumir éxito.
+            onSuccess: (page) => {
+                const flash = (page.props as { flash?: { error?: string } }).flash
+                if (flash?.error) {
+                    notify.error(flash.error)
+                } else {
+                    notify.success('Anticipo registrado correctamente')
+                    onClose()
+                }
+            },
             onError:   (errs) => { notify.error(Object.values(errs).flat().join(' | ')); setProcessing(false) },
             onFinish:  () => setProcessing(false),
         })
@@ -105,14 +128,27 @@ function ModalNuevo({ proveedores, importaciones, bancos, onClose }: {
                 <div className="modal-body">
                     <div className="space-y-1.5">
                         <Label>Proveedor <span className="text-red-400">*</span></Label>
-                        <select value={form.proveedor_id}
-                            onChange={e => setForm(f => ({ ...f, proveedor_id: e.target.value }))}
-                            className="input-field select-field">
-                            <option value="">— Seleccionar proveedor —</option>
-                            {proveedores.map(p => (
-                                <option key={p.id} value={p.id}>{p.razon_social}</option>
-                            ))}
-                        </select>
+                        {proveedores.length === 0 ? (
+                            <p className="text-xs rounded-lg p-2.5"
+                               style={{ background: 'rgba(239,68,68,0.08)', color: '#b91c1c', border: '1px solid rgba(239,68,68,0.25)' }}>
+                                No hay proveedores internacionales registrados. Este módulo aplica únicamente a
+                                proveedores de importación.
+                            </p>
+                        ) : (
+                            <>
+                                <select value={form.proveedor_id}
+                                    onChange={e => setForm(f => ({ ...f, proveedor_id: e.target.value }))}
+                                    className="input-field select-field">
+                                    <option value="">— Seleccionar proveedor —</option>
+                                    {proveedores.map(p => (
+                                        <option key={p.id} value={p.id}>{p.razon_social}</option>
+                                    ))}
+                                </select>
+                                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                    Solo proveedores internacionales — este módulo aplica a Importaciones.
+                                </p>
+                            </>
+                        )}
                     </div>
 
                     <div className="space-y-1.5">
@@ -327,7 +363,8 @@ function ModalCruzar({ anticipo, onClose }: {
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function AnticiposIndex() {
-    const { anticipos, proveedores, importaciones, bancos, filtros, flash } = usePage<Props>().props
+    const { anticipos, proveedores, proveedoresInternacionales, importaciones, bancos, filtros, flash } = usePage<Props>().props
+    const { puede } = usePermiso('compras')
 
     const [buscar,      setBuscar]      = useState(filtros.buscar       ?? '')
     const [estado,      setEstado]      = useState(filtros.estado       ?? '')
@@ -335,21 +372,40 @@ export default function AnticiposIndex() {
     const [modalNuevo,  setModalNuevo]  = useState(false)
     const [cruzarActivo, setCruzarActivo] = useState<Anticipo | null>(null)
 
+    // Cambiar cualquier filtro después de haber buscado marca los
+    // resultados como "obsoletos" respecto al filtro actual — la tabla NO
+    // se vacía (se sigue mostrando la última búsqueda, atenuada vía esta
+    // misma bandera) hasta que se presione Buscar de nuevo. Antes esto
+    // forzaba el estado vacío inmediatamente al cambiar cualquier filtro,
+    // generando un parpadeo datos→vacío→datos.
+    const [filtrosSucios, setFiltrosSucios] = useState(false)
+
+    // Carga bajo demanda: `anticipos` viene null hasta que el usuario
+    // presiona Buscar por primera vez (aplicarFiltros manda buscado=1) —
+    // mismo patrón que Cuentas por Pagar/Proveedores. Una vez que hay
+    // resultados, se siguen mostrando aunque el usuario cambie un filtro
+    // sin volver a buscar.
+    const haBuscado = anticipos !== null
+
     useEffect(() => {
         if (flash?.success) notify.success(flash.success)
         if (flash?.error)   notify.error(flash.error)
     }, [flash?.success, flash?.error])
 
+    function cambiarBuscar(v: string)      { setBuscar(v);      setFiltrosSucios(true) }
+    function cambiarEstado(v: string)      { setEstado(v);      setFiltrosSucios(true) }
+    function cambiarProveedorId(v: string) { setProveedorId(v); setFiltrosSucios(true) }
+
     function aplicarFiltros() {
         router.get(route('compras.anticipos.index'), {
             buscar, estado,
             ...(proveedorId && { proveedor_id: proveedorId }),
-        }, { preserveState: true, replace: true })
-    }
-
-    function limpiar() {
-        setBuscar(''); setEstado(''); setProveedorId('')
-        router.get(route('compras.anticipos.index'), {}, { preserveState: false })
+            buscado: '1',
+        }, {
+            preserveState: true,
+            replace: true,
+            onSuccess: () => setFiltrosSucios(false),
+        })
     }
 
     async function confirmarAnulacion(a: Anticipo) {
@@ -413,66 +469,63 @@ export default function AnticiposIndex() {
         <AppLayout title="Anticipos Proveedores" suppressFlash>
             <Head title="Anticipos Proveedores" />
 
+            <PageHeader
+                title="Anticipos a Proveedores"
+                breadcrumbs={[{ label: 'Compras' }, { label: 'Anticipos' }]}
+                actions={
+                    puede('crear') ? (
+                        <button onClick={() => setModalNuevo(true)}
+                            className="flex items-center gap-2 whitespace-nowrap shrink-0 px-4 py-2 rounded-xl font-semibold text-sm text-black transition-all hover:opacity-90"
+                            style={{ background: 'var(--primary)' }}>
+                            <Plus size={15} /> Nuevo Anticipo
+                        </button>
+                    ) : undefined
+                }
+            />
+
             <div className="px-6 pt-6 mb-2">
-                {/* Header */}
-                <div className="flex items-center gap-3 mb-4">
-                    <div className="p-2 rounded-xl"
-                         style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
-                        <CreditCard size={24} style={{ color: 'var(--primary)' }} />
-                    </div>
-                    <div>
-                        <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>
-                            Anticipos a Proveedores
-                        </h1>
+                <FilterToolbar
+                    search={{
+                        value: buscar,
+                        onChange: cambiarBuscar,
+                        onSearch: aplicarFiltros,
+                        placeholder: 'Proveedor o transferencia...',
+                    }}
+                >
+                    <select value={estado} onChange={e => cambiarEstado(e.target.value)}
+                        className="input-field shrink-0"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
+                        <option value="">Todos</option>
+                        <option value="pendiente">Pendientes</option>
+                        <option value="cruzado">Cruzados</option>
+                    </select>
+
+                    <select value={proveedorId} onChange={e => cambiarProveedorId(e.target.value)}
+                        className="input-field shrink-0"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
+                        <option value="">Todos los proveedores</option>
+                        {proveedores.map(p => (
+                            <option key={p.id} value={p.id}>{p.razon_social}</option>
+                        ))}
+                    </select>
+                </FilterToolbar>
+            </div>
+
+            {/* Estado inicial: aún no se ha buscado (carga bajo demanda) */}
+            {!haBuscado && (
+                <div className="px-6 pb-8">
+                    <div className="text-center py-16">
+                        <Search className="w-12 h-12 mx-auto mb-4 opacity-30" style={{ color: 'var(--text-muted)' }} />
                         <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                            Pagos adelantados antes de recibir la factura formal
+                            Ajusta los filtros y presiona Buscar para consultar los anticipos.
                         </p>
                     </div>
                 </div>
-
-                {/* Toolbar */}
-                <div className="flex items-center justify-between gap-3 mb-6">
-                    <div className="flex items-center gap-2 flex-wrap">
-                        <button onClick={() => setModalNuevo(true)} className="btn-primary flex items-center gap-2 whitespace-nowrap">
-                            <Plus size={15} /> Nuevo Anticipo
-                        </button>
-
-                        <div className="input-with-icon">
-                            <Search size={14} className="input-icon" />
-                            <input type="text" value={buscar}
-                                onChange={e => setBuscar(e.target.value)}
-                                onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
-                                placeholder="Proveedor o transferencia…"
-                                className="input-field w-52" />
-                        </div>
-
-                        <select value={estado} onChange={e => setEstado(e.target.value)}
-                            className="input-field select-field" style={{ width: 'auto' }}>
-                            <option value="">Todos</option>
-                            <option value="pendiente">Pendientes</option>
-                            <option value="cruzado">Cruzados</option>
-                        </select>
-
-                        <select value={proveedorId} onChange={e => setProveedorId(e.target.value)}
-                            className="input-field select-field" style={{ width: 'auto' }}>
-                            <option value="">Todos los proveedores</option>
-                            {proveedores.map(p => (
-                                <option key={p.id} value={p.id}>{p.razon_social}</option>
-                            ))}
-                        </select>
-
-                        <button onClick={aplicarFiltros} className="btn-secondary whitespace-nowrap">
-                            Filtrar
-                        </button>
-                        <button onClick={limpiar} className="btn-secondary whitespace-nowrap">
-                            Limpiar
-                        </button>
-                    </div>
-                </div>
-            </div>
+            )}
 
             {/* Tabla */}
-            <div className="px-6 pb-8">
+            {haBuscado && (
+            <div className={cn('px-6 pb-8 transition-opacity', filtrosSucios && 'opacity-60')}>
                 <div className="border rounded-xl overflow-hidden"
                     style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
 
@@ -495,7 +548,7 @@ export default function AnticiposIndex() {
                             <CreditCard className="opacity-20 mx-auto mb-3 w-10 h-10"
                                 style={{ color: 'var(--text-muted)' }} />
                             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                                No hay anticipos registrados
+                                No se encontraron anticipos con estos filtros
                             </p>
                         </div>
                     )}
@@ -558,16 +611,20 @@ export default function AnticiposIndex() {
                             <div className="col-span-1 flex justify-center gap-1">
                                 {a.estado === 'pendiente' && (
                                     <>
-                                        <button onClick={() => setCruzarActivo(a)}
-                                            title="Cruzar con factura"
-                                            className="p-1.5 rounded-lg hover:bg-blue-500/20 text-blue-500 transition-colors">
-                                            <ArrowLeftRight className="w-3.5 h-3.5" />
-                                        </button>
-                                        <button onClick={() => confirmarAnulacion(a)}
-                                            title="Anular anticipo"
-                                            className="p-1.5 rounded-lg hover:bg-red-500/20 text-red-500 transition-colors">
-                                            <X className="w-3.5 h-3.5" />
-                                        </button>
+                                        {puede('editar') && (
+                                            <button onClick={() => setCruzarActivo(a)}
+                                                title="Cruzar con factura"
+                                                className="p-1.5 rounded-lg hover:bg-blue-500/20 text-blue-500 transition-colors">
+                                                <ArrowLeftRight className="w-3.5 h-3.5" />
+                                            </button>
+                                        )}
+                                        {puede('anular') && (
+                                            <button onClick={() => confirmarAnulacion(a)}
+                                                title="Anular anticipo"
+                                                className="p-1.5 rounded-lg hover:bg-red-500/20 text-red-500 transition-colors">
+                                                <X className="w-3.5 h-3.5" />
+                                            </button>
+                                        )}
                                     </>
                                 )}
                             </div>
@@ -575,10 +632,11 @@ export default function AnticiposIndex() {
                     ))}
                 </div>
             </div>
+            )}
 
             {modalNuevo && (
                 <ModalNuevo
-                    proveedores={proveedores}
+                    proveedores={proveedoresInternacionales}
                     importaciones={importaciones}
                     bancos={bancos}
                     onClose={() => setModalNuevo(false)}

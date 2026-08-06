@@ -1,10 +1,13 @@
-import { useState, useMemo } from 'react'
+import { useRef, useState, useMemo } from 'react'
 import { router, usePage } from '@inertiajs/react'
 import { toast, ToastContainer } from 'react-toastify'
 import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
-import { Settings, Search, CheckCircle, AlertCircle, Zap, Save } from 'lucide-react'
+import PageHeader from '@/Components/shared/PageHeader'
+import { Input } from '@/Components/ui/input'
+import { Search, CheckCircle, AlertCircle, Zap, Save } from 'lucide-react'
 import { notify, swalBase } from '@/utils/contabilidad'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { PlanCuenta, PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
 
@@ -39,6 +42,7 @@ const NOTAS_GRUPO: Record<string, string> = {
 
 export default function ParametrosIndex({ grupos, cuentas }: Props) {
     usePage<Props>()
+    const { puede } = usePermiso('contabilidad')
 
     const [valores, setValores] = useState<Record<string, number | null>>(() => {
         const init: Record<string, number | null> = {}
@@ -51,6 +55,27 @@ export default function ParametrosIndex({ grupos, cuentas }: Props) {
     const [modalAbierto, setModalAbierto] = useState(false)
     const [codigoActivo, setCodigoActivo] = useState<string | null>(null)
     const [busqueda, setBusqueda]         = useState('')
+
+    // Buscador simple por nombre/código de parámetro — no un FilterToolbar
+    // completo (esto no es un listado con filtros, es un formulario de
+    // mapeo por categoría), solo para no tener que scrollear entre las 8
+    // categorías (Ventas, Compras, Inventario, Bancos, Nómina, SRI,
+    // Contabilidad, Gastos Operativos) buscando un parámetro puntual.
+    const [busquedaParametros, setBusquedaParametros] = useState('')
+    const inputBusquedaRef = useRef<HTMLInputElement>(null)
+
+    const gruposFiltrados = useMemo(() => {
+        const q = busquedaParametros.toLowerCase().trim()
+        if (!q) return grupos
+        const resultado: Record<string, Parametro[]> = {}
+        Object.entries(grupos).forEach(([nombreGrupo, params]) => {
+            const coincidencias = params.filter(p =>
+                p.descripcion.toLowerCase().includes(q) || p.codigo.toLowerCase().includes(q)
+            )
+            if (coincidencias.length > 0) resultado[nombreGrupo] = coincidencias
+        })
+        return resultado
+    }, [grupos, busquedaParametros])
 
     const cuentasFiltradas = useMemo(() => {
         const q = busqueda.toLowerCase().trim()
@@ -136,44 +161,40 @@ export default function ParametrosIndex({ grupos, cuentas }: Props) {
 
     return (
         <AppLayout suppressFlash>
+            <PageHeader
+                title="Parámetros Contables"
+                breadcrumbs={[{ label: 'Contabilidad' }, { label: 'Parámetros Contables' }]}
+                actions={
+                    <div className="flex items-center gap-2 flex-wrap">
+                        {puede('editar') && (
+                            <button onClick={guardar}
+                                className="flex items-center gap-2 px-4 py-2 rounded-xl
+                                           font-semibold text-sm text-black whitespace-nowrap transition-all
+                                           hover:opacity-90 hover:-translate-y-0.5"
+                                style={{ background: 'var(--primary)' }}>
+                                <Save size={15} />
+                                Guardar cambios
+                            </button>
+                        )}
+                        {puede('editar') && (
+                            <button onClick={autoconfigurar}
+                                className="flex items-center gap-2 px-4 py-2 rounded-xl
+                                           font-semibold text-sm border whitespace-nowrap transition-colors hover:opacity-80"
+                                style={{
+                                    background:  'color-mix(in srgb, var(--primary) 8%, transparent)',
+                                    borderColor: 'color-mix(in srgb, var(--primary) 30%, transparent)',
+                                    color:       'var(--primary)',
+                                }}>
+                                <Zap size={15} />
+                                Autoconfigurar
+                            </button>
+                        )}
+                    </div>
+                }
+            />
+
             <div className="p-4 md:p-6 space-y-6"
                  style={{ background: 'var(--bg-main)', minHeight: '100vh' }}>
-
-                {/* HEADER */}
-                <div className="mb-6">
-                    <div className="flex items-center gap-3 mb-4">
-                        <div className="p-2 rounded-xl"
-                             style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
-                            <Settings size={24} style={{ color: 'var(--primary)' }} />
-                        </div>
-                        <div>
-                            <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>
-                                Parámetros Contables
-                            </h1>
-                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                                Mapeo de eventos operativos a cuentas del Plan de Cuentas
-                            </p>
-                        </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 flex-wrap mb-6">
-                        <button onClick={guardar}
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl
-                                       font-semibold text-sm text-white whitespace-nowrap transition-all
-                                       hover:opacity-90 hover:-translate-y-0.5"
-                            style={{ background: 'var(--primary)' }}>
-                            <Save size={15} />
-                            Guardar cambios
-                        </button>
-                        <button onClick={autoconfigurar}
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl
-                                       font-semibold text-sm border whitespace-nowrap transition-all hover:opacity-80"
-                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)' }}>
-                            <Zap size={15} style={{ color: 'var(--primary)' }} />
-                            Autoconfigurar
-                        </button>
-                    </div>
-                </div>
 
                 {/* Banner pendientes */}
                 {totalPendientes > 0 && (
@@ -195,8 +216,52 @@ export default function ParametrosIndex({ grupos, cuentas }: Props) {
                     </div>
                 )}
 
+                {/* Buscador simple — no reemplaza el diseño de tarjetas por categoría,
+                    solo filtra qué parámetros se muestran dentro de cada una. Mismo
+                    patrón visual que FilterToolbar (input compacto + botón cuadrado de
+                    lupa a la derecha), aunque aquí no hace falta un handler de "buscar"
+                    real: el filtrado ya es instantáneo (gruposFiltrados reacciona en
+                    vivo a cada tecla) — el botón está solo por consistencia visual con
+                    el resto del sistema y quita el foco del input al presionarlo.
+
+                    justify-end (no ml-auto): a diferencia del search group interno de
+                    FilterToolbar (que sí usa ml-auto porque es un flex ITEM dentro de
+                    OTRO contenedor flex con más hermanos), este div es un contenedor de
+                    bloque de nivel superior en esta página — por sí solo ya ocupa el
+                    100% del ancho, así que ml-auto no tendría espacio hacia el cual
+                    empujar. justify-end sí funciona porque actúa sobre cómo se acomodan
+                    SUS PROPIOS hijos dentro de ese ancho completo. */}
+                <div className="flex justify-end" role="group">
+                    <div className="relative">
+                        <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+                        <Input
+                            ref={inputBusquedaRef}
+                            value={busquedaParametros}
+                            onChange={e => setBusquedaParametros(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && e.currentTarget.blur()}
+                            placeholder="Buscar parámetro..."
+                            className="pl-9 w-52 rounded-r-none border-r-0"
+                        />
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => inputBusquedaRef.current?.blur()}
+                        className="flex items-center justify-center w-9 h-9 rounded-r-md border text-sm font-medium shrink-0"
+                        style={{ background: 'var(--primary)', color: 'black', borderColor: 'var(--primary)' }}
+                        title="Buscar"
+                    >
+                        <Search className="w-4 h-4" />
+                    </button>
+                </div>
+
+                {Object.keys(gruposFiltrados).length === 0 && (
+                    <div className="py-12 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
+                        Sin resultados para "{busquedaParametros}"
+                    </div>
+                )}
+
                 {/* GRUPOS */}
-                {Object.entries(grupos).map(([nombreGrupo, params]) => (
+                {Object.entries(gruposFiltrados).map(([nombreGrupo, params]) => (
                     <div key={nombreGrupo} className="rounded-2xl overflow-hidden border"
                          style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
 
@@ -211,7 +276,8 @@ export default function ParametrosIndex({ grupos, cuentas }: Props) {
                             </span>
                             <span className="text-xs px-2 py-0.5 rounded-full ml-auto"
                                   style={{ background: 'var(--bg-main)', color: 'var(--text-muted)' }}>
-                                {params.filter(p => valores[p.codigo]).length}/{params.length}
+                                {grupos[nombreGrupo].filter(p => valores[p.codigo]).length}/{grupos[nombreGrupo].length}
+                                {busquedaParametros && ` · ${params.length} encontrado(s)`}
                             </span>
                         </div>
 

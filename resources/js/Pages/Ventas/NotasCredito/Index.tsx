@@ -67,72 +67,68 @@ export default function Index() {
                 title="Notas de Crédito"
                 description="Gestión de notas de crédito emitidas"
                 breadcrumbs={[{ label: 'Ventas' }, { label: 'Notas de Crédito' }]}
+                actions={
+                    <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                        {notas.total} nota{notas.total === 1 ? '' : 's'}
+                    </span>
+                }
             />
 
             <div className="p-6 space-y-4">
                 {/* Filtros */}
-                <div
-                    className="rounded-xl p-4 border"
-                    style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
-                >
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                        <div>
-                            <label className="text-xs mb-1 block" style={{ color: 'var(--text-muted)' }}>Desde</label>
-                            <Input
-                                type="date"
-                                value={filtro.fecha_desde}
-                                onChange={e => setFiltro(p => ({ ...p, fecha_desde: e.target.value }))}
-                                onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
-                            />
-                        </div>
-                        <div>
-                            <label className="text-xs mb-1 block" style={{ color: 'var(--text-muted)' }}>Hasta</label>
-                            <Input
-                                type="date"
-                                value={filtro.fecha_hasta}
-                                onChange={e => setFiltro(p => ({ ...p, fecha_hasta: e.target.value }))}
-                                onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
-                            />
-                        </div>
-                        <div>
-                            <label className="text-xs mb-1 block" style={{ color: 'var(--text-muted)' }}>Cliente</label>
-                            <div className="relative">
-                                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none" style={{ color: 'var(--text-muted)' }} />
-                                <Input
-                                    className="pl-8"
-                                    placeholder="Nombre o RUC..."
-                                    value={filtro.cliente}
-                                    onChange={e => setFiltro(p => ({ ...p, cliente: e.target.value }))}
-                                    onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
-                                />
-                            </div>
-                        </div>
-                        <div>
-                            <label className="text-xs mb-1 block" style={{ color: 'var(--text-muted)' }}>Estado SRI</label>
-                            <select
-                                className="w-full h-9 rounded-md border px-3 text-sm"
-                                style={{ background: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
-                                value={filtro.estado}
-                                onChange={e => setFiltro(p => ({ ...p, estado: e.target.value }))}
-                            >
-                                <option value="">Todos</option>
-                                <option value="pendiente">Pendiente</option>
-                                <option value="autorizada">Autorizada</option>
-                                <option value="rechazada">Rechazada</option>
-                                <option value="anulada">Anulada</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div className="flex justify-end gap-2 mt-3">
-                        {hayFiltros && (
-                            <Button type="button" variant="ghost" size="sm" onClick={limpiarFiltros}>
-                                Limpiar
-                            </Button>
-                        )}
-                        <Button type="button" size="sm" onClick={aplicarFiltros}>
-                            <Search className="w-4 h-4" />
-                            Buscar
+                <div className="flex items-center gap-3 flex-wrap">
+                    <Input
+                        type="date"
+                        value={filtro.fecha_desde}
+                        onChange={e => setFiltro(p => ({ ...p, fecha_desde: e.target.value }))}
+                        onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
+                        className="shrink-0 w-36"
+                        title="Desde"
+                    />
+                    <Input
+                        type="date"
+                        value={filtro.fecha_hasta}
+                        onChange={e => setFiltro(p => ({ ...p, fecha_hasta: e.target.value }))}
+                        onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
+                        className="shrink-0 w-36"
+                        title="Hasta"
+                    />
+                    <select
+                        className="input-field shrink-0"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}
+                        value={filtro.estado}
+                        onChange={e => setFiltro(p => ({ ...p, estado: e.target.value }))}
+                    >
+                        <option value="">Todos los estados SRI</option>
+                        <option value="pendiente">Pendiente</option>
+                        <option value="autorizada">Autorizada</option>
+                        <option value="rechazada">Rechazada</option>
+                        <option value="anulada">Anulada</option>
+                    </select>
+
+                    {hayFiltros && (
+                        <Button type="button" variant="ghost" size="sm" onClick={limpiarFiltros} className="shrink-0">
+                            Limpiar
                         </Button>
+                    )}
+
+                    <div className="flex shrink-0 ml-auto" role="group">
+                        <div className="relative">
+                            <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+                            <Input
+                                value={filtro.cliente}
+                                onChange={e => setFiltro(p => ({ ...p, cliente: e.target.value }))}
+                                onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
+                                placeholder="Cliente o RUC..."
+                                className="pl-9 w-52 rounded-r-none border-r-0"
+                            />
+                        </div>
+                        <button className="flex items-center justify-center w-9 h-9 rounded-r-md border text-sm font-medium shrink-0"
+                            style={{ background: 'var(--primary)', color: 'black', borderColor: 'var(--primary)' }}
+                            onClick={aplicarFiltros}
+                            title="Buscar">
+                            <Search className="w-4 h-4" />
+                        </button>
                     </div>
                 </div>
 

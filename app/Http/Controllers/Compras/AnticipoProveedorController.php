@@ -25,43 +25,65 @@ class AnticipoProveedorController extends Controller
     {
         $empresaId = session('empresa_activa_id');
 
-        $query = AnticipoProveedor::with(['proveedor', 'importacion', 'bancoCaja'])
-            ->where('empresa_id', $empresaId);
+        // Carga bajo demanda: mismo patrón que Cuentas por Pagar/
+        // Proveedores — la query solo se ejecuta cuando el usuario dispara
+        // una búsqueda explícita (botón lupa del FilterToolbar).
+        $anticipos = null;
 
-        if ($request->filled('estado')) {
-            $query->where('estado', $request->estado);
-        }
-        if ($request->filled('proveedor_id')) {
-            $query->where('proveedor_id', $request->proveedor_id);
-        }
-        if ($request->filled('buscar')) {
-            $q = $request->buscar;
-            $query->where(function ($qb) use ($q) {
-                $qb->whereHas('proveedor', fn($p) =>
-                    $p->where('razon_social', 'ilike', "%{$q}%")
-                )->orWhere('num_transferencia', 'ilike', "%{$q}%");
-            });
+        if ($request->boolean('buscado')) {
+            $query = AnticipoProveedor::with(['proveedor', 'importacion', 'bancoCaja'])
+                ->where('empresa_id', $empresaId);
+
+            if ($request->filled('estado')) {
+                $query->where('estado', $request->estado);
+            }
+            if ($request->filled('proveedor_id')) {
+                $query->where('proveedor_id', $request->proveedor_id);
+            }
+            if ($request->filled('buscar')) {
+                $q = $request->buscar;
+                $query->where(function ($qb) use ($q) {
+                    $qb->whereHas('proveedor', fn($p) =>
+                        $p->where('razon_social', 'ilike', "%{$q}%")
+                    )->orWhere('num_transferencia', 'ilike', "%{$q}%");
+                });
+            }
+
+            $anticipos = $query->orderByDesc('fecha')
+                ->orderByDesc('id')
+                ->get()
+                ->map(fn($a) => [
+                    'id'               => $a->id,
+                    'proveedor_id'     => $a->proveedor_id,
+                    'proveedor'        => $a->proveedor?->razon_social,
+                    'importacion'      => $a->importacion?->nombre,
+                    'importacion_id'   => $a->importacion_id,
+                    'fecha'            => $a->fecha?->format('d/m/Y'),
+                    'monto'            => $a->monto,
+                    'saldo'            => $a->saldo,
+                    'num_transferencia'=> $a->num_transferencia,
+                    'banco'            => $a->bancoCaja?->nombre,
+                    'estado'           => $a->estado,
+                    'asiento_id'       => $a->asiento_id,
+                ]);
         }
 
-        $anticipos = $query->orderByDesc('fecha')
-            ->orderByDesc('id')
-            ->get()
-            ->map(fn($a) => [
-                'id'               => $a->id,
-                'proveedor_id'     => $a->proveedor_id,
-                'proveedor'        => $a->proveedor?->razon_social,
-                'importacion'      => $a->importacion?->nombre,
-                'importacion_id'   => $a->importacion_id,
-                'fecha'            => $a->fecha?->format('d/m/Y'),
-                'monto'            => $a->monto,
-                'saldo'            => $a->saldo,
-                'num_transferencia'=> $a->num_transferencia,
-                'banco'            => $a->bancoCaja?->nombre,
-                'estado'           => $a->estado,
-                'asiento_id'       => $a->asiento_id,
-            ]);
-
+        // `proveedores`: se usa en el filtro del listado — se deja SIN
+        // restringir por tipo a propósito, para no romper la posibilidad
+        // de filtrar/encontrar los anticipos históricos ya registrados a
+        // proveedores nacionales (ver auditoría 2026-07-29 punto 3 — esos
+        // registros no se tocan ni se ocultan).
+        //
+        // `proveedoresInternacionales`: lista aparte, SOLO para el
+        // selector del formulario "Nuevo Anticipo" — el cliente
+        // especificó este módulo únicamente para proveedores
+        // internacionales/importaciones (auditoría 2026-07-29 punto a).
         $proveedores = Proveedor::where('empresa_id', $empresaId)
+            ->activos()->orderBy('razon_social')
+            ->get(['id', 'razon_social', 'tipo']);
+
+        $proveedoresInternacionales = Proveedor::where('empresa_id', $empresaId)
+            ->where('tipo', 'internacional')
             ->activos()->orderBy('razon_social')
             ->get(['id', 'razon_social', 'tipo']);
 
@@ -77,11 +99,12 @@ class AnticipoProveedorController extends Controller
             ->get(['id', 'nombre', 'tipo', 'saldo_actual']);
 
         return Inertia::render('Compras/Anticipos/Index', [
-            'anticipos'     => $anticipos,
-            'proveedores'   => $proveedores,
-            'importaciones' => $importaciones,
-            'bancos'        => $bancos,
-            'filtros'       => $request->only(['estado', 'proveedor_id', 'buscar']),
+            'anticipos'                  => $anticipos,
+            'proveedores'                => $proveedores,
+            'proveedoresInternacionales' => $proveedoresInternacionales,
+            'importaciones'              => $importaciones,
+            'bancos'                     => $bancos,
+            'filtros'                    => $request->only(['estado', 'proveedor_id', 'buscar']),
         ]);
     }
 
@@ -130,6 +153,18 @@ class AnticipoProveedorController extends Controller
             'banco_id.required'    => 'Selecciona el banco desde donde se pagó.',
             'proveedor_id.required'=> 'El proveedor es obligatorio.',
         ]);
+
+        // Candado: este módulo es únicamente para Anticipos a Proveedores
+        // Extranjeros/Importaciones (especificación del cliente — ver
+        // auditoría 2026-07-29 punto a). No basta con restringir el
+        // <select> del frontend: se valida también aquí por si se intenta
+        // enviar un proveedor_id nacional directamente.
+        $proveedor = Proveedor::findOrFail($request->proveedor_id);
+        if ($proveedor->tipo !== 'internacional') {
+            return back()->with('error',
+                'Los anticipos a proveedores solo aplican para proveedores internacionales/importaciones.'
+            )->withInput();
+        }
 
         $banco = BancoCaja::findOrFail($request->banco_id);
 
@@ -241,6 +276,26 @@ class AnticipoProveedorController extends Controller
                 ]);
             }
 
+            // El auto-cruce en ImportacionController::liquidar() genera asiento
+            // vía AsientoService::cruciarAnticipo() (2.1.1.02/2.1.1.01 según tipo
+            // de proveedor); este cruce manual desde la UI no lo hacía, dejando
+            // la cuenta "Anticipos a Proveedores" sin descargar contablemente.
+            $descripcionAsiento = '';
+            try {
+                $referencia = 'CRZ-ANT-' . str_pad($anticipo->id, 4, '0', STR_PAD_LEFT);
+                $asientoCruce = $this->asientoService->cruciarAnticipo(
+                    empresaId:  $anticipo->empresa_id,
+                    anticipoId: $anticipo->id,
+                    referencia: $referencia,
+                    monto:      (float) $request->monto,
+                    fecha:      now()->toDateString(),
+                );
+                $descripcionAsiento = " (asiento #{$asientoCruce->id})";
+            } catch (\Exception) {
+                // No bloquear si período contable cerrado — mismo criterio
+                // que el registro del anticipo (store()) y el auto-cruce.
+            }
+
             DB::table('log_documentos')->insert([
                 'usuario_id'  => Auth::id(),
                 'username'    => Auth::user()?->email ?? '',
@@ -248,8 +303,8 @@ class AnticipoProveedorController extends Controller
                 'modulo'      => 'compras',
                 'tabla'       => 'anticipos_proveedores',
                 'registro_id' => $anticipo->id,
-                'descripcion' => "Cruce anticipo \${$request->monto} con compra ID {$request->compra_id}",
-                'ip'          => $request->ip(),
+                'descripcion' => "Cruce anticipo \${$request->monto} con compra ID {$request->compra_id}{$descripcionAsiento}",
+                'ip_address'  => $request->ip(),
                 'empresa_id'  => $anticipo->empresa_id,
                 'fecha'       => now(),
             ]);

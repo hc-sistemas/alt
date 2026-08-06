@@ -9,7 +9,7 @@ interface Breadcrumb {
 
 interface Props {
     title: string
-    description?: string
+    description?: React.ReactNode
     breadcrumbs?: Breadcrumb[]
     actions?: React.ReactNode
 }
@@ -37,7 +37,7 @@ export default function PageHeader({ title, description, breadcrumbs, actions }:
                 )}
                 <h1 className="text-xl font-semibold" style={{ color: 'var(--text-main)' }}>{title}</h1>
                 {description && (
-                    <p className="text-sm mt-0.5" style={{ color: 'var(--text-muted)' }}>{description}</p>
+                    <p className="text-sm mt-0.5 flex items-center gap-2 flex-wrap" style={{ color: 'var(--text-muted)' }}>{description}</p>
                 )}
             </div>
             {actions && <div className="flex items-center gap-2">{actions}</div>}

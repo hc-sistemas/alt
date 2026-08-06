@@ -11,7 +11,7 @@ class BancoCaja extends Model
 {
     protected $table    = 'bancos_cajas';
     protected $fillable = [
-        'empresa_id', 'cuenta_id', 'tipo', 'nombre',
+        'empresa_id', 'cuenta_id', 'centro_costo_id', 'tipo', 'nombre',
         'num_cuenta', 'tipo_cuenta', 'saldo_inicial', 'saldo_actual', 'estado',
     ];
 
@@ -32,6 +32,11 @@ class BancoCaja extends Model
     public function cuenta(): BelongsTo
     {
         return $this->belongsTo(PlanCuenta::class, 'cuenta_id');
+    }
+
+    public function centroCosto(): BelongsTo
+    {
+        return $this->belongsTo(CentroCosto::class, 'centro_costo_id');
     }
 
     public function movimientos(): HasMany

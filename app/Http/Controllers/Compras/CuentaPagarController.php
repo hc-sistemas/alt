@@ -20,10 +20,9 @@ use Maatwebsite\Excel\Facades\Excel;
 
 class CuentaPagarController extends Controller
 {
-    public function index(Request $request): Response
+    private function queryFiltrada(Request $request)
     {
         $empresaId = session('empresa_activa_id');
-
         $query = CuentaPagar::with(['proveedor', 'compra'])
             ->where('empresa_id', $empresaId);
 
@@ -58,23 +57,44 @@ class CuentaPagarController extends Controller
         if ($request->filled('fecha_hasta')) {
             $query->where('fecha_vencimiento', '<=', $request->fecha_hasta);
         }
+        if ($request->filled('buscar')) {
+            $q = $request->buscar;
+            $query->where(fn($qb) =>
+                $qb->whereHas('proveedor', fn($p) => $p->where('razon_social', 'ilike', "%{$q}%"))
+                   ->orWhereHas('compra', fn($c) => $c->where('num_documento', 'ilike', "%{$q}%"))
+            );
+        }
 
-        $cxp = $query->orderBy('fecha_vencimiento')->get()
-            ->map(fn($c) => [
-                'id'               => $c->id,
-                'compra_id'        => $c->compra_id,
-                'proveedor'        => $c->proveedor?->razon_social,
-                'num_documento'    => $c->compra?->num_documento,
-                'monto'            => $c->monto,
-                'saldo'            => $c->saldo,
-                'fecha_emision'    => $c->fecha_emision?->format('d/m/Y'),
-                'fecha_vencimiento'=> $c->fecha_vencimiento?->format('d/m/Y'),
-                'estado'           => $c->estado,
-                'compra_anulada'   => $c->compra?->estado === 'anulada',
-                'urgencia'         => $c->urgencia,
-                'color_urgencia'   => $c->color_urgencia,
-                'dias_vencimiento' => $c->dias_vencimiento,
-            ]);
+        return $query;
+    }
+
+    public function index(Request $request): Response
+    {
+        $empresaId = session('empresa_activa_id');
+
+        // Carga bajo demanda: mismo patrón que Asientos/Plan de Cuentas/
+        // Facturas de Compra/Proveedores — la query solo se ejecuta cuando
+        // el usuario dispara una búsqueda explícita (botón lupa).
+        $cxp = null;
+
+        if ($request->boolean('buscado')) {
+            $cxp = $this->queryFiltrada($request)->orderBy('fecha_vencimiento')->get()
+                ->map(fn($c) => [
+                    'id'               => $c->id,
+                    'compra_id'        => $c->compra_id,
+                    'proveedor'        => $c->proveedor?->razon_social,
+                    'num_documento'    => $c->compra?->num_documento,
+                    'monto'            => $c->monto,
+                    'saldo'            => $c->saldo,
+                    'fecha_emision'    => $c->fecha_emision?->format('d/m/Y'),
+                    'fecha_vencimiento'=> $c->fecha_vencimiento?->format('d/m/Y'),
+                    'estado'           => $c->estado,
+                    'compra_anulada'   => $c->compra?->estado === 'anulada',
+                    'urgencia'         => $c->urgencia,
+                    'color_urgencia'   => $c->color_urgencia,
+                    'dias_vencimiento' => $c->dias_vencimiento,
+                ]);
+        }
 
         $proveedores = Proveedor::where('empresa_id', $empresaId)
             ->activos()->orderBy('razon_social')
@@ -88,7 +108,7 @@ class CuentaPagarController extends Controller
             'cxp'         => $cxp,
             'proveedores' => $proveedores,
             'bancos'      => $bancos,
-            'filtros'     => $request->only(['estado', 'proveedor_id', 'periodo', 'fecha_desde', 'fecha_hasta']),
+            'filtros'     => $request->only(['buscar', 'estado', 'proveedor_id', 'periodo', 'fecha_desde', 'fecha_hasta']),
         ]);
     }
 
@@ -153,6 +173,7 @@ class CuentaPagarController extends Controller
                 $request->referencia ?? "Pago #{$movimiento->id}",
                 $monto,
                 $cuentaPagar->compra?->centro_costo_id,
+                $request->fecha_pago,
             );
         });
 
@@ -161,17 +182,11 @@ class CuentaPagarController extends Controller
 
     public function pdf(Request $request): \Illuminate\Http\Response
     {
+        ini_set('memory_limit', '2560M');
+
         $empresaId = session('empresa_activa_id');
-        $query     = CuentaPagar::with(['proveedor', 'compra'])->where('empresa_id', $empresaId);
-        if ($request->filled('estado')) {
-            $query->where('estado', $request->estado);
-        } else {
-            $query->whereIn('estado', ['pendiente', 'parcial']);
-        }
-        if ($request->filled('proveedor_id')) {
-            $query->where('proveedor_id', $request->proveedor_id);
-        }
-        $cxp     = $query->orderBy('fecha_vencimiento')->get();
+
+        $cxp     = $this->queryFiltrada($request)->orderBy('fecha_vencimiento')->get();
         $empresa = Empresa::find($empresaId);
         $pdf = Pdf::loadView('pdf.cxp', compact('cxp', 'empresa'))->setPaper('a4', 'landscape');
         return $pdf->stream('cuentas-pagar-' . now()->format('Y-m-d') . '.pdf');
@@ -179,9 +194,13 @@ class CuentaPagarController extends Controller
 
     public function excel(Request $request): \Symfony\Component\HttpFoundation\BinaryFileResponse
     {
+        ini_set('memory_limit', '2560M');
+
         $empresaId = session('empresa_activa_id');
+        $filtros   = $request->only(['estado', 'proveedor_id', 'periodo', 'fecha_desde', 'fecha_hasta', 'buscar']);
+
         return Excel::download(
-            new CxPExport((int) $empresaId, $request->only(['estado', 'proveedor_id'])),
+            new CxPExport((int) $empresaId, $filtros),
             'cuentas-pagar-' . now()->format('Y-m-d') . '.xlsx',
             \Maatwebsite\Excel\Excel::XLSX
         );

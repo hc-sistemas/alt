@@ -37,8 +37,10 @@
 
         .badge { display:inline-block;padding:1px 5px;border-radius:3px;
                  font-size:7px;font-weight:bold;border:1px solid #D8DCE6; }
-        .b-ing { background:#EEF2F8;color:#2C5F8A; }
-        .b-egr { background:#F5F7FA;color:#555770; }
+        .b-pendiente  { background:#FEF3C7;color:#92400E; }
+        .b-conciliado { background:#DBEAFE;color:#1E40AF; }
+        .b-anulado    { background:#FEE2E2;color:#991B1B; }
+        .fila-anulada { opacity:0.55; }
 
         .fila-total { background:#1F2D3D!important; }
         .fila-total td { color:white!important;font-weight:bold!important;
@@ -93,37 +95,42 @@
         <tr>
             <th style="width:9%">Fecha</th>
             <th style="width:18%">Banco/Caja</th>
-            <th style="width:7%">Tipo</th>
-            <th style="width:8%">Sub-tipo</th>
-            <th style="width:28%">Descripción</th>
-            <th style="width:14%">Beneficiario</th>
+            <th style="width:27%">Descripción</th>
+            <th style="width:16%">Beneficiario</th>
+            <th style="width:10%">Forma</th>
             <th class="right" style="width:10%">Monto</th>
-            <th style="width:6%">Conc.</th>
+            <th style="width:10%">Estado</th>
         </tr>
     </thead>
     <tbody>
+        @php
+            $subTipoLabel = ['transferencia' => 'Transferencia', 'cheque' => 'Cheque', 'efectivo' => 'Efectivo', 'deposito' => 'Depósito'];
+        @endphp
         @foreach($movimientos as $m)
-        <tr>
+        <tr @class(['fila-anulada' => $m->anulado])>
             <td>{{ \Carbon\Carbon::parse($m->fecha)->format('d/m/Y') }}</td>
             <td style="font-weight:600;font-size:8px">{{ $m->bancoCaja?->nombre ?? '—' }}</td>
-            <td>
-                <span class="badge {{ $m->tipo === 'ingreso' ? 'b-ing' : 'b-egr' }}">
-                    {{ ucfirst($m->tipo) }}
-                </span>
-            </td>
-            <td style="font-size:8px;text-transform:capitalize">{{ $m->sub_tipo ?? '—' }}</td>
-            <td>{{ \Illuminate\Support\Str::limit($m->descripcion ?? '—', 40) }}</td>
+            <td>{{ \Illuminate\Support\Str::limit($m->descripcion ?? '—', 45) }}</td>
             <td style="font-size:8px">
-                {{ \Illuminate\Support\Str::limit($m->beneficiario ?? '—', 20) }}
+                {{ \Illuminate\Support\Str::limit($m->beneficiario ?? '—', 22) }}
             </td>
-            <td class="right" style="font-weight:bold">
-                ${{ number_format($m->monto, 2) }}
+            <td style="font-size:8px">{{ $subTipoLabel[$m->sub_tipo] ?? ($m->sub_tipo ?? '—') }}</td>
+            <td class="right" style="font-weight:bold;color:{{ $m->tipo === 'ingreso' ? '#15803D' : '#B91C1C' }}">
+                {{ $m->tipo === 'egreso' ? '-' : '+' }}${{ number_format($m->monto, 2) }}
             </td>
-            <td style="text-align:center;font-size:9px">{{ $m->conciliado ? '&#10003;' : '—' }}</td>
+            <td style="text-align:center">
+                @if($m->anulado)
+                    <span class="badge b-anulado">Anulado</span>
+                @elseif($m->conciliado)
+                    <span class="badge b-conciliado">Conciliado</span>
+                @else
+                    <span class="badge b-pendiente">Pendiente</span>
+                @endif
+            </td>
         </tr>
         @endforeach
         <tr class="fila-total">
-            <td colspan="6">TOTALES</td>
+            <td colspan="5">TOTALES (ingresos / egresos, sin anulados)</td>
             <td class="right">
                 ${{ number_format($totalIngresos, 2) }} /
                 ${{ number_format($totalEgresos, 2) }}

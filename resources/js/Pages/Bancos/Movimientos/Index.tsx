@@ -1,16 +1,19 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { router, usePage, useForm, Head } from '@inertiajs/react'
 import { toast, ToastContainer } from 'react-toastify'
 import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
+import PageHeader from '@/Components/shared/PageHeader'
+import FilterToolbar from '@/Components/shared/FilterToolbar'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { cn, formatFecha } from '@/lib/utils'
 import {
-    Plus, X, ArrowUpCircle, ArrowDownCircle, Search,
-    Ban, DollarSign, Clock, FileSpreadsheet,
+    Plus, X, ArrowUpCircle, ArrowDownCircle,
+    Ban, DollarSign, Clock, Search, FileText, FileCode, Download,
 } from 'lucide-react'
-import type { MovimientoBancario, BancoCaja, PlanCuenta, PageProps } from '@/types'
+import { usePermiso } from '@/Hooks/usePermiso'
+import type { MovimientoBancario, BancoCaja, PlanCuenta, CentroCosto, PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -33,13 +36,17 @@ interface Props extends PageProps {
         banco_caja?: BancoCaja
         cuenta_contrapartida?: PlanCuenta
         creado_por?: { nombre: string }
-    }>
-    bancos:      Pick<BancoCaja, 'id' | 'nombre' | 'tipo' | 'saldo_actual'>[]
-    cuentas:     Pick<PlanCuenta, 'id' | 'codigo' | 'nombre'>[]
-    proveedores: PersonaOpt[]
-    clientes:    PersonaOpt[]
-    filtros: { banco_caja_id?: string; tipo?: string; fecha_desde?: string; fecha_hasta?: string; buscar?: string }
-    stats: { total_ingresos: number; total_egresos: number; pendientes_conciliar: number }
+    }> | null
+    bancos:       Pick<BancoCaja, 'id' | 'nombre' | 'tipo' | 'saldo_actual'>[]
+    cuentas:      Pick<PlanCuenta, 'id' | 'codigo' | 'nombre'>[]
+    proveedores:  PersonaOpt[]
+    clientes:     PersonaOpt[]
+    centrosCosto: Pick<CentroCosto, 'id' | 'nombre'>[]
+    filtros: {
+        banco_caja_id?: string; tipo?: string; fecha_desde?: string; fecha_hasta?: string; buscar?: string
+        centro_costo_id?: string; persona_tipo?: string; persona_id?: string
+    }
+    stats: { total_ingresos: number; total_egresos: number; pendientes_conciliar: number } | null
 }
 
 // ─── Notify / Swal ───────────────────────────────────────────────────────────
@@ -374,7 +381,7 @@ function AnularModal({ movimiento, onClose }: { movimiento: MovimientoBancario; 
                 </div>
                 <div className="modal-footer">
                     <button type="submit" disabled={processing || data.motivo.length < 10}
-                        className="btn-primary" style={{ background: '#EF4444', boxShadow: 'none' }}>
+                        className="btn-primary" style={{ background: '#EF4444', color: '#fff', boxShadow: 'none' }}>
                         <Ban className="w-4 h-4" /> Anular
                     </button>
                     <button type="button" onClick={onClose} className="btn-secondary">
@@ -390,11 +397,24 @@ function AnularModal({ movimiento, onClose }: { movimiento: MovimientoBancario; 
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function MovimientosIndex() {
-    const { movimientos, bancos, cuentas, proveedores, clientes, filtros, stats, flash } = usePage<Props>().props
+    const { movimientos, bancos, cuentas, proveedores, clientes, centrosCosto, filtros, stats, flash } = usePage<Props>().props
+    const { puede } = usePermiso('bancos')
     const [showModal, setShowModal] = useState(false)
     const [anularMov, setAnularMov] = useState<MovimientoBancario | null>(null)
     const [filtro, setFiltro] = useState(filtros)
 
+    // Cambiar cualquier filtro después de haber buscado marca los resultados
+    // como "obsoletos" respecto al filtro actual — la tabla NO se vacía (se
+    // sigue mostrando la última búsqueda, atenuada) hasta que se presione
+    // Buscar de nuevo. Antes esto forzaba el estado vacío inmediatamente al
+    // cambiar cualquier filtro, generando un parpadeo datos→vacío→datos.
+    const [filtrosSucios, setFiltrosSucios] = useState(false)
+
+    // Carga bajo demanda: `movimientos`/`stats` vienen null hasta que el
+    // usuario presiona Buscar por primera vez. Una vez que hay resultados,
+    // se siguen mostrando (atenuados vía filtrosSucios) aunque el usuario
+    // cambie un filtro sin volver a buscar.
+    const haBuscado = movimientos !== null
 
     useEffect(() => {
         if (flash?.success) notify.ok(flash.success)
@@ -402,87 +422,204 @@ export default function MovimientosIndex() {
         if (flash?.warning) notify.warn(flash.warning as string)
     }, [flash?.success, flash?.error])
 
-    function buscar() {
-        router.get(route('bancos.movimientos.index'), filtro as any, { preserveState: true, replace: true })
-    }
-    function limpiar() {
-        const empty = { banco_caja_id: '', tipo: '', fecha_desde: '', fecha_hasta: '', buscar: '' }
-        setFiltro(empty)
-        router.get(route('bancos.movimientos.index'), {}, { preserveState: true, replace: true })
+    function cambiarFiltro<K extends keyof typeof filtro>(campo: K, valor: string) {
+        setFiltro(f => ({ ...f, [campo]: valor }))
+        setFiltrosSucios(true)
     }
 
-    const inp = { background: 'var(--bg-card)', color: 'var(--text-main)', borderColor: 'var(--border)' }
+    // El filtro de Persona combina proveedores+clientes en un solo select (mismo
+    // criterio que el selector del modal Nuevo Movimiento) — el backend ya
+    // filtraba por persona_tipo/persona_id (queryFiltrada) pero esta página nunca
+    // tuvo el control para mandarlos, así que el filtro era inalcanzable desde la UI.
+    function cambiarPersona(valor: string) {
+        const [tipo, id] = valor ? valor.split(':') : ['', '']
+        setFiltro(f => ({ ...f, persona_tipo: tipo, persona_id: id }))
+        setFiltrosSucios(true)
+    }
+
+    function buscar() {
+        router.get(route('bancos.movimientos.index'), { ...filtro, buscado: '1' } as any, {
+            preserveState: true,
+            replace: true,
+            onSuccess: () => setFiltrosSucios(false),
+        })
+    }
+
+    const paramsFiltrosActuales = () =>
+        Object.fromEntries(Object.entries(filtro).filter(([, v]) => v)) as Record<string, string>
+
+    const exportUrl = route('bancos.movimientos.export-excel') + '?' + new URLSearchParams(paramsFiltrosActuales()).toString()
+    const exportXmlUrl = route('bancos.movimientos.exportar-xml') + '?' + new URLSearchParams(paramsFiltrosActuales()).toString()
+
+    // ── PDF: se trae como blob (fetch) en vez de apuntar el <iframe> directo a
+    //    la URL del backend — mismo patrón que Asientos/Facturas de Compra/
+    //    Proveedores/Cuentas por Pagar: un blob: URL siempre se muestra
+    //    embebido, sin depender de si el navegador decide forzar la descarga. ──
+    const [modalPdf, setModalPdf] = useState(false)
+    const [cargandoPdf, setCargandoPdf] = useState(false)
+    const [urlPdf, setUrlPdf] = useState('')
+
+    const abrirPdf = async (url: string) => {
+        setModalPdf(true)
+        setCargandoPdf(true)
+        setUrlPdf('')
+        try {
+            const res = await fetch(url, { headers: { Accept: 'application/pdf' } })
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ message: null })) as { message?: string | null }
+                throw new Error(err.message ?? 'No se pudo generar el PDF.')
+            }
+            const blob = await res.blob()
+            setUrlPdf(URL.createObjectURL(blob))
+        } catch (e) {
+            notify.error(e instanceof Error ? e.message : 'No se pudo generar el PDF. Intenta de nuevo.')
+            setModalPdf(false)
+        } finally {
+            setCargandoPdf(false)
+        }
+    }
+
+    const cerrarModalPdf = () => {
+        if (urlPdf) URL.revokeObjectURL(urlPdf)
+        setModalPdf(false)
+        setUrlPdf('')
+    }
+
+    const iniciarExportacionPdf = () => {
+        const params = new URLSearchParams(paramsFiltrosActuales())
+        abrirPdf(route('bancos.movimientos.pdf') + '?' + params)
+    }
 
     return (
         <AppLayout title="Movimientos Bancarios" suppressFlash>
             <Head title="Movimientos Bancarios" />
 
+            <PageHeader
+                title="Movimientos Bancarios"
+                breadcrumbs={[{ label: 'Bancos' }, { label: 'Movimientos' }]}
+                actions={
+                    puede('crear') ? (
+                        <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-2 whitespace-nowrap shrink-0">
+                            <Plus size={15} /> Nuevo
+                        </button>
+                    ) : undefined
+                }
+            />
+
             <div className="px-6 pt-6 mb-2">
-                <div className="flex items-center gap-3 mb-4">
-                    <div className="p-2 rounded-xl" style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
-                        <DollarSign size={24} style={{ color: 'var(--primary)' }} />
-                    </div>
-                    <div>
-                        <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>Movimientos Bancarios</h1>
-                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Ingresos y egresos de bancos y cajas</p>
-                    </div>
-                </div>
-                {/* Toolbar */}
-                <div className="flex items-center justify-between gap-3 mb-6">
-                    <div className="flex items-center gap-2 flex-wrap">
-                        <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-2 whitespace-nowrap">
-                            <Plus size={15} /> Nuevo Movimiento
-                        </button>
+                {/*
+                    Ancho vía `style.width` inline a propósito, NO clases Tailwind: `.input-field`
+                    (app.css) declara `width:100%` fuera de cualquier @layer, y las utilidades de
+                    Tailwind v4 viven dentro de su @layer utilities interno — por reglas de CSS
+                    Cascade Layers, lo no-layereado siempre gana sobre lo layereado sin importar
+                    especificidad ni orden, así que un w-XX de Tailwind nunca puede ganarle a
+                    `.input-field`. Mismo hallazgo documentado en Asientos/Facturas de Compra/
+                    Proveedores/Cuentas por Pagar/Anticipos/Devoluciones/Importaciones.
+                */}
+                <div className="overflow-x-auto">
+                <div style={{ minWidth: '1100px' }}>
+                <FilterToolbar
+                    search={{
+                        value: filtro.buscar ?? '',
+                        onChange: v => cambiarFiltro('buscar', v),
+                        onSearch: buscar,
+                        placeholder: 'Descripción, beneficiario...',
+                    }}
+                    searchWidth="w-[120px]"
+                    exportHref={exportUrl}
+                    extraActions={
+                        <>
+                            <a href={exportXmlUrl}
+                                className="flex items-center justify-center w-9 h-9 rounded-md text-sm font-medium border shrink-0"
+                                style={{ background: '#4F46E5', color: 'white', borderColor: '#4F46E5', transition: 'background 0.2s' }}
+                                onMouseEnter={e => (e.currentTarget.style.background = '#4338CA')}
+                                onMouseLeave={e => (e.currentTarget.style.background = '#4F46E5')}
+                                title="Exportar a XML">
+                                <FileCode className="w-4 h-4" />
+                            </a>
+                            <button type="button"
+                                onClick={iniciarExportacionPdf}
+                                disabled={cargandoPdf}
+                                title={cargandoPdf ? 'Generando PDF…' : 'PDF'}
+                                className="flex items-center justify-center w-9 h-9 rounded-md border text-sm font-medium shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                                style={{ background: '#ef4444', color: 'white', borderColor: '#ef4444' }}>
+                                <FileText className="w-4 h-4" />
+                            </button>
+                        </>
+                    }
+                >
+                    <select value={filtro.banco_caja_id ?? ''} onChange={e => cambiarFiltro('banco_caja_id', e.target.value)}
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '128px' }}>
+                        <option value="">Bancos</option>
+                        {bancos.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
+                    </select>
 
-                        <div className="input-with-icon">
-                            <Search size={14} className="input-icon" />
-                            <input type="text" value={filtro.buscar ?? ''}
-                                onChange={e => setFiltro(f => ({ ...f, buscar: e.target.value }))}
-                                placeholder="Descripción, beneficiario…"
-                                className="input-field w-48" />
-                        </div>
+                    <select value={filtro.tipo ?? ''} onChange={e => cambiarFiltro('tipo', e.target.value)}
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '112px' }}>
+                        <option value="">Tipos</option>
+                        <option value="ingreso">Ingreso</option>
+                        <option value="egreso">Egreso</option>
+                    </select>
 
-                        <select value={filtro.banco_caja_id ?? ''} onChange={e => setFiltro(f => ({ ...f, banco_caja_id: e.target.value }))}
-                            className="input-field select-field" style={{ width: 'auto' }}>
-                            <option value="">Todos los bancos</option>
-                            {bancos.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
-                        </select>
+                    <select value={filtro.centro_costo_id ?? ''} onChange={e => cambiarFiltro('centro_costo_id', e.target.value)}
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '132px' }}>
+                        <option value="">Centros</option>
+                        {centrosCosto.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                    </select>
 
-                        <select value={filtro.tipo ?? ''} onChange={e => setFiltro(f => ({ ...f, tipo: e.target.value }))}
-                            className="input-field select-field" style={{ width: 'auto' }}>
-                            <option value="">Todos</option>
-                            <option value="ingreso">Ingreso</option>
-                            <option value="egreso">Egreso</option>
-                        </select>
+                    <select value={filtro.persona_tipo && filtro.persona_id ? `${filtro.persona_tipo}:${filtro.persona_id}` : ''}
+                        onChange={e => cambiarPersona(e.target.value)}
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '140px' }}>
+                        <option value="">Persona</option>
+                        {clientes.length > 0 && (
+                            <optgroup label="Clientes">
+                                {clientes.map(c => <option key={`cliente:${c.id}`} value={`cliente:${c.id}`}>{c.nombre}</option>)}
+                            </optgroup>
+                        )}
+                        {proveedores.length > 0 && (
+                            <optgroup label="Proveedores">
+                                {proveedores.map(p => <option key={`proveedor:${p.id}`} value={`proveedor:${p.id}`}>{p.nombre}</option>)}
+                            </optgroup>
+                        )}
+                    </select>
 
+                    <div className="flex flex-col gap-1 shrink-0 self-end">
+                        <label className="text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>Desde</label>
                         <input type="date" value={filtro.fecha_desde ?? ''}
-                            onChange={e => setFiltro(f => ({ ...f, fecha_desde: e.target.value }))}
-                            className="input-field" style={{ width: 'auto' }} />
+                            onChange={e => cambiarFiltro('fecha_desde', e.target.value)}
+                            className="input-field text-xs"
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '125px' }} />
+                    </div>
+                    <div className="flex flex-col gap-1 shrink-0 self-end">
+                        <label className="text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>Hasta</label>
                         <input type="date" value={filtro.fecha_hasta ?? ''}
-                            onChange={e => setFiltro(f => ({ ...f, fecha_hasta: e.target.value }))}
-                            className="input-field" style={{ width: 'auto' }} />
-
-                        <button onClick={buscar} className="btn-secondary whitespace-nowrap">
-                            Filtrar
-                        </button>
-                        <button onClick={limpiar} className="btn-secondary whitespace-nowrap">
-                            Limpiar
-                        </button>
+                            onChange={e => cambiarFiltro('fecha_hasta', e.target.value)}
+                            className="input-field text-xs"
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '125px' }} />
                     </div>
-
-                    <div className="flex items-center gap-2">
-                        <a href={route('bancos.movimientos.export-excel') + '?' + new URLSearchParams(
-                                Object.fromEntries(Object.entries(filtro).filter(([,v]) => v)) as Record<string, string>
-                            ).toString()}
-                           className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-sm font-medium text-white whitespace-nowrap transition-opacity hover:opacity-90"
-                           style={{ background: '#16a34a' }}>
-                            <FileSpreadsheet size={15} /> Excel
-                        </a>
-
-                    </div>
+                </FilterToolbar>
+                </div>
                 </div>
             </div>
 
+            {/* Estado inicial: aún no se ha buscado (carga bajo demanda) */}
+            {!haBuscado && (
+                <div className="px-6 pb-8">
+                    <div className="text-center py-16">
+                        <Search className="w-12 h-12 mx-auto mb-4 opacity-30" style={{ color: 'var(--text-muted)' }} />
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                            Ajusta los filtros y presiona Buscar para consultar los movimientos.
+                        </p>
+                    </div>
+                </div>
+            )}
+
+            {haBuscado && stats && movimientos && (
+            <div className={cn('transition-opacity', filtrosSucios && 'opacity-60')}>
             {/* Stats */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 px-6 py-4">
                 <StatCard label="Total Ingresos" value={fmt(stats.total_ingresos)} icon={ArrowUpCircle}
@@ -515,7 +652,7 @@ export default function MovimientosIndex() {
                     {movimientos.data.length === 0 && (
                         <div className="py-20 text-center">
                             <DollarSign className="w-12 h-12 opacity-20 mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
-                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No hay movimientos registrados</p>
+                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No se encontraron movimientos con estos filtros</p>
                         </div>
                     )}
 
@@ -566,7 +703,7 @@ export default function MovimientosIndex() {
                                 }
                             </div>
                             <div className="col-span-1 flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                                {!m.anulado && !m.conciliado && (
+                                {!m.anulado && !m.conciliado && puede('anular') && (
                                     <button onClick={() => setAnularMov(m)} title="Anular"
                                         className="p-1.5 rounded hover:bg-red-500/20 text-red-500 transition-colors">
                                         <Ban className="w-3.5 h-3.5" />
@@ -599,6 +736,8 @@ export default function MovimientosIndex() {
                     </div>
                 )}
             </div>
+            </div>
+            )}
 
             {showModal && (
                 <MovimientoModal
@@ -611,7 +750,46 @@ export default function MovimientosIndex() {
             )}
             {anularMov && <AnularModal movimiento={anularMov} onClose={() => setAnularMov(null)} />}
 
-
+            {/* ── Modal PDF ── */}
+            {modalPdf && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+                     style={{ background: 'rgba(0,0,0,0.85)' }}
+                     onClick={cerrarModalPdf}>
+                    <div className="w-full max-w-5xl rounded-2xl overflow-hidden shadow-2xl flex flex-col"
+                         style={{ background: 'var(--bg-card)', height: '90vh' }}
+                         onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between px-4 py-3 border-b shrink-0"
+                             style={{ borderColor: 'var(--border)' }}>
+                            <h3 className="font-semibold text-sm flex items-center gap-2"
+                                style={{ color: 'var(--text-main)' }}>
+                                <FileText size={16} style={{ color: '#ef4444' }} />
+                                Reporte de Movimientos Bancarios
+                            </h3>
+                            <div className="flex items-center gap-2">
+                                {urlPdf && (
+                                    <a href={urlPdf} download={`movimientos-bancarios-${new Date().toISOString().slice(0, 10)}.pdf`}
+                                       className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-all hover:opacity-90"
+                                       style={{ background: '#ef4444' }}>
+                                        <Download size={13} /> Descargar
+                                    </a>
+                                )}
+                                <button onClick={cerrarModalPdf}
+                                    className="px-3 py-1.5 rounded-lg text-xs font-semibold border hover:opacity-80"
+                                    style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
+                                    ✕ Cerrar
+                                </button>
+                            </div>
+                        </div>
+                        {cargandoPdf ? (
+                            <div className="flex-1 flex items-center justify-center text-sm" style={{ color: 'var(--text-muted)' }}>
+                                Generando PDF…
+                            </div>
+                        ) : (
+                            <iframe src={urlPdf} className="flex-1 w-full border-0" title="Reporte PDF Movimientos" />
+                        )}
+                    </div>
+                </div>
+            )}
 
             <ToastContainer position="top-right" autoClose={3500} hideProgressBar={false}
                 newestOnTop closeOnClick pauseOnHover draggable theme="colored"

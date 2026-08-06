@@ -13,7 +13,7 @@ class CompraDetalle extends Model
 
     protected $fillable = [
         'compra_id', 'producto_id', 'cuenta_id', 'descripcion',
-        'cantidad', 'precio_unitario', 'descuento',
+        'cantidad', 'peso', 'precio_unitario', 'descuento',
         'subtotal', 'porcentaje_iva', 'valor_iva', 'total',
         'es_activo_fijo', 'activo_fijo_id',
     ];
@@ -22,6 +22,7 @@ class CompraDetalle extends Model
     {
         return [
             'cantidad'        => 'decimal:4',
+            'peso'            => 'decimal:4',
             'precio_unitario' => 'decimal:4',
             'descuento'       => 'decimal:4',
             'subtotal'        => 'decimal:4',

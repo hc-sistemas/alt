@@ -12,7 +12,7 @@ interface Props {
 
 export default function Login({ errors: serverErrors }: Props) {
     const { data, setData, post, processing, errors } = useForm({
-        email: '',
+        usuario: '',
         password: '',
         remember: false,
     })
@@ -41,26 +41,26 @@ export default function Login({ errors: serverErrors }: Props) {
                 </div>
 
                 {/* Error general */}
-                {allErrors.email && (
+                {allErrors.usuario && (
                     <div className="flex items-start gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
                         <AlertCircle className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
-                        <p className="text-sm text-red-400">{allErrors.email}</p>
+                        <p className="text-sm text-red-400">{allErrors.usuario}</p>
                     </div>
                 )}
 
                 <form onSubmit={submit} className="space-y-4">
                     <div className="space-y-1.5">
-                        <Label htmlFor="email">Correo electrónico</Label>
+                        <Label htmlFor="usuario">Usuario</Label>
                         <div className="relative">
                             <Input
-                                id="email"
-                                type="email"
-                                value={data.email}
-                                onChange={e => setData('email', e.target.value)}
-                                placeholder="correo@empresa.com"
-                                autoComplete="email"
+                                id="usuario"
+                                type="text"
+                                value={data.usuario}
+                                onChange={e => setData('usuario', e.target.value)}
+                                placeholder="usuario o correo"
+                                autoComplete="username"
                                 autoFocus
-                                error={allErrors.email}
+                                error={allErrors.usuario}
                                 className="pl-9"
                             />
                             <svg className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }}

@@ -2,10 +2,13 @@ import { useState, useEffect, useMemo } from 'react'
 import { router, usePage, useForm, Head } from '@inertiajs/react'
 import { toast, ToastContainer } from 'react-toastify'
 import AppLayout from '@/Layouts/AppLayout'
+import PageHeader from '@/Components/shared/PageHeader'
+import FilterToolbar from '@/Components/shared/FilterToolbar'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
-import { Plus, X, CreditCard, CheckCircle } from 'lucide-react'
+import { Plus, X, CreditCard, CheckCircle, Search } from 'lucide-react'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { BancoCaja, DatafastLote, PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
 
@@ -29,7 +32,7 @@ interface Filtros {
 }
 
 interface Props extends PageProps {
-    lotes:   LoteRow[]
+    lotes:   LoteRow[] | null
     bancos:  Pick<BancoCaja, 'id' | 'nombre' | 'tipo'>[]
     filtros: Filtros
 }
@@ -218,13 +221,20 @@ function LiquidarModal({ lote, bancos, onClose }: { lote: LoteRow; bancos: Props
 
 export default function DatafastIndex() {
     const { lotes, bancos, filtros, flash } = usePage<Props>().props
+    const { puede } = usePermiso('bancos')
     const [showLote, setShowLote] = useState(false)
     const [liquidarLote, setLiquidarLote] = useState<LoteRow | null>(null)
-    const [bancoId,    setBancoId]    = useState(filtros.banco_caja_id ?? '')
-    const [estado,     setEstado]     = useState(filtros.estado        ?? '')
-    const [fechaDesde, setFechaDesde] = useState(filtros.fecha_desde   ?? '')
-    const [fechaHasta, setFechaHasta] = useState(filtros.fecha_hasta   ?? '')
-    const [buscar,     setBuscar]     = useState(filtros.buscar        ?? '')
+
+    const [filtro, setFiltro] = useState(filtros)
+
+    // Cambiar cualquier filtro después de haber buscado no vacía la tabla —
+    // solo la atenúa (opacity-60) hasta que se presione Buscar de nuevo.
+    // Mismo patrón ya usado en Movimientos Bancarios/Anticipos/Devoluciones/
+    // Importaciones/Cajas.
+    const [filtrosSucios, setFiltrosSucios] = useState(false)
+
+    // Carga bajo demanda: `lotes` viene null hasta la primera búsqueda.
+    const haBuscado = lotes !== null
 
     useEffect(() => {
         if (flash?.success) notify.ok(flash.success)
@@ -232,81 +242,94 @@ export default function DatafastIndex() {
         if (flash?.warning) notify.warn(flash.warning as string)
     }, [flash?.success, flash?.error])
 
-    function aplicarFiltros() {
-        router.get(route('bancos.datafast.index'), {
-            banco_caja_id: bancoId, estado, fecha_desde: fechaDesde, fecha_hasta: fechaHasta, buscar,
-        }, { preserveState: true, replace: true })
+    function cambiarFiltro<K extends keyof typeof filtro>(campo: K, valor: string) {
+        setFiltro(f => ({ ...f, [campo]: valor }))
+        setFiltrosSucios(true)
     }
 
-    function limpiar() {
-        setBancoId(''); setEstado(''); setFechaDesde(''); setFechaHasta(''); setBuscar('')
-        router.get(route('bancos.datafast.index'), {}, { preserveState: false })
+    function buscar() {
+        router.get(route('bancos.datafast.index'), { ...filtro, buscado: '1' } as any, {
+            preserveState: true,
+            replace: true,
+            onSuccess: () => setFiltrosSucios(false),
+        })
     }
-
-    const hayFiltros = !!(bancoId || estado || fechaDesde || fechaHasta || buscar)
-
-    const lotesFiltrados = useMemo(() => {
-        if (!buscar.trim()) return lotes
-        const q = buscar.toLowerCase()
-        return lotes.filter(l => l.numero_lote.toLowerCase().includes(q))
-    }, [lotes, buscar])
 
     return (
         <AppLayout title="Datafast" suppressFlash>
             <Head title="Datafast" />
 
+            <PageHeader
+                title="Datafast"
+                breadcrumbs={[{ label: 'Bancos' }, { label: 'Datafast' }]}
+                actions={
+                    puede('crear') ? (
+                        <button onClick={() => setShowLote(true)}
+                            className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-black whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5 shrink-0"
+                            style={{ background: 'var(--primary)' }}>
+                            <Plus size={15} /> Nuevo Lote
+                        </button>
+                    ) : undefined
+                }
+            />
+
             <div className="px-6 pt-6 mb-2">
-                <div className="flex items-center gap-3 mb-4">
-                    <div className="p-2 rounded-xl" style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)' }}>
-                        <CreditCard size={24} style={{ color: 'var(--primary)' }} />
-                    </div>
-                    <div>
-                        <h1 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>Datafast</h1>
-                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Lotes de vouchers y liquidaciones</p>
-                    </div>
-                </div>
-                <div className="flex items-center gap-2 flex-wrap mb-6">
-                    <button onClick={() => setShowLote(true)}
-                        className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm text-white whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5"
-                        style={{ background: 'var(--primary)' }}>
-                        <Plus size={15} /> Nuevo Lote
-                    </button>
-
-                    <input type="text" placeholder="Buscar N° lote..."
-                        value={buscar} onChange={e => setBuscar(e.target.value)}
-                        onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
-                        className="input-field" style={{ width: '160px' }} />
-
-                    <select value={bancoId} onChange={e => setBancoId(e.target.value)}
-                        className="input-field select-field" style={{ width: 'auto' }}>
-                        <option value="">Todos los terminales</option>
+                <FilterToolbar
+                    search={{
+                        value: filtro.buscar ?? '',
+                        onChange: v => cambiarFiltro('buscar', v),
+                        onSearch: buscar,
+                        placeholder: 'N° lote...',
+                    }}
+                    searchWidth="w-[140px]"
+                >
+                    <select value={filtro.banco_caja_id ?? ''} onChange={e => cambiarFiltro('banco_caja_id', e.target.value)}
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '150px' }}>
+                        <option value="">Terminal</option>
                         {bancos.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
                     </select>
 
-                    <select value={estado} onChange={e => setEstado(e.target.value)}
-                        className="input-field select-field" style={{ width: 'auto' }}>
-                        <option value="">Todos los estados</option>
+                    <select value={filtro.estado ?? ''} onChange={e => cambiarFiltro('estado', e.target.value)}
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '120px' }}>
+                        <option value="">Estado</option>
                         <option value="pendiente">Pendiente</option>
                         <option value="liquidado">Liquidado</option>
                     </select>
 
-                    <input type="date" value={fechaDesde} onChange={e => setFechaDesde(e.target.value)}
-                        className="input-field" style={{ width: 'auto' }} />
-                    <input type="date" value={fechaHasta} onChange={e => setFechaHasta(e.target.value)}
-                        className="input-field" style={{ width: 'auto' }} />
-
-                    <button onClick={aplicarFiltros} className="btn-secondary whitespace-nowrap">Filtrar</button>
-                    {hayFiltros && (
-                        <button onClick={limpiar} className="btn-secondary flex items-center gap-1 whitespace-nowrap">
-                            <X size={13} /> Limpiar
-                        </button>
-                    )}
-                </div>
+                    <div className="flex flex-col gap-1 shrink-0 self-end">
+                        <label className="text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>Desde</label>
+                        <input type="date" value={filtro.fecha_desde ?? ''}
+                            onChange={e => cambiarFiltro('fecha_desde', e.target.value)}
+                            className="input-field text-xs"
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '140px' }} />
+                    </div>
+                    <div className="flex flex-col gap-1 shrink-0 self-end">
+                        <label className="text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>Hasta</label>
+                        <input type="date" value={filtro.fecha_hasta ?? ''}
+                            onChange={e => cambiarFiltro('fecha_hasta', e.target.value)}
+                            className="input-field text-xs"
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '140px' }} />
+                    </div>
+                </FilterToolbar>
             </div>
 
+            {/* Estado inicial: aún no se ha buscado (carga bajo demanda) */}
+            {!haBuscado && (
+                <div className="px-6 pb-8">
+                    <div className="text-center py-16">
+                        <Search className="w-12 h-12 mx-auto mb-4 opacity-30" style={{ color: 'var(--text-muted)' }} />
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                            Ajusta los filtros y presiona Buscar para consultar los lotes Datafast.
+                        </p>
+                    </div>
+                </div>
+            )}
 
             {/* Tabla */}
-            <div className="px-6 pb-8">
+            {haBuscado && lotes && (
+            <div className={cn('px-6 pb-8', filtrosSucios && 'opacity-60 transition-opacity')}>
                 <div className="border rounded-xl overflow-hidden"
                     style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
                     <div className="grid grid-cols-12 gap-2 px-4 py-2.5 border-b text-[11px] font-semibold uppercase tracking-wider"
@@ -320,14 +343,14 @@ export default function DatafastIndex() {
                         <span className="col-span-2 text-right">Acción</span>
                     </div>
 
-                    {lotesFiltrados.length === 0 && (
+                    {lotes.length === 0 && (
                         <div className="py-20 text-center">
                             <CreditCard className="w-12 h-12 opacity-20 mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
-                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No hay lotes registrados</p>
+                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No se encontraron lotes con estos filtros</p>
                         </div>
                     )}
 
-                    {lotesFiltrados.map(l => (
+                    {lotes.map(l => (
                         <div key={l.id}
                             className="group grid grid-cols-12 gap-2 px-4 py-3 border-b items-center text-sm transition-colors"
                             style={{ borderColor: 'var(--border)' }}
@@ -364,9 +387,9 @@ export default function DatafastIndex() {
                                 }
                             </div>
                             <div className="col-span-2 flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                                {l.estado === 'pendiente' && (
+                                {l.estado === 'pendiente' && puede('editar') && (
                                     <button onClick={() => setLiquidarLote(l)}
-                                        className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium text-white"
+                                        className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium text-black"
                                         style={{ background: 'var(--primary)' }}>
                                         <CheckCircle className="w-3.5 h-3.5" /> Liquidar
                                     </button>
@@ -376,6 +399,7 @@ export default function DatafastIndex() {
                     ))}
                 </div>
             </div>
+            )}
 
             {showLote && <LoteModal bancos={bancos} onClose={() => setShowLote(false)} />}
             {liquidarLote && <LiquidarModal lote={liquidarLote} bancos={bancos} onClose={() => setLiquidarLote(null)} />}

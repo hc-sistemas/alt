@@ -8,6 +8,7 @@ import { Label } from '@/Components/ui/label'
 import BuscadorClienteModal from '@/Components/shared/BuscadorClienteModal'
 import { toastError } from '@/lib/toast'
 import { Search, Save, X, AlertTriangle, RotateCcw } from 'lucide-react'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { PageProps, Cliente, TallerTipoEquipo, TallerEquipo } from '@/types'
 
 interface Props extends PageProps {
@@ -33,6 +34,7 @@ function getCsrf(): string {
 
 export default function IngresoForm() {
     const { clientes, tiposEquipo, errors } = usePage<Props>().props
+    const { puede } = usePermiso('taller')
 
     // — Cliente
     const [identificacion, setIdentificacion] = useState('')
@@ -399,10 +401,12 @@ export default function IngresoForm() {
                             Cancelar
                         </Button>
                     </Link>
-                    <Button type="submit" loading={guardando}>
-                        <Save className="w-4 h-4" />
-                        Guardar Ingreso
-                    </Button>
+                    {puede('crear') && (
+                        <Button type="submit" loading={guardando}>
+                            <Save className="w-4 h-4" />
+                            Guardar Ingreso
+                        </Button>
+                    )}
                 </div>
             </form>
 

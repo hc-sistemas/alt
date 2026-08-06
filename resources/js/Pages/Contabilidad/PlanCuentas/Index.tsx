@@ -4,17 +4,19 @@ import { toast, ToastContainer } from 'react-toastify'
 import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
+import FilterToolbar from '@/Components/shared/FilterToolbar'
 import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
 import {
     ChevronRight, ChevronDown, Plus, Pencil, Trash2,
-    ToggleLeft, ToggleRight, Download, Search, X,
+    ToggleLeft, ToggleRight, Search, X,
     ChevronsUpDown, ChevronsDownUp, BookOpen,
     TrendingUp, TrendingDown, DollarSign, Shield, BarChart3,
     Upload,
 } from 'lucide-react'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { PlanCuenta, PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
 
@@ -609,18 +611,22 @@ interface CuentaNodeProps {
     onEditar: (cuenta: PlanCuenta) => void
     onToggleEstado: (cuenta: PlanCuenta) => void
     onEliminar: (cuenta: PlanCuenta) => void
+    puedeCrear: boolean
+    puedeEditar: boolean
+    puedeEliminarPermiso: boolean
 }
 
 function CuentaNode({
     cuenta, busqueda, expandidos,
     onToggleExpand, onAgregar, onEditar, onToggleEstado, onEliminar,
+    puedeCrear, puedeEditar, puedeEliminarPermiso,
 }: CuentaNodeProps) {
     const hasHijos   = (cuenta.hijos?.length ?? 0) > 0
     const isExpanded = !!busqueda || expandidos.has(cuenta.id)
     const config     = TIPO_CONFIG[cuenta.tipo]
 
     const toggleBlocked = cuenta.estado && cuenta.total_asientos > 0
-    const puedeEliminar = cuenta.total_asientos === 0 && !hasHijos
+    const puedeEliminar = puedeEliminarPermiso && cuenta.total_asientos === 0 && !hasHijos
 
     const tooltipEliminar = !puedeEliminar
         ? hasHijos
@@ -714,47 +720,55 @@ function CuentaNode({
 
                 {/* Acciones */}
                 <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 ml-1 transition-opacity shrink-0">
-                    <button
-                        onClick={() => onAgregar(cuenta)}
-                        title="Agregar cuenta hija"
-                        className="hover:bg-amber-500/20 p-1 rounded transition-colors"
-                        style={{ color: 'var(--primary)' }}
-                    >
-                        <Plus className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                        onClick={() => onEditar(cuenta)}
-                        title="Editar cuenta"
-                        className="hover:bg-blue-500/20 p-1 rounded text-blue-500 dark:text-blue-400 transition-colors"
-                    >
-                        <Pencil className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                        onClick={() => !toggleBlocked && onToggleEstado(cuenta)}
-                        title={toggleBlocked
-                            ? `Tiene ${cuenta.total_asientos} asiento(s) registrado(s), no se puede desactivar`
-                            : cuenta.estado ? 'Desactivar cuenta' : 'Activar cuenta'}
-                        disabled={toggleBlocked}
-                        className={cn(
-                            'p-1 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed',
-                            cuenta.estado
-                                ? 'hover:bg-red-500/20 text-red-500 dark:text-red-400'
-                                : 'hover:bg-green-500/20 text-green-600 dark:text-green-400',
-                        )}
-                    >
-                        {cuenta.estado
-                            ? <ToggleRight className="w-3.5 h-3.5" />
-                            : <ToggleLeft className="w-3.5 h-3.5" />
-                        }
-                    </button>
-                    <button
-                        onClick={() => puedeEliminar && onEliminar(cuenta)}
-                        title={tooltipEliminar}
-                        disabled={!puedeEliminar}
-                        className="p-1 rounded transition-colors hover:bg-red-500/20 text-red-500 dark:text-red-400 disabled:opacity-25 disabled:cursor-not-allowed"
-                    >
-                        <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    {puedeCrear && (
+                        <button
+                            onClick={() => onAgregar(cuenta)}
+                            title="Agregar cuenta hija"
+                            className="hover:bg-amber-500/20 p-1 rounded transition-colors"
+                            style={{ color: 'var(--primary)' }}
+                        >
+                            <Plus className="w-3.5 h-3.5" />
+                        </button>
+                    )}
+                    {puedeEditar && (
+                        <button
+                            onClick={() => onEditar(cuenta)}
+                            title="Editar cuenta"
+                            className="hover:bg-blue-500/20 p-1 rounded text-blue-500 dark:text-blue-400 transition-colors"
+                        >
+                            <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                    )}
+                    {puedeEditar && (
+                        <button
+                            onClick={() => !toggleBlocked && onToggleEstado(cuenta)}
+                            title={toggleBlocked
+                                ? `Tiene ${cuenta.total_asientos} asiento(s) registrado(s), no se puede desactivar`
+                                : cuenta.estado ? 'Desactivar cuenta' : 'Activar cuenta'}
+                            disabled={toggleBlocked}
+                            className={cn(
+                                'p-1 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed',
+                                cuenta.estado
+                                    ? 'hover:bg-red-500/20 text-red-500 dark:text-red-400'
+                                    : 'hover:bg-green-500/20 text-green-600 dark:text-green-400',
+                            )}
+                        >
+                            {cuenta.estado
+                                ? <ToggleRight className="w-3.5 h-3.5" />
+                                : <ToggleLeft className="w-3.5 h-3.5" />
+                            }
+                        </button>
+                    )}
+                    {puedeEliminarPermiso && (
+                        <button
+                            onClick={() => puedeEliminar && onEliminar(cuenta)}
+                            title={tooltipEliminar}
+                            disabled={!puedeEliminar}
+                            className="p-1 rounded transition-colors hover:bg-red-500/20 text-red-500 dark:text-red-400 disabled:opacity-25 disabled:cursor-not-allowed"
+                        >
+                            <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -772,6 +786,9 @@ function CuentaNode({
                             onEditar={onEditar}
                             onToggleEstado={onToggleEstado}
                             onEliminar={onEliminar}
+                            puedeCrear={puedeCrear}
+                            puedeEditar={puedeEditar}
+                            puedeEliminarPermiso={puedeEliminarPermiso}
                         />
                     ))}
                 </div>
@@ -834,7 +851,7 @@ function ImportarExcelModal({ onClose }: { onClose: () => void }) {
                     <div className="modal-footer" style={{ justifyContent: 'space-between' }}>
                         <button type="submit" disabled={!archivo || processing}
                             className="btn-primary flex items-center gap-2"
-                            style={{ background: '#059669', opacity: (!archivo || processing) ? 0.6 : 1 }}>
+                            style={{ background: '#059669', color: '#000', opacity: (!archivo || processing) ? 0.6 : 1 }}>
                             <Upload size={15} />
                             {processing ? 'Importando...' : 'Importar'}
                         </button>
@@ -850,6 +867,7 @@ function ImportarExcelModal({ onClose }: { onClose: () => void }) {
 
 export default function PlanCuentasIndex() {
     const { cuentas, todasLasCuentas, flash } = usePage<Props>().props
+    const { puede } = usePermiso('contabilidad')
 
     const [busqueda, setBusqueda]   = useState('')
     const [expandidos, setExpandidos] = useState<Set<number>>(() => new Set(cuentas.map(c => c.id)))
@@ -917,66 +935,50 @@ export default function PlanCuentasIndex() {
 
             <PageHeader
                 title="Plan de Cuentas"
-                description="Estructura contable oficial de Altamira Light & Sound"
                 breadcrumbs={[
                     { label: 'Contabilidad' },
                     { label: 'Plan de Cuentas' },
                 ]}
+                actions={
+                    puede('crear') ? (
+                        <Button size="sm" onClick={() => setModal({ open: true, padre: null })} style={{ color: '#000' }}>
+                            <Plus className="w-4 h-4" />
+                            Nueva
+                        </Button>
+                    ) : undefined
+                }
             />
 
-            {/* Toolbar: [Nueva Cuenta] [Expandir] [Colapsar] [Buscar] | [Excel] */}
-            <div className="flex items-center justify-between gap-3 px-6 pb-4">
-                <div className="flex flex-wrap items-center gap-2">
-                    <Button size="sm" onClick={() => setModal({ open: true, padre: null })}>
-                        <Plus className="w-4 h-4" />
-                        Nueva cuenta
-                    </Button>
-
-                    <Button variant="outline" size="sm" onClick={expandirTodo} title="Expandir todo">
+            {/* Toolbar: [Expandir] [Colapsar] [Buscar] | [Excel] [Importar] */}
+            <div className="px-6 pb-4">
+                <FilterToolbar
+                    search={{
+                        value: busqueda,
+                        onChange: setBusqueda,
+                        onSearch: () => {},
+                        placeholder: 'Buscar por código o nombre...',
+                    }}
+                    exportHref={route('contabilidad.plan-cuentas.exportar')}
+                    extraActions={
+                        puede('crear') ? (
+                            <button onClick={() => setModalImportar(true)}
+                                title="Importar Excel"
+                                className="flex items-center justify-center w-9 h-9 rounded-md border text-sm font-medium shrink-0"
+                                style={{ background: '#059669', color: 'white', borderColor: '#059669' }}>
+                                <Upload className="w-4 h-4" />
+                            </button>
+                        ) : undefined
+                    }
+                >
+                    <Button variant="outline" size="sm" onClick={expandirTodo} title="Expandir todo" className="shrink-0">
                         <ChevronsUpDown className="w-3.5 h-3.5" />
                         Expandir
                     </Button>
-                    <Button variant="outline" size="sm" onClick={colapsarTodo} title="Colapsar todo">
+                    <Button variant="outline" size="sm" onClick={colapsarTodo} title="Colapsar todo" className="shrink-0">
                         <ChevronsDownUp className="w-3.5 h-3.5" />
                         Colapsar
                     </Button>
-
-                    <div className="relative min-w-48 max-w-sm">
-                        <Search
-                            className="absolute top-1/2 left-2.5 w-4 h-4 -translate-y-1/2 pointer-events-none"
-                            style={{ color: 'var(--text-muted)' }}
-                        />
-                        <Input
-                            className="pl-8 pr-8"
-                            placeholder="Buscar por código o nombre…"
-                            value={busqueda}
-                            onChange={e => setBusqueda(e.target.value)}
-                        />
-                        {busqueda && (
-                            <button
-                                onClick={() => setBusqueda('')}
-                                className="absolute top-1/2 right-2.5 -translate-y-1/2 hover:opacity-70 transition-opacity"
-                                style={{ color: 'var(--text-muted)' }}
-                            >
-                                <X className="w-3.5 h-3.5" />
-                            </button>
-                        )}
-                    </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                    <button onClick={() => setModalImportar(true)}
-                        className="btn-primary flex items-center gap-2 whitespace-nowrap"
-                        style={{ background: '#059669' }}>
-                        <Upload className="w-3.5 h-3.5" />
-                        Importar Excel
-                    </button>
-                    <a href={route('contabilidad.plan-cuentas.exportar')}
-                       className="btn-excel flex items-center gap-2 whitespace-nowrap">
-                        <Download className="w-3.5 h-3.5" />
-                        Excel
-                    </a>
-                </div>
+                </FilterToolbar>
             </div>
 
             {/* Árbol */}
@@ -1033,6 +1035,9 @@ export default function PlanCuentasIndex() {
                             onEditar={c => setModal({ open: true, cuenta: c })}
                             onToggleEstado={confirmarToggle}
                             onEliminar={confirmarEliminar}
+                            puedeCrear={puede('crear')}
+                            puedeEditar={puede('editar')}
+                            puedeEliminarPermiso={puede('eliminar')}
                         />
                     ))}
                 </div>

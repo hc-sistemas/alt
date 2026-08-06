@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Inventario;
 
 use App\Http\Controllers\Controller;
+use App\Models\Bodega;
 use App\Models\CategoriaProducto;
 use App\Models\ListaPrecio;
 use App\Models\Marca;
@@ -29,6 +30,7 @@ class ListaPrecioController extends Controller
                 DB::raw("COALESCE(m.nombre, '—') as marca_nombre"),
                 'p.pvp as pvp_base',
                 'p.pvd as pvd_base',
+                'p.porcentaje_iva',
                 'lp.id as lista_pvp_id',
                 'lp.precio as lista_pvp_precio',
                 'lp.descuento_max as lista_pvp_descuento_max',
@@ -50,7 +52,6 @@ class ListaPrecioController extends Controller
                   ->where('ld.empresa_id', $empresaId)
                   ->where('ld.tipo', 'PVD');
             })
-            ->where('p.empresa_id', $empresaId)
             ->where('p.estado', true)
             ->when($request->search, fn ($q) => $q->where(function ($q) use ($request) {
                 $q->where('p.codigo', 'ilike', "%{$request->search}%")
@@ -60,20 +61,58 @@ class ListaPrecioController extends Controller
             ->when($request->categoria_id, fn ($q) => $q->where('p.categoria_id', $request->categoria_id))
             ->orderBy('p.nombre');
 
+        $bodegas = Bodega::where('empresa_id', $empresaId)
+            ->whereNotNull('centro_costo_id')
+            ->activas()
+            ->orderBy('nombre')
+            ->get(['id', 'nombre']);
+
         if ($request->boolean('sin_paginar')) {
+            $filas = $query->get();
+            $this->adjuntarStockPorBodega($filas, $bodegas);
+
             return response()->json([
                 'props' => [
-                    'filas' => $query->get(),
+                    'filas' => $filas,
                 ],
             ]);
         }
 
+        $listas = $query->paginate(25)->withQueryString();
+        $this->adjuntarStockPorBodega(collect($listas->items()), $bodegas);
+
         return Inertia::render('Inventario/ListasPrecio/Index', [
-            'listas'     => $query->paginate(25)->withQueryString(),
+            'listas'     => $listas,
             'filters'    => $request->only(['search', 'marca_id', 'categoria_id']),
             'marcas'     => Marca::where('estado', true)->orderBy('nombre')->get(['id', 'nombre']),
             'categorias' => CategoriaProducto::where('estado', true)->orderBy('nombre')->get(['id', 'nombre']),
+            'bodegas'    => $bodegas,
         ]);
+    }
+
+    /**
+     * Muta cada fila agregando ->inventario = { bodega_id: stock_actual }.
+     * El stock sigue siendo por empresa (vía bodega), aunque el catálogo de
+     * productos ya no lo esté.
+     */
+    private function adjuntarStockPorBodega($filas, $bodegas): void
+    {
+        $productoIds = $filas->pluck('producto_id');
+
+        $saldos = DB::table('inventario_saldos')
+            ->whereIn('producto_id', $productoIds)
+            ->whereIn('bodega_id', $bodegas->pluck('id'))
+            ->get(['producto_id', 'bodega_id', 'stock_actual']);
+
+        $saldosPorProducto = $saldos->groupBy('producto_id');
+
+        foreach ($filas as $row) {
+            $row->inventario = $bodegas->mapWithKeys(function ($bodega) use ($row, $saldosPorProducto) {
+                $saldo = optional($saldosPorProducto->get($row->producto_id))
+                    ->firstWhere('bodega_id', $bodega->id);
+                return [$bodega->id => $saldo->stock_actual ?? 0];
+            });
+        }
     }
 
     public function update(Request $request, $productoId)
@@ -141,8 +180,7 @@ class ListaPrecioController extends Controller
                 continue;
             }
 
-            $producto = Producto::where('empresa_id', $empresaId)
-                ->where('codigo', $codigo)
+            $producto = Producto::where('codigo', $codigo)
                 ->first();
 
             if (!$producto) {

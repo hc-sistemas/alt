@@ -5,9 +5,12 @@ namespace App\Http\Controllers\RRHH;
 use App\Http\Controllers\Controller;
 use App\Models\Colaborador;
 use App\Models\Horario;
+use App\Models\Nomina;
+use App\Models\NominaDetalle;
 use App\Models\Perfil;
 use App\Models\PuestoTrabajo;
 use App\Models\Usuario;
+use App\Services\NominaCalculoService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -23,33 +26,39 @@ class ColaboradorController extends Controller
     // super_admin y contador se gestionan únicamente desde Configuración > Usuarios.
     private const PERFILES_ACCESO = ['admin', 'vendedor', 'tecnico', 'bodeguero'];
 
+    public function __construct(private NominaCalculoService $nominaCalculoService) {}
+
     public function index(Request $request): Response
     {
         $empresaId = session('empresa_activa_id');
 
-        $query = Colaborador::with(['puesto', 'horario', 'usuario:id,username,estado'])
-            ->where('empresa_id', $empresaId);
+        $colaboradores = null;
 
-        if ($request->filled('buscar')) {
-            $q = $request->buscar;
-            $query->where(fn($qb) =>
-                $qb->where('nombres', 'ilike', "%{$q}%")
-                   ->orWhere('apellidos', 'ilike', "%{$q}%")
-                   ->orWhere('cedula_ruc', 'ilike', "%{$q}%")
-                   ->orWhere('cargo', 'ilike', "%{$q}%")
-            );
+        if ($request->boolean('buscado')) {
+            $query = Colaborador::with(['puesto', 'horario', 'usuario:id,username,estado'])
+                ->where('empresa_id', $empresaId);
+
+            if ($request->filled('buscar')) {
+                $q = $request->buscar;
+                $query->where(fn($qb) =>
+                    $qb->where('nombres', 'ilike', "%{$q}%")
+                       ->orWhere('apellidos', 'ilike', "%{$q}%")
+                       ->orWhere('cedula_ruc', 'ilike', "%{$q}%")
+                       ->orWhere('cargo', 'ilike', "%{$q}%")
+                );
+            }
+
+            if ($request->filled('departamento')) {
+                $query->where('departamento', $request->departamento);
+            }
+
+            if ($request->filled('estado')) {
+                $query->where('estado', $request->estado === 'activo');
+            }
+
+            $colaboradores = $query->orderBy('apellidos')->orderBy('nombres')
+                ->paginate(20)->withQueryString();
         }
-
-        if ($request->filled('departamento')) {
-            $query->where('departamento', $request->departamento);
-        }
-
-        if ($request->filled('estado')) {
-            $query->where('estado', $request->estado === 'activo');
-        }
-
-        $colaboradores = $query->orderBy('apellidos')->orderBy('nombres')
-            ->paginate(20)->withQueryString();
 
         $puestos  = PuestoTrabajo::where('empresa_id', $empresaId)
             ->where('estado', true)->orderBy('nombre')
@@ -166,6 +175,8 @@ class ColaboradorController extends Controller
                 $colaborador->save();
             }
 
+            $this->crearFilasNominaVigente($colaborador);
+
             return $colaborador;
         });
 
@@ -175,6 +186,49 @@ class ColaboradorController extends Controller
         }
 
         return back()->with('success', $mensaje);
+    }
+
+    // Al registrar un colaborador nuevo, debe aparecer automáticamente en
+    // cualquier nómina del ejercicio vigente que YA exista pero siga en
+    // 'borrador' (mensual o quincenal) — evita el registro huérfano de tener
+    // que re-generar o editar manualmente la nómina para incluirlo. Nóminas
+    // ya 'procesado'/'pagado' no se tocan (están cerradas contablemente); si
+    // no hay ninguna nómina en borrador para el mes actual, no hay nada que
+    // crear todavía — se generará con normalidad cuando el usuario presione
+    // "Generar Nómina", momento en que el colaborador ya estará activo y se
+    // incluirá solo.
+    private function crearFilasNominaVigente(Colaborador $colaborador): void
+    {
+        $nominasAbiertas = Nomina::where('empresa_id', $colaborador->empresa_id)
+            ->where('estado', 'borrador')
+            ->where('anio', now()->year)
+            ->where('mes', now()->month)
+            ->get();
+
+        foreach ($nominasAbiertas as $nomina) {
+            $yaExiste = NominaDetalle::where('nomina_id', $nomina->id)
+                ->where('colaborador_id', $colaborador->id)
+                ->exists();
+
+            if ($yaExiste) {
+                continue;
+            }
+
+            $detalle = $this->nominaCalculoService->calcularDetalle($colaborador, [
+                'periodo_tipo' => $nomina->periodo_tipo,
+                'anio'         => $nomina->anio,
+                'mes'          => $nomina->mes,
+                'quincena'     => $nomina->quincena,
+            ], $nomina->id);
+
+            NominaDetalle::create($detalle);
+
+            $nomina->update([
+                'total_ingresos' => round((float) $nomina->total_ingresos + (float) $detalle['total_ingresos'], 2),
+                'total_egresos'  => round((float) $nomina->total_egresos + (float) $detalle['total_egresos'], 2),
+                'total_neto'     => round((float) $nomina->total_neto + (float) $detalle['neto_pagar'], 2),
+            ]);
+        }
     }
 
     public function update(Request $request, Colaborador $colaborador): RedirectResponse
