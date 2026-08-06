@@ -45,13 +45,8 @@ class CuentaCobrarController extends Controller
 
         $cuentas = $query->paginate(25)->withQueryString();
 
-        $cuentas->getCollection()->transform(function (CuentaCobrar $c) use ($hoy) {
-            $fv          = $c->fecha_vencimiento?->toDateString();
-            $diasVencido = ($fv && $fv < $hoy)
-                // abs(): diffInDays() en Carbon 3 es firmado (negativo si la fecha de
-                // vencimiento, ya pasada, es anterior a hoy) y se necesita el conteo positivo.
-                ? (int) abs(now()->startOfDay()->diffInDays($c->fecha_vencimiento->startOfDay()))
-                : 0;
+        $cuentas->getCollection()->transform(function (CuentaCobrar $c) {
+            $diasVencido = $this->diasVencido($c);
 
             return [
                 'id'                => $c->id,
@@ -59,7 +54,7 @@ class CuentaCobrarController extends Controller
                 'documento_tipo'    => $c->factura_id   ? 'Factura' : ($c->prefactura_id ? 'Prefactura' : 'Otro'),
                 'documento_numero'  => $c->factura?->numero_completo ?? "CXC-{$c->id}",
                 'fecha_emision'     => $c->fecha_emision?->toDateString(),
-                'fecha_vencimiento' => $fv,
+                'fecha_vencimiento' => $c->fecha_vencimiento?->toDateString(),
                 'monto'             => (float) $c->monto,
                 'saldo'             => (float) $c->saldo,
                 'dias_vencido'      => $diasVencido,
@@ -101,12 +96,7 @@ class CuentaCobrarController extends Controller
     {
         $cuentaCobrar->load(['cliente', 'factura', 'cobros.usuario']);
 
-        $hoy         = now()->toDateString();
-        $fv          = $cuentaCobrar->fecha_vencimiento?->toDateString();
-        $diasVencido = ($fv && $fv < $hoy)
-            // abs(): ver nota en index() sobre diffInDays() firmado en Carbon 3
-            ? (int) abs(now()->startOfDay()->diffInDays($cuentaCobrar->fecha_vencimiento->startOfDay()))
-            : 0;
+        $diasVencido = $this->diasVencido($cuentaCobrar);
 
         return Inertia::render('Ventas/CxC/Show', [
             'cuenta' => [
@@ -116,7 +106,7 @@ class CuentaCobrarController extends Controller
                 'documento_tipo'         => $cuentaCobrar->factura_id ? 'Factura' : ($cuentaCobrar->prefactura_id ? 'Prefactura' : 'Otro'),
                 'documento_numero'       => $cuentaCobrar->factura?->numero_completo ?? "CXC-{$cuentaCobrar->id}",
                 'fecha_emision'          => $cuentaCobrar->fecha_emision?->toDateString(),
-                'fecha_vencimiento'      => $fv,
+                'fecha_vencimiento'      => $cuentaCobrar->fecha_vencimiento?->toDateString(),
                 'monto'                  => (float) $cuentaCobrar->monto,
                 'saldo'                  => (float) $cuentaCobrar->saldo,
                 'dias_vencido'           => $diasVencido,
@@ -186,6 +176,23 @@ class CuentaCobrarController extends Controller
         return back()->with('flash', ['tipo' => 'exito', 'mensaje' => "Cobro de \${$monto} registrado correctamente."]);
     }
 
+    /**
+     * Días de vencimiento de una CxC — mismo cálculo usado en index() y
+     * show() para el reporte de antigüedad, centralizado aquí para que
+     * castigo() no reimplemente la lógica de días vencidos.
+     */
+    private function diasVencido(CuentaCobrar $cuentaCobrar): int
+    {
+        $hoy = now()->toDateString();
+        $fv  = $cuentaCobrar->fecha_vencimiento?->toDateString();
+
+        // abs(): diffInDays() en Carbon 3 es firmado (negativo si la fecha de
+        // vencimiento, ya pasada, es anterior a hoy) y se necesita el conteo positivo.
+        return ($fv && $fv < $hoy)
+            ? (int) abs(now()->startOfDay()->diffInDays($cuentaCobrar->fecha_vencimiento->startOfDay()))
+            : 0;
+    }
+
     public function castigo(Request $request, CuentaCobrar $cuentaCobrar)
     {
         $request->validate([
@@ -203,12 +210,7 @@ class CuentaCobrarController extends Controller
             return back()->withErrors(['error' => 'Solo el SuperAdmin puede castigar deudas.']);
         }
 
-        $fv = $cuentaCobrar->fecha_vencimiento?->toDateString();
-        $hoy = now()->toDateString();
-        $diasVencido = ($fv && $fv < $hoy)
-            // abs(): ver nota en index() sobre diffInDays() firmado en Carbon 3
-            ? (int) abs(now()->startOfDay()->diffInDays($cuentaCobrar->fecha_vencimiento->startOfDay()))
-            : 0;
+        $diasVencido = $this->diasVencido($cuentaCobrar);
 
         if ($diasVencido <= 360) {
             return back()->withErrors([

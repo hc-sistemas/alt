@@ -273,7 +273,8 @@ class KardexController extends Controller
         ]);
 
         $productoIds = collect($data['detalles'])->pluck('producto_id')->unique()->all();
-        $productos = Producto::whereIn('id', $productoIds)
+        $productos = Producto::where('empresa_id', $empresaId)
+            ->whereIn('id', $productoIds)
             ->get(['id', 'codigo'])
             ->keyBy('id');
 
