@@ -218,12 +218,13 @@ class CuentaCobrarController extends Controller
             ]);
         }
 
-        // Mismo esquema de aprobación especial que Facturas/Proformas: la
-        // aprobación debe existir, estar pedida por este mismo usuario, ser
-        // del tipo correcto y no haberse usado todavía.
+        // Mismo esquema de aprobación especial que Facturas/Proformas (ver
+        // FacturaController::store(), caso 'descuento_excedido'): la aprobación
+        // debe existir, haber sido pedida por este mismo usuario, ser del tipo
+        // correcto, y no haberse usado todavía.
         $aprobacion = DB::table('aprobaciones_especiales')
             ->join('tipos_aprobacion', 'tipos_aprobacion.id', '=', 'aprobaciones_especiales.tipo_aprobacion_id')
-            ->where('aprobaciones_especiales.id', $request->aprobacion_especial_id)
+            ->where('aprobaciones_especiales.id', $request->input('aprobacion_especial_id'))
             ->where('aprobaciones_especiales.solicitado_por', $usuario->id)
             ->where('tipos_aprobacion.clave', 'castigo_cartera')
             ->whereNull('aprobaciones_especiales.registro_id')
@@ -234,8 +235,17 @@ class CuentaCobrarController extends Controller
             return back()->withErrors(['aprobacion_especial' => 'La aprobación especial no es válida o ya fue utilizada.']);
         }
 
-        DB::transaction(function () use ($cuentaCobrar, $aprobacion) {
-            $cuentaCobrar->update(['estado' => 'castigada']);
+        $montoCastigado = (float) $cuentaCobrar->saldo;
+
+        $ctaGastoIncobrables = DB::table('plan_cuentas')->where('codigo', '5.2.4.01')->value('id');
+        $ctaProvisionIncobrables = DB::table('plan_cuentas')->where('codigo', '1.1.3.05')->value('id');
+
+        if (!$ctaGastoIncobrables || !$ctaProvisionIncobrables) {
+            return back()->withErrors(['error' => 'Faltan cuentas del plan de cuentas (5.2.4.01 / 1.1.3.05) para registrar el castigo.']);
+        }
+
+        DB::transaction(function () use ($cuentaCobrar, $aprobacion, $montoCastigado, $ctaGastoIncobrables, $ctaProvisionIncobrables) {
+            $cuentaCobrar->update(['estado' => 'castigada', 'saldo' => 0]);
 
             // Marca la aprobación como consumida — mismo patrón que
             // FacturaController::store() para 'descuento_excedido'.
@@ -246,20 +256,25 @@ class CuentaCobrarController extends Controller
                     'registro_id'      => $cuentaCobrar->id,
                     'updated_at'       => now(),
                 ]);
-        });
 
-        try {
-            $this->asiento->crear(
+            $asiento = $this->asiento->crear(
                 empresaId: $cuentaCobrar->empresa_id,
                 concepto:  "Castigo de cartera CXC-{$cuentaCobrar->id}",
-                partidas:  [],
+                partidas:  [
+                    ['cuenta_id' => $ctaGastoIncobrables,     'debe' => $montoCastigado, 'haber' => 0, 'descripcion' => "Castigo de cartera CXC-{$cuentaCobrar->id}"],
+                    ['cuenta_id' => $ctaProvisionIncobrables, 'debe' => 0, 'haber' => $montoCastigado, 'descripcion' => "Castigo de cartera CXC-{$cuentaCobrar->id}"],
+                ],
+                documentoTipo: 'CXC',
+                documentoId:   $cuentaCobrar->id,
+                documentoRef:  "CXC-{$cuentaCobrar->id}",
+                esAutomatico:  true,
             );
-        } catch (\Throwable) {
-            // AsientoService no disponible o sin partidas — silencioso
-        }
 
-        $this->auditoria->documento('castigar', 'ventas', 'cuentas_cobrar', $cuentaCobrar->id, "Castigo de deuda CXC {$cuentaCobrar->id}");
+            $cuentaCobrar->update(['asiento_cobro_id' => $asiento->id]);
+        });
 
-        return back()->with('flash', ['tipo' => 'exito', 'mensaje' => "Deuda CXC-{$cuentaCobrar->id} castigada."]);
+        $this->auditoria->documento('castigar', 'ventas', 'cuentas_cobrar', $cuentaCobrar->id, "Castigo de deuda CXC {$cuentaCobrar->id} por \${$montoCastigado}");
+
+        return back()->with('flash', ['tipo' => 'exito', 'mensaje' => "Deuda CXC-{$cuentaCobrar->id} castigada por \${$montoCastigado}."]);
     }
 }

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Head, usePage, router, Link } from '@inertiajs/react'
 import Swal from 'sweetalert2'
+import axios from '@/lib/axios'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
 import { Button } from '@/Components/ui/button'
@@ -42,10 +43,6 @@ interface Filtros {
 interface ModalCobro {
     id: number
     saldo: number
-}
-
-function getCsrf(): string {
-    return (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement | null)?.content ?? ''
 }
 
 interface Props extends PageProps {
@@ -103,6 +100,12 @@ export default function Index() {
 
     const aplicarFiltros = () => {
         router.get(route('ventas.cxc.index'), filtro as Record<string, string | undefined>, { preserveState: true })
+    }
+
+    const limpiarFiltros = () => {
+        const limpio: Filtros = { cliente: '', estado: '', vencimiento_desde: '', vencimiento_hasta: '' }
+        setFiltro(limpio)
+        router.get(route('ventas.cxc.index'), {}, { preserveState: false })
     }
 
     const abrirModalCobro = (cuenta: CxCItem) => {
@@ -166,42 +169,44 @@ export default function Index() {
         if (!formValues) return
 
         try {
-            const res = await fetch(route('ventas.aprobacion.validar'), {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': getCsrf(),
-                    Accept: 'application/json',
-                },
-                body: JSON.stringify({
-                    tipo: 'castigo_cartera',
-                    codigo: formValues.codigo,
-                    motivo: formValues.motivo,
-                }),
-            })
-            const data = await res.json() as { valido: boolean; aprobacion_id?: number; mensaje?: string }
+            // Paso 1: validar el código contra un aprobador real (mismo flujo que
+            // Facturas/Proformas para descuento_excedido — ver AprobacionController).
+            const { data } = await axios.post<{ valido: boolean; aprobacion_id?: number; mensaje?: string }>(
+                route('ventas.aprobacion.validar'),
+                { tipo: 'castigo_cartera', codigo: formValues.codigo, motivo: formValues.motivo },
+            )
+
             if (!data.valido || !data.aprobacion_id) {
-                void Swal.fire('Código inválido', data.mensaje ?? 'Código incorrecto.', 'error')
+                void Swal.fire('Código incorrecto', data.mensaje ?? 'La aprobación no es válida.', 'error')
                 return
             }
+
+            // Paso 2: consumir la aprobación ya validada y ejecutar el castigo.
             router.patch(
                 route('ventas.cxc.castigo', cuenta.id),
                 { aprobacion_especial_id: data.aprobacion_id },
                 { preserveState: true }
             )
         } catch {
-            void Swal.fire('Error', 'Error de conexión. Intente nuevamente.', 'error')
+            void Swal.fire('Error', 'No se pudo validar el código de aprobación.', 'error')
         }
     }
 
-    const esSuperAdmin = auth.user?.perfil === 'Super Admin'
+    const hayFiltros = Object.values(filtro).some(v => v !== '')
+    const esSuperAdmin = auth.user?.perfil === 'super_admin'
 
     return (
         <AppLayout>
             <Head title="Cuentas por Cobrar" />
             <PageHeader
                 title="Cuentas por Cobrar"
+                description="Control de cartera y cobros"
                 breadcrumbs={[{ label: 'Ventas' }, { label: 'Cuentas por Cobrar' }]}
+                actions={
+                    <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                        {cuentas.total} cuenta{cuentas.total === 1 ? '' : 's'}
+                    </span>
+                }
             />
 
             <div className="p-6 space-y-4">
@@ -214,11 +219,14 @@ export default function Index() {
                     <MetricaCard label="Vencido 60+ días" valor={metricas.vencido_90} color="rgb(239,68,68)" />
                 </div>
 
-                {/* Barra de filtros */}
-                <div className="flex items-center gap-3 mb-4 flex-nowrap overflow-x-auto">
-                    <select value={filtro.estado} onChange={e => setFiltro(p => ({ ...p, estado: e.target.value }))}
+                {/* Filtros */}
+                <div className="flex items-center gap-3 flex-wrap">
+                    <select
                         className="input-field shrink-0"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}
+                        value={filtro.estado}
+                        onChange={e => setFiltro(p => ({ ...p, estado: e.target.value }))}
+                    >
                         <option value="">Todos los estados</option>
                         <option value="pendiente">Pendiente</option>
                         <option value="parcial">Parcial</option>
@@ -226,23 +234,26 @@ export default function Index() {
                         <option value="vencida">Vencida</option>
                         <option value="castigada">Castigada</option>
                     </select>
+                    <Input
+                        type="date"
+                        value={filtro.vencimiento_desde}
+                        onChange={e => setFiltro(p => ({ ...p, vencimiento_desde: e.target.value }))}
+                        className="shrink-0 w-36"
+                        title="Vencimiento desde"
+                    />
+                    <Input
+                        type="date"
+                        value={filtro.vencimiento_hasta}
+                        onChange={e => setFiltro(p => ({ ...p, vencimiento_hasta: e.target.value }))}
+                        className="shrink-0 w-36"
+                        title="Vencimiento hasta"
+                    />
 
-                    <div className="flex items-center gap-1.5 shrink-0">
-                        <label className="text-xs font-medium whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>VENCE DESDE:</label>
-                        <input type="date" value={filtro.vencimiento_desde}
-                            onChange={e => setFiltro(p => ({ ...p, vencimiento_desde: e.target.value }))}
-                            onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
-                            className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm"
-                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }} />
-                    </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                        <label className="text-xs font-medium whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>AL:</label>
-                        <input type="date" value={filtro.vencimiento_hasta}
-                            onChange={e => setFiltro(p => ({ ...p, vencimiento_hasta: e.target.value }))}
-                            onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
-                            className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm"
-                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }} />
-                    </div>
+                    {hayFiltros && (
+                        <Button type="button" variant="ghost" size="sm" onClick={limpiarFiltros} className="shrink-0">
+                            Limpiar
+                        </Button>
+                    )}
 
                     <div className="flex shrink-0 ml-auto" role="group">
                         <div className="relative">
@@ -251,12 +262,11 @@ export default function Index() {
                                 value={filtro.cliente}
                                 onChange={e => setFiltro(p => ({ ...p, cliente: e.target.value }))}
                                 onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
-                                placeholder="Nombre o RUC..."
+                                placeholder="Cliente o RUC..."
                                 className="pl-9 w-52 rounded-r-none border-r-0"
                             />
                         </div>
-                        <button type="button"
-                            className="flex items-center justify-center w-9 h-9 rounded-r-md border text-sm font-medium shrink-0"
+                        <button className="flex items-center justify-center w-9 h-9 rounded-r-md border text-sm font-medium shrink-0"
                             style={{ background: 'var(--primary)', color: 'black', borderColor: 'var(--primary)' }}
                             onClick={aplicarFiltros}
                             title="Buscar">

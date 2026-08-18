@@ -7,6 +7,12 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    /**
+     * Permite que un mismo perfil tenga permisos distintos por empresa
+     * (Matriz/Import/Fix). Backfill no destructivo: cada permiso existente
+     * se replica para todas las empresas antes de exigir empresa_id, así
+     * ningún perfil pierde su configuración actual.
+     */
     public function up(): void
     {
         if (!Schema::hasColumn('permisos', 'empresa_id')) {
@@ -19,8 +25,6 @@ return new class extends Migration
                 $table->dropUnique(['perfil_id', 'modulo_id']);
             });
 
-            // Backfill: cada permiso existente (global) se replica por empresa
-            // para no perder la configuración actual de cada perfil.
             $empresaIds = DB::table('empresas')->pluck('id');
             $permisos = DB::table('permisos')->whereNull('empresa_id')->get();
 
@@ -53,6 +57,16 @@ return new class extends Migration
     public function down(): void
     {
         if (Schema::hasColumn('permisos', 'empresa_id')) {
+            // No se puede restaurar el unique (perfil_id, modulo_id) mientras
+            // existan varias filas por empresa para el mismo par — hay que
+            // descartar primero las copias de todas las empresas menos la
+            // primera (se pierde cualquier diferencia configurada por empresa,
+            // que es el trade-off esperado de revertir este cambio).
+            $primeraEmpresaId = DB::table('empresas')->min('id');
+            if ($primeraEmpresaId !== null) {
+                DB::table('permisos')->where('empresa_id', '!=', $primeraEmpresaId)->delete();
+            }
+
             Schema::table('permisos', function (Blueprint $table) {
                 $table->dropUnique(['perfil_id', 'modulo_id', 'empresa_id']);
                 $table->dropConstrainedForeignId('empresa_id');

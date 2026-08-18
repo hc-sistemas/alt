@@ -160,24 +160,32 @@ Route::middleware('auth')->group(function () {
         Route::prefix('configuracion/usuarios')->name('configuracion.usuarios.')->group(function () {
             Route::get('/', [UsuarioController::class, 'index'])->name('index');
             Route::get('/crear', [UsuarioController::class, 'create'])->name('create');
-            Route::post('/', [UsuarioController::class, 'store'])->name('store');
             Route::get('/{usuario}/editar', [UsuarioController::class, 'edit'])->name('edit');
-            Route::put('/{usuario}', [UsuarioController::class, 'update'])->name('update');
-            Route::patch('/{usuario}/toggle-estado', [UsuarioController::class, 'toggleEstado'])->name('toggle-estado');
-            Route::patch('/{usuario}/colaborador', [UsuarioController::class, 'vincularColaborador'])->name('vincular-colaborador');
             Route::get('/{usuario}/accesos', [UsuarioController::class, 'show'])->name('show');
+            Route::middleware('permiso:configuracion,crear')->group(function () {
+                Route::post('/', [UsuarioController::class, 'store'])->name('store');
+            });
+            Route::middleware('permiso:configuracion,editar')->group(function () {
+                Route::put('/{usuario}', [UsuarioController::class, 'update'])->name('update');
+                Route::patch('/{usuario}/toggle-estado', [UsuarioController::class, 'toggleEstado'])->name('toggle-estado');
+                Route::patch('/{usuario}/colaborador', [UsuarioController::class, 'vincularColaborador'])->name('vincular-colaborador');
+            });
         });
 
         Route::prefix('configuracion/permisos')->name('configuracion.permisos.')->group(function () {
             Route::get('/', [PermisoController::class, 'index'])->name('index');
-            Route::post('/actualizar', [PermisoController::class, 'actualizar'])->name('actualizar');
-            Route::post('/limite', [PermisoController::class, 'actualizarLimite'])->name('limite');
+            Route::middleware('permiso:configuracion,editar')->group(function () {
+                Route::post('/actualizar', [PermisoController::class, 'actualizar'])->name('actualizar');
+                Route::post('/limite', [PermisoController::class, 'actualizarLimite'])->name('limite');
+            });
         });
 
         Route::prefix('configuracion/empresa')->name('configuracion.empresa.')->group(function () {
             Route::get('/', [EmpresaController::class, 'index'])->name('index');
-            Route::put('/', [EmpresaController::class, 'update'])->name('update');
-            Route::patch('/secuencial/{secuencial}', [EmpresaController::class, 'actualizarSecuencial'])->name('secuencial');
+            Route::middleware('permiso:configuracion,editar')->group(function () {
+                Route::put('/', [EmpresaController::class, 'update'])->name('update');
+                Route::patch('/secuencial/{secuencial}', [EmpresaController::class, 'actualizarSecuencial'])->name('secuencial');
+            });
         });
     });
 
@@ -185,26 +193,40 @@ Route::middleware('auth')->group(function () {
     Route::middleware('permiso:contabilidad,ver')->group(function () {
         Route::prefix('contabilidad/parametros')->name('contabilidad.parametros.')->group(function () {
             Route::get('/',     [ParametroContableController::class, 'index'])         ->name('index');
-            Route::post('/',    [ParametroContableController::class, 'update'])        ->name('update');
-            Route::post('/auto',[ParametroContableController::class, 'autoconfigurar'])->name('auto');
+            Route::middleware('permiso:contabilidad,editar')->group(function () {
+                Route::post('/',    [ParametroContableController::class, 'update'])        ->name('update');
+                Route::post('/auto',[ParametroContableController::class, 'autoconfigurar'])->name('auto');
+            });
         });
 
         Route::prefix('contabilidad/plan-cuentas')->name('contabilidad.plan-cuentas.')->group(function () {
             Route::get('/', [PlanCuentaController::class, 'index'])->name('index');
             Route::get('/exportar', [PlanCuentaController::class, 'exportar'])->name('exportar');
-            Route::post('/importar', [PlanCuentaController::class, 'importarExcel'])->name('importar');
-            Route::post('/', [PlanCuentaController::class, 'store'])->name('store');
-            Route::put('/{cuenta}', [PlanCuentaController::class, 'update'])->name('update');
-            Route::patch('/{cuenta}/toggle-estado', [PlanCuentaController::class, 'toggleEstado'])->name('toggle-estado');
-            Route::delete('/{cuenta}', [PlanCuentaController::class, 'destroy'])->name('destroy');
+            Route::middleware('permiso:contabilidad,crear')->group(function () {
+                Route::post('/importar', [PlanCuentaController::class, 'importarExcel'])->name('importar');
+                Route::post('/', [PlanCuentaController::class, 'store'])->name('store');
+            });
+            Route::middleware('permiso:contabilidad,editar')->group(function () {
+                Route::put('/{cuenta}', [PlanCuentaController::class, 'update'])->name('update');
+                Route::patch('/{cuenta}/toggle-estado', [PlanCuentaController::class, 'toggleEstado'])->name('toggle-estado');
+            });
+            Route::middleware('permiso:contabilidad,eliminar')->group(function () {
+                Route::delete('/{cuenta}', [PlanCuentaController::class, 'destroy'])->name('destroy');
+            });
         });
 
         Route::prefix('contabilidad/ejercicios')->name('contabilidad.ejercicios.')->group(function () {
             Route::get('/',                      [EjercicioContableController::class, 'index']) ->name('index');
-            Route::post('/',                     [EjercicioContableController::class, 'store']) ->name('store');
-            Route::patch('/{ejercicio}/cerrar',  [EjercicioContableController::class, 'cerrar'])->name('cerrar');
-            Route::patch('/{ejercicio}/reabrir', [EjercicioContableController::class, 'reabrir'])->name('reabrir');
-            Route::post('/cierre-fiscal-anual',  [EjercicioContableController::class, 'cierreFiscalAnual'])->name('cierre-fiscal-anual');
+            Route::middleware('permiso:contabilidad,crear')->group(function () {
+                Route::post('/',                     [EjercicioContableController::class, 'store']) ->name('store');
+            });
+            Route::middleware('permiso:contabilidad,editar')->group(function () {
+                Route::patch('/{ejercicio}/reabrir', [EjercicioContableController::class, 'reabrir'])->name('reabrir');
+                Route::post('/cierre-fiscal-anual',  [EjercicioContableController::class, 'cierreFiscalAnual'])->name('cierre-fiscal-anual');
+            });
+            Route::middleware('permiso:contabilidad,anular')->group(function () {
+                Route::patch('/{ejercicio}/cerrar',  [EjercicioContableController::class, 'cerrar'])->name('cerrar');
+            });
         });
 
         Route::prefix('contabilidad/reportes')->name('contabilidad.reportes.')->group(function () {
@@ -220,15 +242,21 @@ Route::middleware('auth')->group(function () {
 
         Route::prefix('contabilidad/asientos')->name('contabilidad.asientos.')->group(function () {
             Route::get('/',                    [AsientoContableController::class, 'index'])        ->name('index');
-            Route::post('/',                   [AsientoContableController::class, 'store'])        ->name('store');
             Route::get('/exportar-excel',      [AsientoContableController::class, 'exportarExcel'])->name('exportar-excel');
             Route::get('/reporte-pdf',         [AsientoContableController::class, 'reportePdf'])   ->name('reporte-pdf');
             Route::get('/libro-diario',        [AsientoContableController::class, 'libroDiario'])  ->name('libro-diario');
             Route::get('/mayor-cuenta',        [AsientoContableController::class, 'mayorCuenta'])  ->name('mayor-cuenta');
             Route::get('/{asiento}',           [AsientoContableController::class, 'show'])         ->name('show');
             Route::get('/{asiento}/pdf',       [AsientoContableController::class, 'imprimirPdf'])  ->name('pdf');
-            Route::patch('/{asiento}/anular',  [AsientoContableController::class, 'anular'])       ->name('anular');
-            Route::delete('/{asiento}',        [AsientoContableController::class, 'destroy'])      ->name('destroy');
+            Route::middleware('permiso:contabilidad,crear')->group(function () {
+                Route::post('/',                   [AsientoContableController::class, 'store'])        ->name('store');
+            });
+            Route::middleware('permiso:contabilidad,anular')->group(function () {
+                Route::patch('/{asiento}/anular',  [AsientoContableController::class, 'anular'])       ->name('anular');
+            });
+            Route::middleware('permiso:contabilidad,eliminar')->group(function () {
+                Route::delete('/{asiento}',        [AsientoContableController::class, 'destroy'])      ->name('destroy');
+            });
         });
     });
 
@@ -299,6 +327,7 @@ Route::middleware('auth')->group(function () {
 
             Route::get('traslados', [TrasladoController::class, 'index'])->name('traslados.index');
             Route::get('traslados/nuevo', [TrasladoController::class, 'create'])->name('traslados.create');
+            Route::get('traslados/productos-en-bodega', [TrasladoController::class, 'productosEnBodega'])->name('traslados.productosEnBodega');
             Route::get('traslados/{traslado}', [TrasladoController::class, 'show'])->name('traslados.show');
 
             Route::get('activos/{activoFijo}', [ActivoFijoController::class, 'show'])->name('activos.show');
