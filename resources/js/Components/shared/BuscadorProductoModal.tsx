@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Search, X } from 'lucide-react'
 
@@ -11,6 +11,10 @@ export interface Resultado {
     disponible?: number
 }
 
+export interface BuscadorProductoModalHandle {
+    focus: () => void
+}
+
 interface Props {
     onSelect: (producto: Resultado) => void
     placeholder?: string
@@ -18,7 +22,10 @@ interface Props {
     urlBusqueda?: string
 }
 
-export default function BuscadorProductoModal({ onSelect, placeholder, disabled, urlBusqueda }: Props) {
+const BuscadorProductoModal = forwardRef<BuscadorProductoModalHandle, Props>(function BuscadorProductoModal(
+    { onSelect, placeholder, disabled, urlBusqueda }: Props,
+    ref
+) {
     const [queryInput, setQueryInput]   = useState('')
     const [resultados, setResultados]   = useState<Resultado[]>([])
     const [buscando, setBuscando]       = useState(false)
@@ -28,6 +35,10 @@ export default function BuscadorProductoModal({ onSelect, placeholder, disabled,
 
     const inputExternoRef = useRef<HTMLInputElement>(null)
     const inputModalRef   = useRef<HTMLInputElement>(null)
+
+    useImperativeHandle(ref, () => ({
+        focus: () => inputExternoRef.current?.focus(),
+    }))
 
     // Filtrado local dentro del modal
     const resultadosFiltrados = filtroModal.trim()
@@ -288,4 +299,6 @@ export default function BuscadorProductoModal({ onSelect, placeholder, disabled,
             {createPortal(modal, document.body)}
         </>
     )
-}
+})
+
+export default BuscadorProductoModal
