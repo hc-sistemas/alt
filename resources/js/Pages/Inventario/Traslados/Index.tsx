@@ -1,5 +1,5 @@
 import { Head, Link, router, usePage } from '@inertiajs/react'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
 import { Button } from '@/Components/ui/button'
@@ -39,6 +39,8 @@ export default function TrasladosIndex() {
     const [origenId, setOrigenId]   = useState(filters.bodega_origen_id ?? '')
     const [destinoId, setDestinoId] = useState(filters.bodega_destino_id ?? '')
     const [detalleId, setDetalleId] = useState<number | null>(null)
+    const debounceRef   = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const isFirstRender = useRef(true)
 
     const haBuscado = traslados !== null
 
@@ -51,6 +53,26 @@ export default function TrasladosIndex() {
             buscado: '1',
         }, { preserveState: false })
     }
+
+    // Auto-dispara la búsqueda 300ms después de cambiar estado/bodega, sin
+    // esperar al botón "Buscar" — la búsqueda por número (search) sigue
+    // siendo manual (Enter o botón), no dispara este debounce. Solo corre
+    // una vez que ya se buscó al menos una vez, igual que en ListasPrecio.
+    useEffect(() => {
+        if (isFirstRender.current) { isFirstRender.current = false; return }
+        if (!haBuscado) return
+        if (debounceRef.current) clearTimeout(debounceRef.current)
+        debounceRef.current = setTimeout(() => {
+            router.get(route('inventario.traslados.index'), {
+                search: search || undefined,
+                estado: estado || undefined,
+                bodega_origen_id: origenId || undefined,
+                bodega_destino_id: destinoId || undefined,
+                buscado: '1',
+            }, { preserveState: true, replace: true })
+        }, 300)
+        return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
+    }, [estado, origenId, destinoId])
 
     async function exportarExcel() {
         if (!traslados) return

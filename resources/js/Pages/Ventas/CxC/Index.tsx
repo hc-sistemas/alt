@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Head, usePage, router, Link } from '@inertiajs/react'
 import Swal from 'sweetalert2'
+import { isAxiosError } from 'axios'
 import axios from '@/lib/axios'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
@@ -187,8 +188,16 @@ export default function Index() {
                 { aprobacion_especial_id: data.aprobacion_id },
                 { preserveState: true }
             )
-        } catch {
-            void Swal.fire('Error', 'No se pudo validar el código de aprobación.', 'error')
+        } catch (error) {
+            // Con axios, un 4xx/5xx rechaza la promesa (a diferencia de fetch())
+            // — el backend ya manda el motivo real en el body ({mensaje: "..."}),
+            // así que se lee de ahí en vez de mostrar siempre el genérico. El
+            // genérico queda solo para cuando no hay respuesta del servidor
+            // (conexión caída), que es cuando error.response no existe.
+            const mensaje = isAxiosError<{ mensaje?: string }>(error) && error.response
+                ? error.response.data?.mensaje
+                : undefined
+            void Swal.fire('Error', mensaje ?? 'No se pudo validar el código de aprobación.', 'error')
         }
     }
 

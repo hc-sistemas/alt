@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { Head, usePage, router, Link } from '@inertiajs/react'
 import Swal from 'sweetalert2'
+import { isAxiosError } from 'axios'
+import axios from '@/lib/axios'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
 import { Button } from '@/Components/ui/button'
@@ -77,10 +79,6 @@ function esMismoDia(fecha: string): boolean {
     return fecha.startsWith(hoyLocal)
 }
 
-function getCsrf(): string {
-    return (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement | null)?.content ?? ''
-}
-
 // ── Componente ────────────────────────────────────────────────────────────────
 
 export default function Index() {
@@ -127,20 +125,10 @@ export default function Index() {
         if (!formValues) return
 
         try {
-            const res = await fetch(route('ventas.aprobacion.validar'), {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': getCsrf(),
-                    Accept: 'application/json',
-                },
-                body: JSON.stringify({
-                    tipo: 'anulacion_factura',
-                    codigo: formValues.codigo,
-                    motivo: formValues.motivo,
-                }),
-            })
-            const data = await res.json() as { valido: boolean; aprobacion_id?: number; mensaje?: string }
+            const { data } = await axios.post<{ valido: boolean; aprobacion_id?: number; mensaje?: string }>(
+                route('ventas.aprobacion.validar'),
+                { tipo: 'anulacion_factura', codigo: formValues.codigo, motivo: formValues.motivo },
+            )
             if (!data.valido || !data.aprobacion_id) {
                 void Swal.fire('Código inválido', data.mensaje ?? 'Código incorrecto.', 'error')
                 return
@@ -150,8 +138,16 @@ export default function Index() {
                 { aprobacion_especial_id: data.aprobacion_id },
                 { preserveState: true },
             )
-        } catch {
-            void Swal.fire('Error', 'Error de conexión. Intente nuevamente.', 'error')
+        } catch (error) {
+            // Con axios, un 4xx/5xx rechaza la promesa (a diferencia de fetch())
+            // — el backend ya manda el motivo real en el body ({mensaje: "..."}),
+            // así que se lee de ahí en vez de mostrar siempre el genérico. El
+            // genérico queda solo para cuando no hay respuesta del servidor
+            // (conexión caída), que es cuando error.response no existe.
+            const mensaje = isAxiosError<{ mensaje?: string }>(error) && error.response
+                ? error.response.data?.mensaje
+                : undefined
+            void Swal.fire('Error', mensaje ?? 'Error de conexión. Intente nuevamente.', 'error')
         }
     }
 

@@ -1,5 +1,5 @@
 import { Head, Link, router, usePage } from '@inertiajs/react'
-import { Fragment, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
@@ -106,6 +106,8 @@ export default function ListasPrecioIndex() {
 
     const fileInputRef  = useRef<HTMLInputElement>(null)
     const blurTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const debounceRef   = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const isFirstRender = useRef(true)
 
     const haBuscado = listas !== null
 
@@ -117,6 +119,27 @@ export default function ListasPrecioIndex() {
             buscado: '1',
         }, { preserveState: false })
     }
+
+    // Auto-dispara la búsqueda 300ms después del último cambio, sin
+    // necesidad del botón "Buscar" — pero solo una vez que ya se buscó al
+    // menos una vez (botón o Enter). Antes de esa primera búsqueda no se
+    // dispara nada: se preserva el estado inicial "ajusta los filtros y
+    // busca", que existe porque el backend no pagina el catálogo completo
+    // sin `buscado=1` explícito.
+    useEffect(() => {
+        if (isFirstRender.current) { isFirstRender.current = false; return }
+        if (!haBuscado) return
+        if (debounceRef.current) clearTimeout(debounceRef.current)
+        debounceRef.current = setTimeout(() => {
+            router.get(route('inventario.listas.index'), {
+                search: search || undefined,
+                marca_id: marcaId || undefined,
+                categoria_id: catId || undefined,
+                buscado: '1',
+            }, { preserveState: true, replace: true })
+        }, 300)
+        return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
+    }, [search, marcaId, catId])
 
     function startEdit(row: ListaPrecioRow) {
         setEditing({

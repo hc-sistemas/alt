@@ -276,7 +276,7 @@ export default function Index() {
                                                                 Convertir
                                                             </button>
                                                         )}
-                                                        {esPendiente && puede('anular') && (
+                                                        {esPendiente && puede('eliminar') && (
                                                             <button
                                                                 type="button"
                                                                 className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors hover:bg-red-500/10 text-red-400"
