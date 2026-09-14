@@ -65,10 +65,10 @@ export default function TrasladoShow() {
                 toastError(json.message ?? 'Error al confirmar')
                 return
             }
-            toastExito('Traslado aceptado correctamente')
+            toastExito('Movimiento aceptado correctamente')
             router.reload()
         } catch {
-            toastError('Error al confirmar el traslado')
+            toastError('Error al confirmar el movimiento')
         }
     }
 
@@ -91,7 +91,7 @@ export default function TrasladoShow() {
                 toastError(json.message ?? 'Error al rechazar')
                 return
             }
-            toastExito('Traslado rechazado')
+            toastExito('Movimiento rechazado')
             router.visit(route('inventario.traslados.index'))
         } catch {
             toastError('Error al rechazar')
@@ -102,10 +102,10 @@ export default function TrasladoShow() {
     }
 
     return (
-        <AppLayout title={`Traslado #${traslado.id}`}>
-            <Head title={`Traslado #${traslado.id}`} />
+        <AppLayout title={`Movimiento #${traslado.id}`}>
+            <Head title={`Movimiento #${traslado.id}`} />
             <PageHeader
-                title={`Traslado #${traslado.id}`}
+                title={`Movimiento #${traslado.id}`}
                 breadcrumbs={[
                     { label: 'Inventario' },
                     { label: 'Movimientos', href: route('inventario.traslados.index') },
@@ -247,7 +247,7 @@ export default function TrasladoShow() {
                             {puede('editar') && (
                                 <Button type="submit" loading={processing}>
                                     <Save className="w-4 h-4" />
-                                    Confirmar movimiento
+                                    Confirmar recepción
                                 </Button>
                             )}
                             {puede('anular') && (

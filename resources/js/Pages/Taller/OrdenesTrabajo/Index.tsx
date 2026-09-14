@@ -1,5 +1,5 @@
 import { Head, Link, router, usePage } from '@inertiajs/react'
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
 import { Button } from '@/Components/ui/button'
@@ -34,47 +34,29 @@ export default function OrdenesTrabajoIndex() {
     const [search, setSearch] = useState(filtros.search ?? '')
     const [estado, setEstado] = useState(filtros.estado ?? '')
     const [tecnicoId, setTecnicoId] = useState(filtros.tecnico_id ?? '')
-    const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-    const isFirstRender = useRef(true)
 
-    useEffect(() => {
-        if (isFirstRender.current) { isFirstRender.current = false; return }
-        if (debounceRef.current) clearTimeout(debounceRef.current)
-        debounceRef.current = setTimeout(() => {
-            router.get(route('taller.ordenes.index'), {
-                search: search || undefined,
-                estado: estado || undefined,
-                tecnico_id: tecnicoId || undefined,
-            }, { preserveState: true, replace: true })
-        }, 400)
-        return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
-    }, [search, estado, tecnicoId])
+    function buscar() {
+        router.get(route('taller.ordenes.index'), {
+            search: search || undefined,
+            estado: estado || undefined,
+            tecnico_id: tecnicoId || undefined,
+        }, { preserveState: true, replace: true })
+    }
 
     return (
         <AppLayout title="Órdenes de Trabajo">
             <Head title="Órdenes de Trabajo" />
             <PageHeader
                 title="Órdenes de Trabajo"
-                description="Seguimiento de las reparaciones en curso"
                 breadcrumbs={[{ label: 'Taller' }, { label: 'Órdenes de Trabajo' }]}
             />
 
             <div className="p-6">
                 {/* Barra de filtros */}
-                <div className="flex items-center gap-3 mb-4 flex-wrap">
-                    <div className="relative">
-                        <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
-                        <Input
-                            value={search}
-                            onChange={e => setSearch(e.target.value)}
-                            placeholder="Cliente o identificación..."
-                            className="pl-9 w-60"
-                        />
-                    </div>
-
+                <div className="flex items-center gap-3 mb-4 flex-nowrap overflow-x-auto">
                     <select value={estado} onChange={e => setEstado(e.target.value)}
-                        className="input-field"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
+                        className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
                         <option value="">Todos los estados</option>
                         <option value="pendiente">Pendiente</option>
                         <option value="en_proceso">En proceso</option>
@@ -85,13 +67,32 @@ export default function OrdenesTrabajoIndex() {
                     </select>
 
                     <select value={tecnicoId} onChange={e => setTecnicoId(e.target.value)}
-                        className="input-field"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
+                        className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
                         <option value="">Todos los técnicos</option>
                         {tecnicos.map(t => (
                             <option key={t.id} value={t.id}>{t.nombre}</option>
                         ))}
                     </select>
+
+                    <div className="flex shrink-0 ml-auto" role="group">
+                        <div className="relative">
+                            <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+                            <Input
+                                value={search}
+                                onChange={e => setSearch(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && buscar()}
+                                placeholder="Cliente o identificación..."
+                                className="pl-9 w-60 rounded-r-none border-r-0"
+                            />
+                        </div>
+                        <button className="flex items-center justify-center w-9 h-9 rounded-r-md border text-sm font-medium shrink-0"
+                            style={{ background: 'var(--primary)', color: 'black', borderColor: 'var(--primary)' }}
+                            onClick={buscar}
+                            title="Buscar">
+                            <Search className="w-4 h-4" />
+                        </button>
+                    </div>
                 </div>
 
                 {/* Tabla */}

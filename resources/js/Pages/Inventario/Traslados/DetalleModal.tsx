@@ -264,6 +264,7 @@ export default function TrasladoDetalleModal({ trasladoId, onClose, onChanged }:
                         {/* Confirmar recepción */}
                         {isPendiente && puedeOperar && (
                             <div className="rounded-xl border p-4 space-y-3" style={{ borderColor: 'var(--border)', background: 'var(--bg-main)' }}>
+                                <h3 className="text-sm font-semibold" style={{ color: 'var(--text-main)' }}>Confirmar recepción</h3>
                                 <div className="space-y-1">
                                     <label className="text-sm" style={{ color: 'var(--text-muted)' }}>Observaciones</label>
                                     <textarea
@@ -279,7 +280,7 @@ export default function TrasladoDetalleModal({ trasladoId, onClose, onChanged }:
                                     {puede('editar') && (
                                         <Button type="button" onClick={ejecutarConfirmar} loading={confirmando} disabled={confirmando}>
                                             <Save className="w-4 h-4" />
-                                            Confirmar movimiento
+                                            Confirmar recepción
                                         </Button>
                                     )}
                                     {puede('anular') && (
@@ -299,7 +300,7 @@ export default function TrasladoDetalleModal({ trasladoId, onClose, onChanged }:
 
             {/* Sub-modal de rechazo */}
             {modalAnular && (
-                <div className="fixed inset-0 z-60 flex items-center justify-center p-4">
+                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
                     <div className="absolute inset-0 bg-black/60" onClick={() => setModalAnular(false)} />
                     <div className="relative w-full max-w-md rounded-xl shadow-2xl p-6 space-y-4"
                         style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>

@@ -24,19 +24,28 @@ class ActivoFijoController extends Controller
     public function index(Request $request): Response
     {
         $empresaId = session('empresa_activa_id');
+        $busquedaRealizada = $request->boolean('buscado');
 
-        $query = ActivoFijo::where('empresa_id', $empresaId)
-            ->when($request->search, fn($q) => $q->where(function ($q) use ($request) {
-                $q->where('codigo', 'ilike', "%{$request->search}%")
-                  ->orWhere('nombre', 'ilike', "%{$request->search}%");
-            }))
-            ->when($request->estado, fn($q) => $q->where('estado', $request->estado))
-            ->orderBy('codigo');
+        $activos = null;
+
+        if ($busquedaRealizada) {
+            $activos = ActivoFijo::where('empresa_id', $empresaId)
+                ->when($request->search, fn($q) => $q->where(function ($q) use ($request) {
+                    $q->where('codigo', 'ilike', "%{$request->search}%")
+                      ->orWhere('nombre', 'ilike', "%{$request->search}%");
+                }))
+                ->when($request->estado, fn($q) => $q->where('estado', $request->estado))
+                ->when($request->fecha_desde, fn($q) => $q->whereDate('fecha_adquisicion', '>=', $request->fecha_desde))
+                ->when($request->fecha_hasta, fn($q) => $q->whereDate('fecha_adquisicion', '<=', $request->fecha_hasta))
+                ->orderBy('codigo')
+                ->paginate(20)
+                ->withQueryString();
+        }
 
         return Inertia::render('Inventario/Activos/Index', [
-            'activos' => $query->paginate(20)->withQueryString(),
+            'activos' => $activos,
             'estados' => ActivoFijo::ESTADOS,
-            'filters' => $request->only(['search', 'estado']),
+            'filters' => $request->only(['search', 'estado', 'fecha_desde', 'fecha_hasta']),
         ]);
     }
 

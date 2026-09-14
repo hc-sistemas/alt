@@ -78,8 +78,13 @@ class ListaPrecioController extends Controller
             ]);
         }
 
-        $listas = $query->paginate(25)->withQueryString();
-        $this->adjuntarStockPorBodega(collect($listas->items()), $bodegas);
+        $busquedaRealizada = $request->boolean('buscado');
+        $listas = null;
+
+        if ($busquedaRealizada) {
+            $listas = $query->paginate(25)->withQueryString();
+            $this->adjuntarStockPorBodega(collect($listas->items()), $bodegas);
+        }
 
         return Inertia::render('Inventario/ListasPrecio/Index', [
             'listas'     => $listas,

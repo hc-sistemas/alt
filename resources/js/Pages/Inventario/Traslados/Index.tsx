@@ -3,15 +3,17 @@ import { useEffect, useRef, useState } from 'react'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
 import { Button } from '@/Components/ui/button'
-import { Plus, Eye, FileSpreadsheet } from 'lucide-react'
-import type { TrasladoBodega, PaginatedData, PageProps } from '@/types'
+import { Input } from '@/Components/ui/input'
+import { Plus, Eye, Search, FileSpreadsheet } from 'lucide-react'
 import { usePermiso } from '@/Hooks/usePermiso'
 import TrasladoDetalleModal from './DetalleModal'
+import type { TrasladoBodega, PaginatedData, PageProps } from '@/types'
 
 interface Props extends PageProps {
-    traslados: PaginatedData<TrasladoBodega>
+    traslados: PaginatedData<TrasladoBodega> | null
     bodegas: { id: number; nombre: string }[]
     filters: {
+        search?: string
         estado?: string
         bodega_origen_id?: string
         bodega_destino_id?: string
@@ -32,6 +34,7 @@ export default function TrasladosIndex() {
     const { traslados, bodegas, filters } = usePage<Props>().props
     const { puede } = usePermiso('inventario')
 
+    const [search, setSearch]       = useState(filters.search ?? '')
     const [estado, setEstado]       = useState(filters.estado ?? '')
     const [origenId, setOrigenId]   = useState(filters.bodega_origen_id ?? '')
     const [destinoId, setDestinoId] = useState(filters.bodega_destino_id ?? '')
@@ -39,20 +42,40 @@ export default function TrasladosIndex() {
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const isFirstRender = useRef(true)
 
+    const haBuscado = traslados !== null
+
+    function buscar() {
+        router.get(route('inventario.traslados.index'), {
+            search: search || undefined,
+            estado: estado || undefined,
+            bodega_origen_id: origenId || undefined,
+            bodega_destino_id: destinoId || undefined,
+            buscado: '1',
+        }, { preserveState: false })
+    }
+
+    // Auto-dispara la búsqueda 300ms después de cambiar estado/bodega, sin
+    // esperar al botón "Buscar" — la búsqueda por número (search) sigue
+    // siendo manual (Enter o botón), no dispara este debounce. Solo corre
+    // una vez que ya se buscó al menos una vez, igual que en ListasPrecio.
     useEffect(() => {
         if (isFirstRender.current) { isFirstRender.current = false; return }
+        if (!haBuscado) return
         if (debounceRef.current) clearTimeout(debounceRef.current)
         debounceRef.current = setTimeout(() => {
             router.get(route('inventario.traslados.index'), {
+                search: search || undefined,
                 estado: estado || undefined,
                 bodega_origen_id: origenId || undefined,
                 bodega_destino_id: destinoId || undefined,
+                buscado: '1',
             }, { preserveState: true, replace: true })
-        }, 400)
+        }, 300)
         return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
     }, [estado, origenId, destinoId])
 
     async function exportarExcel() {
+        if (!traslados) return
         const XLSX = await import('xlsx')
         const filas = traslados.data.map(t => ({
             'ID':             `#${t.id}`,
@@ -65,8 +88,8 @@ export default function TrasladosIndex() {
         }))
         const ws = XLSX.utils.json_to_sheet(filas)
         const wb = XLSX.utils.book_new()
-        XLSX.utils.book_append_sheet(wb, ws, 'Traslados')
-        XLSX.writeFile(wb, 'traslados.xlsx')
+        XLSX.utils.book_append_sheet(wb, ws, 'Movimientos')
+        XLSX.writeFile(wb, 'movimientos.xlsx')
     }
 
     const formatFecha = (dt: string) =>
@@ -117,17 +140,46 @@ export default function TrasladosIndex() {
                     </select>
 
                     <div className="flex shrink-0 ml-auto" role="group">
-                        <button className="flex items-center justify-center w-9 h-9 rounded-md text-sm font-medium border shrink-0"
-                            style={{ background: '#16A34A', color: 'white', borderColor: '#16A34A', transition: 'background 0.2s' }}
-                            onMouseEnter={e => (e.currentTarget.style.background = '#15803D')}
-                            onMouseLeave={e => (e.currentTarget.style.background = '#16A34A')}
-                            onClick={exportarExcel}
-                            title="Excel">
-                            <FileSpreadsheet className="w-4 h-4" />
+                        <div className="relative">
+                            <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+                            <Input
+                                value={search}
+                                onChange={e => setSearch(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && buscar()}
+                                placeholder="Número de traslado..."
+                                className="pl-9 w-52 rounded-r-none border-r-0"
+                            />
+                        </div>
+                        <button className="flex items-center justify-center w-9 h-9 rounded-r-md border text-sm font-medium shrink-0"
+                            style={{ background: 'var(--primary)', color: 'black', borderColor: 'var(--primary)' }}
+                            onClick={buscar}
+                            title="Buscar">
+                            <Search className="w-4 h-4" />
                         </button>
                     </div>
+
+                    <button className="flex items-center justify-center w-9 h-9 rounded-md text-sm font-medium border shrink-0"
+                        style={{ background: '#16A34A', color: 'white', borderColor: '#16A34A', transition: 'background 0.2s' }}
+                        onMouseEnter={e => (e.currentTarget.style.background = '#15803D')}
+                        onMouseLeave={e => (e.currentTarget.style.background = '#16A34A')}
+                        onClick={exportarExcel}
+                        disabled={!traslados}
+                        title="Excel">
+                        <FileSpreadsheet className="w-4 h-4" />
+                    </button>
                 </div>
 
+                {/* Estado inicial: aún no se ha buscado */}
+                {!haBuscado && (
+                    <div className="text-center py-16">
+                        <Search className="w-12 h-12 mx-auto mb-4 opacity-30" style={{ color: 'var(--text-muted)' }} />
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                            Ajusta los filtros y presiona Buscar para consultar los movimientos.
+                        </p>
+                    </div>
+                )}
+
+                {haBuscado && traslados && (
                 <div className="rounded-xl border overflow-x-auto" style={{ borderColor: 'var(--border)' }}>
                     <table className="w-full text-sm">
                         <thead>
@@ -142,7 +194,7 @@ export default function TrasladosIndex() {
                             {traslados.data.length === 0 ? (
                                 <tr>
                                     <td colSpan={8} className="text-center py-16 text-sm" style={{ color: 'var(--text-muted)' }}>
-                                        No hay traslados registrados.
+                                        No hay movimientos registrados.
                                     </td>
                                 </tr>
                             ) : traslados.data.map(t => (
@@ -183,8 +235,9 @@ export default function TrasladosIndex() {
                         </tbody>
                     </table>
                 </div>
+                )}
 
-                {traslados.last_page > 1 && (
+                {haBuscado && traslados && traslados.last_page > 1 && (
                     <div className="flex items-center justify-between mt-4 text-sm">
                         <p style={{ color: 'var(--text-muted)' }}>
                             Mostrando {traslados.from}–{traslados.to} de {traslados.total}

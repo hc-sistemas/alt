@@ -8,8 +8,8 @@ import { Label } from '@/Components/ui/label'
 import { Plus, Pencil, Trash2, X, Save, ChevronRight, ChevronDown } from 'lucide-react'
 import { toastExito, toastError } from '@/lib/toast'
 import { confirmarEliminar } from '@/lib/swal'
-import type { CategoriaProducto, PageProps } from '@/types'
 import { usePermiso } from '@/Hooks/usePermiso'
+import type { CategoriaProducto, PageProps } from '@/types'
 
 interface Props extends PageProps {
     categorias: CategoriaProducto[]
@@ -110,7 +110,6 @@ export default function CategoriasIndex() {
             <Head title="Categorías de Producto" />
             <PageHeader
                 title="Categorías de Producto"
-                description="Árbol de categorías para clasificar productos"
                 breadcrumbs={[{ label: 'Inventario' }, { label: 'Configuración' }, { label: 'Categorías' }]}
                 actions={
                     puede('crear') ? (

@@ -53,11 +53,11 @@ export default function ProductosIndex() {
         if (!productos) return
         const XLSX = await import('xlsx')
         const filas = productos.data.map(p => ({
-            'Código':             p.codigo,
-            'Nombre':             p.nombre,
-            'Marca comercial':    p.marca?.nombre ?? '—',
-            'Marca':              p.marca_fabricante ?? '—',
-            'Categoría':          p.categoria?.nombre ?? '—',
+            'Código':          p.codigo,
+            'Nombre':          p.nombre,
+            'Marca comercial': p.marca?.nombre ?? '—',
+            'Marca':           p.marca_fabricante ?? '—',
+            'Categoría':       p.categoria?.nombre ?? '—',
             'Tipo':       p.tipo,
             'PVP':        Number(p.pvp),
             'PVD':        Number(p.pvd),

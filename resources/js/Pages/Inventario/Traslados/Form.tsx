@@ -7,7 +7,7 @@ import type { BuscadorProductoModalHandle, Resultado } from '@/Components/shared
 import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
-import { Trash2, Save, AlertTriangle, X } from 'lucide-react'
+import { Trash2, Save, AlertTriangle, X, Plus } from 'lucide-react'
 import { toastExito, toastError } from '@/lib/toast'
 import { usePermiso } from '@/Hooks/usePermiso'
 import type { PageProps } from '@/types'
@@ -216,6 +216,16 @@ export default function TrasladoForm() {
 
                     {/* Items */}
                     <div className="rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+                        <div className="px-3 py-2 flex items-center justify-between"
+                            style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
+                            <h3 className="text-sm font-semibold" style={{ color: 'var(--text-main)' }}>
+                                Productos a trasladar
+                            </h3>
+                            <Button type="button" variant="outline" onClick={() => agregarItem()}>
+                                <Plus className="w-4 h-4" />
+                                Agregar producto
+                            </Button>
+                        </div>
                         <table className="w-full text-sm">
                         <thead>
                             <tr style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>

@@ -28,10 +28,6 @@ const equipoVacio = {
     observaciones: '',
 }
 
-function getCsrf(): string {
-    return (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement | null)?.content ?? ''
-}
-
 export default function IngresoForm() {
     const { clientes, tiposEquipo, errors } = usePage<Props>().props
     const { puede } = usePermiso('taller')

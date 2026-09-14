@@ -1,5 +1,5 @@
 import { Head, Link, router, usePage } from '@inertiajs/react'
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
 import { Button } from '@/Components/ui/button'
@@ -30,27 +30,19 @@ export default function IngresosIndex() {
     const [search, setSearch] = useState(filtros.search ?? '')
     const [estado, setEstado] = useState(filtros.estado ?? '')
     const [pdfIngresoId, setPdfIngresoId] = useState<number | null>(null)
-    const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-    const isFirstRender = useRef(true)
 
-    useEffect(() => {
-        if (isFirstRender.current) { isFirstRender.current = false; return }
-        if (debounceRef.current) clearTimeout(debounceRef.current)
-        debounceRef.current = setTimeout(() => {
-            router.get(route('taller.ingresos.index'), {
-                search: search || undefined,
-                estado: estado || undefined,
-            }, { preserveState: true, replace: true })
-        }, 400)
-        return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
-    }, [search, estado])
+    function buscar() {
+        router.get(route('taller.ingresos.index'), {
+            search: search || undefined,
+            estado: estado || undefined,
+        }, { preserveState: true, replace: true })
+    }
 
     return (
         <AppLayout title="Ingresos">
             <Head title="Ingresos" />
             <PageHeader
                 title="Ingresos al Taller"
-                description="Registro de equipos ingresados para reparación"
                 breadcrumbs={[{ label: 'Taller' }, { label: 'Ingresos' }]}
                 actions={
                     puede('crear') ? (
@@ -66,20 +58,10 @@ export default function IngresosIndex() {
 
             <div className="p-6">
                 {/* Barra de filtros */}
-                <div className="flex items-center gap-3 mb-4 flex-wrap">
-                    <div className="relative">
-                        <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
-                        <Input
-                            value={search}
-                            onChange={e => setSearch(e.target.value)}
-                            placeholder="Cliente o identificación..."
-                            className="pl-9 w-60"
-                        />
-                    </div>
-
+                <div className="flex items-center gap-3 mb-4 flex-nowrap overflow-x-auto">
                     <select value={estado} onChange={e => setEstado(e.target.value)}
-                        className="input-field"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
+                        className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
                         <option value="">Todos los estados</option>
                         <option value="0">Ingresado</option>
                         <option value="1">En diagnóstico</option>
@@ -87,6 +69,25 @@ export default function IngresosIndex() {
                         <option value="3">Listo</option>
                         <option value="4">Entregado</option>
                     </select>
+
+                    <div className="flex shrink-0 ml-auto" role="group">
+                        <div className="relative">
+                            <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+                            <Input
+                                value={search}
+                                onChange={e => setSearch(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && buscar()}
+                                placeholder="Cliente o identificación..."
+                                className="pl-9 w-60 rounded-r-none border-r-0"
+                            />
+                        </div>
+                        <button className="flex items-center justify-center w-9 h-9 rounded-r-md border text-sm font-medium shrink-0"
+                            style={{ background: 'var(--primary)', color: 'black', borderColor: 'var(--primary)' }}
+                            onClick={buscar}
+                            title="Buscar">
+                            <Search className="w-4 h-4" />
+                        </button>
+                    </div>
                 </div>
 
                 {/* Tabla */}

@@ -182,28 +182,33 @@ class KardexController extends Controller
     public function saldos(Request $request): Response
     {
         $empresaId = session('empresa_activa_id');
+        $busquedaRealizada = $request->boolean('buscado');
 
-        $saldos = InventarioSaldo::with(['producto', 'bodega'])
-            ->join('productos', 'inventario_saldos.producto_id', '=', 'productos.id')
-            ->join('bodegas', 'inventario_saldos.bodega_id', '=', 'bodegas.id')
-            ->where('bodegas.empresa_id', $empresaId)
-            ->when($request->bodega_id, fn($q) => $q->where('inventario_saldos.bodega_id', $request->bodega_id))
-            ->when($request->search, fn($q) => $q->where(function ($q) use ($request) {
-                $q->where('productos.codigo', 'ilike', "%{$request->search}%")
-                  ->orWhere('productos.nombre', 'ilike', "%{$request->search}%");
-            }))
-            ->when($request->boolean('solo_criticos'), fn($q) =>
-                $q->whereColumn('inventario_saldos.stock_actual', '<=', 'productos.stock_minimo')
-            )
-            ->select([
-                'inventario_saldos.*',
-                'productos.codigo as producto_codigo',
-                'productos.nombre as producto_nombre',
-                'productos.stock_minimo as producto_stock_minimo',
-            ])
-            ->orderBy('productos.nombre')
-            ->paginate(25)
-            ->withQueryString();
+        $saldos = null;
+
+        if ($busquedaRealizada) {
+            $saldos = InventarioSaldo::with(['producto', 'bodega'])
+                ->join('productos', 'inventario_saldos.producto_id', '=', 'productos.id')
+                ->join('bodegas', 'inventario_saldos.bodega_id', '=', 'bodegas.id')
+                ->where('bodegas.empresa_id', $empresaId)
+                ->when($request->bodega_id, fn($q) => $q->where('inventario_saldos.bodega_id', $request->bodega_id))
+                ->when($request->search, fn($q) => $q->where(function ($q) use ($request) {
+                    $q->where('productos.codigo', 'ilike', "%{$request->search}%")
+                      ->orWhere('productos.nombre', 'ilike', "%{$request->search}%");
+                }))
+                ->when($request->boolean('solo_criticos'), fn($q) =>
+                    $q->whereColumn('inventario_saldos.stock_actual', '<=', 'productos.stock_minimo')
+                )
+                ->select([
+                    'inventario_saldos.*',
+                    'productos.codigo as producto_codigo',
+                    'productos.nombre as producto_nombre',
+                    'productos.stock_minimo as producto_stock_minimo',
+                ])
+                ->orderBy('productos.nombre')
+                ->paginate(25)
+                ->withQueryString();
+        }
 
         $bodegas = Bodega::where('empresa_id', $empresaId)
             ->where('estado', true)
@@ -273,8 +278,7 @@ class KardexController extends Controller
         ]);
 
         $productoIds = collect($data['detalles'])->pluck('producto_id')->unique()->all();
-        $productos = Producto::where('empresa_id', $empresaId)
-            ->whereIn('id', $productoIds)
+        $productos = Producto::whereIn('id', $productoIds)
             ->get(['id', 'codigo'])
             ->keyBy('id');
 

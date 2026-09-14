@@ -371,6 +371,7 @@ Route::middleware('auth')->group(function () {
 
             Route::get('kardex/saldo', [KardexController::class, 'getSaldo'])->name('kardex.getSaldo');
             Route::get('kardex/saldos', [KardexController::class, 'saldos'])->name('kardex.saldos');
+            Route::get('kardex/saldos/reporte', [KardexController::class, 'reporteSaldos'])->name('kardex.reporte.saldos');
             Route::get('kardex/ajuste', [KardexController::class, 'ajuste'])->name('kardex.ajuste');
             Route::get('kardex', [KardexController::class, 'index'])->name('kardex.index');
 
@@ -766,6 +767,8 @@ Route::middleware('auth')->group(function () {
         Route::prefix('taller')->name('taller.')->group(function () {
             // Tipos de equipo
             Route::get('/tipos-equipo', [TipoEquipoController::class, 'index'])->name('tipos-equipo.index');
+
+            // Ingresos
             Route::get('/ingresos', [IngresoController::class, 'index'])->name('ingresos.index');
             Route::get('/ingresos/crear', [IngresoController::class, 'create'])->name('ingresos.create');
             Route::get('/ingresos/{ingreso}', [IngresoController::class, 'show'])->name('ingresos.show');
@@ -775,6 +778,8 @@ Route::middleware('auth')->group(function () {
             Route::get('/ordenes/{orden}', [OrdenTrabajoController::class, 'show'])->name('ordenes.show');
             Route::get('/ordenes/{orden}/repuestos/saldo-disponible', [LiquidacionController::class, 'saldoDisponible'])->name('ordenes.repuestos.saldo-disponible');
             Route::get('/ordenes/{orden}/diagnostico', [DiagnosticoController::class, 'create'])->name('diagnosticos.create');
+
+            // Liquidación
             Route::get('/ordenes/{orden}/liquidar', [LiquidacionController::class, 'show'])->name('liquidacion.show');
 
             Route::middleware('permiso:taller,crear')->group(function () {

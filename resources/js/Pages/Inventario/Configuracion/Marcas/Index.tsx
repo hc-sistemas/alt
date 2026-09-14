@@ -1,5 +1,5 @@
 import { Head, router, usePage } from '@inertiajs/react'
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
 import { Button } from '@/Components/ui/button'
@@ -8,8 +8,8 @@ import { Label } from '@/Components/ui/label'
 import { Plus, Pencil, Trash2, X, Save, Search } from 'lucide-react'
 import { toastExito, toastError } from '@/lib/toast'
 import { confirmarEliminar } from '@/lib/swal'
-import type { Marca, PaginatedData, PageProps } from '@/types'
 import { usePermiso } from '@/Hooks/usePermiso'
+import type { Marca, PaginatedData, PageProps } from '@/types'
 
 interface Props extends PageProps {
     marcas: PaginatedData<Marca>
@@ -22,8 +22,6 @@ export default function MarcasIndex() {
     const { marcas, filters } = usePage<Props>().props
     const { puede } = usePermiso('inventario')
     const [search, setSearch] = useState(filters.search ?? '')
-    const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-    const isFirstRender = useRef(true)
 
     const [modalOpen, setModalOpen] = useState(false)
     const [editando, setEditando] = useState<Marca | null>(null)
@@ -32,14 +30,9 @@ export default function MarcasIndex() {
     const [procesando, setProcesando] = useState(false)
     const [errorEliminar, setErrorEliminar] = useState<string | null>(null)
 
-    useEffect(() => {
-        if (isFirstRender.current) { isFirstRender.current = false; return }
-        if (debounceRef.current) clearTimeout(debounceRef.current)
-        debounceRef.current = setTimeout(() => {
-            router.get(route('inventario.config.marcas.index'), { search }, { preserveState: true, replace: true })
-        }, 300)
-        return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
-    }, [search])
+    function buscar() {
+        router.get(route('inventario.config.marcas.index'), { search: search || undefined }, { preserveState: true, replace: true })
+    }
 
     function abrirCrear() {
         setEditando(null)
@@ -115,7 +108,6 @@ export default function MarcasIndex() {
             <Head title="Marcas" />
             <PageHeader
                 title="Marcas"
-                description="Gestión de marcas de productos"
                 breadcrumbs={[{ label: 'Inventario' }, { label: 'Configuración' }, { label: 'Marcas' }]}
                 actions={
                     puede('crear') ? (
@@ -135,15 +127,24 @@ export default function MarcasIndex() {
                     </div>
                 )}
 
-                <div className="flex items-center gap-4 mb-4 flex-wrap">
-                    <div className="relative">
-                        <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
-                        <Input
-                            value={search}
-                            onChange={e => setSearch(e.target.value)}
-                            placeholder="Buscar marca..."
-                            className="pl-9 w-56"
-                        />
+                <div className="flex items-center gap-3 mb-4 flex-wrap">
+                    <div className="flex shrink-0 ml-auto" role="group">
+                        <div className="relative">
+                            <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+                            <Input
+                                value={search}
+                                onChange={e => setSearch(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && buscar()}
+                                placeholder="Buscar marca..."
+                                className="pl-9 w-56 rounded-r-none border-r-0"
+                            />
+                        </div>
+                        <button className="flex items-center justify-center w-9 h-9 rounded-r-md border text-sm font-medium shrink-0"
+                            style={{ background: 'var(--primary)', color: 'black', borderColor: 'var(--primary)' }}
+                            onClick={buscar}
+                            title="Buscar">
+                            <Search className="w-4 h-4" />
+                        </button>
                     </div>
                 </div>
 

@@ -21,19 +21,26 @@ class ClienteController extends Controller
     public function index(Request $request): Response
     {
         $empresaId = session('empresa_activa_id');
+        $busquedaRealizada = $request->boolean('buscado');
 
-        $query = Cliente::where('empresa_id', $empresaId)
-            ->when($request->search, fn($q) => $q->where(function ($q) use ($request) {
-                $q->where('identificacion', 'ilike', "%{$request->search}%")
-                  ->orWhere('razon_social', 'ilike', "%{$request->search}%");
-            }))
-            ->when($request->estado !== null && $request->estado !== '', fn($q) =>
-                $q->where('estado', $request->estado === 'activo')
-            )
-            ->orderBy('razon_social');
+        $clientes = null;
+
+        if ($busquedaRealizada) {
+            $clientes = Cliente::where('empresa_id', $empresaId)
+                ->when($request->search, fn($q) => $q->where(function ($q) use ($request) {
+                    $q->where('identificacion', 'ilike', "%{$request->search}%")
+                      ->orWhere('razon_social', 'ilike', "%{$request->search}%");
+                }))
+                ->when($request->estado !== null && $request->estado !== '', fn($q) =>
+                    $q->where('estado', $request->estado === 'activo')
+                )
+                ->orderBy('razon_social')
+                ->paginate(20)
+                ->withQueryString();
+        }
 
         return Inertia::render('Personas/Clientes/Index', [
-            'clientes' => $query->paginate(20)->withQueryString(),
+            'clientes' => $clientes,
             'filters' => $request->only(['search', 'estado']),
         ]);
     }

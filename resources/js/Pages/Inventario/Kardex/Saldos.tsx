@@ -1,12 +1,13 @@
 import { Head, Link, router, usePage } from '@inertiajs/react'
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
+import PdfPreviewModal from '@/Components/shared/PdfPreviewModal'
 import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
-import { Search, ArrowUpDown, Plus, Pencil, FileSpreadsheet } from 'lucide-react'
-import type { InventarioSaldo, PaginatedData, PageProps } from '@/types'
+import { Search, ArrowUpDown, Plus, Pencil, FileText, FileSpreadsheet } from 'lucide-react'
 import { usePermiso } from '@/Hooks/usePermiso'
+import type { InventarioSaldo, PaginatedData, PageProps } from '@/types'
 
 interface SaldoRow extends InventarioSaldo {
     producto_codigo?: string
@@ -15,7 +16,7 @@ interface SaldoRow extends InventarioSaldo {
 }
 
 interface Props extends PageProps {
-    saldos: PaginatedData<SaldoRow>
+    saldos: PaginatedData<SaldoRow> | null
     bodegas: { id: number; nombre: string }[]
     filters: { search?: string; bodega_id?: string; solo_criticos?: string }
 }
@@ -27,23 +28,21 @@ export default function KardexSaldos() {
     const [search, setSearch]         = useState(filters.search ?? '')
     const [bodegaId, setBodegaId]     = useState(filters.bodega_id ?? '')
     const [soloCriticos, setSoloCriticos] = useState(filters.solo_criticos === '1')
-    const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-    const isFirstRender = useRef(true)
+    const [pdfModal, setPdfModal]     = useState(false)
 
-    useEffect(() => {
-        if (isFirstRender.current) { isFirstRender.current = false; return }
-        if (debounceRef.current) clearTimeout(debounceRef.current)
-        debounceRef.current = setTimeout(() => {
-            router.get(route('inventario.kardex.saldos'), {
-                search: search || undefined,
-                bodega_id: bodegaId || undefined,
-                solo_criticos: soloCriticos ? '1' : undefined,
-            }, { preserveState: true, replace: true })
-        }, 400)
-        return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
-    }, [search, bodegaId, soloCriticos])
+    const haBuscado = saldos !== null
+
+    function buscar() {
+        router.get(route('inventario.kardex.saldos'), {
+            search: search || undefined,
+            bodega_id: bodegaId || undefined,
+            solo_criticos: soloCriticos ? '1' : undefined,
+            buscado: '1',
+        }, { preserveState: false })
+    }
 
     async function exportarExcel() {
+        if (!saldos) return
         const XLSX = await import('xlsx')
         const filas = saldos.data.map(s => {
             const nombre     = s.producto_nombre ?? s.producto?.nombre ?? '—'
@@ -70,30 +69,28 @@ export default function KardexSaldos() {
             <Head title="Inventario General" />
             <PageHeader
                 title="Inventario General"
-                description="Stock actual por producto y bodega"
                 breadcrumbs={[{ label: 'Inventario' }, { label: 'Kárdex' }, { label: 'Inventario General' }]}
                 actions={
-                    <div className="flex items-center gap-2">
-                        <Link href={route('inventario.kardex.index')}>
-                            <Button variant="outline">
-                                <ArrowUpDown className="w-4 h-4" />
-                                Ver Movimientos
+                    puede('crear') ? (
+                        <Link href={route('inventario.kardex.ajuste')}>
+                            <Button>
+                                <Plus className="w-4 h-4" />
+                                Registrar Ajuste
                             </Button>
                         </Link>
-                        {puede('crear') && (
-                            <Link href={route('inventario.kardex.ajuste')}>
-                                <Button>
-                                    <Plus className="w-4 h-4" />
-                                    Registrar
-                                </Button>
-                            </Link>
-                        )}
-                    </div>
+                    ) : undefined
                 }
             />
 
             <div className="p-6">
                 <div className="flex items-center gap-3 mb-4 flex-wrap">
+                    <Link href={route('inventario.kardex.index')}>
+                        <Button variant="outline">
+                            <ArrowUpDown className="w-4 h-4" />
+                            Ver Movimientos
+                        </Button>
+                    </Link>
+
                     <select value={bodegaId} onChange={e => setBodegaId(e.target.value)}
                         className="input-field shrink-0"
                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
@@ -109,33 +106,53 @@ export default function KardexSaldos() {
                         Solo críticos
                     </label>
 
-                    <div className="flex items-center gap-3 shrink-0 ml-auto">
-                        <div className="flex shrink-0" role="group">
-                            <div className="relative">
-                                <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
-                                <Input value={search} onChange={e => setSearch(e.target.value)}
-                                    placeholder="Código o nombre..." className="pl-9 w-72 rounded-r-none border-r-0" />
-                            </div>
-                            <button className="flex items-center justify-center w-9 h-9 rounded-r-md border text-sm font-medium shrink-0"
-                                style={{ background: 'var(--primary)', color: 'black', borderColor: 'var(--primary)' }}
-                                title="Buscar">
-                                <Search className="w-4 h-4" />
-                            </button>
+                    <div className="flex shrink-0 ml-auto" role="group">
+                        <div className="relative">
+                            <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+                            <Input value={search} onChange={e => setSearch(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && buscar()}
+                                placeholder="Código o nombre..." className="pl-9 w-52 rounded-r-none border-r-0" />
                         </div>
+                        <button className="flex items-center justify-center w-9 h-9 rounded-r-md border text-sm font-medium shrink-0"
+                            style={{ background: 'var(--primary)', color: 'black', borderColor: 'var(--primary)' }}
+                            onClick={buscar}
+                            title="Buscar">
+                            <Search className="w-4 h-4" />
+                        </button>
+                    </div>
 
-                        <div className="flex shrink-0" role="group">
-                            <button className="flex items-center justify-center w-9 h-9 rounded-md border text-sm font-medium"
-                                style={{ background: '#16A34A', color: 'white', borderColor: '#16A34A', transition: 'background 0.2s' }}
-                                onMouseEnter={e => (e.currentTarget.style.background = '#15803D')}
-                                onMouseLeave={e => (e.currentTarget.style.background = '#16A34A')}
-                                onClick={exportarExcel}
-                                title="Excel">
-                                <FileSpreadsheet className="w-4 h-4" />
-                            </button>
-                        </div>
+                    <div className="flex items-center gap-2">
+                        <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium"
+                            style={{ background: '#DC2626', color: 'white', transition: 'background 0.2s' }}
+                            onMouseEnter={e => (e.currentTarget.style.background = '#B91C1C')}
+                            onMouseLeave={e => (e.currentTarget.style.background = '#DC2626')}
+                            onClick={() => setPdfModal(true)}>
+                            <FileText className="w-4 h-4" />
+                            PDF
+                        </button>
+                        <button className="flex items-center justify-center w-9 h-9 rounded-md text-sm font-medium border shrink-0"
+                            style={{ background: '#16A34A', color: 'white', borderColor: '#16A34A', transition: 'background 0.2s' }}
+                            onMouseEnter={e => (e.currentTarget.style.background = '#15803D')}
+                            onMouseLeave={e => (e.currentTarget.style.background = '#16A34A')}
+                            onClick={exportarExcel}
+                            disabled={!saldos}
+                            title="Excel">
+                            <FileSpreadsheet className="w-4 h-4" />
+                        </button>
                     </div>
                 </div>
 
+                {/* Estado inicial: aún no se ha buscado */}
+                {!haBuscado && (
+                    <div className="text-center py-16">
+                        <Search className="w-12 h-12 mx-auto mb-4 opacity-30" style={{ color: 'var(--text-muted)' }} />
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                            Ajusta los filtros y presiona Buscar para consultar el inventario.
+                        </p>
+                    </div>
+                )}
+
+                {haBuscado && saldos && (
                 <div className="rounded-xl border overflow-x-auto" style={{ borderColor: 'var(--border)' }}>
                     <table className="w-full text-xs">
                         <thead>
@@ -217,8 +234,9 @@ export default function KardexSaldos() {
                         </tbody>
                     </table>
                 </div>
+                )}
 
-                {saldos.last_page > 1 && (
+                {haBuscado && saldos && saldos.last_page > 1 && (
                     <div className="flex items-center justify-between mt-4 text-sm">
                         <p style={{ color: 'var(--text-muted)' }}>
                             Mostrando {saldos.from}–{saldos.to} de {saldos.total}
@@ -241,6 +259,13 @@ export default function KardexSaldos() {
                     </div>
                 )}
             </div>
+            <PdfPreviewModal
+                abierto={pdfModal}
+                onCerrar={() => setPdfModal(false)}
+                url={pdfModal ? route('inventario.kardex.reporte.saldos') : ''}
+                titulo="Inventario General"
+                nombreDescarga="kardex_saldos.pdf"
+            />
         </AppLayout>
     )
 }

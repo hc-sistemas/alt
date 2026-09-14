@@ -166,7 +166,6 @@ export default function KardexAjuste() {
             <Head title="Ajuste de Inventario" />
             <PageHeader
                 title="Ajuste de Inventario"
-                description="Registrar entradas o salidas manuales de stock para varios productos en una misma bodega"
                 breadcrumbs={[
                     { label: 'Inventario' },
                     { label: 'Kárdex', href: route('inventario.kardex.saldos') },

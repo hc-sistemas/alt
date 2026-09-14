@@ -2,6 +2,8 @@ import React, { useState, useMemo, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { Head, usePage, router, Link } from '@inertiajs/react'
 import Swal from 'sweetalert2'
+import { isAxiosError } from 'axios'
+import axios from '@/lib/axios'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
 import { Button } from '@/Components/ui/button'
@@ -102,10 +104,6 @@ function pagoVacio(formas: string[]): FormaPagoLinea {
 }
 
 const hoy = new Date().toLocaleDateString('es-EC', { day: '2-digit', month: '2-digit', year: 'numeric' })
-
-function getCsrf(): string {
-    return (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement | null)?.content ?? ''
-}
 
 async function consultarSaldoDisponible(productoId: number): Promise<number> {
     const res = await fetch(
@@ -312,20 +310,21 @@ export default function Form() {
 
         setGuardandoCliente(true)
         try {
-            const res = await fetch(route('ventas.facturas.cliente-guardar'), {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': getCsrf(),
-                    'Accept': 'application/json',
-                },
-                body: JSON.stringify(clienteEditado),
-            })
-            const data = await res.json() as { cliente: Cliente }
+            const { data } = await axios.post<{ cliente: Cliente }>(
+                route('ventas.facturas.cliente-guardar'),
+                clienteEditado,
+            )
             setClienteSeleccionado(data.cliente)
             setClienteEditado({ ...data.cliente })
-        } catch {
-            // silencioso
+        } catch (error) {
+            // El backend valida con $request->validate() — en 422 devuelve el
+            // formato estándar de Laravel ({message, errors}), no {mensaje}
+            // como aprobacion.validar. Se lee de ahí el motivo real.
+            const respData = isAxiosError<{ message?: string; errors?: Record<string, string[]> }>(error)
+                ? error.response?.data
+                : undefined
+            const mensaje = (respData?.errors && Object.values(respData.errors).flat().join(' ')) || respData?.message
+            toastError(mensaje || 'No se pudo guardar el cliente. Intente nuevamente.')
         } finally {
             setGuardandoCliente(false)
         }

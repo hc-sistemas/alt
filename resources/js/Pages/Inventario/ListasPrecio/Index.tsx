@@ -33,7 +33,7 @@ interface Categoria { id: number; nombre: string }
 interface BodegaOpcion { id: number; nombre: string }
 
 interface Props extends PageProps {
-    listas: PaginatedData<ListaPrecioRow>
+    listas: PaginatedData<ListaPrecioRow> | null
     filters: { search?: string; marca_id?: string; categoria_id?: string }
     marcas: Marca[]
     categorias: Categoria[]
@@ -102,8 +102,8 @@ function tienePromoGuardada(row: ListaPrecioRow): boolean {
 export default function ListasPrecioIndex() {
     const { listas, filters, marcas, categorias, bodegas } = usePage<Props>().props
     const { puede } = usePermiso('inventario')
-    // Código, Nombre, PVP+IVA, Desc. PVP%, PVD+IVA, Desc. PVD% (6) + bodegas + Promo (1)
-    const totalColumnas = 7 + bodegas.length
+    // Código, Nombre, Marca, PVP+IVA, Desc. PVP%, PVD+IVA, Desc. PVD% (7) + bodegas + Promo (1)
+    const totalColumnas = 8 + bodegas.length
 
     const [search, setSearch]   = useState(filters.search ?? '')
     const [marcaId, setMarcaId] = useState(filters.marca_id ?? '')
@@ -111,19 +111,38 @@ export default function ListasPrecioIndex() {
     const [editing, setEditing] = useState<EditState | null>(null)
     const [promoEditing, setPromoEditing] = useState<PromoEditState | null>(null)
 
-    const debounceRef   = useRef<ReturnType<typeof setTimeout> | null>(null)
-    const isFirstRender = useRef(true)
     const fileInputRef  = useRef<HTMLInputElement>(null)
     const blurTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const debounceRef   = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const isFirstRender = useRef(true)
 
+    const haBuscado = listas !== null
+
+    function buscar() {
+        router.get(route('inventario.listas.index'), {
+            search: search || undefined,
+            marca_id: marcaId || undefined,
+            categoria_id: catId || undefined,
+            buscado: '1',
+        }, { preserveState: false })
+    }
+
+    // Auto-dispara la búsqueda 300ms después del último cambio, sin
+    // necesidad del botón "Buscar" — pero solo una vez que ya se buscó al
+    // menos una vez (botón o Enter). Antes de esa primera búsqueda no se
+    // dispara nada: se preserva el estado inicial "ajusta los filtros y
+    // busca", que existe porque el backend no pagina el catálogo completo
+    // sin `buscado=1` explícito.
     useEffect(() => {
         if (isFirstRender.current) { isFirstRender.current = false; return }
+        if (!haBuscado) return
         if (debounceRef.current) clearTimeout(debounceRef.current)
         debounceRef.current = setTimeout(() => {
             router.get(route('inventario.listas.index'), {
                 search: search || undefined,
                 marca_id: marcaId || undefined,
                 categoria_id: catId || undefined,
+                buscado: '1',
             }, { preserveState: true, replace: true })
         }, 300)
         return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
@@ -280,7 +299,7 @@ export default function ListasPrecioIndex() {
         (e: React.ChangeEvent<HTMLInputElement>) =>
             setEditing(prev => prev ? { ...prev, [field]: e.target.value } : null)
 
-    const tdBase = 'px-2 py-2 whitespace-nowrap text-xs'
+    const tdBase = 'px-1.5 py-1.5 whitespace-nowrap text-xs'
     const tdMuted = cn(tdBase, 'font-mono text-right')
 
     function editCell(
@@ -293,7 +312,7 @@ export default function ListasPrecioIndex() {
                     value={editVal(field)}
                     onChange={setEditVal(field)}
                     onKeyDown={handleKeyDown}
-                    className="h-7 text-xs w-24 font-mono"
+                    className="h-6 text-xs w-16 font-mono px-1.5"
                     {...props}
                 />
             </td>
@@ -364,21 +383,25 @@ export default function ListasPrecioIndex() {
                     </>
                 }
                 breadcrumbs={[{ label: 'Inventario' }, { label: 'Listas de Precio' }]}
+                actions={
+                    puede('crear') ? (
+                        <button
+                            onClick={() => fileInputRef.current?.click()}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium"
+                            style={{ background: 'var(--primary)', color: 'black', transition: 'background 0.2s' }}
+                            onMouseEnter={e => (e.currentTarget.style.background = 'var(--primary-hover)')}
+                            onMouseLeave={e => (e.currentTarget.style.background = 'var(--primary)')}
+                        >
+                            <Upload className="w-4 h-4" />
+                            Importar
+                        </button>
+                    ) : undefined
+                }
             />
 
             <div className="p-6">
                 {/* Filtros + acciones */}
                 <div className="flex items-center gap-3 mb-4 flex-wrap">
-                    <div className="relative">
-                        <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
-                        <Input
-                            value={search}
-                            onChange={e => setSearch(e.target.value)}
-                            placeholder="Código o nombre..."
-                            className="pl-9 w-52"
-                        />
-                    </div>
-
                     <select value={marcaId} onChange={e => setMarcaId(e.target.value)}
                         className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm"
                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
@@ -393,51 +416,67 @@ export default function ListasPrecioIndex() {
                         {categorias.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
                     </select>
 
-                    <div className="flex items-center gap-2 ml-auto">
-                        <button
-                            onClick={descargarPlantilla}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium"
-                            style={{ background: '#16A34A', color: 'white', transition: 'background 0.2s' }}
-                            onMouseEnter={e => (e.currentTarget.style.background = '#15803D')}
-                            onMouseLeave={e => (e.currentTarget.style.background = '#16A34A')}
-                        >
-                            <FileSpreadsheet className="w-4 h-4" />
-                            Excel
+                    <div className="flex shrink-0 ml-auto" role="group">
+                        <div className="relative">
+                            <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+                            <Input
+                                value={search}
+                                onChange={e => setSearch(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && buscar()}
+                                placeholder="Código o nombre..."
+                                className="pl-9 w-52 rounded-r-none border-r-0"
+                            />
+                        </div>
+                        <button className="flex items-center justify-center w-9 h-9 rounded-r-md border text-sm font-medium shrink-0"
+                            style={{ background: 'var(--primary)', color: 'black', borderColor: 'var(--primary)' }}
+                            onClick={buscar}
+                            title="Buscar">
+                            <Search className="w-4 h-4" />
                         </button>
-                        {puede('crear') && (
-                            <button
-                                onClick={() => fileInputRef.current?.click()}
-                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium"
-                                style={{ background: 'var(--primary)', color: 'black', transition: 'background 0.2s' }}
-                                onMouseEnter={e => (e.currentTarget.style.background = 'var(--primary-hover)')}
-                                onMouseLeave={e => (e.currentTarget.style.background = 'var(--primary)')}
-                            >
-                                <Upload className="w-4 h-4" />
-                                Importar
-                            </button>
-                        )}
-                        <input
-                            ref={fileInputRef}
-                            type="file"
-                            accept=".xlsx,.xls"
-                            className="hidden"
-                            onChange={handleFileChange}
-                        />
                     </div>
+
+                    <button
+                        onClick={descargarPlantilla}
+                        className="flex items-center justify-center w-9 h-9 rounded-md text-sm font-medium border shrink-0"
+                        style={{ background: '#16A34A', color: 'white', borderColor: '#16A34A', transition: 'background 0.2s' }}
+                        onMouseEnter={e => (e.currentTarget.style.background = '#15803D')}
+                        onMouseLeave={e => (e.currentTarget.style.background = '#16A34A')}
+                        title="Excel">
+                        <FileSpreadsheet className="w-4 h-4" />
+                    </button>
+                    <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept=".xlsx,.xls"
+                        className="hidden"
+                        onChange={handleFileChange}
+                    />
                 </div>
 
+                {/* Estado inicial: aún no se ha buscado */}
+                {!haBuscado && (
+                    <div className="text-center py-16">
+                        <Search className="w-12 h-12 mx-auto mb-4 opacity-30" style={{ color: 'var(--text-muted)' }} />
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                            Ajusta los filtros y presiona Buscar para consultar las listas de precio.
+                        </p>
+                    </div>
+                )}
+
+                {haBuscado && listas && (
+                <>
                 {/* Tabla */}
                 <div className="rounded-xl border overflow-x-auto" style={{ borderColor: 'var(--border)' }}>
                     <table className="w-full text-xs">
                         <thead>
                             <tr style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
                                 {[
-                                    'Código', 'Nombre',
+                                    'Código', 'Nombre', 'Marca',
                                     'PVP+IVA', 'Desc. PVP%',
                                     'PVD+IVA', 'Desc. PVD%',
                                 ].map(h => (
                                     <th key={h}
-                                        className="text-left px-2 py-3 font-medium text-xs uppercase tracking-wider whitespace-nowrap"
+                                        className="text-left px-1.5 py-2 font-medium text-[11px] uppercase tracking-wider whitespace-nowrap"
                                         style={{ color: 'var(--text-muted)' }}>
                                         {h}
                                     </th>
@@ -492,6 +531,10 @@ export default function ListasPrecioIndex() {
                                         {/* Nombre */}
                                         <td className={cn(tdBase, 'max-w-45 truncate')} style={{ color: 'var(--text-main)' }}>
                                             {row.nombre}
+                                        </td>
+                                        {/* Marca */}
+                                        <td className={tdBase} style={{ color: 'var(--text-muted)' }}>
+                                            {row.marca_nombre}
                                         </td>
                                         {active ? (
                                             <>
@@ -633,6 +676,8 @@ export default function ListasPrecioIndex() {
                 <p className="mt-3 text-xs" style={{ color: 'var(--text-muted)' }}>
                     Clic en cualquier celda para editar. Al salir de la fila se guarda automáticamente. Enter guarda, Escape cancela.
                 </p>
+                </>
+                )}
             </div>
         </AppLayout>
     )

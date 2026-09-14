@@ -128,7 +128,6 @@ export default function KardexIndex() {
             <Head title="Kardex" />
             <PageHeader
                 title="Kardex de Movimientos"
-                description="Historial de entradas y salidas de stock por producto"
                 breadcrumbs={[{ label: 'Inventario' }, { label: 'Kardex' }]}
             />
 
@@ -152,7 +151,6 @@ export default function KardexIndex() {
                         required className="shrink-0 w-36" title="Desde *" />
                     <Input type="date" value={fechaHasta} onChange={e => setFechaHasta(e.target.value)}
                         required className="shrink-0 w-36" title="Al *" />
-
                     <div className="flex shrink-0 ml-auto" role="group">
                         <div className="relative">
                             <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
@@ -197,7 +195,7 @@ export default function KardexIndex() {
                         <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
                             O ve directamente a{' '}
                             <Link href={route('inventario.kardex.saldos')} className="underline" style={{ color: 'var(--primary)' }}>
-                                Saldos de Inventario
+                                Inventario General
                             </Link>
                         </p>
                     </div>
