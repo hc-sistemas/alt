@@ -29,26 +29,11 @@ interface NavItem {
 const navItems: NavItem[] = [
     { nombre: 'Dashboard', clave: 'dashboard', icon: LayoutDashboard, href: '/dashboard' },
     {
-        nombre: 'Ventas', clave: 'ventas', icon: FileText,
+        nombre: 'Configuración', clave: 'configuracion', icon: Settings,
         hijos: [
-            { nombre: 'Facturas', href: '/ventas/facturas' },
-            { nombre: 'Proformas', href: '/ventas/proformas' },
-            { nombre: 'Prefacturas', href: '/ventas/prefacturas' },
-            { nombre: 'CxC', href: '/ventas/cxc' },
-            { nombre: 'Notas de Crédito', href: '/ventas/notas-credito' },
-            { nombre: 'Retenciones', href: '/ventas/retenciones' },
-            { nombre: 'Guías de Remisión', href: '/ventas/guias-remision' },
-        ]
-    },
-    {
-        nombre: 'Compras', clave: 'compras', icon: ShoppingCart,
-        hijos: [
-            { nombre: 'Facturas de Compra', href: '/compras/facturas' },
-            { nombre: 'Proveedores', href: '/compras/proveedores' },
-            { nombre: 'Cuentas por Pagar', href: '/compras/cuentas-pagar' },
-            { nombre: 'Anticipos Proveedores', href: '/compras/anticipos' },
-            { nombre: 'Devoluciones',          href: '/compras/devoluciones' },
-            { nombre: 'Importaciones',         href: '/compras/importaciones' },
+            { nombre: 'Usuarios', href: '/configuracion/usuarios' },
+            { nombre: 'Permisos', href: '/configuracion/permisos' },
+            { nombre: 'Empresa', href: '/configuracion/empresa' },
         ]
     },
     {
@@ -74,13 +59,26 @@ const navItems: NavItem[] = [
         ],
     },
     {
-        nombre: 'Contabilidad', clave: 'contabilidad', icon: BookOpen,
+        nombre: 'Compras', clave: 'compras', icon: ShoppingCart,
         hijos: [
-            { nombre: 'Ejercicios', href: '/contabilidad/ejercicios' },
-            { nombre: 'Asientos', href: '/contabilidad/asientos' },
-            { nombre: 'Plan de Cuentas', href: '/contabilidad/plan-cuentas' },
-            { nombre: 'Parámetros Contables', href: '/contabilidad/parametros' },
-            { nombre: 'Reportes Contables', href: '/contabilidad/reportes' },
+            { nombre: 'Facturas de Compra', href: '/compras/facturas' },
+            { nombre: 'Proveedores', href: '/compras/proveedores' },
+            { nombre: 'Cuentas por Pagar', href: '/compras/cuentas-pagar' },
+            { nombre: 'Anticipos Proveedores', href: '/compras/anticipos' },
+            { nombre: 'Devoluciones',          href: '/compras/devoluciones' },
+            { nombre: 'Importaciones',         href: '/compras/importaciones' },
+        ]
+    },
+    {
+        nombre: 'Ventas', clave: 'ventas', icon: FileText,
+        hijos: [
+            { nombre: 'Facturas', href: '/ventas/facturas' },
+            { nombre: 'Proformas', href: '/ventas/proformas' },
+            { nombre: 'Prefacturas', href: '/ventas/prefacturas' },
+            { nombre: 'CxC', href: '/ventas/cxc' },
+            { nombre: 'Notas de Crédito', href: '/ventas/notas-credito' },
+            { nombre: 'Retenciones', href: '/ventas/retenciones' },
+            { nombre: 'Guías de Remisión', href: '/ventas/guias-remision' },
         ]
     },
     {
@@ -93,6 +91,16 @@ const navItems: NavItem[] = [
             { nombre: 'Conciliación Bancaria', href: '/bancos/conciliaciones' },
             { nombre: 'Cheques', href: '/bancos/cheques' },
             { nombre: 'Reportes', href: '/bancos/reportes' },
+        ]
+    },
+    {
+        nombre: 'Contabilidad', clave: 'contabilidad', icon: BookOpen,
+        hijos: [
+            { nombre: 'Ejercicios', href: '/contabilidad/ejercicios' },
+            { nombre: 'Asientos', href: '/contabilidad/asientos' },
+            { nombre: 'Plan de Cuentas', href: '/contabilidad/plan-cuentas' },
+            { nombre: 'Parámetros Contables', href: '/contabilidad/parametros' },
+            { nombre: 'Reportes Contables', href: '/contabilidad/reportes' },
         ]
     },
     {
@@ -129,29 +137,22 @@ const navItems: NavItem[] = [
         ]
     },
     { nombre: 'Manuales', clave: 'manuales', icon: Library, href: '/manuales' },
-    {
-        nombre: 'Configuración', clave: 'configuracion', icon: Settings,
-        hijos: [
-            { nombre: 'Usuarios', href: '/configuracion/usuarios' },
-            { nombre: 'Permisos', href: '/configuracion/permisos' },
-            { nombre: 'Empresa', href: '/configuracion/empresa' },
-        ]
-    },
 ]
 
-function getInitialOpen(currentUrl: string): string[] {
-    const open = new Set(['configuracion', 'inventario-config'])
+// Solo la sección (y subgrupo) que contiene la ruta activa queda abierta —
+// el resto colapsa automáticamente (comportamiento acordeón).
+function getActiveOpen(currentUrl: string): string[] {
+    const open: string[] = []
     for (const item of navItems) {
         if (!item.hijos && !item.subgrupos) continue
-        const hasActive =
-            (item.hijos?.some(h => currentUrl.startsWith(h.href)) ?? false) ||
-            (item.subgrupos?.some(sg => sg.hijos.some(h => currentUrl.startsWith(h.href))) ?? false)
-        if (hasActive) open.add(item.clave)
-        item.subgrupos?.forEach(sg => {
-            if (sg.hijos.some(h => currentUrl.startsWith(h.href))) open.add(sg.clave)
-        })
+        const hasActiveHijo = item.hijos?.some(h => currentUrl.startsWith(h.href)) ?? false
+        const activeSubgrupo = item.subgrupos?.find(sg => sg.hijos.some(h => currentUrl.startsWith(h.href)))
+        if (hasActiveHijo || activeSubgrupo) {
+            open.push(item.clave)
+            if (activeSubgrupo) open.push(activeSubgrupo.clave)
+        }
     }
-    return [...open]
+    return open
 }
 
 interface Props {
@@ -164,7 +165,12 @@ interface Props {
 export default function Sidebar({ collapsed, onCollapse, mobileOpen, onMobileClose }: Props) {
     const { url, props } = usePage<PageProps>()
     const permisos = props.permisos
-    const [openSections, setOpenSections] = useState<string[]>(() => getInitialOpen(url))
+    const [openSections, setOpenSections] = useState<string[]>(() => getActiveOpen(url))
+
+    const subgrupoClaves = useMemo(
+        () => navItems.flatMap(i => i.subgrupos?.map(sg => sg.clave) ?? []),
+        []
+    )
 
     const itemsVisibles = useMemo(() => {
         if (permisos === '*') return navItems
@@ -174,38 +180,25 @@ export default function Sidebar({ collapsed, onCollapse, mobileOpen, onMobileClo
         })
     }, [permisos])
 
+    // Acordeón: abrir una sección cierra las demás del mismo nivel — un
+    // subgrupo solo cierra a sus hermanos (dentro del mismo padre), sin
+    // afectar qué sección de nivel superior está abierta.
     const toggleSection = (clave: string) => {
         setOpenSections(prev => {
             if (prev.includes(clave)) {
-                const item = navItems.find(i => i.clave === clave)
-                const hasActive =
-                    (item?.hijos?.some(h => url.startsWith(h.href)) ?? false) ||
-                    (item?.subgrupos?.some(sg => sg.hijos.some(h => url.startsWith(h.href))) ?? false)
-                if (hasActive) return prev
                 return prev.filter(s => s !== clave)
             }
-            return [...prev, clave]
+            if (subgrupoClaves.includes(clave)) {
+                const parent = navItems.find(i => i.subgrupos?.some(sg => sg.clave === clave))
+                const hermanos = parent?.subgrupos?.map(sg => sg.clave) ?? []
+                return [...prev.filter(s => !hermanos.includes(s)), clave]
+            }
+            return [clave]
         })
     }
 
     useEffect(() => {
-        const handle = () => {
-            const path = window.location.pathname
-            setOpenSections(prev => {
-                const next = new Set(prev)
-                for (const item of navItems) {
-                    if (!item.hijos && !item.subgrupos) continue
-                    const hasActive =
-                        (item.hijos?.some(h => path.startsWith(h.href)) ?? false) ||
-                        (item.subgrupos?.some(sg => sg.hijos.some(h => path.startsWith(h.href))) ?? false)
-                    if (hasActive) next.add(item.clave)
-                    item.subgrupos?.forEach(sg => {
-                        if (sg.hijos.some(h => path.startsWith(h.href))) next.add(sg.clave)
-                    })
-                }
-                return [...next]
-            })
-        }
+        const handle = () => setOpenSections(getActiveOpen(window.location.pathname))
         document.addEventListener('inertia:navigate', handle)
         return () => document.removeEventListener('inertia:navigate', handle)
     }, [])

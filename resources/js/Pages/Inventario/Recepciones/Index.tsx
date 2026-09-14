@@ -12,8 +12,9 @@ import { usePermiso } from '@/Hooks/usePermiso'
 import type { RecepcionBodega, PaginatedData, PageProps } from '@/types'
 
 interface Props extends PageProps {
-    recepciones: PaginatedData<RecepcionBodega>
+    recepciones: PaginatedData<RecepcionBodega> | null
     filtros: {
+        search?: string
         estado?: string
         fecha_desde?: string
         fecha_hasta?: string
@@ -334,24 +335,22 @@ export default function RecepcionesIndex() {
     const { puede } = usePermiso('inventario')
 
     const [modalAbierto, setModalAbierto] = useState(false)
+    const [search, setSearch]         = useState(filtros.search ?? '')
     const [estado, setEstado]         = useState(filtros.estado ?? '')
     const [fechaDesde, setFechaDesde] = useState(filtros.fecha_desde ?? '')
     const [fechaHasta, setFechaHasta] = useState(filtros.fecha_hasta ?? '')
-    const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-    const isFirstRender = useRef(true)
 
-    useEffect(() => {
-        if (isFirstRender.current) { isFirstRender.current = false; return }
-        if (debounceRef.current) clearTimeout(debounceRef.current)
-        debounceRef.current = setTimeout(() => {
-            router.get(route('inventario.recepciones.index'), {
-                estado: estado || undefined,
-                fecha_desde: fechaDesde || undefined,
-                fecha_hasta: fechaHasta || undefined,
-            }, { preserveState: true, replace: true })
-        }, 400)
-        return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
-    }, [estado, fechaDesde, fechaHasta])
+    const haBuscado = recepciones !== null
+
+    function buscar() {
+        router.get(route('inventario.recepciones.index'), {
+            search: search || undefined,
+            estado: estado || undefined,
+            fecha_desde: fechaDesde || undefined,
+            fecha_hasta: fechaHasta || undefined,
+            buscado: '1',
+        }, { preserveState: false })
+    }
 
     const formatFecha = (dt: string | null) =>
         dt ? new Date(dt).toLocaleDateString('es-EC', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'
@@ -396,8 +395,39 @@ export default function RecepcionesIndex() {
                         className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm"
                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}
                         placeholder="Hasta" />
+
+                    <div className="flex shrink-0 ml-auto" role="group">
+                        <div className="relative">
+                            <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+                            <Input
+                                value={search}
+                                onChange={e => setSearch(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && buscar()}
+                                placeholder="N° factura o proveedor..."
+                                className="pl-9 w-52 rounded-r-none border-r-0"
+                            />
+                        </div>
+                        <button className="flex items-center justify-center w-9 h-9 rounded-r-md border text-sm font-medium shrink-0"
+                            style={{ background: 'var(--primary)', color: 'black', borderColor: 'var(--primary)' }}
+                            onClick={buscar}
+                            title="Buscar">
+                            <Search className="w-4 h-4" />
+                        </button>
+                    </div>
                 </div>
 
+                {/* Estado inicial: aún no se ha buscado */}
+                {!haBuscado && (
+                    <div className="text-center py-16">
+                        <Search className="w-12 h-12 mx-auto mb-4 opacity-30" style={{ color: 'var(--text-muted)' }} />
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                            Ajusta los filtros y presiona Buscar para consultar las recepciones.
+                        </p>
+                    </div>
+                )}
+
+                {haBuscado && recepciones && (
+                <>
                 <div className="rounded-xl border overflow-x-auto" style={{ borderColor: 'var(--border)' }}>
                     <table className="w-full text-sm">
                         <thead>
@@ -473,6 +503,8 @@ export default function RecepcionesIndex() {
                             ))}
                         </div>
                     </div>
+                )}
+                </>
                 )}
             </div>
 
