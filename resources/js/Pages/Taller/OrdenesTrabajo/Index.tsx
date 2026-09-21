@@ -16,7 +16,7 @@ interface Tecnico {
 
 interface Props extends PageProps {
     ordenes: PaginatedData<TallerOrdenTrabajo>
-    filtros: { search?: string; estado?: string; tecnico_id?: string }
+    filtros: { search?: string; estado?: string; tecnico_id?: string; desde?: string; hasta?: string }
     tecnicos: Tecnico[]
 }
 
@@ -34,12 +34,16 @@ export default function OrdenesTrabajoIndex() {
     const [search, setSearch] = useState(filtros.search ?? '')
     const [estado, setEstado] = useState(filtros.estado ?? '')
     const [tecnicoId, setTecnicoId] = useState(filtros.tecnico_id ?? '')
+    const [desde, setDesde] = useState(filtros.desde ?? '')
+    const [hasta, setHasta] = useState(filtros.hasta ?? '')
 
     function buscar() {
         router.get(route('taller.ordenes.index'), {
             search: search || undefined,
             estado: estado || undefined,
             tecnico_id: tecnicoId || undefined,
+            desde: desde || undefined,
+            hasta: hasta || undefined,
         }, { preserveState: true, replace: true })
     }
 
@@ -75,6 +79,11 @@ export default function OrdenesTrabajoIndex() {
                         ))}
                     </select>
 
+                    <Input type="date" value={desde} onChange={e => setDesde(e.target.value)}
+                        className="w-40 shrink-0" title="Desde" />
+                    <Input type="date" value={hasta} onChange={e => setHasta(e.target.value)}
+                        className="w-40 shrink-0" title="Hasta" />
+
                     <div className="flex shrink-0 ml-auto" role="group">
                         <div className="relative">
                             <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
@@ -82,7 +91,7 @@ export default function OrdenesTrabajoIndex() {
                                 value={search}
                                 onChange={e => setSearch(e.target.value)}
                                 onKeyDown={e => e.key === 'Enter' && buscar()}
-                                placeholder="Cliente o identificación..."
+                                placeholder="Cliente, equipo, serie u OT..."
                                 className="pl-9 w-60 rounded-r-none border-r-0"
                             />
                         </div>

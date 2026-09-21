@@ -448,3 +448,78 @@ Vendedor:
 3. La UI muestra un badge naranja "Sin asiento contable" (con el motivo en tooltip) tanto en `Compras/Compras/Index.tsx` (icono junto al número de documento) como en `Compras/Compras/Show.tsx` (badge junto al estado + línea de detalle).
 
 **Alcance real de esta excepción — NO se extiende a Pagos ni a Nómina:** `CuentaPagarController::pagar()` (pago a proveedor) y `NominaController::procesar()` **no** tienen este patrón de "guardar igual si falla" — ahí la generación del asiento ocurre dentro de un único `DB::transaction()` sin `catch` silencioso, así que si el período está cerrado la operación completa se revierte y el usuario ve un error inmediato (no queda un pago o una nómina huérfana sin asiento). Si en el futuro se decide extender el patrón "guardar sin asiento" a Pagos o Nómina, es una decisión de diseño nueva — no asumir que ya funciona igual que Compras.
+
+### ACTUALIZACIÓN (2026-09-20) — la decisión anterior fue REEMPLAZADA: contabilidad lista antes de operar
+
+**Reemplaza** la sección "Compra sin asiento contable si el período está cerrado" de arriba, a pedido explícito del usuario. Ahora el sistema **bloquea** (no guarda igual) las operaciones que generan asientos si la parte contable no está lista.
+
+- `AsientoService::validarConfiguracion($empresaId, $codigos, $fecha)` verifica (1) que haya un período abierto y que el mes de la fecha no esté cerrado, y (2) que cada parámetro contable requerido resuelva a una cuenta. Lanza `\DomainException` con un mensaje que dice qué hacer (Contabilidad → Ejercicios / Parámetros Contables). `AsientoService::codigosCompra($tipoAsiento, $retIR, $retIVA)` da los parámetros que usa `compraRegistrada()` — mantener en sincronía con esa función.
+- Se valida en: `CompraController::store()` y `activar()`, `RecepcionController::confirmar()`, `ImportacionController::liquidar()` (solo período) y `CuentaPagarController::pagar()` (`cta_proveedores_locales` + `cta_bancos_locales`). Todos devuelven `back()->with('error', ...)`. `pagar()` además atrapa cualquier excepción del asiento y devuelve un error legible en vez de un 500.
+- `compras.asiento_error` y el badge "Sin asiento contable" siguen existiendo para facturas antiguas; no deberían generarse nuevas.
+- No cubierto aún: `CompraController::update()` (edición de factura activa) y Anticipos (este último ya devuelve error controlado desde su propio try/catch).
+
+### Auditoría y corrección del módulo de Contabilidad (2026-09-20)
+
+Revisión completa del módulo. Lo que cambió y **no debe revertirse**:
+
+**Plan de cuentas — formato de códigos.** El plan real del cliente mezcla dos
+formatos: clases 1, 2, 3 y 5.1 usan un dígito en el último segmento
+(`1.1.1.1` Caja General), mientras que 4, 5.2, 5.3 y 5.4 usan dos
+(`4.1.1.01`, `5.2.2.06`). El mapa `AsientoService::FALLBACK_PLAN` estaba
+escrito íntegramente con dos dígitos, así que **26 de 42 cuentas no existían**
+y ningún asiento automático llegaba a generarse. Se corrigieron los códigos y
+se agregó `AsientoService::normalizarCodigo()` / `buscarCuentaPorCodigo()`,
+que comparan ignorando los ceros a la izquierda. **No "normalizar" el plan de
+cuentas en la BD** — se resuelve en código.
+
+Además había códigos semánticamente equivocados ya persistidos en
+`parametros_contables` (el aporte patronal apuntaba a "Comisiones y Bonos", la
+utilidad del período a "Ganancias Acumuladas", las ganancias acumuladas a
+"Superávit por Revaluación PPE"). Los corrige la migración
+`2026_09_20_110001_corregir_parametros_contables_mal_mapeados`.
+
+**Costo de ventas.** `facturaAutorizada()` ahora registra las dos mitades del
+inventario permanente: el ingreso *y* `DEBE Costo de Ventas / HABER
+Inventario`. El costo se lee del kárdex con
+`AsientoService::costoSalidaDocumento()` para que contabilidad e inventario
+no puedan divergir. Antes no se registraba nunca: el inventario solo crecía y
+el Estado de Resultados mostraba costo cero.
+
+**Períodos contables.** Un asiento pertenece al ejercicio de **su propia
+fecha** (antes se colgaba del último período abierto). Se permiten varios
+meses abiertos a la vez y `reabrir()` funciona de verdad (super_admin o
+contador), bloqueado solo si el año ya tiene cierre fiscal. El candado
+permanente es el Cierre Fiscal Anual, no el cierre mensual.
+
+**Balance General.** Es un corte acumulado a una fecha (`fecha_hasta`), no un
+mes, e incluye la línea "Resultado del ejercicio en curso"
+(`resultadoAcumulado()`). Ese método **debe** incluir los asientos
+`CIERRE_ANUAL` en su suma: así devuelve la utilidad pendiente antes del cierre
+y 0 después, evitando contarla dos veces contra Ganancias Acumuladas.
+
+**Numeración.** `AsientoContable::generarNumero()` filtra por el prefijo
+`AS-{año}-` y calcula el máximo sobre el secuencial como entero. Con el
+`max('numero')` de texto anterior, el asiento `CIERRE-2026` ganaba la
+comparación y el siguiente número saltaba a `AS-2026-2027`. Hay índice único
+`(empresa_id, numero)` y `crear()` reintenta ante colisión.
+
+**Reportes.** Los cuatro estados financieros agregan con un solo `GROUP BY`
+(antes: 1-2 consultas por cuenta, ~400 por PDF). Todos imprimen el período que
+cubren. El Mayor trae saldo anterior y saldo corrido; el Estado de Resultados
+llega hasta la utilidad neta pasando por utilidad bruta, 15% de participación
+y 25% de IR (referencial, no es la conciliación tributaria del SRI).
+
+### Recepción de bodega: se crea al guardar la factura (2026-09-20)
+
+Flujo con dos roles: el administrador registra la factura/importación; el **bodeguero** (perfil con permiso `inventario` pero solo `ver` en Compras) confirma el ingreso con la pistola de código de barras desde Inventario → Recepciones.
+
+- `CompraController::store()` crea la recepción pendiente (`crearRecepcionPendiente()`, idempotente) si la compra tiene productos y bodega. `update()` de una factura pendiente la regenera (borra recepción, escaneos y etiquetas); `destroy()` y `anular()` de una factura pendiente la eliminan. `RecepcionController::confirmar()` rechaza compras anuladas; `activar()` rechaza facturas con recepción pendiente (evita doble ingreso de stock).
+- Las etiquetas se generan también desde la pantalla de la recepción (`inventario.recepciones.etiquetasData` / `etiquetasPdf`, permiso `inventario,editar`), que reutilizan `CompraController::etiquetasData()` y `generarEtiquetasPdf()`. Sin etiquetas generadas no hay nada que escanear (`escanear()` busca `EtiquetaProducto` por `compra_id`).
+- Hasta que bodega confirma: la factura queda *Pendiente*, no entra stock y no existe la Cuenta por Pagar.
+
+### Bancos conectado a Ventas y Nómina (2026-09-20)
+
+- **Cobros de CxC** (`CuentaCobrarController::registrarCobro`) y **pago de Nómina** (`NominaController::pagar`) exigen elegir el banco/caja; crean un `MovimientoBancario` (`documento_tipo` `COBRO_CXC` / `NOMINA`) y actualizan el saldo. Cheques (`ChequesController::store`) pagan una CxP (`documento_tipo=CXP`) o "otro pago" con cuenta de contrapartida. Transferencias entre cuentas: `MovimientoBancarioController::transferir` (dos movimientos `TRANSFERENCIA` enlazados; se anulan en pareja).
+- **Facturas de venta** (`CobroBancoService`): al emitir, cada forma de pago (menos crédito) genera un ingreso en Bancos (`FACTURA_VENTA`); anular/eliminar la factura lo revierte (`ANULACION_FACTURA`). **Es configurable por el usuario** en Bancos → Configuración de cobros (tabla `configuraciones`, claves `cobro_*`): caja de efectivo por defecto, banco de transferencias, cheques y tarjeta, y modo de tarjeta (`banco` | `datafast`). El efectivo entra a la caja del mismo `centro_costo_id` de la factura. **Si no hay configuración, la factura funciona como antes y no crea movimientos** (nunca bloquea la venta).
+- **Cierre de caja**: `total_facturado` sale de las ventas del día del centro de costo de la caja (`CobroBancoService::ventasEsperadas`, sin anuladas ni crédito) y los montos del cierre se precargan con eso. La caja toma el centro de costo de `bancos_cajas` si no se indica al abrir.
+- Los movimientos con `documento_tipo` `DATAFAST`, `NOMINA`, `COBRO_CXC`, `CXP` y `FACTURA_VENTA` no se anulan desde Movimientos (se hace desde su módulo de origen).

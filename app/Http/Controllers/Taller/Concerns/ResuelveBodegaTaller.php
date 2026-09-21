@@ -6,13 +6,14 @@ use App\Models\Bodega;
 
 trait ResuelveBodegaTaller
 {
-    /** Id de la Bodega Taller resuelto por nombre y cacheado en el request. */
+    /** Id de la bodega de Taller resuelto en tiempo de ejecución y cacheado en el request. */
     private ?int $bodegaTallerId = null;
 
     /**
-     * Resuelve el id de la "Bodega Taller" por nombre en tiempo de ejecución
-     * (no se hardcodea el id, que puede diferir entre entornos). El
-     * resultado se cachea dentro del mismo request.
+     * Resuelve la bodega de Taller de la empresa activa: la bodega activa con
+     * tipo "taller" (se crea desde Inventario → Configuración → Bodegas). No se
+     * hardcodea el id porque difiere entre empresas y entornos. Como respaldo
+     * se acepta una bodega activa llamada "Taller" o "Bodega Taller".
      */
     private function bodegaTallerId(): int
     {
@@ -20,12 +21,17 @@ trait ResuelveBodegaTaller
             return $this->bodegaTallerId;
         }
 
-        $bodega = Bodega::where('nombre', 'Bodega Taller')
+        $base = Bodega::where('empresa_id', session('empresa_activa_id'))
             ->where('estado', true)
-            ->first();
+            ->orderBy('id');
+
+        $bodega = (clone $base)->where('tipo', 'taller')->first()
+            ?? (clone $base)->whereIn('nombre', ['Taller', 'Bodega Taller'])->first();
 
         if (!$bodega) {
-            throw new \RuntimeException('No se encontró la Bodega Taller configurada.');
+            throw new \RuntimeException(
+                'No hay una bodega de tipo Taller activa para esta empresa. Créela en Inventario → Configuración → Bodegas.'
+            );
         }
 
         return $this->bodegaTallerId = (int) $bodega->id;

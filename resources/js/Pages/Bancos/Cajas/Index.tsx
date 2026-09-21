@@ -7,7 +7,7 @@ import PageHeader from '@/Components/shared/PageHeader'
 import FilterToolbar from '@/Components/shared/FilterToolbar'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
-import { cn } from '@/lib/utils'
+import { cn, fechaHoy } from '@/lib/utils'
 import { Plus, X, Wallet, AlertTriangle, CheckCircle, Lock, Search, Clock } from 'lucide-react'
 import { usePermiso } from '@/Hooks/usePermiso'
 import type { BancoCaja, CentroCosto, PageProps } from '@/types'
@@ -24,6 +24,8 @@ interface CierreRow {
     tiene_diferencia: boolean
     dias_abierta: number
     sospechosa: boolean
+    /** Lo que las ventas del día de este centro de costo debieron cobrar (solo cajas abiertas) */
+    esperado?: { efectivo: number; tarjeta: number; cheque: number; transferencia: number; total: number } | null
 }
 
 interface Props extends PageProps {
@@ -131,16 +133,22 @@ function AbrirModal({ cajas, centros, onClose }: {
 
 function CerrarModal({ cierre, onClose }: { cierre: CierreRow; onClose: () => void }) {
     const { data, setData, patch, processing, errors } = useForm({
-        total_efectivo: '0', total_tarjeta: '0',
-        total_cheque: '0', total_transferencia: '0', observaciones: '',
+        // Se precargan con lo que registraron las ventas del día; el cajero ajusta si contó otra cosa
+        total_efectivo:      String(cierre.esperado?.efectivo ?? 0),
+        total_tarjeta:       String(cierre.esperado?.tarjeta ?? 0),
+        total_cheque:        String(cierre.esperado?.cheque ?? 0),
+        total_transferencia: String(cierre.esperado?.transferencia ?? 0),
+        observaciones: '',
     })
+
+    const totalFacturado = cierre.esperado && cierre.esperado.total > 0.01 ? cierre.esperado.total : cierre.total_cobrado
 
     const totalCobrado = useMemo(() =>
         [data.total_efectivo, data.total_tarjeta, data.total_cheque, data.total_transferencia]
             .reduce((s, v) => s + Number(v || 0), 0),
     [data.total_efectivo, data.total_tarjeta, data.total_cheque, data.total_transferencia])
 
-    const diferencia = totalCobrado - cierre.total_cobrado
+    const diferencia = totalCobrado - totalFacturado
 
     function submit(e: React.FormEvent) {
         e.preventDefault()
@@ -201,7 +209,7 @@ function CerrarModal({ cierre, onClose }: { cierre: CierreRow; onClose: () => vo
                         style={{ background: 'rgba(245,158,11,0.05)', border: '1px solid var(--border)' }}>
                         <div className="flex justify-between text-sm">
                             <span style={{ color: 'var(--text-muted)' }}>Total facturado</span>
-                            <span className="font-medium" style={{ color: 'var(--text-main)' }}>{fmt(cierre.total_cobrado)}</span>
+                            <span className="font-medium" style={{ color: 'var(--text-main)' }}>{fmt(totalFacturado)}</span>
                         </div>
                         <div className="flex justify-between text-sm">
                             <span style={{ color: 'var(--text-muted)' }}>Total cobrado</span>
@@ -252,7 +260,11 @@ export default function CajasIndex() {
     const [showAbrir, setShowAbrir] = useState(false)
     const [cerrarCierre, setCerrarCierre] = useState<CierreRow | null>(null)
 
-    const [filtro, setFiltro] = useState(filtros)
+    const [filtro, setFiltro] = useState({
+        ...filtros,
+        fecha_desde: filtros.fecha_desde ?? (cierres !== null ? '' : fechaHoy()),
+        fecha_hasta: filtros.fecha_hasta ?? (cierres !== null ? '' : fechaHoy()),
+    })
 
     // Cambiar cualquier filtro después de haber buscado marca los resultados
     // como "obsoletos" respecto al filtro actual — la tabla NO se vacía (se

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Head, usePage, router, Link } from '@inertiajs/react'
 import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
@@ -6,9 +6,12 @@ import PageHeader from '@/Components/shared/PageHeader'
 import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Badge } from '@/Components/ui/badge'
+import PdfIcon from '@/Components/shared/PdfIcon'
+import PdfPreviewModal from '@/Components/shared/PdfPreviewModal'
 import { formatMoneda, formatFecha } from '@/lib/utils'
-import { ArrowLeft, Plus, X, DollarSign, FileText } from 'lucide-react'
+import { Plus, X, DollarSign, FileText } from 'lucide-react'
 import { usePermiso } from '@/Hooks/usePermiso'
+import { toastError } from '@/lib/toast'
 import type { PageProps } from '@/types'
 
 interface PrefacturaDetalle {
@@ -16,10 +19,9 @@ interface PrefacturaDetalle {
     descripcion: string
     cantidad: number
     precio_unitario: number
-    subtotal: number
-    porcentaje_iva: number
-    valor_iva: number
+    descuento_pct: number
     total: number
+    producto?: { codigo: string } | null
 }
 
 interface PrefacturaAbono {
@@ -34,6 +36,12 @@ interface PrefacturaAbono {
 interface PrefacturaCliente {
     razon_social: string
     identificacion: string
+    tipo_identificacion?: string | null
+    direccion?: string | null
+    telefono?: string | null
+    email?: string | null
+    ciudad?: string | null
+    pais?: string | null
 }
 
 interface PrefacturaFull {
@@ -46,6 +54,7 @@ interface PrefacturaFull {
     saldo_pendiente: number
     observaciones: string | null
     cliente: PrefacturaCliente | null
+    usuario?: { nombre: string } | null
     detalles: PrefacturaDetalle[]
     abonos: PrefacturaAbono[]
 }
@@ -61,12 +70,30 @@ const ESTADO_CONFIG = {
     anulada: { label: 'Anulada', variant: 'secondary' as const },
 }
 
-function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
+const TIPO_ID_LABEL: Record<string, string> = { '04': 'RUC', '05': 'CÉDULA', '06': 'PASAPORTE', '07': 'CONSUMIDOR' }
+const TITULO = 'text-xs font-bold uppercase tracking-wider text-(--primary-hover) dark:text-(--primary)'
+const CARD = { background: 'var(--bg-card)', borderColor: 'var(--border)' }
+const MUTED = { color: 'var(--text-muted)' }
+const MAIN = { color: 'var(--text-main)' }
+
+const redondear = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100
+
+// Campo de solo lectura con el mismo aspecto que los del formulario
+function CampoLectura({ label, value }: { label: string; value: React.ReactNode }) {
     return (
-        <div>
-            <p className="text-xs mb-0.5" style={{ color: 'var(--text-muted)' }}>{label}</p>
-            <p className="text-sm font-medium" style={{ color: 'var(--text-main)' }}>{value}</p>
-        </div>
+        <tr>
+            <td className="py-0 px-2 text-xs font-semibold w-28 select-none whitespace-nowrap" style={MUTED}>
+                {label}:
+            </td>
+            <td className="py-px px-1">
+                <div
+                    className="h-6 w-full rounded-md border px-2 text-xs flex items-center overflow-hidden whitespace-nowrap"
+                    style={{ background: 'var(--bg-main)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
+                >
+                    {value || ''}
+                </div>
+            </td>
+        </tr>
     )
 }
 
@@ -75,14 +102,29 @@ export default function Show() {
     const { puede } = usePermiso('ventas')
     const cfg = ESTADO_CONFIG[prefactura.estado] ?? ESTADO_CONFIG.pendiente
     const puedeAbonar = prefactura.estado !== 'liquidada' && prefactura.estado !== 'anulada' && puede('editar')
-    const puedeConvertir = prefactura.saldo_pendiente === 0 && prefactura.estado !== 'anulada' && puede('editar')
+    const puedeConvertir = Number(prefactura.saldo_pendiente) === 0 && prefactura.estado !== 'anulada' && puede('editar')
+    const cliente = prefactura.cliente
 
+    const [verPdf, setVerPdf] = useState(false)
     const [modalAbono, setModalAbono] = useState(false)
     const [abonoValor, setAbonoValor] = useState('')
     const [abonoFormaPago, setAbonoFormaPago] = useState('efectivo')
     const [abonoBanco, setAbonoBanco] = useState('')
     const [abonoComprobante, setAbonoComprobante] = useState('')
     const [abonando, setAbonando] = useState(false)
+
+    // Líneas con valores derivados (el detalle solo guarda cantidad, precio, % y total con IVA)
+    const lineas = prefactura.detalles.map(d => {
+        const base = Number(d.cantidad) * Number(d.precio_unitario)
+        const descuento = redondear(base * (Number(d.descuento_pct) / 100))
+        const neto = redondear(base - descuento)
+        const grava = Number(d.total) > neto + 0.001
+        return { d, descuento, neto, grava }
+    })
+    const subtotal15 = redondear(lineas.filter(l => l.grava).reduce((a, l) => a + l.neto, 0))
+    const subtotal0 = redondear(lineas.filter(l => !l.grava).reduce((a, l) => a + l.neto, 0))
+    const descTotal = redondear(lineas.reduce((a, l) => a + l.descuento, 0))
+    const iva = redondear(subtotal15 * 0.15)
 
     const abrirModal = () => {
         setAbonoValor(String(prefactura.saldo_pendiente))
@@ -92,6 +134,12 @@ export default function Show() {
         setModalAbono(true)
     }
 
+    // Desde el listado, el icono de abono llega con ?abonar=1
+    useEffect(() => {
+        if (puedeAbonar && new URLSearchParams(window.location.search).get('abonar') === '1') abrirModal()
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
+
     const cerrarModal = () => {
         setModalAbono(false)
     }
@@ -99,6 +147,10 @@ export default function Show() {
     const handleAbonar = () => {
         const valor = parseFloat(abonoValor)
         if (!valor || valor <= 0 || valor > prefactura.saldo_pendiente) return
+        if (descTotal > 0 && (abonoFormaPago === 'tarjeta' || abonoFormaPago === 'datafast')) {
+            toastError('Con tarjeta de crédito no hay descuento de ningún tipo. Esta prefactura tiene descuento.')
+            return
+        }
         setAbonando(true)
         router.post(
             route('ventas.prefacturas.abonar', prefactura.id),
@@ -142,94 +194,114 @@ export default function Show() {
                     { label: 'Prefacturas', href: route('ventas.prefacturas.index') },
                     { label: prefactura.numero },
                 ]}
-                actions={
-                    <div className="flex gap-2">
-                        {puedeAbonar && (
-                            <Button size="sm" onClick={abrirModal}>
-                                <Plus className="w-4 h-4" />
-                                Registrar Abono
-                            </Button>
-                        )}
-                        {puedeConvertir && (
-                            <Button size="sm" variant="secondary" onClick={() => void handleConvertir()}>
-                                <FileText className="w-4 h-4" />
-                                Crear Factura
-                            </Button>
-                        )}
-                    </div>
-                }
             />
 
-            <div className="p-6 space-y-6 max-w-5xl">
+            <div className="p-4 space-y-4 max-w-7xl">
 
-                <div className="flex items-center gap-3">
-                    <Badge variant={cfg.variant}>{cfg.label}</Badge>
-                    <Link href={route('ventas.prefacturas.index')}>
-                        <button type="button" className="flex items-center gap-1 text-xs transition-colors hover:text-amber-500" style={{ color: 'var(--text-muted)' }}>
-                            <ArrowLeft className="w-3.5 h-3.5" />
-                            Volver a Prefacturas
-                        </button>
-                    </Link>
-                </div>
+                {/* Cliente (izquierda) + encabezado y abonos (derecha) */}
+                <div className="flex flex-col lg:flex-row-reverse lg:items-start gap-4">
 
-                {/* Resumen financiero */}
-                <div className="grid grid-cols-3 gap-4">
-                    {[
-                        { label: 'Total', valor: prefactura.total, color: 'var(--text-main)' },
-                        { label: 'Total Abonado', valor: prefactura.total_abonado, color: 'rgb(52,211,153)' },
-                        { label: 'Saldo Pendiente', valor: prefactura.saldo_pendiente, color: prefactura.saldo_pendiente > 0 ? 'var(--primary)' : 'var(--text-muted)' },
-                    ].map(item => (
-                        <div
-                            key={item.label}
-                            className="rounded-xl p-4 border"
-                            style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
-                        >
-                            <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>{item.label}</p>
-                            <p className="text-xl font-bold" style={{ color: item.color }}>{formatMoneda(item.valor)}</p>
+                    <div className="flex flex-col flex-1 min-w-0 gap-4">
+                        <div className="flex flex-wrap items-center gap-6 px-4 py-2.5 rounded-xl border" style={CARD}>
+                            <span className="text-sm" style={MUTED}>
+                                Prefactura N°:{' '}
+                                <span className="font-mono font-semibold" style={MAIN}>{prefactura.numero}</span>
+                            </span>
+                            <span className="text-sm" style={MUTED}>
+                                Fecha: <span className="font-medium" style={MAIN}>{formatFecha(prefactura.fecha_emision)}</span>
+                            </span>
+                            <span className="text-sm" style={MUTED}>
+                                Emitido por: <span className="font-medium" style={MAIN}>{prefactura.usuario?.nombre ?? 'Sistema'}</span>
+                            </span>
+                            <Badge variant={cfg.variant}>{cfg.label}</Badge>
                         </div>
-                    ))}
-                </div>
 
-                {/* Datos */}
-                <div
-                    className="rounded-xl p-5 border"
-                    style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
-                >
-                    <p className="text-xs font-semibold uppercase tracking-wider mb-4" style={{ color: 'var(--text-muted)' }}>Información</p>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                        <InfoRow label="Número" value={<span className="font-mono">{prefactura.numero}</span>} />
-                        <InfoRow label="Fecha" value={formatFecha(prefactura.fecha_emision)} />
-                        <InfoRow label="Cliente" value={prefactura.cliente?.razon_social ?? '—'} />
-                        <InfoRow label="Identificación" value={prefactura.cliente?.identificacion ?? '—'} />
+                        <div className="rounded-xl p-3 border" style={CARD}>
+                            <div className="flex items-center justify-between mb-2">
+                                <p className={TITULO}>Abonos</p>
+                                <span className="text-xs" style={MUTED}>
+                                    Abonado: <b className="text-emerald-400">{formatMoneda(prefactura.total_abonado)}</b>
+                                    {' · '}Saldo: <b style={{ color: Number(prefactura.saldo_pendiente) > 0 ? 'var(--primary)' : 'var(--text-muted)' }}>{formatMoneda(prefactura.saldo_pendiente)}</b>
+                                </span>
+                            </div>
+                            {prefactura.abonos.length === 0 ? (
+                                <p className="py-3 text-xs text-center" style={MUTED}>Sin abonos registrados</p>
+                            ) : (
+                                <table className="w-full text-xs">
+                                    <thead>
+                                        <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                                            {['Fecha', 'Forma', 'Comprobante', 'Usuario', 'Valor'].map((h, i) => (
+                                                <th key={h} className={`py-1 px-1.5 font-medium ${i === 4 ? 'text-right' : 'text-left'}`} style={MUTED}>{h}</th>
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {prefactura.abonos.map(a => (
+                                            <tr key={a.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                                                <td className="py-1 px-1.5" style={MUTED}>{a.fecha ? formatFecha(a.fecha) : '—'}</td>
+                                                <td className="py-1 px-1.5 capitalize" style={MAIN}>{a.forma_pago}</td>
+                                                <td className="py-1 px-1.5 font-mono" style={MUTED}>{a.num_comprobante ?? '—'}</td>
+                                                <td className="py-1 px-1.5" style={MUTED}>{a.usuario_nombre ?? '—'}</td>
+                                                <td className="py-1 px-1.5 text-right font-semibold text-emerald-400">{formatMoneda(a.valor)}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="rounded-xl p-4 border w-full lg:w-xl shrink-0" style={CARD}>
+                        <p className={`${TITULO} mb-3`}>Cliente</p>
+                        <div style={{ maxWidth: 480 }}>
+                            <table className="w-full">
+                                <tbody>
+                                    <CampoLectura label={TIPO_ID_LABEL[cliente?.tipo_identificacion ?? '04'] ?? 'RUC/CC'} value={cliente?.identificacion} />
+                                    <CampoLectura label="NOMBRE" value={cliente?.razon_social} />
+                                    <CampoLectura label="DIRECCIÓN" value={cliente?.direccion} />
+                                    <CampoLectura label="TELÉFONO" value={cliente?.telefono} />
+                                    <CampoLectura label="EMAIL" value={cliente?.email} />
+                                    <CampoLectura label="CIUDAD" value={cliente?.ciudad} />
+                                    <CampoLectura label="PAÍS" value={cliente?.pais ?? 'ECUADOR'} />
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
 
-                {/* Detalle productos */}
-                <div
-                    className="rounded-xl border overflow-hidden"
-                    style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
-                >
-                    <div className="px-5 py-4 border-b" style={{ borderColor: 'var(--border)' }}>
-                        <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Productos</p>
-                    </div>
+                {/* Detalle de productos (V.Tot sin IVA, igual que el formulario) */}
+                <div className="rounded-xl p-3 border" style={CARD}>
+                    <p className={`${TITULO} mb-2`}>Detalle de Productos</p>
                     <div className="overflow-x-auto">
                         <table className="w-full text-xs">
                             <thead>
-                                <tr style={{ borderBottom: '1px solid var(--border)', background: 'rgba(0,0,0,.04)' }}>
-                                    {['Descripción', 'Cant.', 'Precio', 'Subtotal', 'IVA', 'Total'].map((h, i) => (
-                                        <th key={i} className={`px-4 py-3 text-left font-semibold uppercase tracking-wide ${i >= 1 ? 'text-right' : ''}`} style={{ color: 'var(--text-muted)' }}>{h}</th>
+                                <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                                    {[
+                                        { l: 'N°', c: 'w-8 text-center' },
+                                        { l: 'Producto', c: 'min-w-55 text-left' },
+                                        { l: 'Cant', c: 'w-16 text-right' },
+                                        { l: 'Precio', c: 'w-24 text-right' },
+                                        { l: 'Desc%', c: 'w-20 text-right' },
+                                        { l: 'Desc$', c: 'w-20 text-right' },
+                                        { l: 'V.Tot', c: 'w-24 text-right' },
+                                    ].map(col => (
+                                        <th key={col.l} className={`py-1.5 px-1.5 font-medium ${col.c}`} style={MUTED}>{col.l}</th>
                                     ))}
                                 </tr>
                             </thead>
                             <tbody>
-                                {prefactura.detalles.map(d => (
+                                {lineas.map(({ d, descuento, neto }, idx) => (
                                     <tr key={d.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                                        <td className="px-4 py-3" style={{ color: 'var(--text-main)' }}>{d.descripcion}</td>
-                                        <td className="px-4 py-3 text-right" style={{ color: 'var(--text-muted)' }}>{d.cantidad}</td>
-                                        <td className="px-4 py-3 text-right" style={{ color: 'var(--text-muted)' }}>{formatMoneda(d.precio_unitario)}</td>
-                                        <td className="px-4 py-3 text-right" style={{ color: 'var(--text-main)' }}>{formatMoneda(d.subtotal)}</td>
-                                        <td className="px-4 py-3 text-right" style={{ color: 'var(--text-muted)' }}>{formatMoneda(d.valor_iva)}</td>
-                                        <td className="px-4 py-3 text-right font-semibold" style={{ color: 'var(--text-main)' }}>{formatMoneda(d.total)}</td>
+                                        <td className="py-1 px-1.5 text-center" style={MUTED}>{idx + 1}</td>
+                                        <td className="py-1 px-1.5" style={MAIN}>
+                                            <span className="font-mono font-semibold" style={{ color: 'var(--primary)' }}>{d.producto?.codigo ?? '—'}</span>
+                                            {' — '}{d.descripcion}
+                                        </td>
+                                        <td className="py-1 px-1.5 text-right" style={MAIN}>{Number(d.cantidad)}</td>
+                                        <td className="py-1 px-1.5 text-right" style={MAIN}>{formatMoneda(d.precio_unitario)}</td>
+                                        <td className="py-1 px-1.5 text-right" style={MUTED}>{Number(d.descuento_pct)}</td>
+                                        <td className="py-1 px-1.5 text-right" style={MUTED}>{formatMoneda(descuento)}</td>
+                                        <td className="py-1 px-1.5 text-right font-semibold" style={MAIN}>{formatMoneda(neto)}</td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -237,44 +309,73 @@ export default function Show() {
                     </div>
                 </div>
 
-                {/* Historial de abonos */}
-                <div
-                    className="rounded-xl border overflow-hidden"
-                    style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
-                >
-                    <div className="px-5 py-4 border-b" style={{ borderColor: 'var(--border)' }}>
-                        <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
-                            Historial de Abonos
-                        </p>
-                    </div>
-                    {prefactura.abonos.length === 0 ? (
-                        <p className="px-5 py-6 text-sm text-center" style={{ color: 'var(--text-muted)' }}>Sin abonos registrados</p>
-                    ) : (
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-xs">
-                                <thead>
-                                    <tr style={{ borderBottom: '1px solid var(--border)', background: 'rgba(0,0,0,.04)' }}>
-                                        {['Fecha', 'Forma de pago', 'N° Comprobante', 'Usuario', 'Valor'].map(h => (
-                                            <th key={h} className="px-4 py-3 text-left font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>{h}</th>
-                                        ))}
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {prefactura.abonos.map(a => (
-                                        <tr key={a.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                                            <td className="px-4 py-3" style={{ color: 'var(--text-muted)' }}>{a.fecha ? formatFecha(a.fecha) : '—'}</td>
-                                            <td className="px-4 py-3 capitalize" style={{ color: 'var(--text-main)' }}>{a.forma_pago}</td>
-                                            <td className="px-4 py-3 font-mono" style={{ color: 'var(--text-muted)' }}>{a.num_comprobante ?? '—'}</td>
-                                            <td className="px-4 py-3" style={{ color: 'var(--text-muted)' }}>{a.usuario_nombre ?? '—'}</td>
-                                            <td className="px-4 py-3 font-semibold text-emerald-400">{formatMoneda(a.valor)}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                {/* Observaciones + Totales (60 / 40) */}
+                <div className="grid grid-cols-5 gap-4">
+                    <div className="col-span-3">
+                        <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={MUTED}>Observaciones</p>
+                        <div
+                            className="w-full min-h-18 rounded-md border px-3 py-2 text-sm whitespace-pre-wrap"
+                            style={{ borderColor: 'var(--border)', ...MAIN }}
+                        >
+                            {prefactura.observaciones || <span style={MUTED}>—</span>}
                         </div>
-                    )}
+                    </div>
+                    <div className="col-span-2 flex flex-col justify-end">
+                        <table className="w-full">
+                            <tbody>
+                                {[
+                                    { label: 'SUBTOTAL 15%:', value: subtotal15 },
+                                    { label: 'SUBTOTAL SIN IMP.:', value: subtotal0 },
+                                    { label: 'TOTAL DESCUENTO:', value: descTotal },
+                                    { label: 'TOTAL IVA:', value: iva },
+                                ].map(row => (
+                                    <tr key={row.label}>
+                                        <td className="py-0.5 pr-3 text-right text-xs font-medium" style={MUTED}>{row.label}</td>
+                                        <td className="py-0.5 text-right text-xs font-semibold w-28" style={MAIN}>{formatMoneda(row.value)}</td>
+                                    </tr>
+                                ))}
+                                <tr style={{ borderTop: '2px solid var(--border)' }}>
+                                    <td className="pt-2 pr-3 text-right text-sm font-bold" style={MUTED}>TOTAL VALOR:</td>
+                                    <td className="pt-2 text-right text-base font-bold w-28" style={{ color: 'var(--primary)' }}>{formatMoneda(prefactura.total)}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                {/* Acciones */}
+                <div className="flex justify-between pt-3 border-t" style={{ borderColor: 'var(--border)' }}>
+                    <Link href={route('ventas.prefacturas.index')}>
+                        <Button variant="outline">Volver</Button>
+                    </Link>
+                    <div className="flex gap-2">
+                        <Button variant="outline" onClick={() => setVerPdf(true)}>
+                            <PdfIcon className="w-4 h-4 text-red-500" />
+                            PDF
+                        </Button>
+                        {puedeAbonar && (
+                            <Button onClick={abrirModal}>
+                                <Plus className="w-4 h-4" />
+                                Registrar Abono
+                            </Button>
+                        )}
+                        {puedeConvertir && (
+                            <Button variant="secondary" onClick={() => void handleConvertir()}>
+                                <FileText className="w-4 h-4" />
+                                Crear Factura
+                            </Button>
+                        )}
+                    </div>
                 </div>
             </div>
+
+            <PdfPreviewModal
+                abierto={verPdf}
+                onCerrar={() => setVerPdf(false)}
+                url={verPdf ? route('ventas.prefacturas.pdf', prefactura.id) : ''}
+                titulo={`Prefactura ${prefactura.numero}`}
+                nombreDescarga={`Prefactura-${prefactura.numero}.pdf`}
+            />
 
             {/* Modal Abono */}
             {modalAbono && (

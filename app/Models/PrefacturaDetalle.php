@@ -17,6 +17,7 @@ class PrefacturaDetalle extends Model
         'descripcion',
         'cantidad',
         'precio_unitario',
+        'descuento_pct',
         'total',
     ];
 

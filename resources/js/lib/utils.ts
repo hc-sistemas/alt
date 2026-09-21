@@ -22,3 +22,8 @@ export function formatFecha(fecha: string | Date): string {
         year: 'numeric',
     })
 }
+
+/** Fecha de hoy (hora local) en formato YYYY-MM-DD, lista para <input type="date"> */
+export function fechaHoy(): string {
+    return new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10)
+}

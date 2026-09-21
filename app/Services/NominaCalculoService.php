@@ -5,6 +5,8 @@ namespace App\Services;
 use App\Models\Asistencia;
 use App\Models\Colaborador;
 use App\Models\HorasExtrasAprobacion;
+use App\Models\Nomina;
+use App\Models\NominaDetalle;
 use App\Models\PrestamoEmpleado;
 
 // Cálculo del detalle de nómina de UN colaborador para UN período — extraído
@@ -14,11 +16,70 @@ use App\Models\PrestamoEmpleado;
 // sin duplicar esta lógica en dos controllers.
 class NominaCalculoService
 {
+    // Salario Básico Unificado Ecuador 2026 — única fuente (también lo usa
+    // LiquidacionesController); actualizar aquí cada año.
+    public const SBU = 460.0;
+
+    // Un colaborador con sueldo 0 (ficha auto-creada desde un usuario, pendiente de
+    // completar) no entra a nómina hasta que se le registre el sueldo.
+    public function entraANomina(Colaborador $col): bool
+    {
+        return (float) $col->sueldo_base > 0;
+    }
+
+    // Al registrar un colaborador nuevo debe aparecer automáticamente en cualquier
+    // nómina del mes actual que YA exista y siga en 'borrador' (mensual o
+    // quincenal). Nóminas 'procesado'/'pagado' no se tocan (cerradas contablemente).
+    public function agregarANominasAbiertas(Colaborador $colaborador): void
+    {
+        if (!$this->entraANomina($colaborador)) {
+            return;
+        }
+
+        $nominasAbiertas = Nomina::where('empresa_id', $colaborador->empresa_id)
+            ->where('estado', 'borrador')
+            ->where('anio', now()->year)
+            ->where('mes', now()->month)
+            ->get();
+
+        foreach ($nominasAbiertas as $nomina) {
+            $yaExiste = NominaDetalle::where('nomina_id', $nomina->id)
+                ->where('colaborador_id', $colaborador->id)
+                ->exists();
+
+            if ($yaExiste) {
+                continue;
+            }
+
+            $detalle = $this->calcularDetalle($colaborador, [
+                'periodo_tipo' => $nomina->periodo_tipo,
+                'anio'         => $nomina->anio,
+                'mes'          => $nomina->mes,
+                'quincena'     => $nomina->quincena,
+            ], $nomina->id);
+
+            NominaDetalle::create($detalle);
+
+            $nomina->update([
+                'total_ingresos' => round((float) $nomina->total_ingresos + (float) $detalle['total_ingresos'], 2),
+                'total_egresos'  => round((float) $nomina->total_egresos + (float) $detalle['total_egresos'], 2),
+                'total_neto'     => round((float) $nomina->total_neto + (float) $detalle['neto_pagar'], 2),
+            ]);
+        }
+    }
+
     public function calcularDetalle(Colaborador $col, array $data, int $nominaId): array
     {
         $esQuincenal = $data['periodo_tipo'] === 'quincenal';
         $anio        = (int) $data['anio'];
         $mes         = (int) $data['mes'];
+        $quincena    = (int) ($data['quincena'] ?? 0);
+        $diaInicio   = 1;
+        $diaFin      = (int) date('t', mktime(0, 0, 0, $mes, 1, $anio));
+        if ($esQuincenal) {
+            $diaInicio = $quincena === 1 ? 1 : 16;
+            $diaFin    = $quincena === 1 ? 15 : $diaFin;
+        }
 
         // Sueldo base (dividido a la mitad si es quincenal)
         $sueldo = $esQuincenal
@@ -33,8 +94,6 @@ class NominaCalculoService
 
         // Si es quincenal filtramos por días de la quincena
         if ($esQuincenal) {
-            $diaInicio = $data['quincena'] === 1 ? 1 : 16;
-            $diaFin    = $data['quincena'] === 1 ? 15 : (int) date('t', mktime(0, 0, 0, $mes, 1, $anio));
             $baseQuery->whereDay('fecha', '>=', $diaInicio)
                 ->whereDay('fecha', '<=', $diaFin);
         }
@@ -45,7 +104,7 @@ class NominaCalculoService
         // Décimos mensualizados (solo nómina mensual)
         $otrosIngresos = 0.0;
         if (!$esQuincenal) {
-            $SBU = 460.0; // Salario Básico Unificado Ecuador 2026
+            $SBU = self::SBU;
             if ($col->decimo_tercero === 'mensualiza') {
                 $otrosIngresos += round((float) $col->sueldo_base / 12, 2);
             }
@@ -69,9 +128,11 @@ class NominaCalculoService
         // Aporte personal IESS 9.45%
         $aportePersonal = round($totalIngresos * 0.0945, 2);
 
-        // Descuento por atrasos (minutos_atraso del período)
+        // Descuento por atrasos (minutos_atraso del período — solo la quincena si aplica)
         $minutosAtraso = Asistencia::where('colaborador_id', $col->id)
-            ->whereYear('fecha', $anio)->whereMonth('fecha', $mes)->sum('minutos_atraso');
+            ->whereYear('fecha', $anio)->whereMonth('fecha', $mes)
+            ->whereDay('fecha', '>=', $diaInicio)->whereDay('fecha', '<=', $diaFin)
+            ->sum('minutos_atraso');
 
         // Valor por minuto = sueldo_base / (30 días * 8h * 60min)
         $descuentoAtraso = round((float) $minutosAtraso * ((float) $col->sueldo_base / 14400), 2);

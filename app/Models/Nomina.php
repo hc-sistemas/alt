@@ -14,7 +14,7 @@ class Nomina extends Model
     protected $fillable = [
         'empresa_id', 'periodo_tipo', 'anio', 'mes', 'quincena',
         'fecha_emision', 'estado', 'total_ingresos', 'total_egresos', 'total_neto',
-        'asiento_id', 'generado_por', 'procesado_por', 'pagado_por', 'created_at',
+        'asiento_id', 'fecha_pago', 'tipo_comprobante', 'num_comprobante', 'asiento_pago_id', 'generado_por', 'procesado_por', 'pagado_por', 'created_at',
     ];
 
     protected function casts(): array
@@ -24,6 +24,7 @@ class Nomina extends Model
             'mes'            => 'integer',
             'quincena'       => 'integer',
             'fecha_emision'  => 'date',
+            'fecha_pago'     => 'date',
             'total_ingresos' => 'decimal:2',
             'total_egresos'  => 'decimal:2',
             'total_neto'     => 'decimal:2',

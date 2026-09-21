@@ -18,15 +18,16 @@ import 'react-toastify/dist/ReactToastify.css'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface UsuarioItem { id: number; nombre: string; email: string }
-interface PerfilItem { id: number; nombre: string }
-
-const PERFIL_LABEL: Record<string, string> = {
-    admin: 'Administrador',
-    vendedor: 'Vendedor',
-    tecnico: 'Técnico',
-    bodeguero: 'Bodeguero',
+interface UsuarioItem {
+    id: number
+    nombre: string
+    email: string
+    username: string
+    perfil: string | null
+    estado: boolean
+    colaborador_id: number | null   // colaborador al que ya está vinculado (null = libre)
 }
+interface DepartamentoItem { id: number; nombre: string; estado: boolean }
 
 // Instituciones bancarias del Ecuador — lista desplegable pedida por el
 // cliente (antes era texto libre). "Otro…" revela un campo de texto para
@@ -43,8 +44,7 @@ interface Props extends PageProps {
     puestos: PuestoTrabajo[]
     horarios: Horario[]
     usuarios: UsuarioItem[]
-    perfiles: PerfilItem[]
-    departamentos: string[]
+    departamentos: DepartamentoItem[]
     filtros: { buscar?: string; departamento?: string; estado?: string }
 }
 
@@ -99,11 +99,11 @@ interface ModalProps {
     puestos: PuestoTrabajo[]
     horarios: Horario[]
     usuarios: UsuarioItem[]
-    perfiles: PerfilItem[]
+    departamentos: DepartamentoItem[]
     onClose: () => void
 }
 
-function ColaboradorModal({ colaborador, puestos, horarios, usuarios, perfiles, onClose }: ModalProps) {
+function ColaboradorModal({ colaborador, puestos, horarios, usuarios, departamentos, onClose }: ModalProps) {
     const isEditar = !!colaborador
     const [tab, setTab] = useState<TabKey>('identificacion')
 
@@ -114,7 +114,12 @@ function ColaboradorModal({ colaborador, puestos, horarios, usuarios, perfiles, 
     })
     const [creandoHorario, setCreandoHorario] = useState(false)
 
-    const { data, setData, post, put, transform, processing, errors } = useForm({
+    // Alta rápida de departamento (catálogo en RRHH → Departamentos)
+    const [nuevoDepto, setNuevoDepto] = useState(false)
+    const [deptoNombre, setDeptoNombre] = useState('')
+    const [creandoDepto, setCreandoDepto] = useState(false)
+
+    const { data, setData, post, put, processing, errors } = useForm({
         cedula_ruc:          colaborador?.cedula_ruc          ?? '',
         apellidos:           colaborador?.apellidos           ?? '',
         nombres:             colaborador?.nombres             ?? '',
@@ -129,7 +134,7 @@ function ColaboradorModal({ colaborador, puestos, horarios, usuarios, perfiles, 
         fecha_salida:        colaborador?.fecha_salida        ?? '',
         tipo_contrato:       colaborador?.tipo_contrato       ?? '',
         cargo:               colaborador?.cargo               ?? '',
-        departamento:        colaborador?.departamento        ?? '',
+        departamento_id:     String(colaborador?.departamento_id ?? ''),
         comision_porcentaje: String(colaborador?.comision_porcentaje ?? 0),
         puesto_id:           String(colaborador?.puesto_id           ?? ''),
         horario_id:          String(colaborador?.horario_id          ?? ''),
@@ -142,10 +147,6 @@ function ColaboradorModal({ colaborador, puestos, horarios, usuarios, perfiles, 
         numero_cuenta:       colaborador?.numero_cuenta       ?? '',
         usuario_id:          String(colaborador?.usuario_id   ?? ''),
         // Sección 5. Seguridad y Sistema
-        username:            '',
-        password:            '',
-        password_confirmation: '',
-        perfil_id:           '',
         estado_usuario:      colaborador?.usuario?.estado ?? true,
     })
 
@@ -156,16 +157,10 @@ function ColaboradorModal({ colaborador, puestos, horarios, usuarios, perfiles, 
         !!colaborador?.banco && !BANCOS_ECUADOR.includes(colaborador.banco)
     )
 
-    const tieneUsuarioVinculado = isEditar && !!colaborador?.usuario
-
-    // Campos de creación de acceso vacíos → se envían como null (nullable en backend);
-    // si ya existe un usuario vinculado, no se intenta crear uno nuevo.
-    transform(d => ({
-        ...d,
-        username: tieneUsuarioVinculado ? null : (d.username || null),
-        password: tieneUsuarioVinculado ? null : (d.password || null),
-        perfil_id: tieneUsuarioVinculado ? null : (d.perfil_id || null),
-    }))
+    // Usuarios que se pueden vincular: los libres, o el que ya tiene este colaborador
+    const usuariosDisponibles = usuarios.filter(u =>
+        !u.colaborador_id || u.colaborador_id === colaborador?.id)
+    const usuarioElegido = usuarios.find(u => String(u.id) === data.usuario_id)
 
     function crearHorario() {
         if (!horarioForm.descripcion || !horarioForm.hora_entrada || !horarioForm.hora_salida) {
@@ -186,6 +181,28 @@ function ColaboradorModal({ colaborador, puestos, horarios, usuarios, perfiles, 
             },
             onError: () => notify.error('Revisa los datos del horario.'),
             onFinish: () => setCreandoHorario(false),
+        })
+    }
+
+    function crearDepartamento() {
+        if (!deptoNombre.trim()) {
+            notify.error('Escribe el nombre del departamento.')
+            return
+        }
+        setCreandoDepto(true)
+        router.post(route('rrhh.departamentos.store'), { nombre: deptoNombre }, {
+            preserveScroll: true,
+            preserveState: true,
+            onSuccess: (page) => {
+                const lista = (page.props as unknown as { departamentos: DepartamentoItem[] }).departamentos ?? []
+                const creado = lista.find(d => d.nombre.toLowerCase() === deptoNombre.trim().toLowerCase())
+                if (creado) setData('departamento_id', String(creado.id))
+                setNuevoDepto(false)
+                setDeptoNombre('')
+                notify.ok('Departamento creado y asignado.')
+            },
+            onError: (e) => notify.error(e.nombre ?? 'No se pudo crear el departamento.'),
+            onFinish: () => setCreandoDepto(false),
         })
     }
 
@@ -234,7 +251,7 @@ function ColaboradorModal({ colaborador, puestos, horarios, usuarios, perfiles, 
 
     return (
         <div className="modal-overlay" onClick={onClose}>
-            <div className="modal-card max-w-2xl" onClick={e => e.stopPropagation()}>
+            <div className="modal-card max-w-3xl" onClick={e => e.stopPropagation()}>
                 {/* Header */}
                 <div className="modal-header flex items-center justify-between px-6 py-4">
                     <h2 className="text-base font-semibold" style={{ color: 'var(--text-main)' }}>
@@ -246,7 +263,7 @@ function ColaboradorModal({ colaborador, puestos, horarios, usuarios, perfiles, 
                 </div>
 
                 {/* Tabs */}
-                <div className="flex border-b px-6 gap-1" style={{ borderColor: 'var(--border)' }}>
+                <div className="flex border-b px-4 gap-0.5 overflow-x-auto" style={{ borderColor: 'var(--border)' }}>
                     {TABS.map(t => {
                         const Icon = t.icon
                         const active = tab === t.key
@@ -256,7 +273,7 @@ function ColaboradorModal({ colaborador, puestos, horarios, usuarios, perfiles, 
                                 type="button"
                                 onClick={() => setTab(t.key)}
                                 className={cn(
-                                    'flex items-center gap-1.5 px-3 py-2.5 text-xs font-medium border-b-2 transition-colors whitespace-nowrap',
+                                    'flex items-center gap-1.5 px-2.5 py-2.5 text-xs font-medium border-b-2 transition-colors whitespace-nowrap shrink-0',
                                     active
                                         ? 'border-amber-500 text-amber-600'
                                         : 'border-transparent hover:border-gray-300'
@@ -397,7 +414,34 @@ function ColaboradorModal({ colaborador, puestos, horarios, usuarios, perfiles, 
                                     )}
                                 </div>
                                 {field('Cargo', 'cargo')}
-                                {field('Departamento', 'departamento')}
+                                <div>
+                                    <div className="flex items-center justify-between">
+                                        <Label className="input-label">Departamento</Label>
+                                        <button type="button" onClick={() => setNuevoDepto(v => !v)}
+                                            className="flex items-center gap-1 text-xs font-medium"
+                                            style={{ color: 'var(--primary)' }}>
+                                            <Plus className="w-3 h-3" /> Nuevo departamento
+                                        </button>
+                                    </div>
+                                    <select className="input-field" value={data.departamento_id}
+                                        onChange={e => setData('departamento_id', e.target.value)}>
+                                        <option value="">— Sin departamento —</option>
+                                        {departamentos
+                                            .filter(d => d.estado || String(d.id) === data.departamento_id)
+                                            .map(d => <option key={d.id} value={d.id}>{d.nombre}{d.estado ? '' : ' (inactivo)'}</option>)}
+                                    </select>
+                                    {errors.departamento_id && <p className="mt-1 text-xs text-red-500">{errors.departamento_id}</p>}
+                                    {nuevoDepto && (
+                                        <div className="mt-2 flex gap-2">
+                                            <Input className="input-field" placeholder="Nombre del departamento"
+                                                value={deptoNombre} onChange={e => setDeptoNombre(e.target.value)} />
+                                            <button type="button" disabled={creandoDepto} onClick={crearDepartamento}
+                                                className="btn-primary text-xs px-3 py-1.5 whitespace-nowrap">
+                                                {creandoDepto ? 'Creando…' : 'Crear y asignar'}
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
                                 <div>
                                     <Label className="input-label">Tipo de Contrato</Label>
                                     <select className="input-field" value={data.tipo_contrato} onChange={e => setData('tipo_contrato', e.target.value)}>
@@ -410,13 +454,6 @@ function ColaboradorModal({ colaborador, puestos, horarios, usuarios, perfiles, 
                                 </div>
                                 {field('Fecha de Ingreso *', 'fecha_ingreso', { type: 'date' })}
                                 {field('Fecha de Salida', 'fecha_salida', { type: 'date' })}
-                                <div>
-                                    <Label className="input-label">Usuario del Sistema</Label>
-                                    <select className="input-field" value={data.usuario_id} onChange={e => setData('usuario_id', e.target.value)}>
-                                        <option value="">— Sin vincular —</option>
-                                        {usuarios.map(u => <option key={u.id} value={u.id}>{u.nombre} ({u.email})</option>)}
-                                    </select>
-                                </div>
                             </div>
                         )}
 
@@ -482,21 +519,35 @@ function ColaboradorModal({ colaborador, puestos, horarios, usuarios, perfiles, 
                         {/* Tab: Seguridad y Sistema */}
                         {tab === 'seguridad' && (
                             <div className="space-y-4">
-                                {tieneUsuarioVinculado ? (
+                                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                    Vincula este colaborador con un usuario que ya existe en el sistema. Las credenciales
+                                    (usuario y contraseña) se administran solo en Configuración → Usuarios.
+                                </p>
+
+                                <div>
+                                    <Label className="input-label">Usuario del Sistema</Label>
+                                    <select className="input-field" value={data.usuario_id}
+                                        onChange={e => setData('usuario_id', e.target.value)}>
+                                        <option value="">— Sin acceso al sistema —</option>
+                                        {usuariosDisponibles.map(u => (
+                                            <option key={u.id} value={u.id}>
+                                                {u.nombre} ({u.username}{u.perfil ? ` · ${u.perfil}` : ''}){u.estado ? '' : ' — inactivo'}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    {errors.usuario_id && <p className="mt-1 text-xs text-red-500">{errors.usuario_id}</p>}
+                                    {usuariosDisponibles.length === 0 && (
+                                        <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
+                                            No hay usuarios libres. Crea uno en Configuración → Usuarios.
+                                        </p>
+                                    )}
+                                </div>
+
+                                {usuarioElegido && isEditar && (
                                     <>
-                                        <div className="rounded-lg p-3 text-sm flex items-center justify-between"
-                                            style={{ background: 'var(--bg-main)', color: 'var(--text-main)' }}>
-                                            <span>
-                                                Usuario vinculado: <strong>{colaborador!.usuario!.username}</strong>
-                                            </span>
-                                        </div>
                                         <div className="flex items-center gap-2">
-                                            <input
-                                                id="estado_usuario"
-                                                type="checkbox"
-                                                checked={data.estado_usuario}
-                                                onChange={e => setData('estado_usuario', e.target.checked)}
-                                            />
+                                            <input id="estado_usuario" type="checkbox" checked={data.estado_usuario}
+                                                onChange={e => setData('estado_usuario', e.target.checked)} />
                                             <Label htmlFor="estado_usuario" className="input-label mb-0">
                                                 Estado del Usuario: {data.estado_usuario ? 'Activo' : 'Inactivo (bloqueado)'}
                                             </Label>
@@ -506,44 +557,14 @@ function ColaboradorModal({ colaborador, puestos, horarios, usuarios, perfiles, 
                                             iniciar sesión en el ERP a partir de este momento.
                                         </p>
                                     </>
-                                ) : (
-                                    <>
-                                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                                            Opcional. Si el colaborador necesita acceso al ERP, completa estos campos
-                                            para crear su usuario automáticamente junto con la ficha.
-                                        </p>
-                                        <div className="grid grid-cols-2 gap-4">
-                                            {field('Usuario (Username)', 'username', { autoComplete: 'off' })}
-                                            <div>
-                                                <Label className="input-label">Rol de Acceso</Label>
-                                                <select className="input-field" value={data.perfil_id} onChange={e => setData('perfil_id', e.target.value)}>
-                                                    <option value="">— Seleccionar —</option>
-                                                    {perfiles.map(p => (
-                                                        <option key={p.id} value={p.id}>{PERFIL_LABEL[p.nombre] ?? p.nombre}</option>
-                                                    ))}
-                                                </select>
-                                                {errors.perfil_id && <p className="mt-1 text-xs text-red-500">{errors.perfil_id}</p>}
-                                            </div>
-                                            {field('Contraseña', 'password', { type: 'password', autoComplete: 'new-password' })}
-                                            {field('Confirmar Contraseña', 'password_confirmation', { type: 'password', autoComplete: 'new-password' })}
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            <input
-                                                id="estado_usuario_nuevo"
-                                                type="checkbox"
-                                                checked={data.estado_usuario}
-                                                onChange={e => setData('estado_usuario', e.target.checked)}
-                                            />
-                                            <Label htmlFor="estado_usuario_nuevo" className="input-label mb-0">
-                                                Estado del Usuario: {data.estado_usuario ? 'Activo' : 'Inactivo'}
-                                            </Label>
-                                        </div>
-                                        {!data.username && (
-                                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                                                Si dejas el usuario en blanco, el colaborador se creará sin acceso al sistema.
-                                            </p>
-                                        )}
-                                    </>
+                                )}
+
+                                {!data.usuario_id && (
+                                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                        Sin usuario vinculado, el colaborador no puede iniciar sesión ni timbrar asistencia.
+                                        Si necesita acceso, crea primero su usuario en Configuración → Usuarios (puedes
+                                        crearlo ya vinculado a un colaborador).
+                                    </p>
                                 )}
                             </div>
                         )}
@@ -579,7 +600,7 @@ function ColaboradorModal({ colaborador, puestos, horarios, usuarios, perfiles, 
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function ColaboradoresIndex() {
-    const { colaboradores, puestos, horarios, usuarios, perfiles, departamentos, filtros } =
+    const { colaboradores, puestos, horarios, usuarios, departamentos, filtros } =
         usePage<Props>().props
     const { puede } = usePermiso('rrhh')
 
@@ -660,7 +681,7 @@ export default function ColaboradoresIndex() {
                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}
                     >
                         <option value="">Departamento</option>
-                        {departamentos.map(d => <option key={d} value={d}>{d}</option>)}
+                        {departamentos.map(d => <option key={d.id} value={d.nombre}>{d.nombre}</option>)}
                     </select>
 
                     <select
@@ -718,6 +739,11 @@ export default function ColaboradoresIndex() {
                                     </td>
                                     <td className="px-3 py-2.5 font-mono" style={{ color: 'var(--text-muted)' }}>
                                         {c.cedula_ruc}
+                                        {c.cedula_ruc.startsWith('PEND-') && (
+                                            <div className="text-xs font-sans" style={{ color: '#F59E0B' }}>
+                                                Ficha pendiente de completar
+                                            </div>
+                                        )}
                                     </td>
                                     <td className="px-3 py-2.5">
                                         <div style={{ color: 'var(--text-main)' }}>{c.cargo ?? '—'}</div>
@@ -807,7 +833,7 @@ export default function ColaboradoresIndex() {
                     puestos={puestos}
                     horarios={horarios}
                     usuarios={usuarios}
-                    perfiles={perfiles}
+                    departamentos={departamentos}
                     onClose={() => setModal(null)}
                 />
             )}

@@ -284,6 +284,29 @@ class RecepcionController extends Controller
             return back()->with('error', 'Esta recepción ya fue procesada.');
         }
 
+        // Al completar la recepción se genera el asiento de la compra: exigir contabilidad lista.
+        $compraRec = $recepcion->compra()->with('detalles')->first();
+        if ($compraRec && $compraRec->estado === 'anulada') {
+            return back()->with('error', 'La factura de esta recepción está anulada; no se puede confirmar.');
+        }
+        if ($compraRec) {
+            try {
+                $tipoAsiento = match (true) {
+                    (bool) $compraRec->gasto_no_deducible   => 'no_deducible',
+                    $compraRec->tipo_documento === 'EXT'     => 'gasto',
+                    !$compraRec->detalles->contains(fn($d) => $d->producto_id !== null) => 'gasto',
+                    default                                  => 'inventario',
+                };
+                $this->asientoService->validarConfiguracion(
+                    (int) $empresaId,
+                    \App\Services\AsientoService::codigosCompra($tipoAsiento, (float) $compraRec->retencion_ir > 0, (float) $compraRec->retencion_iva > 0),
+                    $compraRec->fecha_emision?->toDateString(),
+                );
+            } catch (\DomainException $e) {
+                return back()->with('error', $e->getMessage());
+            }
+        }
+
         DB::transaction(function () use ($recepcion, $empresaId) {
             $detalles = $recepcion->detalles;
             $todosCompletados  = true;
@@ -406,6 +429,24 @@ class RecepcionController extends Controller
         });
 
         return back()->with('success', 'Recepción confirmada correctamente.');
+    }
+
+    // Etiquetas desde la propia recepción (perfil bodeguero, permiso inventario): reutiliza la
+    // lógica de Compras para que bodega imprima las etiquetas sin necesitar permisos de Compras.
+    public function etiquetasData(RecepcionBodega $recepcion): JsonResponse
+    {
+        abort_if($recepcion->empresa_id !== (int) session('empresa_activa_id'), 403);
+
+        return app(\App\Http\Controllers\Compras\CompraController::class)
+            ->etiquetasData($recepcion->compra);
+    }
+
+    public function generarEtiquetas(Request $request, RecepcionBodega $recepcion)
+    {
+        abort_if($recepcion->empresa_id !== (int) session('empresa_activa_id'), 403);
+
+        return app(\App\Http\Controllers\Compras\CompraController::class)
+            ->generarEtiquetasPdf($request, $recepcion->compra);
     }
 
     public function etiquetasPendientes(RecepcionBodega $recepcion): JsonResponse

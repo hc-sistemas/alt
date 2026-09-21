@@ -8,12 +8,11 @@ import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
 import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
-import { Label } from '@/Components/ui/label'
 import BuscadorClienteModal from '@/Components/shared/BuscadorClienteModal'
 import DescuentoEspecialModal from '@/Components/Ventas/DescuentoEspecialModal'
 import { cn, formatMoneda } from '@/lib/utils'
 import { toastError } from '@/lib/toast'
-import { Plus, Trash2, Search, Save, X, AlertTriangle } from 'lucide-react'
+import { Search, Save, X, AlertTriangle } from 'lucide-react'
 import { usePermiso } from '@/Hooks/usePermiso'
 import type { PageProps, Empresa, Usuario, Cliente } from '@/types'
 
@@ -67,11 +66,13 @@ interface Props extends PageProps {
     limites_descuento: { descuento_maximo_pct: number; puede_aprobar: boolean }
 }
 
+const redondear = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100
+
 function calcularLinea(linea: DetalleLinea): DetalleLinea {
     const base = linea.cantidad * linea.precio_unitario
-    const descuento_valor = base * (linea.descuento_pct / 100)
-    const subtotal = base - descuento_valor
-    const valor_iva = subtotal * (linea.porcentaje_iva / 100)
+    const descuento_valor = redondear(base * (linea.descuento_pct / 100))
+    const subtotal = redondear(base - descuento_valor)
+    const valor_iva = redondear(subtotal * (linea.porcentaje_iva / 100))
     return { ...linea, descuento_valor, subtotal, valor_iva, total: subtotal + valor_iva }
 }
 
@@ -98,20 +99,21 @@ function ClienteField({ label, value, onChange, type = 'text', onKeyDown }: {
     onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void
 }) {
     return (
-        <tr style={{ borderBottom: '1px solid var(--border)' }}>
+        <tr>
             <td
-                className="py-1 px-2 text-xs font-semibold w-28 select-none whitespace-nowrap"
+                className="py-0 px-2 text-xs font-semibold w-28 select-none whitespace-nowrap"
                 style={{ color: 'var(--text-muted)' }}
             >
                 {label}:
             </td>
-            <td className="py-0.5 px-1">
+            <td className="py-px px-1">
                 <Input
                     type={type}
                     value={value}
                     onChange={e => onChange(e.target.value)}
                     onKeyDown={onKeyDown}
                     placeholder=""
+                    className="h-6 px-2 py-0 text-xs"
                 />
             </td>
         </tr>
@@ -173,14 +175,16 @@ export default function Form() {
     }
 
     const totales = useMemo(() => {
-        let subtotal0 = 0, subtotal15 = 0, descTotal = 0, iva = 0
+        let subtotal0 = 0, subtotal15 = 0, descTotal = 0
         for (const d of detalles) {
             if (d.porcentaje_iva === 0) subtotal0 += d.subtotal
             else subtotal15 += d.subtotal
             descTotal += d.descuento_valor
-            iva += d.valor_iva
         }
-        return { subtotal0, subtotal15, descTotal, iva, total: subtotal0 + subtotal15 + iva }
+        // El IVA se calcula sobre la base imponible total (igual que la factura)
+        subtotal0 = redondear(subtotal0); subtotal15 = redondear(subtotal15); descTotal = redondear(descTotal)
+        const iva = redondear(subtotal15 * 0.15)
+        return { subtotal0, subtotal15, descTotal, iva, total: redondear(subtotal0 + subtotal15 + iva) }
     }, [detalles])
 
     // ── Handlers: cliente ────────────────────────────────────────────────────
@@ -244,8 +248,9 @@ export default function Form() {
             updateDetalle(idx, {
                 descuento_pct: linea.descuento_max_producto,
                 descuento_especial: false, aprobacion_id: null,
-                _desc_error: `Descuento máximo para este producto: ${linea.descuento_max_producto}%`,
+                _desc_error: '',
             })
+            toastError(`Descuento máximo para este producto: ${linea.descuento_max_producto}%`)
             return
         }
 
@@ -273,7 +278,7 @@ export default function Form() {
                 codigo: p.codigo,
                 descripcion: p.nombre,
                 precio_unitario: Math.round(p.pvp * 100) / 100,
-                porcentaje_iva: p.porcentaje_iva,
+                porcentaje_iva: p.porcentaje_iva > 0 ? 15 : 0, // IVA vigente 15% si el producto grava IVA
                 descuento_max_producto: p.descuento_max,
                 descuento_pct: 0,
                 stock_disponible: p.stock_disponible,
@@ -312,6 +317,25 @@ export default function Form() {
     const addDetalle = () => setDetalles(prev => [...prev, lineaVacia()])
     const removeDetalle = (idx: number) => setDetalles(prev => prev.filter((_, i) => i !== idx))
 
+    // Enter dentro de un campo nunca guarda la proforma (solo el botón "Guardar Proforma").
+    // En la última fila con producto agrega la siguiente y pone el cursor en su buscador.
+    const handleFormKeyDown = (e: React.KeyboardEvent<HTMLFormElement>) => {
+        if (e.key !== 'Enter') return
+        const t = e.target as HTMLElement
+        if (t.tagName !== 'INPUT' && t.tagName !== 'SELECT') return
+        e.preventDefault()
+        if (t.hasAttribute('data-busqueda') || t.closest('[data-cliente]')) return
+
+        const filaDet = t.closest<HTMLElement>('[data-fila-detalle]')
+        if (filaDet) {
+            const idx = Number(filaDet.dataset.filaDetalle)
+            if (idx === detalles.length - 1 && detalles[idx].producto_id !== null) {
+                addDetalle()
+                setTimeout(() => document.querySelector<HTMLInputElement>(`[data-busqueda="${idx + 1}"]`)?.focus(), 0)
+            }
+        }
+    }
+
     // ── Submit ───────────────────────────────────────────────────────────────
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -319,7 +343,9 @@ export default function Form() {
         const errs: string[] = []
         if (!clienteSeleccionado) errs.push('Debe seleccionar un cliente.')
         if (!fechaVencimiento) errs.push('La fecha de vencimiento es obligatoria.')
-        if (detalles.length === 0) errs.push('Agregue al menos un producto.')
+        const conProducto = detalles.filter(d => d.producto_id !== null)
+        if (conProducto.length === 0) errs.push('Agregue al menos un producto.')
+        else if (conProducto.length < detalles.length) errs.push('Hay filas de producto vacías. Complételas o elimínelas.')
         const pendientes = detalles.filter(d => d.descuento_especial && !d.aprobacion_id)
         if (pendientes.length > 0) errs.push('Hay descuentos especiales sin autorización.')
         if (errs.length > 0) { setErrores(errs); return }
@@ -354,7 +380,9 @@ export default function Form() {
     const tipoLabel: Record<string, string> = { '04': 'RUC', '05': 'CÉDULA', '06': 'PASAPORTE', '07': 'CONSUMIDOR' }
     // Slot de altura fija debajo del input de cantidad (16px), mismo patrón
     // de Facturas — aquí es solo informativo, nunca cambia de color a rojo.
-    const hintSlotCls = "h-4 mt-0.5 text-[11px] font-medium leading-4 whitespace-nowrap overflow-hidden"
+    const hintSlotCls = "h-3 mt-0 text-[10px] font-medium leading-3 whitespace-nowrap overflow-hidden"
+    const tdInput = "w-full text-xs py-0.5 px-1.5 rounded border focus:outline-none"
+    const tdInputStyle = { background: 'var(--bg-main)', borderColor: 'var(--border)', color: 'var(--text-main)' }
 
     return (
         <AppLayout>
@@ -368,12 +396,16 @@ export default function Form() {
                 ]}
             />
 
-            <form onSubmit={handleSubmit} className="p-6 space-y-6 max-w-7xl">
+            <form
+                onSubmit={handleSubmit}
+                onKeyDown={handleFormKeyDown}
+                className="p-4 space-y-4 max-w-7xl [&_input::-webkit-inner-spin-button]:appearance-none [&_input::-webkit-outer-spin-button]:appearance-none [&_input[type=number]]:[appearance:textfield]"
+            >
 
                 {/* Errores */}
                 {errores.length > 0 && (
                     <div
-                        className="rounded-lg p-4 border"
+                        className="rounded-lg p-3 border"
                         style={{ background: 'rgba(239,68,68,.1)', borderColor: 'rgba(239,68,68,.3)' }}
                     >
                         <ul className="space-y-1">
@@ -386,183 +418,163 @@ export default function Form() {
                     </div>
                 )}
 
-                {/* ── SECCIÓN 1: Encabezado ── */}
-                <div
-                    className="rounded-xl p-5 border"
-                    style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
-                >
-                    <p className="text-xs font-semibold uppercase tracking-wider mb-4" style={{ color: 'var(--text-muted)' }}>
-                        Datos del Documento
-                    </p>
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <div>
-                            <Label style={{ color: 'var(--text-main)' }}>Número</Label>
-                            <Input
-                                className="mt-1 font-mono"
-                                value={siguiente_numero}
-                                readOnly
-                                style={{ color: 'var(--text-muted)', cursor: 'not-allowed' }}
-                            />
-                        </div>
-                        <div>
-                            <Label style={{ color: 'var(--text-main)' }}>Fecha emisión</Label>
-                            <Input
-                                className="mt-1"
-                                value={hoy}
-                                readOnly
-                                style={{ color: 'var(--text-muted)', cursor: 'not-allowed' }}
-                            />
-                        </div>
-                        <div>
-                            <Label style={{ color: 'var(--text-main)' }}>Fecha vencimiento *</Label>
-                            <Input
-                                type="date"
-                                className="mt-1"
-                                value={fechaVencimiento}
-                                min={hoy}
-                                onChange={e => setFechaVencimiento(e.target.value)}
-                                required
-                            />
-                        </div>
-                        <div>
-                            <Label style={{ color: 'var(--text-main)' }}>Vendedor</Label>
-                            {vendedores.length <= 1 ? (
-                                <Input
-                                    className="mt-1"
-                                    value={vendedorActual?.nombre ?? ''}
-                                    readOnly
-                                    style={{ color: 'var(--text-muted)', cursor: 'not-allowed' }}
+                {/* Encabezado (derecha) + Cliente (izquierda) en la misma fila */}
+                <div className="flex flex-col lg:flex-row-reverse lg:items-start gap-4">
+
+                    {/* ── Encabezado compacto ── */}
+                    <div className="flex flex-col flex-1 min-w-0 gap-4">
+                        <div
+                            className="flex flex-wrap items-center gap-6 px-4 py-2.5 rounded-xl border"
+                            style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
+                        >
+                            <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                                Proforma N°:{' '}
+                                <span className="font-mono font-semibold" style={{ color: 'var(--text-main)' }}>{siguiente_numero}</span>
+                            </span>
+                            <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                                Fecha: <span className="font-medium" style={{ color: 'var(--text-main)' }}>{hoy.split('-').reverse().join('/')}</span>
+                            </span>
+                            <span className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-muted)' }}>
+                                Vence:
+                                <input
+                                    type="date"
+                                    value={fechaVencimiento}
+                                    min={hoy}
+                                    onChange={e => setFechaVencimiento(e.target.value)}
+                                    required
+                                    className="h-7 rounded-md border px-2 text-sm"
+                                    style={{ background: 'var(--bg-main)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
                                 />
-                            ) : (
-                                <select
-                                    className="mt-1 w-full h-9 rounded-md border px-3 text-sm"
-                                    style={{ background: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
-                                    value={vendedorId}
-                                    onChange={e => setVendedorId(Number(e.target.value))}
-                                >
-                                    {vendedores.map(v => (
-                                        <option key={v.id} value={v.id}>{v.nombre}</option>
-                                    ))}
-                                </select>
-                            )}
+                            </span>
+                            <span className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-muted)' }}>
+                                Vendedor:
+                                {vendedores.length <= 1 ? (
+                                    <span className="font-medium" style={{ color: 'var(--text-main)' }}>{vendedorActual?.nombre ?? '—'}</span>
+                                ) : (
+                                    <select
+                                        className="h-7 rounded-md border px-2 text-sm"
+                                        style={{ background: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
+                                        value={vendedorId}
+                                        onChange={e => setVendedorId(Number(e.target.value))}
+                                    >
+                                        {vendedores.map(v => (
+                                            <option key={v.id} value={v.id}>{v.nombre}</option>
+                                        ))}
+                                    </select>
+                                )}
+                            </span>
                         </div>
                     </div>
-                </div>
 
-                {/* ── SECCIÓN 2: Cliente ── */}
-                <div
-                    className="rounded-xl p-4 border max-w-xl"
-                    style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
-                >
-                    <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--text-muted)' }}>
-                        Cliente
-                    </p>
-
-                    <div style={{ maxWidth: 480 }}>
-                        <table className="w-full">
-                            <tbody>
-                                <ClienteField
-                                    label={tipoLabel[clienteEditado.tipo_identificacion ?? '04'] ?? 'RUC/CC'}
-                                    value={clienteEditado.identificacion ?? ''}
-                                    onChange={v => {
-                                        setClienteEditado(p => ({ ...p, identificacion: v }))
-                                        setMensajeCliente('')
-                                        if (clienteSeleccionado) setClienteSeleccionado(null)
-                                    }}
-                                    onKeyDown={e => {
-                                        if (e.key === 'Enter') {
-                                            e.preventDefault()
-                                            handleBuscarCliente()
-                                        }
-                                    }}
-                                />
-                                <ClienteField
-                                    label="NOMBRE"
-                                    value={clienteEditado.razon_social ?? ''}
-                                    onChange={v => setClienteEditado(p => ({ ...p, razon_social: v }))}
-                                />
-                                <ClienteField
-                                    label="DIRECCIÓN"
-                                    value={clienteEditado.direccion ?? ''}
-                                    onChange={v => setClienteEditado(p => ({ ...p, direccion: v }))}
-                                />
-                                <ClienteField
-                                    label="TELÉFONO"
-                                    value={clienteEditado.telefono ?? ''}
-                                    onChange={v => setClienteEditado(p => ({ ...p, telefono: v }))}
-                                />
-                                <ClienteField
-                                    label="EMAIL"
-                                    value={clienteEditado.email ?? ''}
-                                    onChange={v => setClienteEditado(p => ({ ...p, email: v }))}
-                                    type="email"
-                                />
-                                <ClienteField
-                                    label="CIUDAD"
-                                    value={clienteEditado.ciudad ?? ''}
-                                    onChange={v => setClienteEditado(p => ({ ...p, ciudad: v }))}
-                                />
-                                <ClienteField
-                                    label="PAÍS"
-                                    value={clienteEditado.pais ?? 'ECUADOR'}
-                                    onChange={v => setClienteEditado(p => ({ ...p, pais: v }))}
-                                />
-                            </tbody>
-                        </table>
-
-                        {mensajeCliente && (
-                            <p className="mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
-                                {mensajeCliente}
-                            </p>
-                        )}
-
-                        <div className="mt-3">
-                            <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                loading={guardandoCliente}
-                                onClick={handleGuardarCliente}
-                            >
-                                <Save className="w-3.5 h-3.5" />
-                                {clienteSeleccionado?.id ? 'Actualizar Cliente' : 'Guardar Cliente'}
-                            </Button>
-                        </div>
-                    </div>
-                </div>
-
-                {/* ── SECCIÓN 3: Productos ── */}
-                <div
-                    className="rounded-xl p-5 border"
-                    style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
-                >
-                    <div className="flex items-center justify-between mb-4">
-                        <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
-                            Detalle de Productos
+                    {/* ── Cliente ── */}
+                    <div
+                        className="rounded-xl p-4 border w-full lg:w-xl shrink-0"
+                        style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
+                    >
+                        <p className="text-xs font-bold uppercase tracking-wider mb-3 text-(--primary-hover) dark:text-(--primary)">
+                            Cliente
                         </p>
-                        <Button type="button" size="sm" onClick={addDetalle}>
-                            <Plus className="w-4 h-4" />
-                            Agregar producto
-                        </Button>
+
+                        <div data-cliente style={{ maxWidth: 480 }}>
+                            <table className="w-full">
+                                <tbody>
+                                    <ClienteField
+                                        label={tipoLabel[clienteEditado.tipo_identificacion ?? '04'] ?? 'RUC/CC'}
+                                        value={clienteEditado.identificacion ?? ''}
+                                        onChange={v => {
+                                            setClienteEditado(p => ({ ...p, identificacion: v }))
+                                            setMensajeCliente('')
+                                            if (clienteSeleccionado) setClienteSeleccionado(null)
+                                        }}
+                                        onKeyDown={e => {
+                                            if (e.key === 'Enter') {
+                                                e.preventDefault()
+                                                handleBuscarCliente()
+                                            }
+                                        }}
+                                    />
+                                    <ClienteField
+                                        label="NOMBRE"
+                                        value={clienteEditado.razon_social ?? ''}
+                                        onChange={v => setClienteEditado(p => ({ ...p, razon_social: v }))}
+                                    />
+                                    <ClienteField
+                                        label="DIRECCIÓN"
+                                        value={clienteEditado.direccion ?? ''}
+                                        onChange={v => setClienteEditado(p => ({ ...p, direccion: v }))}
+                                    />
+                                    <ClienteField
+                                        label="TELÉFONO"
+                                        value={clienteEditado.telefono ?? ''}
+                                        onChange={v => setClienteEditado(p => ({ ...p, telefono: v }))}
+                                    />
+                                    <ClienteField
+                                        label="EMAIL"
+                                        value={clienteEditado.email ?? ''}
+                                        onChange={v => setClienteEditado(p => ({ ...p, email: v }))}
+                                        type="email"
+                                    />
+                                    <ClienteField
+                                        label="CIUDAD"
+                                        value={clienteEditado.ciudad ?? ''}
+                                        onChange={v => setClienteEditado(p => ({ ...p, ciudad: v }))}
+                                    />
+                                    <ClienteField
+                                        label="PAÍS"
+                                        value={clienteEditado.pais ?? 'ECUADOR'}
+                                        onChange={v => setClienteEditado(p => ({ ...p, pais: v }))}
+                                    />
+                                </tbody>
+                            </table>
+
+                            {mensajeCliente && (
+                                <p className="mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
+                                    {mensajeCliente}
+                                </p>
+                            )}
+
+                            <div className="mt-3">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    loading={guardandoCliente}
+                                    onClick={handleGuardarCliente}
+                                >
+                                    <Save className="w-3.5 h-3.5" />
+                                    {clienteSeleccionado?.id ? 'Actualizar Cliente' : 'Guardar Cliente'}
+                                </Button>
+                            </div>
+                        </div>
                     </div>
+                </div>
+
+                {/* ── Detalle de productos ── */}
+                <div
+                    className="rounded-xl p-3 border"
+                    style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
+                >
+                    <p className="text-xs font-bold uppercase tracking-wider mb-2 text-(--primary-hover) dark:text-(--primary)">
+                        Detalle de Productos
+                    </p>
 
                     <div className="overflow-x-auto">
                         <table className="w-full text-xs">
                             <thead>
                                 <tr style={{ borderBottom: '1px solid var(--border)' }}>
                                     {[
+                                        { label: 'N°', cls: 'w-8 text-center' },
                                         { label: 'Producto', cls: 'min-w-55' },
-                                        { label: 'Cant.', cls: 'w-20 text-right' },
-                                        { label: 'Precio Unit.', cls: 'w-24 text-right' },
+                                        { label: 'Cant', cls: 'w-16 text-right' },
+                                        { label: 'Precio', cls: 'w-24 text-right' },
                                         { label: 'Desc%', cls: 'w-20 text-right' },
-                                        { label: 'Subtotal', cls: 'w-24 text-right' },
-                                        { label: 'IVA%', cls: 'w-14 text-center' },
-                                        { label: 'Total', cls: 'w-24 text-right' },
+                                        { label: 'Desc$', cls: 'w-20 text-right' },
+                                        { label: 'V.Tot', cls: 'w-24 text-right' },
                                         { label: '', cls: 'w-8' },
                                     ].map((col, i) => (
                                         <th
                                             key={i}
-                                            className={cn('py-2 px-2 font-medium text-left', col.cls)}
+                                            className={cn('py-1.5 px-1.5 font-medium text-left', col.cls)}
                                             style={{ color: 'var(--text-muted)' }}
                                         >
                                             {col.label}
@@ -572,166 +584,196 @@ export default function Form() {
                             </thead>
                             <tbody>
                                 {detalles.map((det, idx) => (
-                                        <tr key={idx} style={{ borderBottom: '1px solid var(--border)' }}>
-                                            <td className="py-1 px-1">
-                                                {det.producto_id !== null ? (
-                                                    <div
-                                                        className="flex items-center gap-1 min-w-0 px-1.5 py-0.5 rounded"
-                                                        style={{
-                                                            border: '1px solid var(--primary)',
-                                                            background: 'rgba(245,158,11,0.06)',
-                                                        }}
-                                                    >
-                                                        <span
-                                                            className="font-mono font-semibold text-xs shrink-0"
-                                                            style={{ color: 'var(--primary)' }}
-                                                        >
-                                                            {det.codigo}
-                                                        </span>
-                                                        <span
-                                                            className="text-xs truncate flex-1"
-                                                            style={{ color: 'var(--text-main)' }}
-                                                        >
-                                                            {' — '}{det.descripcion}
-                                                        </span>
-                                                        <button
-                                                            type="button"
-                                                            className="shrink-0 p-0.5 rounded hover:bg-red-500/10 transition-colors"
-                                                            onClick={() => limpiarProducto(idx)}
-                                                            title="Limpiar producto"
-                                                        >
-                                                            <X className="w-3 h-3 text-red-400" />
-                                                        </button>
-                                                    </div>
-                                                ) : (
-                                                    <div>
-                                                        <div className="relative">
-                                                            <Search
-                                                                className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 pointer-events-none"
-                                                                style={{ color: 'var(--text-muted)' }}
-                                                            />
-                                                            <input
-                                                                type="text"
-                                                                className="w-full h-7 pl-6 pr-2 text-xs rounded border focus:outline-none"
-                                                                style={{
-                                                                    background: 'var(--bg-main)',
-                                                                    borderColor: det._error ? '#ef4444' : 'var(--border)',
-                                                                    color: 'var(--text-main)',
-                                                                }}
-                                                                placeholder="Código o nombre... Enter"
-                                                                value={det._busqueda}
-                                                                onChange={e => updateDetalle(idx, { _busqueda: e.target.value, _error: '' })}
-                                                                onKeyDown={e => {
-                                                                    if (e.key === 'Enter') {
-                                                                        e.preventDefault()
-                                                                        handleBuscarProducto(idx, det._busqueda)
-                                                                    }
-                                                                }}
-                                                            />
-                                                        </div>
-                                                        {det._error && (
-                                                            <p className="text-xs mt-0.5" style={{ color: '#ef4444' }}>
-                                                                {det._error}
-                                                            </p>
-                                                        )}
-                                                    </div>
-                                                )}
-                                                <div className={hintSlotCls} />
-                                            </td>
-                                            <td className="py-1.5 px-2">
-                                                <Input
-                                                    type="number"
-                                                    min="1"
-                                                    step="1"
-                                                    value={det.cantidad}
-                                                    className="h-7 px-2 text-xs text-right"
-                                                    onKeyDown={e => { if (e.key === '.' || e.key === ',') e.preventDefault() }}
-                                                    onChange={e => {
-                                                        const val = parseInt(e.target.value, 10)
-                                                        updateDetalle(idx, { cantidad: isNaN(val) || val < 1 ? 1 : val })
-                                                    }}
-                                                />
-                                                <div className={hintSlotCls} style={{ color: 'var(--color-warning)' }}>
-                                                    {det.producto_id !== null && det.stock_disponible !== null
-                                                        ? `Stock: ${det.stock_disponible}`
-                                                        : ''}
-                                                </div>
-                                            </td>
-                                            <td className="py-1.5 px-2">
-                                                <Input type="number" min="0" step="0.01" value={det.precio_unitario} className="h-7 px-2 text-xs text-right" onChange={e => updateDetalle(idx, { precio_unitario: Number(e.target.value) })} />
-                                                <div className={hintSlotCls} />
-                                            </td>
-                                            <td className="py-1.5 px-2 relative">
-                                                <Input
-                                                    type="number" min="0" max="100" step="0.1"
-                                                    value={det.descuento_pct}
-                                                    className={cn('h-7 px-2 text-xs text-right pr-6', det.descuento_especial && 'border-amber-500')}
-                                                    onChange={e => handleDescuentoChange(idx, Number(e.target.value))}
-                                                />
-                                                {det.descuento_especial && (
-                                                    <AlertTriangle className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-amber-500 pointer-events-none" />
-                                                )}
+                                    <tr key={idx} data-fila-detalle={idx} style={{ borderBottom: '1px solid var(--border)' }}>
+                                        <td className="py-1 px-1.5 text-center align-top" style={{ color: 'var(--text-muted)' }}>
+                                            {idx + 1}
+                                        </td>
+                                        <td className="py-1 px-1 align-top">
+                                            {det.producto_id !== null ? (
                                                 <div
-                                                    className={hintSlotCls}
-                                                    style={{ color: det._desc_error ? 'var(--color-danger)' : 'var(--color-warning)' }}
+                                                    className="flex items-center gap-1 min-w-0 px-1.5 py-0.5 rounded"
+                                                    style={{
+                                                        border: '1px solid var(--primary)',
+                                                        background: 'rgba(245,158,11,0.06)',
+                                                    }}
                                                 >
-                                                    {det._desc_error || (det.producto_id !== null
-                                                        ? `Max. ${det.descuento_max_producto}%`
-                                                        : '')}
+                                                    <span
+                                                        className="font-mono font-semibold text-xs shrink-0"
+                                                        style={{ color: 'var(--primary)' }}
+                                                    >
+                                                        {det.codigo}
+                                                    </span>
+                                                    <span
+                                                        className="text-xs truncate flex-1"
+                                                        style={{ color: 'var(--text-main)' }}
+                                                    >
+                                                        {' — '}{det.descripcion}
+                                                    </span>
+                                                    <button
+                                                        type="button"
+                                                        className="shrink-0 p-0.5 rounded hover:bg-red-500/10 transition-colors"
+                                                        onClick={() => limpiarProducto(idx)}
+                                                        title="Limpiar producto"
+                                                    >
+                                                        <X className="w-3 h-3 text-red-400" />
+                                                    </button>
                                                 </div>
-                                            </td>
-                                            <td className="py-1.5 px-2 text-right font-medium" style={{ color: 'var(--text-main)' }}>{formatMoneda(det.subtotal)}</td>
-                                            <td className="py-1.5 px-2 text-center" style={{ color: 'var(--text-muted)' }}>{det.porcentaje_iva}%</td>
-                                            <td className="py-1.5 px-2 text-right font-semibold" style={{ color: 'var(--text-main)' }}>{formatMoneda(det.total)}</td>
-                                            <td className="py-1.5 px-2">
-                                                <button type="button" className="p-1 rounded hover:bg-red-500/10 transition-colors" onClick={() => removeDetalle(idx)}>
-                                                    <Trash2 className="w-4 h-4 text-red-400" />
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    ))}
+                                            ) : (
+                                                <div>
+                                                    <div className="relative">
+                                                        <Search
+                                                            className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 pointer-events-none"
+                                                            style={{ color: 'var(--text-muted)' }}
+                                                        />
+                                                        <input
+                                                            type="text"
+                                                            data-busqueda={idx}
+                                                            className="w-full h-7 pl-6 pr-2 text-xs rounded border focus:outline-none"
+                                                            style={{
+                                                                background: 'var(--bg-main)',
+                                                                borderColor: det._error ? '#ef4444' : 'var(--border)',
+                                                                color: 'var(--text-main)',
+                                                            }}
+                                                            placeholder="Código o nombre... Enter"
+                                                            value={det._busqueda}
+                                                            onChange={e => updateDetalle(idx, { _busqueda: e.target.value, _error: '' })}
+                                                            onKeyDown={e => {
+                                                                if (e.key === 'Enter') {
+                                                                    e.preventDefault()
+                                                                    handleBuscarProducto(idx, det._busqueda)
+                                                                }
+                                                            }}
+                                                        />
+                                                    </div>
+                                                    {det._error && (
+                                                        <p className="text-xs mt-0.5" style={{ color: '#ef4444' }}>
+                                                            {det._error}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </td>
+                                        <td className="py-1 px-1 align-top">
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                step="1"
+                                                value={det.cantidad}
+                                                className={cn(tdInput, 'text-right')}
+                                                style={tdInputStyle}
+                                                onKeyDown={e => { if (e.key === '.' || e.key === ',') e.preventDefault() }}
+                                                onChange={e => {
+                                                    const val = parseInt(e.target.value, 10)
+                                                    updateDetalle(idx, { cantidad: isNaN(val) || val < 1 ? 1 : val })
+                                                }}
+                                            />
+                                            <div className={hintSlotCls} style={{ color: 'var(--color-warning)' }}>
+                                                {det.producto_id !== null && det.stock_disponible !== null
+                                                    ? `Stock: ${det.stock_disponible}`
+                                                    : ''}
+                                            </div>
+                                        </td>
+                                        <td className="py-1 px-1 align-top">
+                                            <input
+                                                type="number" min="0" step="0.01"
+                                                value={det.precio_unitario}
+                                                className={cn(tdInput, 'text-right')}
+                                                style={tdInputStyle}
+                                                onChange={e => updateDetalle(idx, { precio_unitario: Number(e.target.value) })}
+                                            />
+                                            <div className={hintSlotCls} />
+                                        </td>
+                                        <td className="py-1 px-1 align-top relative">
+                                            <input
+                                                type="number" min="0" max="100" step="0.1"
+                                                value={det.descuento_pct}
+                                                className={cn(tdInput, 'text-right', det.descuento_especial && 'border-amber-500')}
+                                                style={tdInputStyle}
+                                                onChange={e => handleDescuentoChange(idx, Number(e.target.value))}
+                                            />
+                                            <div
+                                                className={hintSlotCls}
+                                                style={{ color: 'var(--color-warning)' }}
+                                            >
+                                                {det.producto_id !== null
+                                                    ? (det.descuento_especial ? 'Descuento especial autorizado' : `Max. ${det.descuento_max_producto}%`)
+                                                    : ''}
+                                            </div>
+                                        </td>
+                                        <td className="py-1 px-1.5 text-right align-top" style={{ color: 'var(--text-muted)' }}>
+                                            {formatMoneda(det.descuento_valor)}
+                                        </td>
+                                        <td className="py-1 px-1.5 text-right font-semibold align-top" style={{ color: 'var(--text-main)' }}>
+                                            {formatMoneda(det.subtotal)}
+                                        </td>
+                                        <td className="py-1 px-1 text-center align-top">
+                                            <button
+                                                type="button"
+                                                className="p-0.5 rounded hover:bg-red-500/10 transition-colors"
+                                                onClick={() => removeDetalle(idx)}
+                                                title="Eliminar fila"
+                                            >
+                                                <X className="w-3.5 h-3.5 text-red-400" />
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
                             </tbody>
-                            <tfoot>
-                                <tr style={{ borderTop: '2px solid var(--border)' }}>
-                                    <td colSpan={3} className="py-3 px-2">
-                                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                                            Subtotal 0%: <strong style={{ color: 'var(--text-main)' }}>{formatMoneda(totales.subtotal0)}</strong>
-                                            <span className="mx-3">·</span>
-                                            Subtotal 15%: <strong style={{ color: 'var(--text-main)' }}>{formatMoneda(totales.subtotal15)}</strong>
-                                            <span className="mx-3">·</span>
-                                            Descuento: <strong style={{ color: 'var(--text-main)' }}>{formatMoneda(totales.descTotal)}</strong>
-                                        </span>
-                                    </td>
-                                    <td className="py-3 px-2 text-right text-xs" style={{ color: 'var(--text-muted)' }}>
-                                        IVA: <strong style={{ color: 'var(--text-main)' }}>{formatMoneda(totales.iva)}</strong>
-                                    </td>
-                                    <td colSpan={3} className="py-3 px-2 text-right">
-                                        <span className="text-base font-bold" style={{ color: 'var(--primary)' }}>{formatMoneda(totales.total)}</span>
-                                    </td>
-                                    <td />
-                                </tr>
-                            </tfoot>
                         </table>
                     </div>
                 </div>
 
-                {/* ── SECCIÓN 4: Observaciones ── */}
-                <div
-                    className="rounded-xl p-5 border"
-                    style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
-                >
-                    <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--text-muted)' }}>Observaciones</p>
-                    <textarea
-                        rows={3}
-                        className="w-full rounded-md border px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-(--primary) transition-shadow"
-                        style={{ background: 'transparent', borderColor: 'var(--border)', color: 'var(--text-main)' }}
-                        placeholder="Observaciones adicionales para la proforma..."
-                        value={observaciones}
-                        onChange={e => setObservaciones(e.target.value)}
-                    />
+                {/* ── Observaciones + Totales (60 / 40) ── */}
+                <div className="grid grid-cols-5 gap-4">
+                    <div className="col-span-3">
+                        <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>
+                            Observaciones
+                        </p>
+                        <textarea
+                            rows={3}
+                            className="w-full rounded-md border px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-(--primary) transition-shadow"
+                            style={{ background: 'transparent', borderColor: 'var(--border)', color: 'var(--text-main)' }}
+                            placeholder="Observaciones adicionales para la proforma..."
+                            value={observaciones}
+                            onChange={e => setObservaciones(e.target.value)}
+                        />
+                    </div>
+
+                    <div className="col-span-2 flex flex-col justify-end">
+                        <table className="w-full">
+                            <tbody>
+                                {[
+                                    { label: 'SUBTOTAL 15%:', value: totales.subtotal15 },
+                                    { label: 'SUBTOTAL SIN IMP.:', value: totales.subtotal0 },
+                                    { label: 'TOTAL DESCUENTO:', value: totales.descTotal },
+                                    { label: 'TOTAL IVA:', value: totales.iva },
+                                ].map(row => (
+                                    <tr key={row.label}>
+                                        <td className="py-0.5 pr-3 text-right text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
+                                            {row.label}
+                                        </td>
+                                        <td className="py-0.5 text-right text-xs font-semibold w-28" style={{ color: 'var(--text-main)' }}>
+                                            {formatMoneda(row.value)}
+                                        </td>
+                                    </tr>
+                                ))}
+                                <tr style={{ borderTop: '2px solid var(--border)' }}>
+                                    <td className="pt-2 pr-3 text-right text-sm font-bold" style={{ color: 'var(--text-muted)' }}>
+                                        TOTAL VALOR:
+                                    </td>
+                                    <td
+                                        className="pt-2 text-right text-base font-bold w-28"
+                                        style={{ color: totales.total > 0 ? 'var(--primary)' : 'var(--text-main)' }}
+                                    >
+                                        {formatMoneda(totales.total)}
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
 
-                {/* ── SECCIÓN 5: Acciones ── */}
+                {/* ── Acciones ── */}
                 <div className="flex items-center justify-between pb-2">
                     <Link href={route('ventas.proformas.index')}>
                         <Button type="button" variant="ghost">

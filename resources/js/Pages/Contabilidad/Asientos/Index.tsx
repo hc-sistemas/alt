@@ -12,7 +12,7 @@ import {
     BookOpen, Plus, Eye, XCircle, CheckCircle,
     AlertTriangle, User, X, FileText, Zap, Download, Search,
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, fechaHoy } from '@/lib/utils'
 import { usePermiso } from '@/Hooks/usePermiso'
 import type { AsientoContable, CentroCosto, EjercicioContable, PlanCuenta, PageProps } from '@/types'
 import { notify, formatMoney, formatFecha, swalBase, injectSwalStyles } from '@/utils/contabilidad'
@@ -70,8 +70,8 @@ export default function AsientosIndex() {
     // sin filtro (probado real, ver CLAUDE.md); el usuario puede seguir
     // ampliándolo o quitándolo si quiere esperar por el reporte completo.
     const [ejercicioId, setEjercicioId] = useState(filtros.ejercicio_id ?? (periodoActivo ? String(periodoActivo.id) : ''))
-    const [fechaDesde, setFechaDesde] = useState(filtros.fecha_desde ?? '')
-    const [fechaHasta, setFechaHasta] = useState(filtros.fecha_hasta ?? '')
+    const [fechaDesde, setFechaDesde] = useState(filtros.fecha_desde ?? (asientos !== null ? '' : fechaHoy()))
+    const [fechaHasta, setFechaHasta] = useState(filtros.fecha_hasta ?? (asientos !== null ? '' : fechaHoy()))
 
     // Carga bajo demanda: `asientos` viene null hasta que se dispare una búsqueda explícita
     const haBuscado = asientos !== null

@@ -4,28 +4,22 @@ namespace App\Http\Controllers\RRHH;
 
 use App\Http\Controllers\Controller;
 use App\Models\Colaborador;
+use App\Models\Departamento;
 use App\Models\Horario;
 use App\Models\Nomina;
 use App\Models\NominaDetalle;
-use App\Models\Perfil;
 use App\Models\PuestoTrabajo;
 use App\Models\Usuario;
 use App\Services\NominaCalculoService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
-use Illuminate\Validation\Rules\Password;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class ColaboradorController extends Controller
 {
-    // Roles de acceso disponibles desde la ficha del colaborador (sección 5. Seguridad y Sistema).
-    // super_admin y contador se gestionan únicamente desde Configuración > Usuarios.
-    private const PERFILES_ACCESO = ['admin', 'vendedor', 'tecnico', 'bodeguero'];
-
     public function __construct(private NominaCalculoService $nominaCalculoService) {}
 
     public function index(Request $request): Response
@@ -67,17 +61,27 @@ class ColaboradorController extends Controller
         $horarios = Horario::orderBy('descripcion')
             ->get(['id', 'descripcion', 'hora_entrada', 'hora_salida', 'tolerancia_minutos']);
 
-        $usuarios = Usuario::where('empresa_id', $empresaId)
-            ->where('estado', true)
+        // Usuarios con acceso a esta empresa, con el colaborador al que ya están
+        // vinculados (null = libre) para poder ofrecerlos en "Seguridad y Sistema".
+        $vinculados = Colaborador::whereNotNull('usuario_id')->pluck('id', 'usuario_id');
+
+        $usuarios = Usuario::with('perfil:id,nombre')
+            ->where(fn($q) => $q->where('empresa_id', $empresaId)
+                ->orWhereHas('empresas', fn($e) => $e->where('empresas.id', $empresaId)))
             ->orderBy('nombre')
-            ->get(['id', 'nombre', 'email']);
+            ->get(['id', 'nombre', 'email', 'username', 'perfil_id', 'estado'])
+            ->map(fn($u) => [
+                'id'             => $u->id,
+                'nombre'         => $u->nombre,
+                'email'          => $u->email,
+                'username'       => $u->username,
+                'perfil'         => $u->perfil?->nombre,
+                'estado'         => (bool) $u->estado,
+                'colaborador_id' => $vinculados[$u->id] ?? null,
+            ]);
 
-        $departamentos = Colaborador::where('empresa_id', $empresaId)
-            ->whereNotNull('departamento')
-            ->distinct()->pluck('departamento')->sort()->values();
-
-        $perfiles = Perfil::whereIn('nombre', self::PERFILES_ACCESO)
-            ->orderBy('nombre')->get(['id', 'nombre']);
+        $departamentos = Departamento::where('empresa_id', $empresaId)
+            ->orderBy('nombre')->get(['id', 'nombre', 'estado']);
 
         return Inertia::render('RRHH/Colaboradores/Index', [
             'colaboradores' => $colaboradores,
@@ -85,7 +89,6 @@ class ColaboradorController extends Controller
             'horarios'      => $horarios,
             'usuarios'      => $usuarios,
             'departamentos' => $departamentos,
-            'perfiles'      => $perfiles,
             'filtros'       => $request->only(['buscar', 'departamento', 'estado']),
         ]);
     }
@@ -111,7 +114,7 @@ class ColaboradorController extends Controller
             'fecha_salida'        => 'nullable|date|after_or_equal:fecha_ingreso',
             'tipo_contrato'       => 'nullable|in:indefinido,plazo_fijo,honorarios',
             'cargo'               => 'nullable|string|max:100',
-            'departamento'        => 'nullable|string|max:100',
+            'departamento_id'     => 'nullable|integer|exists:departamentos,id',
             'comision_porcentaje' => 'numeric|min:0|max:100',
             'sueldo_base'         => 'required|numeric|min:0',
             'decimo_tercero'      => 'in:acumula,mensualiza',
@@ -122,7 +125,7 @@ class ColaboradorController extends Controller
             'numero_cuenta'       => 'nullable|string|max:30',
             'puesto_id'           => 'nullable|exists:puestos_trabajo,id',
             'horario_id'          => 'nullable|exists:horarios,id',
-            'usuario_id'          => 'nullable|exists:usuarios,id',
+            'usuario_id'          => ['nullable', 'exists:usuarios,id', Rule::unique('colaboradores', 'usuario_id')->ignore($colaboradorId)],
         ];
     }
 
@@ -130,103 +133,68 @@ class ColaboradorController extends Controller
     {
         $empresaId = session('empresa_activa_id');
 
-        $rules = $this->reglasBase();
+        $data = $request->validate($this->reglasBase());
+        $this->resolverDepartamento($data, (int) $empresaId);
 
-        // Sección 5. Seguridad y Sistema — crea el usuario del ERP en el mismo flujo.
-        // Todos nullable por defecto: un colaborador sin acceso al sistema es válido
-        // (personas bajo contrato/factura que no necesitan iniciar sesión).
-        $rules['username']       = ['nullable', 'string', 'max:50', 'alpha_dash', 'unique:usuarios,username'];
-        $rules['password']       = ['nullable', 'string'];
-        $rules['perfil_id']      = ['nullable', 'exists:perfiles,id'];
-        $rules['estado_usuario'] = ['boolean'];
-
-        if ($request->filled('username')) {
-            // Si se va a crear el usuario, el correo es obligatorio (login/notificaciones)
-            // y debe ser único también en la tabla usuarios, no solo en colaboradores.
-            $rules['email'][0] = 'required';
-            $rules['email'][]  = Rule::unique('usuarios', 'email');
-            $rules['password'] = ['required', 'confirmed', Password::min(8)->mixedCase()->numbers()];
-            $rules['perfil_id'] = ['required', 'exists:perfiles,id'];
+        $usuario = null;
+        if (!empty($data['usuario_id'])) {
+            $usuario = Usuario::findOrFail($data['usuario_id']);
+            $this->asegurarMismaEmpresa($usuario, (int) $empresaId);
         }
 
-        $data = $request->validate($rules);
-
-        $colaborador = DB::transaction(function () use ($data, $empresaId) {
+        $colaborador = DB::transaction(function () use ($data, $empresaId, $usuario) {
             $colaborador = Colaborador::create([
-                ...collect($data)->except(['username', 'password', 'perfil_id', 'estado_usuario'])->toArray(),
+                ...collect($data)->except(['usuario_id'])->toArray(),
                 'empresa_id' => $empresaId,
                 'estado'     => true,
             ]);
 
-            if (!empty($data['username'])) {
-                $usuario = Usuario::create([
-                    'empresa_id'     => $empresaId,
-                    'perfil_id'      => $data['perfil_id'],
-                    'colaborador_id' => $colaborador->id,
-                    'nombre'         => "{$colaborador->apellidos} {$colaborador->nombres}",
-                    'email'          => $data['email'],
-                    'username'       => $data['username'],
-                    'password'       => Hash::make($data['password']),
-                    'estado'         => $data['estado_usuario'] ?? true,
-                ]);
-                $usuario->empresas()->sync([$empresaId]);
-
-                $colaborador->usuario_id = $usuario->id;
-                $colaborador->save();
+            if ($usuario) {
+                $colaborador->vincularUsuario($usuario);
             }
 
-            $this->crearFilasNominaVigente($colaborador);
+            $this->nominaCalculoService->agregarANominasAbiertas($colaborador);
 
             return $colaborador;
         });
 
         $mensaje = "Colaborador {$colaborador->apellidos} {$colaborador->nombres} creado correctamente.";
-        if (!empty($data['username'])) {
-            $mensaje .= " Usuario '{$data['username']}' creado con acceso al sistema.";
+        if ($usuario) {
+            $mensaje .= " Vinculado al usuario '{$usuario->username}'.";
         }
 
         return back()->with('success', $mensaje);
     }
 
-    // Al registrar un colaborador nuevo, debe aparecer automáticamente en
-    // cualquier nómina del ejercicio vigente que YA exista pero siga en
-    // 'borrador' (mensual o quincenal) — evita el registro huérfano de tener
-    // que re-generar o editar manualmente la nómina para incluirlo. Nóminas
-    // ya 'procesado'/'pagado' no se tocan (están cerradas contablemente); si
-    // no hay ninguna nómina en borrador para el mes actual, no hay nada que
-    // crear todavía — se generará con normalidad cuando el usuario presione
-    // "Generar Nómina", momento en que el colaborador ya estará activo y se
-    // incluirá solo.
-    private function crearFilasNominaVigente(Colaborador $colaborador): void
+    // Resuelve el departamento del catálogo (debe ser de la misma empresa) y guarda
+    // también su nombre en colaboradores.departamento (desnormalizado para filtros).
+    private function resolverDepartamento(array &$data, int $empresaId): void
     {
-        $nominasAbiertas = Nomina::where('empresa_id', $colaborador->empresa_id)
-            ->where('estado', 'borrador')
-            ->where('anio', now()->year)
-            ->where('mes', now()->month)
-            ->get();
+        if (empty($data['departamento_id'])) {
+            $data['departamento_id'] = null;
+            $data['departamento']    = null;
+            return;
+        }
 
-        foreach ($nominasAbiertas as $nomina) {
-            $yaExiste = NominaDetalle::where('nomina_id', $nomina->id)
-                ->where('colaborador_id', $colaborador->id)
-                ->exists();
+        $dep = Departamento::where('empresa_id', $empresaId)->find($data['departamento_id']);
+        if (!$dep) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'departamento_id' => 'El departamento no pertenece a esta empresa.',
+            ]);
+        }
 
-            if ($yaExiste) {
-                continue;
-            }
+        $data['departamento'] = $dep->nombre;
+    }
 
-            $detalle = $this->nominaCalculoService->calcularDetalle($colaborador, [
-                'periodo_tipo' => $nomina->periodo_tipo,
-                'anio'         => $nomina->anio,
-                'mes'          => $nomina->mes,
-                'quincena'     => $nomina->quincena,
-            ], $nomina->id);
+    // El usuario a vincular debe tener acceso a la empresa del colaborador.
+    private function asegurarMismaEmpresa(Usuario $usuario, int $empresaId): void
+    {
+        $tieneAcceso = (int) $usuario->empresa_id === $empresaId
+            || $usuario->empresas()->where('empresas.id', $empresaId)->exists();
 
-            NominaDetalle::create($detalle);
-
-            $nomina->update([
-                'total_ingresos' => round((float) $nomina->total_ingresos + (float) $detalle['total_ingresos'], 2),
-                'total_egresos'  => round((float) $nomina->total_egresos + (float) $detalle['total_egresos'], 2),
-                'total_neto'     => round((float) $nomina->total_neto + (float) $detalle['neto_pagar'], 2),
+        if (!$tieneAcceso) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'usuario_id' => 'El usuario no tiene acceso a la empresa del colaborador.',
             ]);
         }
     }
@@ -237,12 +205,24 @@ class ColaboradorController extends Controller
         $rules['estado_usuario'] = ['boolean'];
 
         $data = $request->validate($rules);
+        $this->resolverDepartamento($data, (int) $colaborador->empresa_id);
 
         $estadoUsuario = $data['estado_usuario'] ?? null;
         unset($data['estado_usuario']);
 
-        DB::transaction(function () use ($colaborador, $data, $estadoUsuario) {
+        $nuevoUsuarioId = $data['usuario_id'] ?? null;
+        unset($data['usuario_id']);
+
+        if ($nuevoUsuarioId) {
+            $this->asegurarMismaEmpresa(Usuario::findOrFail($nuevoUsuarioId), (int) $colaborador->empresa_id);
+        }
+
+        DB::transaction(function () use ($colaborador, $data, $estadoUsuario, $nuevoUsuarioId) {
             $colaborador->update($data);
+
+            if ((int) $nuevoUsuarioId !== (int) $colaborador->usuario_id) {
+                $colaborador->vincularUsuario($nuevoUsuarioId ? Usuario::find($nuevoUsuarioId) : null);
+            }
 
             // Bloqueo/desbloqueo manual del acceso desde la propia ficha del colaborador,
             // independiente del estado laboral (estado del colaborador).
@@ -267,6 +247,11 @@ class ColaboradorController extends Controller
             if (!$nuevoEstado && $colaborador->usuario_id) {
                 Usuario::where('id', $colaborador->usuario_id)->update(['estado' => false]);
                 $usuarioBloqueado = true;
+            }
+
+            // Simétrico: al reactivar al colaborador se reactiva su usuario vinculado.
+            if ($nuevoEstado && $colaborador->usuario_id) {
+                Usuario::where('id', $colaborador->usuario_id)->update(['estado' => true]);
             }
         });
 

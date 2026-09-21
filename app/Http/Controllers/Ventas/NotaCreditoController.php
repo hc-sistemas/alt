@@ -30,6 +30,13 @@ class NotaCreditoController extends Controller
     {
         $empresaId = session('empresa_activa_id');
 
+        // Primera visita: fechas por defecto = hoy (si se borran, llegan vacías y no se fuerzan)
+        $hoy = now()->toDateString();
+        $request->merge([
+            'fecha_desde' => $request->has('fecha_desde') ? $request->fecha_desde : $hoy,
+            'fecha_hasta' => $request->has('fecha_hasta') ? $request->fecha_hasta : $hoy,
+        ]);
+
         $query = NotaCredito::with(['factura', 'cliente'])
             ->where('empresa_id', $empresaId)
             ->orderByDesc('fecha_emision')
@@ -139,7 +146,11 @@ class NotaCreditoController extends Controller
 
         $total = $subtotal + $totalIva;
 
-        $notaCredito = DB::transaction(function () use ($request, $empresaId, $factura, $subtotal, $totalIva, $total) {
+        // Costo (al costo real de salida) de la mercadería que vuelve por esta
+        // NC — se usa para reversar el costo de ventas en el asiento.
+        $costoDevuelto = 0.0;
+
+        $notaCredito = DB::transaction(function () use ($request, $empresaId, $factura, $subtotal, $totalIva, $total, &$costoDevuelto) {
             $numero  = $this->secuencial->siguiente($empresaId, 'NC');
             $partes  = explode('-', $numero);
 
@@ -186,12 +197,40 @@ class NotaCreditoController extends Controller
                 ]);
 
                 if ($bodegaCuarentena && $original->producto_id) {
+                    // El reingreso va al COSTO al que salió, no al precio de
+                    // venta. Antes se pasaba `precio_unitario` como costo
+                    // unitario: cada devolución metía el margen de venta dentro
+                    // del costo promedio del producto (ingresarStock recalcula
+                    // el promedio ponderado con el costo que recibe), inflando
+                    // el costo del inventario de forma permanente e
+                    // irreversible, y con él todos los costos de venta futuros.
+                    //
+                    // El costo real de esa salida está en el kárdex de la
+                    // factura original.
+                    $costoUnitario = (float) (DB::table('inventario_movimientos')
+                        ->where('doc_tipo', 'FACTURA')
+                        ->where('doc_id', $factura->id)
+                        ->where('producto_id', $original->producto_id)
+                        ->where('tipo', 'salida')
+                        ->value('costo_unitario') ?? 0);
+
+                    // Sin movimiento de salida registrado (facturas viejas o de
+                    // servicios) se cae al costo promedio actual del producto.
+                    if ($costoUnitario <= 0) {
+                        $costoUnitario = (float) (DB::table('inventario_saldos')
+                            ->where('producto_id', $original->producto_id)
+                            ->orderByDesc('stock_actual')
+                            ->value('costo_promedio') ?? 0);
+                    }
+
+                    $costoDevuelto += round($cantidad * $costoUnitario, 2);
+
                     try {
                         $this->inventario->ingresarStock(
                             productoId: $original->producto_id,
                             bodegaId:   $bodegaCuarentena->id,
                             cantidad:   $cantidad,
-                            costoUnitario: (float)$original->precio_unitario,
+                            costoUnitario: $costoUnitario,
                             docTipo:    'NC',
                             docId:      $notaCredito->id,
                         );
@@ -220,16 +259,35 @@ class NotaCreditoController extends Controller
         });
 
         try {
+            // La contrapartida depende de cómo se pagó la factura original: si
+            // fue a crédito se rebaja la CxC del cliente; si fue de contado sale
+            // dinero de caja/banco. Antes siempre acreditaba Clientes, aunque la
+            // venta hubiera sido en efectivo.
+            $formaOriginal = (string) (DB::table('factura_pagos')
+                ->where('factura_id', $factura->id)
+                ->orderByDesc('valor')
+                ->value('forma_pago') ?? 'credito');
+
             $asientoNC = $this->asiento->notaCreditoEmitida(
-                empresaId:    $empresaId,
+                empresaId:     $empresaId,
                 notaCreditoId: $notaCredito->id,
-                referencia:   $notaCredito->numero_completo,
-                subtotal:     $subtotal,
-                iva:          $totalIva,
+                referencia:    $notaCredito->numero_completo,
+                subtotal:      $subtotal,
+                iva:           $totalIva,
+                formaPago:     $formaOriginal,
+                costoVenta:    $costoDevuelto,
+                fecha:         $notaCredito->fecha_emision?->toDateString(),
             );
             $notaCredito->update(['asiento_id' => $asientoNC->id]);
-        } catch (\Throwable) {
-            // Asiento falla de forma silenciosa
+        } catch (\Throwable $e) {
+            \Log::warning("Contabilidad: NC {$notaCredito->numero_completo} sin asiento: {$e->getMessage()}");
+            $this->asiento->notificarAsientoFallido(
+                empresaId:  (int) $empresaId,
+                tabla:      'notas_credito',
+                registroId: $notaCredito->id,
+                referencia: "Nota de crédito {$notaCredito->numero_completo}",
+                mensaje:    $e->getMessage(),
+            );
         }
 
         $this->auditoria->documento('crear', 'ventas', 'notas_credito', $notaCredito->id, "Nota de crédito {$notaCredito->numero_completo} emitida");

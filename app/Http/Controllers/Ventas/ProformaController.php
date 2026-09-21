@@ -14,10 +14,13 @@ use App\Models\Producto;
 use App\Models\Proforma;
 use App\Models\ProformaDetalle;
 use App\Models\Usuario;
+use App\Services\AprobacionService;
 use App\Services\AuditoriaService;
 use App\Services\DescuentoService;
+use App\Services\DocumentoVentaPdf;
 use App\Services\InventarioService;
 use App\Services\SecuencialService;
+use App\Support\ReglasPago;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -38,6 +41,14 @@ class ProformaController extends Controller
     {
         $empresaId = session('empresa_activa_id');
 
+        // Primera visita: fechas por defecto = hoy. Si el usuario borra una fecha,
+        // el parámetro llega vacío (has() = true) y no se vuelve a forzar.
+        $hoy = now()->toDateString();
+        $request->merge([
+            'fecha_desde' => $request->has('fecha_desde') ? $request->fecha_desde : $hoy,
+            'fecha_hasta' => $request->has('fecha_hasta') ? $request->fecha_hasta : $hoy,
+        ]);
+
         $query = Proforma::with(['cliente', 'usuario'])
             ->where('empresa_id', $empresaId)
             ->orderByDesc('fecha_emision')
@@ -46,10 +57,27 @@ class ProformaController extends Controller
         if ($request->filled('estado')) {
             $query->where('estado', $request->estado);
         }
+        // Búsqueda libre: cada palabra debe aparecer en algún campo (número, cliente,
+        // RUC, vendedor, observaciones o productos), sin importar el orden.
         if ($request->filled('cliente')) {
-            $query->whereHas('cliente', fn($q) => $q
-                ->where('razon_social', 'ilike', "%{$request->cliente}%")
-                ->orWhere('identificacion', 'ilike', "%{$request->cliente}%"));
+            foreach (preg_split('/\s+/', trim((string) $request->cliente)) as $termino) {
+                $like = '%' . addcslashes($termino, '%_\\') . '%';
+
+                $query->where(function ($q) use ($like) {
+                    $q->where('numero', 'ilike', $like)
+                      ->orWhere('observaciones', 'ilike', $like)
+                      ->orWhereHas('cliente', fn ($c) => $c
+                          ->where('razon_social', 'ilike', $like)
+                          ->orWhere('nombre_comercial', 'ilike', $like)
+                          ->orWhere('identificacion', 'ilike', $like)
+                          ->orWhere('email', 'ilike', $like)
+                          ->orWhere('telefono', 'ilike', $like))
+                      ->orWhereHas('usuario', fn ($u) => $u->where('nombre', 'ilike', $like))
+                      ->orWhereHas('detalles', fn ($d) => $d
+                          ->where('descripcion', 'ilike', $like)
+                          ->orWhereHas('producto', fn ($p) => $p->where('codigo', 'ilike', $like)));
+                });
+            }
         }
         if ($request->filled('fecha_desde')) {
             $query->where('fecha_emision', '>=', $request->fecha_desde);
@@ -59,6 +87,22 @@ class ProformaController extends Controller
         }
 
         $proformas = $query->paginate(25)->withQueryString();
+
+        // "Nuevo": es la primera proforma que se le hizo a ese cliente.
+        $primeras = Proforma::where('empresa_id', $empresaId)
+            ->whereIn('cliente_id', $proformas->pluck('cliente_id')->unique())
+            ->groupBy('cliente_id')
+            ->selectRaw('cliente_id, min(id) as primera')
+            ->pluck('primera', 'cliente_id');
+
+        $proformas->through(function (Proforma $p) use ($primeras) {
+            $bruto = (float) $p->subtotal + (float) $p->descuento_total;
+            $p->setAttribute('cliente_nuevo', (int) ($primeras[$p->cliente_id] ?? 0) === $p->id);
+            $p->setAttribute('desc_pct', $bruto > 0 ? round((float) $p->descuento_total / $bruto * 100, 2) : 0);
+            $p->setAttribute('vendedor', $p->usuario?->nombre);
+
+            return $p;
+        });
 
         return Inertia::render('Ventas/Proformas/Index', [
             'proformas' => $proformas,
@@ -238,24 +282,29 @@ class ProformaController extends Controller
             }
         }
 
+        // Valores redondeados a centavos por línea; el IVA se calcula sobre la
+        // base imponible total (igual que la factura).
         $subtotal  = 0;
         $descTotal = 0;
-        $totalIva  = 0;
+        $base15    = 0;
 
         foreach ($request->detalles as $det) {
             $cantidad  = (float)$det['cantidad'];
             $precio    = (float)$det['precio'];
             $descPct   = (float)($det['descuento_pct'] ?? 0);
-            $descuento = $precio * $cantidad * ($descPct / 100);
-            $neto      = ($precio * $cantidad) - $descuento;
+            $descuento = round($precio * $cantidad * ($descPct / 100), 2);
+            $neto      = round(($precio * $cantidad) - $descuento, 2);
             $grabaIva  = (bool)($det['graba_iva'] ?? true);
 
             $subtotal  += $neto;
             $descTotal += $descuento;
-            $totalIva  += $grabaIva ? $neto * 0.15 : 0;
+            $base15    += $grabaIva ? $neto : 0;
         }
 
-        $total = $subtotal + $totalIva;
+        $subtotal  = round($subtotal, 2);
+        $descTotal = round($descTotal, 2);
+        $totalIva  = round($base15 * 0.15, 2);
+        $total     = round($subtotal + $totalIva, 2);
 
         $proforma = DB::transaction(function () use ($request, $empresaId, $subtotal, $descTotal, $totalIva, $total, $aprobacionesUsadas) {
             $numero = $this->secuencial->siguiente($empresaId, 'PRF');
@@ -280,10 +329,10 @@ class ProformaController extends Controller
                 $cantidad  = (float)$det['cantidad'];
                 $precio    = (float)$det['precio'];
                 $descPct   = (float)($det['descuento_pct'] ?? 0);
-                $descuento = $precio * $cantidad * ($descPct / 100);
-                $neto      = ($precio * $cantidad) - $descuento;
+                $descuento = round($precio * $cantidad * ($descPct / 100), 2);
+                $neto      = round(($precio * $cantidad) - $descuento, 2);
                 $grabaIva  = (bool)($det['graba_iva'] ?? true);
-                $iva       = $grabaIva ? $neto * 0.15 : 0;
+                $iva       = $grabaIva ? round($neto * 0.15, 2) : 0;
 
                 ProformaDetalle::create([
                     'proforma_id'    => $proforma->id,
@@ -325,17 +374,65 @@ class ProformaController extends Controller
         ]);
     }
 
-    public function destroy(Proforma $proforma)
+    /** PDF de la proforma: en línea para el visor; con ?download=1 se descarga. */
+    public function pdf(Request $request, Proforma $proforma, DocumentoVentaPdf $pdfs)
     {
+        $pdf    = $pdfs->proforma($proforma);
+        $nombre = 'Proforma-' . $proforma->numero . '.pdf';
+
+        return $request->boolean('download') ? $pdf->download($nombre) : $pdf->stream($nombre);
+    }
+
+    /** Anula una proforma pendiente. Requiere el PIN de aprobación de un supervisor. */
+    public function anular(Request $request, Proforma $proforma, AprobacionService $aprobaciones)
+    {
+        $request->validate(['aprobacion_especial_id' => 'required|integer']);
+
         if ($proforma->estado !== 'pendiente') {
             return back()->withErrors(['error' => 'Solo se pueden anular proformas en estado pendiente.']);
         }
 
-        $proforma->update(['estado' => 'anulada']);
+        $aprobacion = $aprobaciones->disponible((int) $request->aprobacion_especial_id, 'anulacion_factura');
+        if (!$aprobacion) {
+            return back()->withErrors(['error' => 'La aprobación especial no es válida o ya fue utilizada.']);
+        }
+
+        DB::transaction(function () use ($proforma, $aprobaciones, $aprobacion) {
+            $proforma->update(['estado' => 'anulada']);
+            $aprobaciones->consumir($aprobacion->id, 'proformas', $proforma->id);
+        });
 
         $this->auditoria->documento('anular', 'ventas', 'proformas', $proforma->id, "Proforma {$proforma->numero} anulada");
 
         return back()->with('flash', ['tipo' => 'exito', 'mensaje' => "Proforma {$proforma->numero} anulada."]);
+    }
+
+    /** Elimina la proforma con sus detalles. Solo SuperAdmin; exige escribir el número. */
+    public function destroy(Request $request, Proforma $proforma, AprobacionService $aprobaciones)
+    {
+        $data = $request->validate(['confirmacion' => 'required|string']);
+
+        if (!$aprobaciones->esSuperAdmin()) {
+            return back()->withErrors(['error' => 'Solo el SuperAdmin puede eliminar proformas.']);
+        }
+        if (trim($data['confirmacion']) !== $proforma->numero) {
+            return back()->withErrors(['error' => 'El número escrito no coincide con la proforma.']);
+        }
+        if ($proforma->estado === 'facturada' || $proforma->factura_id) {
+            return back()->withErrors(['error' => 'La proforma ya fue convertida en factura y no se puede eliminar.']);
+        }
+
+        $resumen = "Proforma {$proforma->numero} eliminada (total {$proforma->total}, estado {$proforma->estado})";
+
+        DB::transaction(function () use ($proforma) {
+            ProformaDetalle::where('proforma_id', $proforma->id)->delete();
+            $proforma->delete();
+        });
+
+        $this->auditoria->documento('eliminar', 'ventas', 'proformas', $proforma->id, $resumen);
+
+        return redirect()->route('ventas.proformas.index')
+            ->with('flash', ['tipo' => 'exito', 'mensaje' => "Proforma {$proforma->numero} eliminada."]);
     }
 
     public function convertirAFactura(Request $request, Proforma $proforma)
@@ -351,6 +448,12 @@ class ProformaController extends Controller
             'formas_pago.*.forma' => 'required|string',
             'formas_pago.*.monto' => 'required|numeric|min:0.01',
         ]);
+
+        // Con tarjeta de crédito no hay descuento de ningún tipo.
+        if ((float) $proforma->descuento_total > 0
+            && ReglasPago::algunaTarjeta(collect($request->formas_pago)->pluck('forma'))) {
+            return back()->withErrors(['error' => ReglasPago::MENSAJE_SIN_DESCUENTO . ' Esta proforma tiene descuento.']);
+        }
 
         try {
             $factura = DB::transaction(function () use ($request, $proforma, $empresaId) {

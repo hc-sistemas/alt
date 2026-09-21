@@ -7,13 +7,13 @@ import { Input } from '@/Components/ui/input'
 import { Badge } from '@/Components/ui/badge'
 import PdfPreviewModal from '@/Components/shared/PdfPreviewModal'
 import { formatFecha } from '@/lib/utils'
-import { Plus, Search, Eye, FileText, Wrench } from 'lucide-react'
+import { Plus, Search, Eye, FileText, Wrench, Pencil } from 'lucide-react'
 import { usePermiso } from '@/Hooks/usePermiso'
 import type { PageProps, PaginatedData, TallerIngreso } from '@/types'
 
 interface Props extends PageProps {
     ingresos: PaginatedData<TallerIngreso>
-    filtros: { search?: string; estado?: string }
+    filtros: { search?: string; estado?: string; desde?: string; hasta?: string }
 }
 
 const ESTADO_CONFIG: Record<number, { label: string; variant: 'info' | 'warning' | 'default' | 'success' | 'secondary' }> = {
@@ -29,12 +29,16 @@ export default function IngresosIndex() {
     const { puede } = usePermiso('taller')
     const [search, setSearch] = useState(filtros.search ?? '')
     const [estado, setEstado] = useState(filtros.estado ?? '')
+    const [desde, setDesde] = useState(filtros.desde ?? '')
+    const [hasta, setHasta] = useState(filtros.hasta ?? '')
     const [pdfIngresoId, setPdfIngresoId] = useState<number | null>(null)
 
     function buscar() {
         router.get(route('taller.ingresos.index'), {
             search: search || undefined,
             estado: estado || undefined,
+            desde: desde || undefined,
+            hasta: hasta || undefined,
         }, { preserveState: true, replace: true })
     }
 
@@ -70,6 +74,11 @@ export default function IngresosIndex() {
                         <option value="4">Entregado</option>
                     </select>
 
+                    <Input type="date" value={desde} onChange={e => setDesde(e.target.value)}
+                        className="w-40 shrink-0" title="Desde" />
+                    <Input type="date" value={hasta} onChange={e => setHasta(e.target.value)}
+                        className="w-40 shrink-0" title="Hasta" />
+
                     <div className="flex shrink-0 ml-auto" role="group">
                         <div className="relative">
                             <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
@@ -77,7 +86,7 @@ export default function IngresosIndex() {
                                 value={search}
                                 onChange={e => setSearch(e.target.value)}
                                 onKeyDown={e => e.key === 'Enter' && buscar()}
-                                placeholder="Cliente o identificación..."
+                                placeholder="Cliente, equipo, serie u OT..."
                                 className="pl-9 w-60 rounded-r-none border-r-0"
                             />
                         </div>
@@ -150,6 +159,13 @@ export default function IngresosIndex() {
                                                         <Eye className="w-4 h-4" />
                                                     </Button>
                                                 </Link>
+                                                {puede('editar') && ingreso.ordenes_trabajo?.every(o => o.estado !== 'facturado') && (
+                                                    <Link href={route('taller.ingresos.edit', ingreso.id)}>
+                                                        <Button variant="ghost" size="icon" title="Editar">
+                                                            <Pencil className="w-4 h-4" />
+                                                        </Button>
+                                                    </Link>
+                                                )}
                                                 <Button variant="ghost" size="icon" title="Ver PDF" onClick={() => setPdfIngresoId(ingreso.id)}>
                                                     <FileText className="w-4 h-4" />
                                                 </Button>

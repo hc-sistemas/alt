@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import type { PageProps } from '@/types'
 import { usePermiso } from '@/Hooks/usePermiso'
-import { cn } from '@/lib/utils'
+import { cn, fechaHoy } from '@/lib/utils'
 import 'react-toastify/dist/ReactToastify.css'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -417,8 +417,8 @@ export default function DevolucionesIndex() {
     const [buscar, setBuscar]         = useState(filtros.buscar ?? '')
     const [estado, setEstado]         = useState(filtros.estado ?? '')
     const [proveedorId, setProveedorId] = useState(filtros.proveedor_id ?? '')
-    const [fechaDesde, setFechaDesde] = useState(filtros.fecha_desde ?? '')
-    const [fechaHasta, setFechaHasta] = useState(filtros.fecha_hasta ?? '')
+    const [fechaDesde, setFechaDesde] = useState(filtros.fecha_desde ?? (devoluciones !== null ? '' : fechaHoy()))
+    const [fechaHasta, setFechaHasta] = useState(filtros.fecha_hasta ?? (devoluciones !== null ? '' : fechaHoy()))
 
     // Cambiar cualquier filtro después de haber buscado marca los
     // resultados como "obsoletos" respecto al filtro actual — la tabla NO
@@ -599,7 +599,7 @@ export default function DevolucionesIndex() {
                         </div>
                     ) : devoluciones.map((dev, i) => (
                         <div key={dev.id}
-                            className="grid gap-2 px-4 py-3 border-b items-center text-sm"
+                            className="grid gap-2 px-4 py-3 border-b items-center text-[11px]"
                             style={{
                                 gridTemplateColumns: '2fr 1.2fr 1fr 1fr 1fr 1fr 1fr auto',
                                 borderColor: 'var(--border)',
@@ -607,24 +607,24 @@ export default function DevolucionesIndex() {
                                     : 'color-mix(in srgb, var(--bg-main) 30%, transparent)',
                             }}>
                             <div>
-                                <p className="text-xs font-medium" style={{ color: 'var(--text-main)' }}>
+                                <p className="text-[11px] font-medium" style={{ color: 'var(--text-main)' }}>
                                     {dev.proveedor ?? '—'}
                                 </p>
                                 <p className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>
                                     {dev.motivo}
                                 </p>
                             </div>
-                            <p className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>
+                            <p className="text-[11px] font-mono" style={{ color: 'var(--text-muted)' }}>
                                 {dev.num_documento ?? '—'}
                             </p>
-                            <p className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>
+                            <p className="text-[11px] font-mono" style={{ color: 'var(--text-muted)' }}>
                                 {dev.num_compra ?? '—'}
                             </p>
-                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{dev.fecha}</p>
-                            <p className="text-xs font-mono text-right" style={{ color: 'var(--text-main)' }}>
+                            <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{dev.fecha}</p>
+                            <p className="text-[11px] font-mono text-right" style={{ color: 'var(--text-main)' }}>
                                 {fmt(dev.subtotal)}
                             </p>
-                            <p className="text-xs font-mono text-right" style={{ color: 'var(--text-muted)' }}>
+                            <p className="text-[11px] font-mono text-right" style={{ color: 'var(--text-muted)' }}>
                                 {fmt(dev.iva)}
                             </p>
                             <EstadoBadge estado={dev.estado} />

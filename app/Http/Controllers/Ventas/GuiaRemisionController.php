@@ -25,6 +25,13 @@ class GuiaRemisionController extends Controller
     {
         $empresaId = session('empresa_activa_id');
 
+        // Primera visita: fechas por defecto = hoy (si se borran, llegan vacías y no se fuerzan)
+        $hoy = now()->toDateString();
+        $request->merge([
+            'fecha_desde' => $request->has('fecha_desde') ? $request->fecha_desde : $hoy,
+            'fecha_hasta' => $request->has('fecha_hasta') ? $request->fecha_hasta : $hoy,
+        ]);
+
         $query = GuiaRemision::with(['factura', 'transportista'])
             ->where('empresa_id', $empresaId)
             ->orderByDesc('fecha_emision')

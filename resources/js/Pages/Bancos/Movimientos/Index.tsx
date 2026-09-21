@@ -7,9 +7,9 @@ import PageHeader from '@/Components/shared/PageHeader'
 import FilterToolbar from '@/Components/shared/FilterToolbar'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
-import { cn, formatFecha } from '@/lib/utils'
+import { cn, formatFecha, fechaHoy } from '@/lib/utils'
 import {
-    Plus, X, ArrowUpCircle, ArrowDownCircle,
+    Plus, X, ArrowUpCircle, ArrowDownCircle, ArrowLeftRight,
     Ban, DollarSign, Clock, Search, FileText, FileCode, Download,
 } from 'lucide-react'
 import { usePermiso } from '@/Hooks/usePermiso'
@@ -350,6 +350,109 @@ function MovimientoModal({ bancos, cuentas, proveedores, clientes, onClose }: {
     )
 }
 
+// ─── Modal Transferencia entre cuentas ──────────────────────────────────────────
+
+function TransferenciaModal({ bancos, onClose }: { bancos: Props['bancos']; onClose: () => void }) {
+    const { data, setData, post, processing, errors } = useForm({
+        banco_origen_id:  '',
+        banco_destino_id: '',
+        fecha:            fechaHoy(),
+        monto:            '',
+        num_documento:    '',
+        descripcion:      '',
+    })
+
+    const origen = bancos.find(b => b.id === Number(data.banco_origen_id))
+
+    function submit(e: React.FormEvent) {
+        e.preventDefault()
+        post(route('bancos.movimientos.transferir'), {
+            onSuccess: () => { notify.ok('Transferencia registrada correctamente'); onClose() },
+            onError: (errs) => notify.error(Object.values(errs).join(' | ')),
+        })
+    }
+
+    const selectStyle = { borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }
+
+    return (
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal-card max-w-lg" onClick={e => e.stopPropagation()}>
+                <div className="modal-header">
+                    <h2>Transferencia entre cuentas</h2>
+                    <button className="modal-close" onClick={onClose}><X className="w-4 h-4" /></button>
+                </div>
+
+                <form onSubmit={submit}>
+                    <div className="modal-body" style={{ gap: '1rem' }}>
+                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                            Mueve dinero entre cuentas propias (banco ↔ banco, caja → banco, banco → caja).
+                            Se registra un egreso en el origen y un ingreso en el destino.
+                        </p>
+
+                        <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1.5">
+                                <Label>Cuenta origen <span className="text-red-400">*</span></Label>
+                                <select className="input-field" style={selectStyle} value={data.banco_origen_id}
+                                    onChange={e => setData('banco_origen_id', e.target.value)}>
+                                    <option value="">Seleccionar…</option>
+                                    {bancos.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
+                                </select>
+                                {origen && (
+                                    <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                        Saldo disponible: ${Number(origen.saldo_actual).toFixed(2)}
+                                    </p>
+                                )}
+                                {errors.banco_origen_id && <p className="text-red-400 text-xs">{errors.banco_origen_id}</p>}
+                            </div>
+                            <div className="space-y-1.5">
+                                <Label>Cuenta destino <span className="text-red-400">*</span></Label>
+                                <select className="input-field" style={selectStyle} value={data.banco_destino_id}
+                                    onChange={e => setData('banco_destino_id', e.target.value)}>
+                                    <option value="">Seleccionar…</option>
+                                    {bancos.filter(b => String(b.id) !== data.banco_origen_id)
+                                        .map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
+                                </select>
+                                {errors.banco_destino_id && <p className="text-red-400 text-xs">{errors.banco_destino_id}</p>}
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-3">
+                            <div className="space-y-1.5">
+                                <Label>Fecha <span className="text-red-400">*</span></Label>
+                                <Input type="date" value={data.fecha} onChange={e => setData('fecha', e.target.value)} />
+                            </div>
+                            <div className="space-y-1.5">
+                                <Label>Monto <span className="text-red-400">*</span></Label>
+                                <Input type="number" step="0.01" min="0.01" value={data.monto}
+                                    onChange={e => setData('monto', e.target.value)} placeholder="0.00" />
+                                {errors.monto && <p className="text-red-400 text-xs">{errors.monto}</p>}
+                            </div>
+                            <div className="space-y-1.5">
+                                <Label>N° Documento</Label>
+                                <Input value={data.num_documento} onChange={e => setData('num_documento', e.target.value)} placeholder="Ref…" />
+                            </div>
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <Label>Descripción <span className="text-red-400">*</span></Label>
+                            <Input value={data.descripcion} onChange={e => setData('descripcion', e.target.value)}
+                                placeholder="ej: Depósito de recaudación de caja" />
+                            {errors.descripcion && <p className="text-red-400 text-xs">{errors.descripcion}</p>}
+                        </div>
+                    </div>
+
+                    <div className="modal-footer">
+                        <button type="submit" disabled={processing} className="btn-primary">
+                            <ArrowLeftRight className="w-4 h-4" /> Transferir
+                        </button>
+                        <button type="button" onClick={onClose} className="btn-secondary">Cancelar</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    )
+}
+
 // ─── Modal Anular ─────────────────────────────────────────────────────────────
 
 function AnularModal({ movimiento, onClose }: { movimiento: MovimientoBancario; onClose: () => void }) {
@@ -400,8 +503,13 @@ export default function MovimientosIndex() {
     const { movimientos, bancos, cuentas, proveedores, clientes, centrosCosto, filtros, stats, flash } = usePage<Props>().props
     const { puede } = usePermiso('bancos')
     const [showModal, setShowModal] = useState(false)
+    const [showTransf, setShowTransf] = useState(false)
     const [anularMov, setAnularMov] = useState<MovimientoBancario | null>(null)
-    const [filtro, setFiltro] = useState(filtros)
+    const [filtro, setFiltro] = useState({
+        ...filtros,
+        fecha_desde: filtros.fecha_desde ?? (movimientos !== null ? '' : fechaHoy()),
+        fecha_hasta: filtros.fecha_hasta ?? (movimientos !== null ? '' : fechaHoy()),
+    })
 
     // Cambiar cualquier filtro después de haber buscado marca los resultados
     // como "obsoletos" respecto al filtro actual — la tabla NO se vacía (se
@@ -499,9 +607,14 @@ export default function MovimientosIndex() {
                 breadcrumbs={[{ label: 'Bancos' }, { label: 'Movimientos' }]}
                 actions={
                     puede('crear') ? (
-                        <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-2 whitespace-nowrap shrink-0">
-                            <Plus size={15} /> Nuevo
-                        </button>
+                        <div className="flex items-center gap-2">
+                            <button onClick={() => setShowTransf(true)} className="btn-secondary flex items-center gap-2 whitespace-nowrap shrink-0">
+                                <ArrowLeftRight size={15} /> Transferir
+                            </button>
+                            <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-2 whitespace-nowrap shrink-0">
+                                <Plus size={15} /> Nuevo
+                            </button>
+                        </div>
                     ) : undefined
                 }
             />
@@ -737,6 +850,10 @@ export default function MovimientosIndex() {
                 )}
             </div>
             </div>
+            )}
+
+            {showTransf && (
+                <TransferenciaModal bancos={bancos} onClose={() => setShowTransf(false)} />
             )}
 
             {showModal && (

@@ -1,12 +1,17 @@
 import { useState } from 'react'
 import { Head, usePage, router, Link } from '@inertiajs/react'
+import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
 import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Badge } from '@/Components/ui/badge'
 import { cn, formatMoneda, formatFecha } from '@/lib/utils'
-import { Plus, Search, Eye, FileText, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Plus, Search, Eye, FileText, ChevronLeft, ChevronRight, ArrowRightLeft, Ban, Trash2, HandCoins } from 'lucide-react'
+import AccionIcono, { COLOR_ACCION } from '@/Components/shared/AccionIcono'
+import PdfIcon from '@/Components/shared/PdfIcon'
+import PdfPreviewModal from '@/Components/shared/PdfPreviewModal'
+import { anularConPin, eliminarDocumento } from '@/lib/ventasDocumentos'
 import { usePermiso } from '@/Hooks/usePermiso'
 import type { PageProps, PaginatedData } from '@/types'
 
@@ -23,12 +28,18 @@ interface Prefactura {
     total_abonado: number
     saldo_pendiente: number
     estado: 'pendiente' | 'parcial' | 'liquidada' | 'anulada'
+    factura_id?: number | null
+    cliente_nuevo?: boolean
+    desc_pct?: number
+    vendedor?: string | null
     cliente: PrefacturaCliente | null
 }
 
 interface Filtros {
     estado?: string
     cliente?: string
+    fecha_desde?: string
+    fecha_hasta?: string
 }
 
 interface Props extends PageProps {
@@ -44,12 +55,16 @@ const ESTADO_CONFIG = {
 }
 
 export default function Index() {
-    const { prefacturas, filtros } = usePage<Props>().props
+    const { prefacturas, filtros, auth } = usePage<Props>().props
     const { puede } = usePermiso('ventas')
+    const esSuperAdmin = auth.user?.perfil === 'super_admin'
+    const [pdf, setPdf] = useState<{ id: number; numero: string } | null>(null)
 
     const [filtro, setFiltro] = useState<Filtros>({
         estado:  filtros.estado  ?? '',
         cliente: filtros.cliente ?? '',
+        fecha_desde: filtros.fecha_desde ?? '',
+        fecha_hasta: filtros.fecha_hasta ?? '',
     })
 
     const aplicarFiltros = () => {
@@ -57,12 +72,42 @@ export default function Index() {
     }
 
     const limpiarFiltros = () => {
-        const limpio: Filtros = { estado: '', cliente: '' }
+        const limpio: Filtros = { estado: '', cliente: '', fecha_desde: '', fecha_hasta: '' }
         setFiltro(limpio)
-        router.get(route('ventas.prefacturas.index'), {}, { preserveState: false })
+        router.get(route('ventas.prefacturas.index'), limpio as Record<string, string>, { preserveState: false })
     }
 
     const hayFiltros = Object.values(filtro).some(v => v !== '')
+
+    const handleConvertir = async (pf: Prefactura) => {
+        const result = await Swal.fire({
+            title: 'Crear Factura',
+            text: `La prefactura ${pf.numero} está liquidada. ¿Desea generar la factura correspondiente?`,
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: 'Sí, crear factura',
+            cancelButtonText: 'Cancelar',
+            confirmButtonColor: '#F59E0B',
+        })
+        if (!result.isConfirmed) return
+        router.post(route('ventas.prefacturas.convertir', pf.id))
+    }
+
+    const handleAnular = (pf: Prefactura) =>
+        anularConPin({
+            url: route('ventas.prefacturas.anular', pf.id),
+            etiqueta: 'prefactura',
+            numero: pf.numero,
+            aviso: 'Se liberará el stock que tiene apartado.',
+        })
+
+    const handleEliminar = (pf: Prefactura) =>
+        eliminarDocumento({
+            url: route('ventas.prefacturas.destroy', pf.id),
+            etiqueta: 'prefactura',
+            numero: pf.numero,
+            detalle: ' con sus detalles (se libera el stock apartado)',
+        })
 
     return (
         <AppLayout>
@@ -90,7 +135,23 @@ export default function Index() {
 
             <div className="p-6 space-y-4">
                 {/* Filtros */}
-                <div className="flex items-center gap-3 flex-wrap">
+                <div className="filter-toolbar flex items-end gap-3 flex-wrap">
+                    <Input
+                        type="date"
+                        value={filtro.fecha_desde}
+                        onChange={e => setFiltro(p => ({ ...p, fecha_desde: e.target.value }))}
+                        onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
+                        className="shrink-0 w-36"
+                        title="Desde"
+                    />
+                    <Input
+                        type="date"
+                        value={filtro.fecha_hasta}
+                        onChange={e => setFiltro(p => ({ ...p, fecha_hasta: e.target.value }))}
+                        onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
+                        className="shrink-0 w-36"
+                        title="Hasta"
+                    />
                     <select
                         className="input-field shrink-0"
                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}
@@ -117,8 +178,8 @@ export default function Index() {
                                 value={filtro.cliente}
                                 onChange={e => setFiltro(p => ({ ...p, cliente: e.target.value }))}
                                 onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
-                                placeholder="Cliente o RUC..."
-                                className="pl-9 w-52 rounded-r-none border-r-0"
+                                placeholder="Cliente, RUC, producto, N° prefactura..."
+                                className="pl-9 w-72 rounded-r-none border-r-0"
                             />
                         </div>
                         <button className="flex items-center justify-center w-9 h-9 rounded-r-md border text-sm font-medium shrink-0"
@@ -153,10 +214,10 @@ export default function Index() {
                             <table className="w-full text-sm">
                                 <thead>
                                     <tr style={{ borderBottom: '1px solid var(--border)', background: 'rgba(0,0,0,.04)' }}>
-                                        {['Número', 'Fecha', 'Cliente', 'Total', 'Abonado', 'Saldo', 'Estado', 'Acciones'].map(h => (
+                                        {['No', 'Fecha', 'Pre. No', 'Cliente', 'Nuevo', 'V. Total', 'Desc/Max', 'Abonado', 'Saldo', 'Vendedor', 'Estado', 'Acciones'].map(h => (
                                             <th
                                                 key={h}
-                                                className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide"
+                                                className="text-left px-3 py-3 text-[10px] font-semibold uppercase tracking-wide whitespace-nowrap"
                                                 style={{ color: 'var(--text-muted)' }}
                                             >
                                                 {h}
@@ -165,54 +226,92 @@ export default function Index() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {prefacturas.data.map(pf => {
+                                    {prefacturas.data.map((pf, idx) => {
                                         const cfg = ESTADO_CONFIG[pf.estado] ?? ESTADO_CONFIG.pendiente
+                                        const celda = 'px-3 py-3 text-[10px]'
+                                        const abierta = pf.estado === 'pendiente' || pf.estado === 'parcial'
+                                        const puedeConvertir = Number(pf.saldo_pendiente) === 0 && pf.estado !== 'anulada' && !pf.factura_id
                                         return (
                                             <tr
                                                 key={pf.id}
                                                 className="hover:bg-amber-500/5 transition-colors"
                                                 style={{ borderBottom: '1px solid var(--border)' }}
                                             >
-                                                <td className="px-4 py-3 font-mono text-xs font-medium" style={{ color: 'var(--text-main)' }}>
-                                                    {pf.numero}
+                                                <td className={celda} style={{ color: 'var(--text-muted)' }}>
+                                                    {(prefacturas.from ?? 1) + idx}
                                                 </td>
-                                                <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-muted)' }}>
+                                                <td className={`${celda} whitespace-nowrap`} style={{ color: 'var(--text-muted)' }}>
                                                     {formatFecha(pf.fecha_emision)}
                                                 </td>
-                                                <td className="px-4 py-3">
+                                                <td className={`${celda} font-mono font-medium whitespace-nowrap`} style={{ color: 'var(--text-main)' }}>
+                                                    {pf.numero}
+                                                </td>
+                                                <td className={celda}>
                                                     {pf.cliente ? (
                                                         <>
-                                                            <p className="text-xs font-medium" style={{ color: 'var(--text-main)' }}>{pf.cliente.razon_social}</p>
-                                                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{pf.cliente.identificacion}</p>
+                                                            <p className="font-medium uppercase" style={{ color: 'var(--text-main)' }}>{pf.cliente.razon_social}</p>
+                                                            <p style={{ color: 'var(--text-muted)' }}>{pf.cliente.identificacion}</p>
                                                         </>
                                                     ) : (
                                                         <span style={{ color: 'var(--text-muted)' }}>—</span>
                                                     )}
                                                 </td>
-                                                <td className="px-4 py-3 text-xs font-semibold" style={{ color: 'var(--text-main)' }}>
+                                                <td className={`${celda} font-semibold`} style={{ color: 'var(--text-main)' }}>
+                                                    {pf.cliente_nuevo ? 'SI' : ''}
+                                                </td>
+                                                <td className={`${celda} text-right font-bold whitespace-nowrap`} style={{ color: 'var(--text-main)' }}>
                                                     {formatMoneda(pf.total)}
                                                 </td>
-                                                <td className="px-4 py-3 text-xs text-emerald-400 font-medium">
+                                                <td className={`${celda} text-right whitespace-nowrap`} style={{ color: 'var(--text-muted)' }}>
+                                                    {Number(pf.desc_pct ?? 0).toFixed(2)}%
+                                                </td>
+                                                <td className={`${celda} text-right text-emerald-400 font-medium whitespace-nowrap`}>
                                                     {formatMoneda(pf.total_abonado)}
                                                 </td>
-                                                <td className="px-4 py-3 text-xs font-semibold" style={{ color: pf.saldo_pendiente > 0 ? 'var(--primary)' : 'var(--text-muted)' }}>
+                                                <td
+                                                    className={`${celda} text-right font-semibold whitespace-nowrap`}
+                                                    style={{ color: pf.saldo_pendiente > 0 ? 'var(--primary)' : 'var(--text-muted)' }}
+                                                >
                                                     {formatMoneda(pf.saldo_pendiente)}
                                                 </td>
-                                                <td className="px-4 py-3">
-                                                    <Badge variant={cfg.variant}>{cfg.label}</Badge>
+                                                <td className={`${celda} uppercase`} style={{ color: 'var(--text-main)' }}>
+                                                    {pf.vendedor ?? '—'}
                                                 </td>
-                                                <td className="px-4 py-3">
-                                                    <div className="flex items-center gap-1">
-                                                        <Link href={route('ventas.prefacturas.show', pf.id)}>
-                                                            <button
-                                                                type="button"
-                                                                className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors hover:bg-amber-500/10"
-                                                                style={{ color: 'var(--primary)' }}
+                                                <td className={celda}>
+                                                    <Badge variant={cfg.variant} className="text-[10px]">{cfg.label}</Badge>
+                                                </td>
+                                                <td className="px-3 py-2">
+                                                    <div className="flex items-center gap-0.5">
+                                                        <AccionIcono titulo="Ver detalle" color={COLOR_ACCION.ver} href={route('ventas.prefacturas.show', pf.id)}>
+                                                            <Eye className="w-4 h-4" />
+                                                        </AccionIcono>
+                                                        <AccionIcono titulo="Ver PDF" color={COLOR_ACCION.pdf} onClick={() => setPdf({ id: pf.id, numero: pf.numero })}>
+                                                            <PdfIcon className="w-5 h-5" />
+                                                        </AccionIcono>
+                                                        {abierta && puede('editar') && (
+                                                            <AccionIcono
+                                                                titulo="Registrar abono"
+                                                                color={COLOR_ACCION.abonar}
+                                                                href={route('ventas.prefacturas.show', { prefactura: pf.id, abonar: 1 })}
                                                             >
-                                                                <Eye className="w-3.5 h-3.5" />
-                                                                Ver
-                                                            </button>
-                                                        </Link>
+                                                                <HandCoins className="w-4 h-4" />
+                                                            </AccionIcono>
+                                                        )}
+                                                        {puedeConvertir && puede('editar') && (
+                                                            <AccionIcono titulo="Convertir a factura" color={COLOR_ACCION.convertir} onClick={() => void handleConvertir(pf)}>
+                                                                <ArrowRightLeft className="w-4 h-4" />
+                                                            </AccionIcono>
+                                                        )}
+                                                        {abierta && puede('anular') && (
+                                                            <AccionIcono titulo="Anular prefactura" color={COLOR_ACCION.anular} onClick={() => void handleAnular(pf)}>
+                                                                <Ban className="w-4 h-4" />
+                                                            </AccionIcono>
+                                                        )}
+                                                        {esSuperAdmin && !pf.factura_id && (
+                                                            <AccionIcono titulo="Eliminar prefactura (solo SuperAdmin)" color={COLOR_ACCION.eliminar} onClick={() => void handleEliminar(pf)}>
+                                                                <Trash2 className="w-4 h-4" />
+                                                            </AccionIcono>
+                                                        )}
                                                     </div>
                                                 </td>
                                             </tr>
@@ -258,6 +357,13 @@ export default function Index() {
                     )}
                 </div>
             </div>
+            <PdfPreviewModal
+                abierto={pdf !== null}
+                onCerrar={() => setPdf(null)}
+                url={pdf ? route('ventas.prefacturas.pdf', pdf.id) : ''}
+                titulo={`Prefactura ${pdf?.numero ?? ''}`}
+                nombreDescarga={`Prefactura-${pdf?.numero ?? ''}.pdf`}
+            />
         </AppLayout>
     )
 }

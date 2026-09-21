@@ -3,10 +3,10 @@
 namespace App\Http\Controllers\Taller;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Taller\Concerns\ListaTecnicosTaller;
 use App\Http\Controllers\Taller\Concerns\ResuelveBodegaTaller;
 use App\Models\Producto;
 use App\Models\TallerOrdenTrabajo;
-use App\Models\Usuario;
 use App\Services\AuditoriaService;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\RedirectResponse;
@@ -18,6 +18,7 @@ use Inertia\Response;
 class OrdenTrabajoController extends Controller
 {
     use ResuelveBodegaTaller;
+    use ListaTecnicosTaller;
 
     public function __construct(
         private AuditoriaService $auditoria,
@@ -33,9 +34,17 @@ class OrdenTrabajoController extends Controller
             ->orderByDesc('id');
 
         if ($request->filled('search')) {
-            $query->whereHas('ingreso.cliente', fn($q) => $q
-                ->where('razon_social', 'ilike', "%{$request->search}%")
-                ->orWhere('identificacion', 'ilike', "%{$request->search}%"));
+            $term = "%{$request->search}%";
+            $query->where(function ($w) use ($term) {
+                $w->whereHas('ingreso.cliente', fn($q) => $q
+                        ->where('razon_social', 'ilike', $term)
+                        ->orWhere('identificacion', 'ilike', $term))
+                    ->orWhereHas('ingreso.equipo', fn($q) => $q
+                        ->where('marca', 'ilike', $term)
+                        ->orWhere('modelo', 'ilike', $term)
+                        ->orWhere('numero_serie', 'ilike', $term))
+                    ->orWhere('numero', 'ilike', $term);
+            });
         }
         if ($request->filled('estado')) {
             $query->where('estado', $request->estado);
@@ -43,10 +52,16 @@ class OrdenTrabajoController extends Controller
         if ($request->filled('tecnico_id')) {
             $query->where('tecnico_id', $request->tecnico_id);
         }
+        if ($request->filled('desde')) {
+            $query->whereDate('fecha_inicio', '>=', $request->desde);
+        }
+        if ($request->filled('hasta')) {
+            $query->whereDate('fecha_inicio', '<=', $request->hasta);
+        }
 
         return Inertia::render('Taller/OrdenesTrabajo/Index', [
             'ordenes'  => $query->paginate(15)->withQueryString(),
-            'filtros'  => $request->only(['search', 'estado', 'tecnico_id']),
+            'filtros'  => $request->only(['search', 'estado', 'tecnico_id', 'desde', 'hasta']),
             'tecnicos' => $this->listaTecnicos(),
         ]);
     }
@@ -59,7 +74,7 @@ class OrdenTrabajoController extends Controller
 
         return Inertia::render('Taller/OrdenesTrabajo/Show', [
             'orden'     => $orden,
-            'tecnicos'  => Usuario::select('id', 'nombre')->orderBy('nombre')->get(),
+            'tecnicos'  => $this->listaTecnicos(),
             'productos' => $this->productosConStockTaller(),
         ]);
     }
@@ -98,15 +113,26 @@ class OrdenTrabajoController extends Controller
         abort_if((int) $orden->empresa_id !== (int) session('empresa_activa_id'), 403);
 
         $data = $request->validate([
-            'estado'     => 'required|string|in:pendiente,en_proceso,listo,entregado,facturado,garantia',
+            // "facturado" solo lo fija la liquidación (genera la factura y descuenta el stock).
+            'estado'     => 'required|string|in:pendiente,en_proceso,listo,entregado,garantia',
             'tecnico_id' => 'nullable|integer|exists:usuarios,id',
         ]);
+
+        if ($orden->estado === 'facturado') {
+            return back()->with('flash', ['tipo' => 'error', 'mensaje' => 'La orden ya fue facturada; su estado no se puede cambiar.']);
+        }
+        if ($data['estado'] === 'entregado' && !in_array($orden->estado, ['listo', 'entregado'], true)) {
+            return back()->with('flash', ['tipo' => 'error', 'mensaje' => 'Solo una orden en estado "Listo" puede marcarse como entregada.']);
+        }
+        if (!empty($data['tecnico_id']) && !$this->listaTecnicos()->contains('id', (int) $data['tecnico_id'])) {
+            return back()->with('flash', ['tipo' => 'error', 'mensaje' => 'El técnico seleccionado no pertenece a esta empresa.']);
+        }
 
         $estadoIngreso = match ($data['estado']) {
             'pendiente' => 0,
             'en_proceso', 'garantia' => 2,
             'listo' => 3,
-            'entregado', 'facturado' => 4,
+            'entregado' => 4,
         };
 
         DB::transaction(function () use ($orden, $data, $estadoIngreso) {
@@ -126,16 +152,5 @@ class OrdenTrabajoController extends Controller
             "Orden de trabajo {$orden->numero} cambiada a estado {$data['estado']}");
 
         return back()->with('flash', ['tipo' => 'exito', 'mensaje' => 'Estado de la orden actualizado correctamente.']);
-    }
-
-    private function listaTecnicos(): Collection
-    {
-        $tecnicos = Usuario::whereHas('perfil', fn($q) => $q->where('nombre', 'tecnico'))
-            ->select('id', 'nombre')
-            ->get();
-
-        return $tecnicos->isNotEmpty()
-            ? $tecnicos
-            : Usuario::select('id', 'nombre')->orderBy('nombre')->get();
     }
 }

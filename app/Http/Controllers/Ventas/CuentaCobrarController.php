@@ -24,6 +24,12 @@ class CuentaCobrarController extends Controller
         $empresaId = session('empresa_activa_id');
         $hoy       = now()->toDateString();
 
+        // Primera visita: vencimiento por defecto = hoy (si se borra, llega vacío y no se fuerza)
+        $request->merge([
+            'vencimiento_desde' => $request->has('vencimiento_desde') ? $request->vencimiento_desde : $hoy,
+            'vencimiento_hasta' => $request->has('vencimiento_hasta') ? $request->vencimiento_hasta : $hoy,
+        ]);
+
         $query = CuentaCobrar::with(['cliente', 'factura'])
             ->where('empresa_id', $empresaId)
             ->orderBy('fecha_vencimiento');
@@ -86,6 +92,8 @@ class CuentaCobrarController extends Controller
         ];
 
         return Inertia::render('Ventas/CxC/Index', [
+            'bancos'   => \App\Models\BancoCaja::where('empresa_id', $empresaId)
+                ->activos()->orderBy('nombre')->get(['id', 'nombre', 'tipo']),
             'cuentas'  => $cuentas,
             'metricas' => $metricas,
             'filtros'  => $request->only(['cliente', 'estado', 'vencimiento_desde', 'vencimiento_hasta']),
@@ -128,7 +136,10 @@ class CuentaCobrarController extends Controller
         $request->validate([
             'valor'       => 'required|numeric|min:0.01',
             'forma_pago'  => 'required|string',
+            'banco_caja_id' => 'required|exists:bancos_cajas,id',
             'observacion' => 'nullable|string|max:300',
+        ], [
+            'banco_caja_id.required' => 'Selecciona el banco o caja donde se recibe el cobro.',
         ]);
 
         $monto = (float)$request->valor;
@@ -137,7 +148,22 @@ class CuentaCobrarController extends Controller
             return back()->withErrors(['valor' => 'El valor no puede superar el saldo pendiente.']);
         }
 
-        DB::transaction(function () use ($request, $cuentaCobrar, $monto) {
+        $banco = \App\Models\BancoCaja::where('empresa_id', $cuentaCobrar->empresa_id)->findOrFail($request->banco_caja_id);
+
+        // La contabilidad debe estar lista antes de registrar el cobro (período abierto + cuentas)
+        try {
+            $this->asiento->validarConfiguracion(
+                (int) $cuentaCobrar->empresa_id,
+                ['cta_clientes_locales', $request->forma_pago === 'efectivo' ? 'cta_caja_general' : 'cta_bancos_locales'],
+                now()->toDateString(),
+            );
+        } catch (\DomainException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        $movimientoId = null;
+
+        DB::transaction(function () use ($request, $cuentaCobrar, $monto, $banco, &$movimientoId) {
             $nuevoSaldo  = $cuentaCobrar->saldo - $monto;
             $nuevoEstado = $nuevoSaldo <= 0 ? 'cobrada' : 'parcial';
 
@@ -146,7 +172,7 @@ class CuentaCobrarController extends Controller
                 'estado' => $nuevoEstado,
             ]);
 
-            CuentaCobrarCobro::create([
+            $cobro = CuentaCobrarCobro::create([
                 'cuenta_cobrar_id' => $cuentaCobrar->id,
                 'usuario_id'       => Auth::id(),
                 'fecha'            => now()->toDateString(),
@@ -155,6 +181,33 @@ class CuentaCobrarController extends Controller
                 'observacion'      => $request->observacion,
                 'created_at'       => now(),
             ]);
+
+            // Ingreso en Bancos: el dinero cobrado entra a la cuenta elegida
+            $mov = \App\Models\MovimientoBancario::create([
+                'empresa_id'     => $cuentaCobrar->empresa_id,
+                'banco_caja_id'  => $banco->id,
+                'tipo'           => 'ingreso',
+                'sub_tipo'       => match ($request->forma_pago) {
+                    'efectivo'      => 'efectivo',
+                    'transferencia' => 'transferencia',
+                    'cheque'        => 'cheque',
+                    default         => 'deposito',
+                },
+                'fecha'          => now()->toDateString(),
+                'monto'          => $monto,
+                'persona_tipo'   => 'cliente',
+                'persona_id'     => $cuentaCobrar->cliente_id,
+                'beneficiario'   => $cuentaCobrar->cliente?->razon_social,
+                'num_documento'  => $cuentaCobrar->factura?->numero_completo,
+                'descripcion'    => 'Cobro CxC ' . ($cuentaCobrar->factura?->numero_completo ?? "#{$cuentaCobrar->id}"),
+                'documento_tipo' => 'COBRO_CXC',
+                'documento_id'   => $cobro->id,
+                'anulado'        => false,
+                'conciliado'     => false,
+                'created_by'     => Auth::id(),
+            ]);
+            $banco->actualizarSaldo($monto, 'ingreso');
+            $movimientoId = $mov->id;
         });
 
         try {
@@ -167,8 +220,20 @@ class CuentaCobrarController extends Controller
                 formaPago:   $request->forma_pago,
             );
             $cuentaCobrar->update(['asiento_cobro_id' => $asiento->id]);
-        } catch (\Throwable) {
-            // Asiento falla de forma silenciosa
+            if ($movimientoId) {
+                \App\Models\MovimientoBancario::where('id', $movimientoId)->update(['asiento_id' => $asiento->id]);
+            }
+        } catch (\Throwable $e) {
+            // Ya no se traga en silencio: queda en el log y le llega una
+            // notificación al contador/super admin para que lo resuelva.
+            \Log::warning("Contabilidad: cobro CxC {$cuentaCobrar->id} sin asiento: {$e->getMessage()}");
+            $this->asiento->notificarAsientoFallido(
+                empresaId:  (int) $cuentaCobrar->empresa_id,
+                tabla:      'cuentas_cobrar',
+                registroId: $cuentaCobrar->id,
+                referencia: 'Cobro CxC ' . ($cuentaCobrar->factura?->numero_completo ?? $cuentaCobrar->id),
+                mensaje:    $e->getMessage(),
+            );
         }
 
         $this->auditoria->documento('cobrar', 'ventas', 'cuentas_cobrar', $cuentaCobrar->id, "Cobro {$monto} a CxC {$cuentaCobrar->id}");

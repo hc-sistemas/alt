@@ -5,7 +5,7 @@ import PageHeader from '@/Components/shared/PageHeader'
 import PdfPreviewModal from '@/Components/shared/PdfPreviewModal'
 import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
-import { Search, ArrowUpDown, Plus, Pencil, FileText, FileSpreadsheet } from 'lucide-react'
+import { Search, Plus, Pencil, FileText, FileSpreadsheet } from 'lucide-react'
 import { usePermiso } from '@/Hooks/usePermiso'
 import type { InventarioSaldo, PaginatedData, PageProps } from '@/types'
 
@@ -84,13 +84,6 @@ export default function KardexSaldos() {
 
             <div className="p-6">
                 <div className="flex items-center gap-3 mb-4 flex-wrap">
-                    <Link href={route('inventario.kardex.index')}>
-                        <Button variant="outline">
-                            <ArrowUpDown className="w-4 h-4" />
-                            Ver Movimientos
-                        </Button>
-                    </Link>
-
                     <select value={bodegaId} onChange={e => setBodegaId(e.target.value)}
                         className="input-field shrink-0"
                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>

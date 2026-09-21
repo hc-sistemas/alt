@@ -8,7 +8,9 @@ import { Input } from '@/Components/ui/input'
 import { Badge } from '@/Components/ui/badge'
 import { formatFecha, formatMoneda } from '@/lib/utils'
 import { toastError } from '@/lib/toast'
-import { Save, Search, Plus, Check, X } from 'lucide-react'
+import axios from '@/lib/axios'
+import { confirmarEliminar } from '@/lib/swal'
+import { Save, Search, Plus, Check, X, Trash2 } from 'lucide-react'
 import { usePermiso } from '@/Hooks/usePermiso'
 import type { PageProps, TallerOrdenTrabajo } from '@/types'
 
@@ -48,6 +50,7 @@ const DIAGNOSTICO_ESTADO_CONFIG: Record<string, { label: string; variant: 'warni
 
 const REPUESTO_ESTADO_CONFIG: Record<string, { label: string; variant: 'info' | 'success' | 'secondary' }> = {
     reservado: { label: 'Reservado', variant: 'info' },
+    usado:     { label: 'Usado',     variant: 'success' },
     entregado: { label: 'Entregado', variant: 'success' },
     devuelto:  { label: 'Devuelto',  variant: 'secondary' },
 }
@@ -64,16 +67,15 @@ const TIPO_ORDEN_LABELS: Record<number, string> = {
 const hintSlotCls = "h-4 mt-0.5 text-[11px] font-medium leading-4 whitespace-nowrap overflow-hidden"
 
 async function consultarSaldoDisponible(ordenId: number, productoId: number): Promise<number> {
-    const res = await fetch(
-        route('taller.ordenes.repuestos.saldo-disponible', { orden: ordenId, producto_id: productoId }),
-        { headers: { Accept: 'application/json' } },
-    )
-    if (!res.ok) {
-        const data = await res.json().catch(() => null) as { error?: string } | null
-        throw new Error(data?.error || 'No se pudo consultar el stock.')
+    try {
+        const { data } = await axios.get<{ disponible: number }>(
+            route('taller.ordenes.repuestos.saldo-disponible', { orden: ordenId, producto_id: productoId }),
+        )
+        return data.disponible
+    } catch (err) {
+        const e = err as { response?: { data?: { error?: string } } }
+        throw new Error(e.response?.data?.error || 'No se pudo consultar el stock.')
     }
-    const data = await res.json() as { disponible: number }
-    return data.disponible
 }
 
 export default function OrdenTrabajoShow() {
@@ -81,6 +83,8 @@ export default function OrdenTrabajoShow() {
     const { puede } = usePermiso('taller')
     const cfg = ESTADO_CONFIG[orden.estado] ?? { label: orden.estado, variant: 'secondary' as const }
 
+    // "Facturado" solo lo fija la liquidación; una orden facturada ya no cambia de estado.
+    const facturada = orden.estado === 'facturado'
     const [estado, setEstado] = useState(orden.estado)
     const [tecnicoId, setTecnicoId] = useState(orden.tecnico_id ? String(orden.tecnico_id) : '')
     const [actualizando, setActualizando] = useState(false)
@@ -98,6 +102,12 @@ export default function OrdenTrabajoShow() {
 
     // ── Diagnósticos ─────────────────────────────────────────────────────────
     const puedeDiagnosticar = orden.estado === 'pendiente' || orden.estado === 'en_proceso'
+
+    async function quitarRepuesto(repuestoId: number, nombre: string) {
+        if (await confirmarEliminar(nombre)) {
+            router.delete(route('taller.ordenes.repuestos.destroy', { orden: orden.id, repuesto: repuestoId }), { preserveScroll: true })
+        }
+    }
     const [aprobandoId, setAprobandoId] = useState<number | null>(null)
 
     function resolverDiagnostico(diagnosticoId: number, aprueba: boolean) {
@@ -183,7 +193,7 @@ export default function OrdenTrabajoShow() {
         const precio = Number(precioVenta)
         if (isNaN(precio) || precio < 0) { toastError('El precio de venta no es válido.'); return }
         if (disponible !== null && cant > disponible) {
-            toastError(`Stock insuficiente en Bodega Taller: disponible ${disponible}, solicitado ${cant}.`)
+            toastError(`Stock insuficiente en la bodega de Taller: disponible ${disponible}, solicitado ${cant}.`)
             return
         }
 
@@ -309,6 +319,7 @@ export default function OrdenTrabajoShow() {
                             <label className="text-xs" style={{ color: 'var(--text-muted)' }}>Estado</label>
                             <select
                                 value={estado}
+                                disabled={facturada}
                                 onChange={e => setEstado(e.target.value)}
                                 className="w-full h-9 rounded-md border px-3 text-sm"
                                 style={{ background: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
@@ -317,14 +328,15 @@ export default function OrdenTrabajoShow() {
                                 <option value="en_proceso">En proceso</option>
                                 <option value="listo">Listo</option>
                                 <option value="entregado">Entregado</option>
-                                <option value="facturado">Facturado</option>
                                 <option value="garantia">Garantía</option>
+                                {facturada && <option value="facturado">Facturado</option>}
                             </select>
                         </div>
                         <div className="space-y-1.5">
                             <label className="text-xs" style={{ color: 'var(--text-muted)' }}>Técnico</label>
                             <select
                                 value={tecnicoId}
+                                disabled={facturada}
                                 onChange={e => setTecnicoId(e.target.value)}
                                 className="w-full h-9 rounded-md border px-3 text-sm"
                                 style={{ background: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
@@ -336,7 +348,7 @@ export default function OrdenTrabajoShow() {
                             </select>
                         </div>
                     </div>
-                    {puede('editar') && (
+                    {puede('editar') && !facturada && (
                         <Button onClick={actualizarEstado} loading={actualizando}>
                             <Save className="w-4 h-4" />
                             Actualizar
@@ -445,7 +457,7 @@ export default function OrdenTrabajoShow() {
                         <table className="w-full text-sm">
                             <thead>
                                 <tr style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
-                                    {['Producto', 'Serie', 'Cantidad', 'Costo U.', 'Precio Venta', 'Estado'].map(h => (
+                                    {['Producto', 'Serie', 'Cantidad', 'Costo U.', 'Precio Venta', 'Estado', ''].map(h => (
                                         <th key={h} className="text-left px-4 py-2.5 font-medium text-xs" style={{ color: 'var(--text-muted)' }}>{h}</th>
                                     ))}
                                 </tr>
@@ -472,6 +484,14 @@ export default function OrdenTrabajoShow() {
                                             </td>
                                             <td className="px-4 py-2.5">
                                                 <Badge variant={rcfg.variant}>{rcfg.label}</Badge>
+                                            </td>
+                                            <td className="px-4 py-2.5 text-right">
+                                                {r.estado === 'reservado' && !facturada && puede('editar') && (
+                                                    <Button variant="ghost" size="icon" title="Quitar repuesto"
+                                                        onClick={() => void quitarRepuesto(r.id, r.producto?.nombre ?? `repuesto #${r.id}`)}>
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </Button>
+                                                )}
                                             </td>
                                         </tr>
                                     )

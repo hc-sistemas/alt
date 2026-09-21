@@ -130,8 +130,13 @@ class NominaController extends Controller
             ->activos()->orderBy('apellidos')->orderBy('nombres')
             ->get();
 
+        // Fichas auto-creadas desde un usuario del sistema quedan con sueldo 0 hasta
+        // que RRHH las complete — no entran a nómina.
+        $omitidos      = $colaboradores->reject(fn($c) => $this->nominaCalculoService->entraANomina($c))->count();
+        $colaboradores = $colaboradores->filter(fn($c) => $this->nominaCalculoService->entraANomina($c))->values();
+
         if ($colaboradores->isEmpty()) {
-            return back()->with('error', 'No hay colaboradores activos en esta empresa.');
+            return back()->with('error', 'No hay colaboradores activos con sueldo base registrado en esta empresa.');
         }
 
         try {
@@ -168,8 +173,12 @@ class NominaController extends Controller
             return back()->with('error', 'Error al generar nómina: ' . $e->getMessage());
         }
 
-        return redirect()->route('rrhh.nomina.index')
-            ->with('success', 'Nómina generada en borrador correctamente.');
+        $msg = 'Nómina generada en borrador correctamente.';
+        if ($omitidos > 0) {
+            $msg .= " Se omitieron {$omitidos} colaborador(es) activo(s) sin sueldo base (ficha pendiente de completar).";
+        }
+
+        return redirect()->route('rrhh.nomina.index')->with('success', $msg);
     }
 
     // ── Detalle de una nómina ─────────────────────────────────────────────────
@@ -187,8 +196,13 @@ class NominaController extends Controller
             ])
             ->findOrFail($id);
 
+        $bancos = \App\Models\BancoCaja::where('empresa_id', $empresaId)
+            ->activos()->orderBy('nombre')
+            ->get(['id', 'nombre', 'tipo', 'saldo_actual']);
+
         return Inertia::render('RRHH/Nomina/Show', [
             'nomina' => $nomina->append('periodo_label'),
+            'bancos' => $bancos,
         ]);
     }
 
@@ -199,7 +213,7 @@ class NominaController extends Controller
     // Administrador puedan hacerlo, más estricto que el permiso genérico
     // "rrhh,editar" del middleware de la ruta (ese permiso también lo puede
     // tener, por ejemplo, un perfil de RRHH sin ser Contador ni Súper Admin —
-    // ver PERFILES_ACCESO en ColaboradorController). Se valida el rol real
+    // los perfiles de acceso de RRHH se asignan en Configuración → Usuarios). Se valida el rol real
     // aquí, no solo ocultando el botón en el frontend.
     private const PERFILES_EDICION_MANUAL = ['super_admin', 'contador'];
 
@@ -353,20 +367,66 @@ class NominaController extends Controller
             'fecha_pago'         => 'required|date',
             'tipo_comprobante'   => 'required|in:transferencia_masiva,individual',
             'num_comprobante'    => 'required|string|max:100',
+            'banco_caja_id'      => 'required|exists:bancos_cajas,id',
+        ], [
+            'banco_caja_id.required' => 'Selecciona el banco o caja desde el que se paga la nómina.',
         ]);
 
         try {
-            DB::transaction(function () use ($nomina, $data) {
+            $this->asientoService->validarConfiguracion(
+                (int) $empresaId,
+                ['cta_nomina_por_pagar', 'cta_bancos_locales'],
+                $data['fecha_pago'],
+            );
+        } catch (\DomainException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        // El pago sale de un banco/caja: debe existir y tener saldo (mismo monto que el asiento: neto de la nómina)
+        $banco = \App\Models\BancoCaja::where('empresa_id', $empresaId)->findOrFail($data['banco_caja_id']);
+        $monto = round((float) $nomina->total_neto, 2);
+        if ((float) $banco->saldo_actual < $monto) {
+            return back()->with('error',
+                "Saldo insuficiente en {$banco->nombre}. Disponible: \$" . number_format((float) $banco->saldo_actual, 2) .
+                '. Requerido: $' . number_format($monto, 2) . '.');
+        }
+
+        try {
+            DB::transaction(function () use ($nomina, $data, $banco, $monto, $empresaId) {
+                $asiento = $this->asientoService->pagoNomina(
+                    $nomina, $data['fecha_pago'], $data['num_comprobante']
+                );
+
+                // Egreso en Bancos por el neto total, enlazado al asiento del pago
+                \App\Models\MovimientoBancario::create([
+                    'empresa_id'     => $empresaId,
+                    'banco_caja_id'  => $banco->id,
+                    'tipo'           => 'egreso',
+                    'sub_tipo'       => $data['tipo_comprobante'] === 'individual' ? 'efectivo' : 'transferencia',
+                    'fecha'          => $data['fecha_pago'],
+                    'monto'          => $monto,
+                    'beneficiario'   => 'Nómina ' . ($nomina->periodo_label ?? "#{$nomina->id}"),
+                    'num_documento'  => $data['num_comprobante'],
+                    'descripcion'    => 'Pago de nómina ' . ($nomina->periodo_label ?? "#{$nomina->id}"),
+                    'documento_tipo' => 'NOMINA',
+                    'documento_id'   => $nomina->id,
+                    'asiento_id'     => $asiento->id,
+                    'anulado'        => false,
+                    'conciliado'     => false,
+                    'created_by'     => Auth::id(),
+                ]);
+                $banco->actualizarSaldo($monto, 'egreso');
+
                 $nomina->update([
-                    'estado'    => 'pagado',
-                    'pagado_por'=> Auth::id(),
+                    'estado'           => 'pagado',
+                    'pagado_por'       => Auth::id(),
+                    'fecha_pago'       => $data['fecha_pago'],
+                    'tipo_comprobante' => $data['tipo_comprobante'],
+                    'num_comprobante'  => $data['num_comprobante'],
+                    'asiento_pago_id'  => $asiento->id,
                 ]);
 
                 $nomina->detalles()->update(['estado' => 'pagado']);
-
-                // El descuento de préstamos/anticipos ya se aplicó en procesar() — el saldo
-                // de prestamos_empleados debe quedar consistente con el asiento contable
-                // desde ese momento, no al registrar el pago.
             });
         } catch (\Throwable $e) {
             return back()->with('error', 'Error al registrar pago: ' . $e->getMessage());

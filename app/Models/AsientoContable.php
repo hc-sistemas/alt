@@ -94,19 +94,32 @@ class AsientoContable extends Model
         return $this->estado === 1 ? 'Activo' : 'Anulado';
     }
 
+    /**
+     * Siguiente número de la serie AS-{año}-{secuencial}.
+     *
+     * Antes usaba max('numero') sobre una columna de TEXTO, lo que fallaba de
+     * dos maneras:
+     *
+     *   1. El Cierre Fiscal Anual crea asientos llamados "CIERRE-2026" y
+     *      "CIERRE-ARRASTRE-2026". Como 'C' > 'A', el max() de texto devolvía
+     *      "CIERRE-ARRASTRE-2026", y intval(end(explode('-'))) daba 2026 → el
+     *      siguiente asiento del año se numeraba AS-2026-2027 y la serie
+     *      quedaba destruida con un salto de ~2.000 números.
+     *   2. Al pasar de 9999, "AS-2026-10000" es lexicográficamente MENOR que
+     *      "AS-2026-9999", así que la numeración se habría repetido.
+     *
+     * Ahora se restringe a la propia serie (prefijo AS-{año}-) y el máximo se
+     * calcula sobre el secuencial convertido a entero, en SQL.
+     */
     public static function generarNumero(int $empresaId, int $anio): string
     {
-        $ultimo = static::where('empresa_id', $empresaId)
-                        ->whereYear('fecha', $anio)
-                        ->max('numero');
+        $prefijo = sprintf('AS-%d-', $anio);
 
-        if ($ultimo) {
-            $partes = explode('-', $ultimo);
-            $seq    = intval(end($partes)) + 1;
-        } else {
-            $seq = 1;
-        }
+        $ultimo = (int) static::where('empresa_id', $empresaId)
+            ->where('numero', 'like', $prefijo . '%')
+            ->selectRaw("COALESCE(MAX(NULLIF(regexp_replace(split_part(numero, '-', 3), '\\D', '', 'g'), '')::bigint), 0) AS seq")
+            ->value('seq');
 
-        return sprintf('AS-%d-%04d', $anio, $seq);
+        return sprintf('AS-%d-%04d', $anio, $ultimo + 1);
     }
 }

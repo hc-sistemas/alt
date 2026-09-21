@@ -47,6 +47,7 @@ interface ModalCobro {
 }
 
 interface Props extends PageProps {
+    bancos: { id: number; nombre: string; tipo: string }[]
     cuentas: PaginatedData<CxCItem>
     metricas: CxCMetricas
     filtros: Filtros
@@ -83,7 +84,7 @@ function MetricaCard({ label, valor, color }: { label: string; valor: number; co
 }
 
 export default function Index() {
-    const { cuentas, metricas, filtros, auth } = usePage<Props>().props
+    const { cuentas, metricas, filtros, auth, bancos } = usePage<Props>().props
     const { puede } = usePermiso('ventas')
 
     const [filtro, setFiltro] = useState<Filtros>({
@@ -96,6 +97,7 @@ export default function Index() {
     const [modalCobro, setModalCobro] = useState<ModalCobro | null>(null)
     const [cobroValor, setCobroValor] = useState('')
     const [cobroFormaPago, setCobroFormaPago] = useState('efectivo')
+    const [cobroBanco, setCobroBanco] = useState('')
     const [cobroObservacion, setCobroObservacion] = useState('')
     const [cobrandoId, setCobrandoId] = useState<number | null>(null)
 
@@ -119,6 +121,7 @@ export default function Index() {
     const cerrarModalCobro = () => {
         setModalCobro(null)
         setCobroValor('')
+        setCobroBanco('')
         setCobroFormaPago('efectivo')
         setCobroObservacion('')
     }
@@ -126,11 +129,11 @@ export default function Index() {
     const handleCobrar = () => {
         if (!modalCobro) return
         const valor = parseFloat(cobroValor)
-        if (!valor || valor <= 0 || valor > modalCobro.saldo) return
+        if (!valor || valor <= 0 || valor > modalCobro.saldo || !cobroBanco) return
         setCobrandoId(modalCobro.id)
         router.post(
             route('ventas.cxc.cobrar', modalCobro.id),
-            { valor, forma_pago: cobroFormaPago, observacion: cobroObservacion },
+            { valor, forma_pago: cobroFormaPago, banco_caja_id: cobroBanco, observacion: cobroObservacion },
             {
                 onSuccess: () => {
                     cerrarModalCobro()
@@ -229,7 +232,7 @@ export default function Index() {
                 </div>
 
                 {/* Filtros */}
-                <div className="flex items-center gap-3 flex-wrap">
+                <div className="filter-toolbar flex items-end gap-3 flex-wrap">
                     <select
                         className="input-field shrink-0"
                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}
@@ -488,6 +491,23 @@ export default function Index() {
                                 </select>
                             </div>
                             <div>
+                                <label className="text-xs mb-1 block" style={{ color: 'var(--text-muted)' }}>Banco o caja donde se recibe *</label>
+                                <select
+                                    className="w-full h-9 rounded-md border px-3 text-sm"
+                                    style={{ background: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
+                                    value={cobroBanco}
+                                    onChange={e => setCobroBanco(e.target.value)}
+                                >
+                                    <option value="">— Seleccionar —</option>
+                                    {bancos.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
+                                </select>
+                                {bancos.length === 0 && (
+                                    <p className="text-[11px] mt-1 text-amber-500">
+                                        No hay bancos ni cajas registrados. Créalos en Bancos → Bancos y Cajas.
+                                    </p>
+                                )}
+                            </div>
+                            <div>
                                 <label className="text-xs mb-1 block" style={{ color: 'var(--text-muted)' }}>Observación</label>
                                 <Input
                                     placeholder="Opcional..."
@@ -505,7 +525,7 @@ export default function Index() {
                                 type="button"
                                 onClick={handleCobrar}
                                 loading={cobrandoId !== null}
-                                disabled={!cobroValor || parseFloat(cobroValor) <= 0}
+                                disabled={!cobroValor || parseFloat(cobroValor) <= 0 || !cobroBanco}
                             >
                                 <DollarSign className="w-4 h-4" />
                                 Registrar Cobro

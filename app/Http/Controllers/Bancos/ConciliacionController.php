@@ -366,11 +366,15 @@ class ConciliacionController extends Controller
 
                 $banco->actualizarSaldo($montoAjuste, $tipoAjuste);
 
+                // La fecha contable del ajuste es la del corte de la
+                // conciliacion, no la de hoy: si no, conciliar en octubre el
+                // corte de septiembre metia el ajuste en el mes equivocado.
                 $asiento = $this->asientoService->ajusteConciliacion(
                     $empresaId,
                     $conciliacion->id,
                     $diferenciaMonto,
                     $desc,
+                    $conciliacion->fecha_corte?->toDateString(),
                 );
                 $movimiento->update(['asiento_id' => $asiento->id]);
 
@@ -424,6 +428,7 @@ class ConciliacionController extends Controller
                 $conciliacion->id,
                 $diferencia,
                 $desc,
+                $conciliacion->fecha_corte?->toDateString(),
             );
 
             // Crear partida banco para el ajuste
@@ -606,20 +611,11 @@ class ConciliacionController extends Controller
             ->with('success', 'Conciliación eliminada.');
     }
 
+    // Candado: antes marcaba todo como conciliado sin validar partidas pendientes ni la diferencia
+    // de saldos. Ahora exige exactamente las mismas condiciones que cerrar().
     public function marcarConciliada(ConciliacionBancaria $conciliacion): RedirectResponse
     {
-        if ($conciliacion->estaConciliada()) {
-            return back()->with('error', 'Esta conciliación ya está marcada como conciliada.');
-        }
-
-        $movIds = $conciliacion->partidas()
-            ->whereNotNull('movimiento_id')
-            ->pluck('movimiento_id');
-
-        MovimientoBancario::whereIn('id', $movIds)->update(['conciliado' => true]);
-        $conciliacion->update(['estado' => 'conciliada']);
-
-        return back()->with('success', 'Conciliación marcada como conciliada correctamente.');
+        return $this->cerrar($conciliacion);
     }
 
     // ── Helper: procesar XLSX/XLS ─────────────────────────────────────────────

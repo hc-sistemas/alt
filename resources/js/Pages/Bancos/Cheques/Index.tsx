@@ -31,7 +31,12 @@ interface Cheque {
     movimiento_id: number | null
 }
 
+interface CxPOpt { id: number; proveedor: string | null; num_documento: string | null; saldo: number; fecha_vencimiento: string | null }
+interface CuentaOpt { id: number; codigo: string; nombre: string }
+
 interface Props extends PageProps {
+    cuentasPagar: CxPOpt[]
+    cuentas: CuentaOpt[]
     cheques: Cheque[] | null
     bancos: Pick<BancoCaja, 'id' | 'nombre' | 'num_cuenta'>[]
     filtros: { estado?: string; banco_caja_id?: string; buscar?: string }
@@ -67,15 +72,34 @@ function EstadoBadge({ estado }: { estado: Cheque['estado'] }) {
 
 // ─── Modal nuevo cheque ───────────────────────────────────────────────────────
 
-function NuevoModal({ bancos, onClose }: {
+function NuevoModal({ bancos, cuentasPagar, cuentas, onClose }: {
     bancos: Props['bancos']
+    cuentasPagar: Props['cuentasPagar']
+    cuentas: Props['cuentas']
     onClose: () => void
 }) {
+    const [modo, setModo] = useState<'cxp' | 'otro'>('cxp')
     const { data, setData, post, processing, errors } = useForm({
         banco_caja_id: '', numero: '', beneficiario: '', monto: '',
         fecha_emision: new Date().toISOString().split('T')[0],
         banco: '', cuenta: '', fecha_cobro: '', observacion: '',
+        cuenta_pagar_id: '', cuenta_contrapartida_id: '',
     })
+
+    function cambiarModo(m: 'cxp' | 'otro') {
+        setModo(m)
+        setData(d => ({ ...d, cuenta_pagar_id: '', cuenta_contrapartida_id: '' }))
+    }
+
+    function elegirCxP(id: string) {
+        const c = cuentasPagar.find(x => String(x.id) === id)
+        setData(d => ({
+            ...d,
+            cuenta_pagar_id: id,
+            monto: c ? String(c.saldo) : d.monto,
+            beneficiario: c?.proveedor ?? '',
+        }))
+    }
 
     function submit(e: React.FormEvent) {
         e.preventDefault()
@@ -120,6 +144,57 @@ function NuevoModal({ bancos, onClose }: {
                             {errors.banco_caja_id && <p className="text-xs text-red-500 mt-1">{errors.banco_caja_id}</p>}
                         </div>
 
+                        {/* ¿Qué paga este cheque? */}
+                        <div className="col-span-2">
+                            <label className="input-label">¿Qué paga este cheque?</label>
+                            <div className="grid grid-cols-2 gap-2 mt-1">
+                                {([['cxp', 'Una cuenta por pagar'], ['otro', 'Otro pago']] as const).map(([k, label]) => (
+                                    <button key={k} type="button" onClick={() => cambiarModo(k)}
+                                        className={cn('py-1.5 rounded-lg text-xs font-medium border transition-colors',
+                                            modo === k ? 'text-white border-transparent' : 'hover:opacity-80')}
+                                        style={modo === k ? { background: 'var(--primary)' }
+                                            : { borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
+                                        {label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {modo === 'cxp' ? (
+                            <div className="col-span-2">
+                                <label className="input-label">
+                                    Cuenta por pagar <span className="text-red-500">*</span>
+                                </label>
+                                <select value={data.cuenta_pagar_id} onChange={e => elegirCxP(e.target.value)}
+                                    className="input-field select-field mt-1">
+                                    <option value="">— Seleccionar —</option>
+                                    {cuentasPagar.map(c => (
+                                        <option key={c.id} value={c.id}>
+                                            {c.proveedor} · {c.num_documento ?? 'S/N'} · saldo ${c.saldo.toFixed(2)}
+                                            {c.fecha_vencimiento ? ` · vence ${c.fecha_vencimiento}` : ''}
+                                        </option>
+                                    ))}
+                                </select>
+                                {cuentasPagar.length === 0 && (
+                                    <p className="text-[11px] mt-1 text-amber-500">No hay cuentas por pagar pendientes.</p>
+                                )}
+                                {errors.cuenta_pagar_id && <p className="text-xs text-red-500 mt-1">{errors.cuenta_pagar_id}</p>}
+                            </div>
+                        ) : (
+                            <div className="col-span-2">
+                                <label className="input-label">
+                                    Cuenta contable del pago <span className="text-red-500">*</span>
+                                </label>
+                                <select value={data.cuenta_contrapartida_id}
+                                    onChange={e => setData('cuenta_contrapartida_id', e.target.value)}
+                                    className="input-field select-field mt-1">
+                                    <option value="">— Seleccionar —</option>
+                                    {cuentas.map(c => <option key={c.id} value={c.id}>{c.codigo} — {c.nombre}</option>)}
+                                </select>
+                                {errors.cuenta_contrapartida_id && <p className="text-xs text-red-500 mt-1">{errors.cuenta_contrapartida_id}</p>}
+                            </div>
+                        )}
+
                         {/* N° Cheque */}
                         <div>
                             <label className="input-label">
@@ -151,6 +226,7 @@ function NuevoModal({ bancos, onClose }: {
                             </label>
                             <input type="text" value={data.beneficiario}
                                 onChange={e => setData('beneficiario', e.target.value)}
+                                disabled={modo === 'cxp' && !!data.cuenta_pagar_id}
                                 placeholder="Nombre del beneficiario"
                                 className="input-field mt-1" />
                             {errors.beneficiario && <p className="text-xs text-red-500 mt-1">{errors.beneficiario}</p>}
@@ -326,7 +402,7 @@ function CambioEstadoModal({ cheque, estadoNuevo, onClose }: {
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function ChequesIndex() {
-    const { cheques, bancos, filtros, flash } = usePage<Props>().props
+    const { cheques, bancos, filtros, flash, cuentasPagar, cuentas } = usePage<Props>().props
     const { puede } = usePermiso('bancos')
 
     const [showModal, setShowModal] = useState(false)
@@ -546,7 +622,7 @@ export default function ChequesIndex() {
             </div>
 
             {showModal && (
-                <NuevoModal bancos={bancos} onClose={() => setShowModal(false)} />
+                <NuevoModal bancos={bancos} cuentasPagar={cuentasPagar ?? []} cuentas={cuentas ?? []} onClose={() => setShowModal(false)} />
             )}
 
             {estadoModal && (

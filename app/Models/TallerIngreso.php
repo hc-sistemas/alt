@@ -46,6 +46,11 @@ class TallerIngreso extends Model
         return $this->belongsTo(Usuario::class);
     }
 
+    public function componentes(): HasMany
+    {
+        return $this->hasMany(TallerRevComponente::class, 'ingreso_id')->orderBy('id');
+    }
+
     public function ordenesTrabajo(): HasMany
     {
         return $this->hasMany(TallerOrdenTrabajo::class, 'ingreso_id');

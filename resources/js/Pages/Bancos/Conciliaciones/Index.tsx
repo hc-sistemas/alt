@@ -6,7 +6,7 @@ import PageHeader from '@/Components/shared/PageHeader'
 import FilterToolbar from '@/Components/shared/FilterToolbar'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
-import { cn } from '@/lib/utils'
+import { cn, fechaHoy } from '@/lib/utils'
 import { Plus, X, GitMerge, AlertTriangle, CheckCircle, Eye, Search } from 'lucide-react'
 import { usePermiso } from '@/Hooks/usePermiso'
 import type { BancoCaja, ConciliacionBancaria, PageProps } from '@/types'
@@ -167,7 +167,11 @@ export default function ConciliacionesIndex() {
     const { puede } = usePermiso('bancos')
     const [showModal, setShowModal] = useState(false)
 
-    const [filtro, setFiltro] = useState(filtros)
+    const [filtro, setFiltro] = useState({
+        ...filtros,
+        fecha_desde: filtros.fecha_desde ?? (conciliaciones !== null ? '' : fechaHoy()),
+        fecha_hasta: filtros.fecha_hasta ?? (conciliaciones !== null ? '' : fechaHoy()),
+    })
 
     // Cambiar cualquier filtro después de haber buscado no vacía la tabla —
     // solo la atenúa (opacity-60) hasta que se presione Buscar de nuevo.

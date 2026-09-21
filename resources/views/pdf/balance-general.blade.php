@@ -30,7 +30,10 @@
     <div class="h-left">
         <div class="empresa">{{ $empresa?->nombre_comercial ?? $empresa?->razon_social ?? 'Altamira' }}</div>
         <div class="titulo">ESTADO DE SITUACIÓN FINANCIERA</div>
-        <div class="sub">Generado: {{ now()->format('d/m/Y H:i') }}</div>
+        <div style="font-size:10px; font-weight:bold; color:#1F2D3D; margin-top:2px;">
+            {{ $periodo ?? '' }}
+        </div>
+        <div class="sub">Generado: {{ now()->format('d/m/Y H:i') }} &middot; Expresado en USD</div>
     </div>
     <div class="h-right">
         <div style="font-size:8px; color:#6b7280;">RUC: {{ $empresa?->ruc ?? '—' }}</div>
@@ -49,7 +52,9 @@
                         <span class="cod">{{ $c['codigo'] }}</span>
                         {{ $c['nombre'] }}
                     </td>
-                    <td class="right">${{ number_format($c['saldo'], 2) }}</td>
+                    <td class="right" style="{{ $c['saldo'] < 0 ? 'color:#dc2626;' : '' }}">
+                        ${{ number_format($c['saldo'], 2) }}
+                    </td>
                 </tr>
                 @endforeach
             </tbody>
@@ -76,7 +81,13 @@
                             <span style="font-size:6.5px; color:#0c4a6e;">(Patrimonio)</span>
                         @endif
                     </td>
-                    <td class="right">${{ number_format(abs($c['saldo']), 2) }}</td>
+                    {{-- Se imprime el saldo CON signo. Antes iba con abs(), así
+                         que un pasivo con saldo deudor (p. ej. un proveedor
+                         sobrepagado) se mostraba en positivo y el descuadre que
+                         provocaba quedaba invisible. --}}
+                    <td class="right" style="{{ $c['saldo'] < 0 ? 'color:#dc2626;' : '' }}">
+                        ${{ number_format($c['saldo'], 2) }}
+                    </td>
                 </tr>
                 @endforeach
             </tbody>
@@ -96,6 +107,17 @@
         <span style="color:#059669; font-weight:bold; font-size:9px;">✓ Balance cuadrado — ACTIVOS = PASIVOS + PATRIMONIO</span>
     @else
         <span style="color:#dc2626; font-weight:bold; font-size:9px;">⚠ Diferencia: ${{ number_format(abs($diferencia), 2) }}</span>
+        <div style="font-size:7px; color:#6b7280; margin-top:3px;">
+            Revise el Balance de Comprobación: un descuadre aquí indica asientos con DEBE ≠ HABER
+            o cuentas con movimientos marcadas como "no permite asientos".
+        </div>
+    @endif
+    @if(isset($resultado) && abs($resultado) >= 0.01)
+        <div style="font-size:7.5px; color:#6b7280; margin-top:4px;">
+            Incluye el resultado del ejercicio en curso
+            (${{ number_format(abs($resultado), 2) }} {{ $resultado >= 0 ? 'de utilidad' : 'de pérdida' }}),
+            aún no cerrado contra Resultados Acumulados.
+        </div>
     @endif
 </div>
 

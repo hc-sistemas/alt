@@ -16,6 +16,8 @@ use Inertia\Response;
 
 class EjercicioContableController extends Controller
 {
+    public function __construct(private AsientoService $asientos) {}
+
     public function index(): Response
     {
         $empresaId  = session('empresa_activa_id');
@@ -55,13 +57,21 @@ class EjercicioContableController extends Controller
             'descripcion' => 'nullable|string|max:100',
         ]);
 
-        // CORRECCIÓN 4: solo 1 período abierto a la vez
-        $periodosAbiertos = EjercicioContable::where('empresa_id', $empresaId)
-            ->where('estado', 'abierto')->count();
-
-        if ($periodosAbiertos >= 1) {
+        // Antes solo se permitía UN período abierto a la vez y reabrir era
+        // imposible. La combinación era una trampa operativa: para poder
+        // facturar en octubre había que cerrar septiembre, y a partir de ese
+        // momento una factura de proveedor que llegara tarde con fecha de
+        // septiembre ya no se podía registrar NUNCA — ni siquiera un ajuste.
+        // Peor todavía, AsientoService le decía al usuario "reábralo en
+        // Contabilidad → Ejercicios", una instrucción que el sistema no
+        // permitía ejecutar.
+        //
+        // Ahora se pueden tener varios meses abiertos (lo normal mientras no
+        // se cierra el ejercicio fiscal) y lo único que queda blindado es el
+        // año ya cerrado fiscalmente.
+        if ($this->anioCerradoFiscalmente((int) $empresaId, (int) $request->anio)) {
             return back()->with('error',
-                'Ya existe un período abierto. Ciérralo antes de abrir uno nuevo.');
+                "El ejercicio fiscal {$request->anio} ya fue cerrado. No se pueden abrir períodos de ese año.");
         }
 
         $existe = EjercicioContable::where('empresa_id', $empresaId)
@@ -95,6 +105,12 @@ class EjercicioContableController extends Controller
 
     public function cerrar(Request $request, EjercicioContable $ejercicio): RedirectResponse
     {
+        // El route-model binding no filtraba por empresa: con Matriz activa se
+        // podía cerrar un período de Altamira Import pasando el ID en la URL.
+        if ((int) $ejercicio->empresa_id !== (int) session('empresa_activa_id')) {
+            abort(404);
+        }
+
         $request->validate([
             'motivo'       => 'required|string|min:10|max:300',
             'fecha_cierre' => 'required|date|before_or_equal:today',
@@ -140,12 +156,80 @@ class EjercicioContableController extends Controller
             "No se pueden crear ni modificar asientos en este período.");
     }
 
+    /**
+     * ¿El ejercicio fiscal de ese año ya se cerró? Es el único candado
+     * permanente: una vez ejecutado el Cierre Fiscal Anual, los resultados ya
+     * se enceraron y se arrastraron al patrimonio, así que tocar ese año
+     * invalidaría los estados financieros ya emitidos.
+     */
+    private function anioCerradoFiscalmente(int $empresaId, int $anio): bool
+    {
+        return AsientoContable::where('empresa_id', $empresaId)
+            ->where('documento_tipo', 'CIERRE_ANUAL')
+            ->where('documento_ref', (string) $anio)
+            ->where('estado', 1)
+            ->exists();
+    }
+
+    /**
+     * Reabre un período mensual cerrado.
+     *
+     * Antes este método SIEMPRE devolvía error ("restricción contable
+     * permanente"), lo cual dejaba el sistema en un callejón sin salida: como
+     * solo se permitía un período abierto, cerrar un mes para poder trabajar
+     * en el siguiente hacía imposible registrar para siempre cualquier ajuste
+     * o documento atrasado de ese mes. Ningún ERP contable funciona así;
+     * lo correcto es permitir la reapertura mientras el ejercicio FISCAL no
+     * esté cerrado, restringida y auditada.
+     */
     public function reabrir(Request $request, EjercicioContable $ejercicio): RedirectResponse
     {
-        return back()->with('error',
-            'Los períodos contables cerrados no pueden reabrirse. ' .
-            'Esta es una restricción contable permanente para garantizar la integridad del libro mayor. ' .
-            'Si necesitas registrar ajustes, abre el período mensual siguiente.');
+        if ((int) $ejercicio->empresa_id !== (int) session('empresa_activa_id')) {
+            abort(404);
+        }
+
+        $perfil = Auth::user()->perfil->nombre ?? '';
+        if (!in_array($perfil, ['super_admin', 'contador'], true)) {
+            return back()->with('error',
+                'Solo el Super Administrador o el Contador pueden reabrir un período contable.');
+        }
+
+        $request->validate([
+            'motivo' => 'required|string|min:10|max:300',
+        ], [
+            'motivo.required' => 'Indique el motivo de la reapertura.',
+            'motivo.min'      => 'El motivo debe tener al menos 10 caracteres.',
+        ]);
+
+        if (!$ejercicio->estaCerrado()) {
+            return back()->with('error', 'El período ya está abierto.');
+        }
+
+        if ($this->anioCerradoFiscalmente((int) $ejercicio->empresa_id, (int) $ejercicio->anio)) {
+            return back()->with('error',
+                "No se puede reabrir {$ejercicio->periodo_label}: el ejercicio fiscal {$ejercicio->anio} " .
+                'ya fue cerrado. Registre los ajustes en el ejercicio vigente.');
+        }
+
+        $ejercicio->update([
+            'estado'       => 'abierto',
+            'fecha_cierre' => null,
+            'cerrado_por'  => null,
+        ]);
+
+        DB::table('log_cambios_criticos')->insert([
+            'usuario_id'     => Auth::id(),
+            'empresa_id'     => $ejercicio->empresa_id,
+            'tabla'          => 'ejercicios_contables',
+            'registro_id'    => $ejercicio->id,
+            'campo'          => 'estado',
+            'valor_anterior' => 'cerrado',
+            'valor_nuevo'    => "abierto — {$request->motivo}",
+            'ip_address'     => $request->ip(),
+        ]);
+
+        return back()->with('success',
+            "Período {$ejercicio->periodo_label} reabierto. Recuerde volver a cerrarlo al terminar los ajustes.");
     }
 
     public function cierreFiscalAnual(Request $request): RedirectResponse
@@ -181,14 +265,12 @@ class EjercicioContableController extends Controller
                 " período(s) sin cerrar en {$anio}.");
         }
 
-        $yaCerrado = DB::table('log_cambios_criticos')
-            ->where('empresa_id', $empresaId)
-            ->where('tabla', 'ejercicios_contables')
-            ->where('campo', 'cierre_fiscal_anual')
-            ->where('valor_nuevo', 'like', "%anio:{$anio}%")
-            ->exists();
-
-        if ($yaCerrado) {
+        // Idempotencia: antes se comprobaba con un LIKE sobre el texto libre de
+        // log_cambios_criticos.valor_nuevo. Si alguien limpiaba esa tabla de
+        // auditoría, el cierre se podía ejecutar dos veces y duplicaba el
+        // enceramiento y el arrastre al patrimonio. Ahora se pregunta por el
+        // hecho contable en sí: ¿existe ya el asiento de cierre de ese año?
+        if ($this->anioCerradoFiscalmente($empresaId, $anio)) {
             return back()->with('error', "El ejercicio fiscal {$anio} ya fue cerrado anteriormente.");
         }
 
@@ -201,10 +283,21 @@ class EjercicioContableController extends Controller
                     ->orderByDesc('mes')
                     ->first();
 
-                // IDs de asientos activos del año
+                // IDs de asientos activos del año.
+                //
+                // Se seleccionan por la FECHA del asiento, no por el año de su
+                // ejercicio: es la fecha la que define a qué ejercicio fiscal
+                // pertenece el hecho económico, y así el cierre sigue siendo
+                // correcto aunque existan asientos antiguos mal clasificados
+                // (el bug de ejercicio_id que se corrigió en AsientoService).
+                //
+                // Se excluyen los propios asientos de cierre para que un
+                // reproceso no encere sobre lo ya encerado.
                 $asientoIds = AsientoContable::where('empresa_id', $empresaId)
                     ->where('estado', 1)
-                    ->whereHas('ejercicio', fn($q) => $q->where('anio', $anio))
+                    ->whereYear('fecha', $anio)
+                    ->where(fn($q) => $q->whereNull('documento_tipo')
+                                        ->orWhere('documento_tipo', '!=', 'CIERRE_ANUAL'))
                     ->pluck('id');
 
                 // ── PASO 1: calcular saldo neto por cuenta de ingreso y gasto ──
@@ -263,21 +356,20 @@ class EjercicioContableController extends Controller
                 $utilidad = round($totalIngresos - $totalGastos, 4);
 
                 // ── PASO 2: cuenta de resultado del ejercicio ──
-                // "cta_utilidad_periodo" es el código real, configurable desde Parámetros
-                // Contables (grupo "Contabilidad") y ya registrado en AsientoService::
-                // FALLBACK_PLAN (3.1.4.01). Antes se leía "cta_resultados_ejercicio", un
-                // código que no existía en ningún otro lugar del sistema — nunca aparecía
-                // en la UI de Parámetros, así que jamás podía configurarse, y su fallback
-                // por código/descripción resolvía a la cuenta equivocada (3.1.5.01, que en
-                // el plan de cuentas real es "Aportes de Socios o Accionistas", no utilidad).
-                $cuentaResultadoId = DB::table('parametros_contables')
-                    ->where('empresa_id', $empresaId)
-                    ->where('codigo', 'cta_utilidad_periodo')
-                    ->value('cuenta_id');
-
-                if (!$cuentaResultadoId) {
-                    $cr = PlanCuenta::where('codigo', '3.1.4.01')->first();
-                    $cuentaResultadoId = $cr?->id;
+                //
+                // Se resuelve con AsientoService::cuentaId(), que respeta lo
+                // configurado en Parámetros Contables y cae al plan real si no
+                // está configurado. Antes se leía el parámetro a mano y su
+                // fallback era '3.1.4.01', que en el plan de cuentas REAL del
+                // cliente es "Ganancias Acumuladas", no "Utilidad del Periodo"
+                // (esa es 3.1.5.1): el cierre metía el resultado del ejercicio
+                // directamente en acumuladas y después el PASO 4 volvía a
+                // arrastrarlo, duplicándolo.
+                $cuentaResultadoId = null;
+                try {
+                    $cuentaResultadoId = $this->asientos->cuentaId('cta_utilidad_periodo', $empresaId);
+                } catch (\Throwable) {
+                    $cuentaResultadoId = null;
                 }
 
                 if (!empty($detallesCierre) && !$cuentaResultadoId) {
@@ -335,14 +427,20 @@ class EjercicioContableController extends Controller
 
                     // ── PASO 4: asiento de arrastre 3.1.5.01 → 3.1.4.01 ──
                     if ($cuentaResultadoId && abs($utilidad) > 0.0001) {
-                        $cuentaAcumuladaId = DB::table('parametros_contables')
-                            ->where('empresa_id', $empresaId)
-                            ->where('codigo', 'cta_ganancias_acumuladas')
-                            ->value('cuenta_id');
+                        // La utilidad va a Ganancias Acumuladas y la pérdida a
+                        // Pérdidas Acumuladas. El fallback anterior era
+                        // '3.1.3.01' que en el plan real es "Superavit por
+                        // Revaluacion PPE": el resultado del ejercicio se
+                        // arrastraba al superávit por revaluación.
+                        $codigoAcumulada = $utilidad >= 0
+                            ? 'cta_ganancias_acumuladas'
+                            : 'cta_perdidas_acumuladas';
 
-                        if (!$cuentaAcumuladaId) {
-                            $ca = PlanCuenta::where('codigo', '3.1.3.01')->first();
-                            $cuentaAcumuladaId = $ca?->id;
+                        $cuentaAcumuladaId = null;
+                        try {
+                            $cuentaAcumuladaId = $this->asientos->cuentaId($codigoAcumulada, $empresaId);
+                        } catch (\Throwable) {
+                            $cuentaAcumuladaId = null;
                         }
 
                         if ($cuentaAcumuladaId && $cuentaAcumuladaId !== $cuentaResultadoId) {

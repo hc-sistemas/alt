@@ -135,7 +135,8 @@ function ModalPago({ cxp, bancos, onClose }: {
         e.preventDefault()
         setProcessing(true)
         router.post(route('compras.cxp.pagar', cxp.id), form as unknown as Record<string, string>, {
-            onSuccess: () => { notify.success('Pago registrado correctamente'); onClose() },
+            // El toast de éxito lo dispara el efecto de `flash` de la página; notificar aquí también lo duplicaba
+            onSuccess: () => onClose(),
             onError:   (errs) => { notify.error('Error: ' + Object.values(errs).join(', ')); setProcessing(false) },
             onFinish:  () => setProcessing(false),
         })
@@ -567,7 +568,7 @@ export default function CuentasPagarIndex() {
                     {cxp.map(c => (
                         <div key={c.id}
                             className={cn(
-                                'group grid grid-cols-12 gap-3 px-4 py-3 border-b items-center text-sm transition-colors',
+                                'group grid grid-cols-12 gap-3 px-4 py-3 border-b items-center text-[11px] transition-colors',
                                 c.compra_anulada ? 'border-l-4 border-l-gray-400' : URGENCIA_BORDER[c.urgencia],
                                 (c.estado === 'pagada' || c.compra_anulada) && 'opacity-60',
                             )}
@@ -581,25 +582,25 @@ export default function CuentasPagarIndex() {
                                 </p>
                             </div>
                             <div className="col-span-2">
-                                <p className="font-mono text-xs" style={{ color: 'var(--text-main)' }}>
+                                <p className="font-mono text-[11px]" style={{ color: 'var(--text-main)' }}>
                                     {c.num_documento ?? '—'}
                                 </p>
                             </div>
                             <div className="col-span-1 text-right">
-                                <p className="font-medium text-xs" style={{ color: 'var(--text-main)' }}>
+                                <p className="font-medium text-[11px]" style={{ color: 'var(--text-main)' }}>
                                     ${Number(c.monto).toFixed(2)}
                                 </p>
                             </div>
                             <div className="col-span-1 text-right">
-                                <p className="font-bold text-xs" style={{ color: 'var(--primary)' }}>
+                                <p className="font-bold text-[11px]" style={{ color: 'var(--primary)' }}>
                                     ${Number(c.saldo).toFixed(2)}
                                 </p>
                             </div>
                             <div className="col-span-1 text-center">
-                                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{c.fecha_emision ?? '—'}</p>
+                                <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{c.fecha_emision ?? '—'}</p>
                             </div>
                             <div className="col-span-1 text-center">
-                                <p className="text-xs font-medium" style={{ color: 'var(--text-main)' }}>
+                                <p className="text-[11px] font-medium" style={{ color: 'var(--text-main)' }}>
                                     {c.fecha_vencimiento ?? '—'}
                                 </p>
                             </div>

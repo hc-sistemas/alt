@@ -84,6 +84,7 @@ class ImportacionController extends Controller
         }
 
         $proveedores = Proveedor::where('empresa_id', $empresaId)
+            ->where('tipo', 'internacional')
             ->activos()->orderBy('razon_social')
             ->get(['id', 'razon_social', 'pais', 'divisa', 'tipo']);
 
@@ -336,6 +337,16 @@ class ImportacionController extends Controller
         }
 
         $estadoAnterior = $importacion->estado;
+
+        try {
+            $this->asientoService->validarConfiguracion(
+                (int) $importacion->empresa_id,
+                [],
+                $request->input('fecha_liquidacion'),
+            );
+        } catch (\DomainException $e) {
+            return back()->with('error', $e->getMessage());
+        }
 
         $request->validate([
             'metodo_prorrateo'  => 'required|in:cantidad,precio,peso,factor_importacion',

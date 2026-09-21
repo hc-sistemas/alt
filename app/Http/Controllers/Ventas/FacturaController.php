@@ -3,6 +3,10 @@
 namespace App\Http\Controllers\Ventas;
 
 use App\Http\Controllers\Controller;
+use App\Mail\FacturaMail;
+use App\Services\FacturaXmlService;
+use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Support\Facades\Mail;
 use App\Models\Bodega;
 use App\Models\Cliente;
 use App\Models\CuentaCobrar;
@@ -18,6 +22,7 @@ use App\Services\AuditoriaService;
 use App\Services\DescuentoService;
 use App\Services\InventarioService;
 use App\Services\SecuencialService;
+use App\Support\ReglasPago;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -63,6 +68,14 @@ class FacturaController extends Controller
     {
         $empresaId = session('empresa_activa_id');
 
+        // Primera visita: fechas por defecto = hoy. Si el usuario borra una fecha,
+        // el parámetro llega vacío (has() = true) y no se vuelve a forzar.
+        $hoy = now()->toDateString();
+        $request->merge([
+            'fecha_desde' => $request->has('fecha_desde') ? $request->fecha_desde : $hoy,
+            'fecha_hasta' => $request->has('fecha_hasta') ? $request->fecha_hasta : $hoy,
+        ]);
+
         $query = Factura::with(['cliente', 'usuario', 'pagos'])
             ->where('empresa_id', $empresaId)
             ->orderByDesc('fecha_emision')
@@ -74,11 +87,33 @@ class FacturaController extends Controller
         if ($request->filled('fecha_hasta')) {
             $query->where('fecha_emision', '<=', $request->fecha_hasta);
         }
+        // Búsqueda libre: cada palabra debe aparecer en alguno de los campos, sin
+        // importar el orden ("montalvo luis" encuentra "LUIS DAVIS MONTALVOJIMENEZ").
+        // Cubre número de factura, datos del cliente (nombre/apellidos, RUC, email,
+        // teléfono, nombre comercial), vendedor, observaciones y los productos
+        // vendidos (código y descripción).
         if ($request->filled('cliente')) {
-            $query->whereHas('cliente', function ($q) use ($request) {
-                $q->where('razon_social', 'ilike', "%{$request->cliente}%")
-                  ->orWhere('identificacion', 'ilike', "%{$request->cliente}%");
-            });
+            foreach (preg_split('/\s+/', trim((string) $request->cliente)) as $termino) {
+                $like = '%' . addcslashes($termino, '%_\\') . '%';
+
+                $query->where(function ($q) use ($like) {
+                    $q->where('numero_completo', 'ilike', $like)
+                      ->orWhere('razon_social', 'ilike', $like)
+                      ->orWhere('identificacion', 'ilike', $like)
+                      ->orWhere('email_cliente', 'ilike', $like)
+                      ->orWhere('telefono_cliente', 'ilike', $like)
+                      ->orWhere('observaciones', 'ilike', $like)
+                      ->orWhereHas('cliente', fn ($c) => $c
+                          ->where('razon_social', 'ilike', $like)
+                          ->orWhere('nombre_comercial', 'ilike', $like)
+                          ->orWhere('identificacion', 'ilike', $like)
+                          ->orWhere('celular', 'ilike', $like))
+                      ->orWhereHas('usuario', fn ($u) => $u->where('nombre', 'ilike', $like))
+                      ->orWhereHas('detalles', fn ($d) => $d
+                          ->where('codigo_producto', 'ilike', $like)
+                          ->orWhere('descripcion', 'ilike', $like));
+                });
+            }
         }
         if ($request->filled('estado')) {
             $query->where('estado', $request->estado);
@@ -94,6 +129,22 @@ class FacturaController extends Controller
         }
 
         $facturas = $query->paginate(25)->withQueryString();
+
+        // "Nuevo": la factura es la primera que se le emitió a ese cliente.
+        $primeras = Factura::where('empresa_id', $empresaId)
+            ->whereIn('cliente_id', $facturas->pluck('cliente_id')->unique())
+            ->groupBy('cliente_id')
+            ->selectRaw('cliente_id, min(id) as primera')
+            ->pluck('primera', 'cliente_id');
+
+        $facturas->through(function (Factura $f) use ($primeras) {
+            $bruto = (float) $f->subtotal_0 + (float) $f->subtotal_15 + (float) $f->subtotal_exento + (float) $f->descuento_total;
+            $f->setAttribute('cliente_nuevo', (int) ($primeras[$f->cliente_id] ?? 0) === $f->id);
+            $f->setAttribute('desc_pct', $bruto > 0 ? round((float) $f->descuento_total / $bruto * 100, 2) : 0);
+            $f->setAttribute('vendedor', $f->usuario?->nombre);
+
+            return $f;
+        });
 
         return Inertia::render('Ventas/Facturas/Index', [
             'facturas' => $facturas,
@@ -208,6 +259,13 @@ class FacturaController extends Controller
             'formas_pago.*.monto'     => 'required|numeric|min:0.01',
         ]);
 
+        // Con tarjeta de crédito no hay descuento de ningún tipo.
+        if (ReglasPago::algunaTarjeta(collect($request->formas_pago)->pluck('forma'))
+            && (collect($request->detalles)->contains(fn ($d) => (float) ($d['descuento_pct'] ?? 0) > 0)
+                || $request->boolean('tiene_descuento_especial'))) {
+            return back()->withErrors(['descuento' => ReglasPago::MENSAJE_SIN_DESCUENTO])->withInput();
+        }
+
         // Calcular totales
         $subtotal0   = 0;
         $subtotal15  = 0;
@@ -316,8 +374,8 @@ class FacturaController extends Controller
             }
 
             $cantidad   = (float)$detalle['cantidad'];
-            $descuento  = $precio * $cantidad * ($descPct / 100);
-            $subtotalItem = ($precio * $cantidad) - $descuento;
+            $descuento  = round($precio * $cantidad * ($descPct / 100), 2);
+            $subtotalItem = round(($precio * $cantidad) - $descuento, 2);
 
             $descTotal += $descuento;
 
@@ -331,13 +389,38 @@ class FacturaController extends Controller
             }
         }
 
-        $totalIva = $subtotal15 * 0.15;
-        $total    = $subtotal0 + $subtotal15 + $totalIva;
+        $subtotal0  = round($subtotal0, 2);
+        $subtotal15 = round($subtotal15, 2);
+        $descTotal  = round($descTotal, 2);
+        $totalIva   = round($subtotal15 * 0.15, 2);
+        $total      = round($subtotal0 + $subtotal15 + $totalIva, 2);
 
         // Validar que suma de formas_pago == total
-        $sumaFormasPago = collect($request->formas_pago)->sum('monto');
-        if (abs($sumaFormasPago - $total) > 0.01) {
+        // Los valores están redondeados a centavos: deben cuadrar exactamente.
+        $sumaFormasPago = round(collect($request->formas_pago)->sum('monto'), 2);
+        if (abs($sumaFormasPago - $total) >= 0.005) {
             return back()->withErrors(['formas_pago' => "La suma de formas de pago ({$sumaFormasPago}) no coincide con el total ({$total})."]);
+        }
+
+        // "Contabilidad lista antes de operar" (CLAUDE.md, 2026-09-20): se
+        // comprueba ANTES de consumir el secuencial del SRI y de descargar
+        // stock que el período del día esté abierto y que existan los
+        // parámetros contables que usará el asiento. Así el usuario recibe un
+        // mensaje accionable ("abra el período") en vez de emitir una factura
+        // que después no puede contabilizarse.
+        $tiposDetalle = Producto::whereIn('id', collect($request->detalles)->pluck('producto_id'))
+            ->pluck('tipo', 'id');
+        $mueveInventario = collect($request->detalles)
+            ->contains(fn($d) => ($tiposDetalle[$d['producto_id']] ?? null) !== 'servicio');
+
+        try {
+            $this->asiento->validarConfiguracion(
+                (int) $empresaId,
+                \App\Services\AsientoService::codigosFactura($request->formas_pago, $mueveInventario),
+                now()->toDateString(),
+            );
+        } catch (\DomainException $e) {
+            return back()->withErrors(['contabilidad' => $e->getMessage()])->withInput();
         }
 
         try {
@@ -389,10 +472,10 @@ class FacturaController extends Controller
                     $descPct     = (float)($det['descuento_pct'] ?? 0);
                     $precio      = (float)$det['precio'];
                     $cantidad    = (float)$det['cantidad'];
-                    $descuento   = $precio * $cantidad * ($descPct / 100);
-                    $subtotalDet = ($precio * $cantidad) - $descuento;
+                    $descuento   = round($precio * $cantidad * ($descPct / 100), 2);
+                    $subtotalDet = round(($precio * $cantidad) - $descuento, 2);
                     $grabaIva    = (bool)($det['graba_iva'] ?? true);
-                    $iva         = $grabaIva ? $subtotalDet * 0.15 : 0;
+                    $iva         = $grabaIva ? round($subtotalDet * 0.15, 2) : 0;
 
                     FacturaDetalle::create([
                         'factura_id'      => $factura->id,
@@ -495,8 +578,29 @@ class FacturaController extends Controller
             return back()->withErrors(['stock' => $e->getMessage()])->withInput();
         }
 
+        // Asiento contable de la venta.
+        //
+        // Antes esto era un `catch (\Throwable) {}` COMPLETAMENTE vacío: si el
+        // período estaba cerrado o faltaba un parámetro contable, la factura se
+        // emitía y no quedaba rastro de nada (ni asiento_error, ni
+        // log_documentos, ni notificación, ni siquiera un log de Laravel).
+        // Quedaban ventas huérfanas de contabilidad, invisibles.
+        //
+        // Ahora se sigue el mismo criterio que Compras/CxP (CLAUDE.md,
+        // 2026-09-20): la factura NO se bloquea después de emitida —ya está
+        // creada y el SRI no espera—, pero el fallo se registra y se notifica
+        // al contador para que lo resuelva.
         try {
             $formaPrincipal = collect($request->formas_pago)->sortByDesc('monto')->first()['forma'] ?? 'efectivo';
+
+            $formasPago = collect($request->formas_pago)
+                ->map(fn($p) => ['forma' => $p['forma'], 'monto' => (float) $p['monto']])
+                ->values()->all();
+
+            // Costo de la mercadería que salió por esta factura, leído del
+            // kárdex para que contabilidad e inventario usen el mismo valor.
+            $costoVenta = \App\Services\AsientoService::costoSalidaDocumento('FACTURA', $factura->id);
+
             $asientoFactura = $this->asiento->facturaAutorizada(
                 empresaId:      $empresaId,
                 facturaId:      $factura->id,
@@ -505,10 +609,30 @@ class FacturaController extends Controller
                 iva:            $totalIva,
                 total:          $total,
                 formaPago:      $formaPrincipal,
+                formasPago:     $formasPago,
+                costoVenta:     $costoVenta,
+                fecha:          $factura->fecha_emision?->toDateString(),
             );
             $factura->update(['asiento_id' => $asientoFactura->id]);
-        } catch (\Throwable) {
-            // Asiento contable falla de forma silenciosa para no romper la factura
+        } catch (\Throwable $e) {
+            \Log::warning("Contabilidad: factura {$factura->numero_completo} sin asiento: {$e->getMessage()}");
+            $this->asiento->notificarAsientoFallido(
+                empresaId:  (int) $empresaId,
+                tabla:      'facturas',
+                registroId: $factura->id,
+                referencia: "Factura {$factura->numero_completo}",
+                mensaje:    $e->getMessage(),
+            );
+        }
+
+        // Bancos: el dinero cobrado en el acto entra a la caja/banco configurado (Bancos → Configuración
+        // de cobros). Si no hay cuenta configurada para una forma de pago, esa parte simplemente no se
+        // registra; nunca bloquea la factura.
+        try {
+            app(\App\Services\CobroBancoService::class)
+                ->ingresosFactura($factura->fresh(['pagos']), $factura->fresh()->asiento_id);
+        } catch (\Throwable $e) {
+            \Log::warning("Bancos: cobro de factura {$factura->numero_completo} no registrado: {$e->getMessage()}");
         }
 
         $this->auditoria->documento('crear', 'ventas', 'facturas', $factura->id, "Factura {$factura->numero_completo} creada");
@@ -585,10 +709,65 @@ class FacturaController extends Controller
                 );
             }
 
+            // Facturas generadas por Taller: las salidas de stock se registraron
+            // como TALLER_OT (doc_id = repuesto), no como FACTURA. Se devuelven
+            // y la OT vuelve a "listo" para poder liquidarse de nuevo.
+            $ordenTaller = \App\Models\TallerOrdenTrabajo::where('factura_id', $factura->id)->first();
+            if ($ordenTaller) {
+                $repuestoIds = $ordenTaller->repuestos()->pluck('id');
+                $salidasTaller = DB::table('inventario_movimientos')
+                    ->where('doc_tipo', 'TALLER_OT')
+                    ->whereIn('doc_id', $repuestoIds)
+                    ->where('tipo', 'salida')
+                    ->get();
+
+                foreach ($salidasTaller as $mov) {
+                    $this->inventario->ingresarStock(
+                        (int) $mov->producto_id,
+                        (int) $mov->bodega_id,
+                        (float) $mov->cantidad,
+                        (float) $mov->costo_unitario,
+                        'factura_anulada',
+                        $factura->id
+                    );
+                }
+
+                $ordenTaller->repuestos()->where('estado', 'usado')->update(['estado' => 'devuelto']);
+                $ordenTaller->update([
+                    'factura_id'      => null,
+                    'asiento_id'      => null,
+                    'estado'          => 'listo',
+                    'costo_repuestos' => 0,
+                    'costo_total'     => (float) $ordenTaller->costo_mano_obra,
+                ]);
+                $ordenTaller->ingreso()->update(['estado' => 3]);
+            }
+
             $factura->update([
                 'estado'     => 'anulada',
                 'estado_sri' => 'anulada',
             ]);
+
+            // Contabilidad: anular la factura DEBE anular su asiento.
+            //
+            // Antes no se tocaba: se devolvía el stock y se revertía el dinero
+            // en Bancos, pero el asiento de venta seguía activo, así que el
+            // ingreso, el IVA por pagar y (ahora) el costo de ventas quedaban
+            // registrados de una factura anulada. destroy() sí lo hacía; anular()
+            // no. La reversión se genera con la fecha del asiento original.
+            if ($factura->asiento_id) {
+                $asientoVenta = \App\Models\AsientoContable::find($factura->asiento_id);
+                if ($asientoVenta && !$asientoVenta->estaAnulado()) {
+                    $this->asiento->anular(
+                        $asientoVenta,
+                        "Anulación de factura {$factura->numero_completo}"
+                    );
+                }
+            }
+
+            // Bancos: se revierte el dinero que había entrado por esta factura
+            app(\App\Services\CobroBancoService::class)
+                ->revertirFactura($factura, 'factura anulada');
 
             // Marca la aprobación como consumida — mismo patrón que
             // CuentaCobrarController::castigo().
@@ -606,11 +785,193 @@ class FacturaController extends Controller
         return back()->with('flash', ['tipo' => 'exito', 'mensaje' => "Factura {$factura->numero_completo} anulada."]);
     }
 
+    /**
+     * Elimina la factura y todo lo que generó (solo SuperAdmin). Devuelve el
+     * stock, borra detalles/pagos/CxC y revierte el asiento contable (con
+     * asiento de anulación, no se borra la contabilidad). No permite eliminar
+     * facturas ya enviadas/autorizadas por el SRI ni con documentos relacionados.
+     */
+    public function destroy(Request $request, Factura $factura)
+    {
+        $data = $request->validate(['confirmacion' => 'required|string']);
+
+        $perfilNombre = DB::table('perfiles')
+            ->join('usuarios', 'usuarios.perfil_id', '=', 'perfiles.id')
+            ->where('usuarios.id', Auth::id())
+            ->value('perfiles.nombre');
+
+        if ($perfilNombre !== 'super_admin') {
+            return back()->withErrors(['error' => 'Solo el SuperAdmin puede eliminar facturas.']);
+        }
+
+        if (trim($data['confirmacion']) !== $factura->numero_completo) {
+            return back()->withErrors(['error' => 'El número escrito no coincide con la factura.']);
+        }
+
+        if (in_array($factura->estado_sri, ['autorizada', 'recibida'], true)) {
+            return back()->withErrors(['error' => 'La factura ya fue enviada al SRI y no se puede eliminar. Use una nota de crédito.']);
+        }
+
+        $relacionados = collect([
+            'notas de crédito'   => DB::table('notas_credito')->where('factura_id', $factura->id)->exists(),
+            'guías de remisión'  => DB::table('guias_remision')->where('factura_id', $factura->id)->exists(),
+            'retenciones'        => DB::table('retenciones')->where('factura_id', $factura->id)->exists(),
+            'órdenes de taller'  => DB::table('taller_ordenes_trabajo')->where('factura_id', $factura->id)->exists(),
+            'prefacturas'        => DB::table('prefacturas')->where('factura_id', $factura->id)->exists(),
+            'proformas'          => DB::table('proformas')->where('factura_id', $factura->id)->exists(),
+        ])->filter()->keys();
+
+        if ($relacionados->isNotEmpty()) {
+            return back()->withErrors(['error' => 'La factura tiene documentos relacionados (' . $relacionados->implode(', ') . ') y no se puede eliminar.']);
+        }
+
+        if (CuentaCobrar::where('factura_id', $factura->id)->whereHas('cobros')->exists()) {
+            return back()->withErrors(['error' => 'La factura tiene cobros registrados y no se puede eliminar.']);
+        }
+
+        $resumen = "Factura {$factura->numero_completo} eliminada (cliente {$factura->identificacion}, total {$factura->total}, estado {$factura->estado})";
+
+        try {
+            DB::transaction(function () use ($factura) {
+                // Si ya estaba anulada, el stock ya se devolvió al anular.
+                if ($factura->estado !== 'anulada') {
+                    $salidas = DB::table('inventario_movimientos')
+                        ->where('doc_tipo', 'FACTURA')
+                        ->where('doc_id', $factura->id)
+                        ->where('tipo', 'salida')
+                        ->get();
+
+                    foreach ($salidas as $mov) {
+                        $this->inventario->ingresarStock(
+                            (int) $mov->producto_id,
+                            (int) $mov->bodega_id,
+                            (float) $mov->cantidad,
+                            (float) $mov->costo_unitario,
+                            'factura_eliminada',
+                            $factura->id
+                        );
+                    }
+                }
+
+                if ($factura->asiento_id) {
+                    $asiento = \App\Models\AsientoContable::find($factura->asiento_id);
+                    if ($asiento && !$asiento->estaAnulado()) {
+                        $this->asiento->anular($asiento, "Eliminación de factura {$factura->numero_completo}");
+                    }
+                }
+
+                // Bancos: revierte los ingresos de esta factura (idempotente si ya se anuló)
+                app(\App\Services\CobroBancoService::class)
+                    ->revertirFactura($factura, 'factura eliminada');
+
+                CuentaCobrar::where('factura_id', $factura->id)->delete();
+                FacturaDetalle::where('factura_id', $factura->id)->delete();
+                FacturaPago::where('factura_id', $factura->id)->delete();
+                $factura->delete();
+            });
+        } catch (\Throwable $e) {
+            return back()->withErrors(['error' => 'No se pudo eliminar: ' . $e->getMessage()]);
+        }
+
+        $this->auditoria->documento('eliminar', 'ventas', 'facturas', $factura->id, $resumen);
+
+        return redirect()->route('ventas.facturas.index')
+            ->with('flash', ['tipo' => 'exito', 'mensaje' => "Factura {$factura->numero_completo} eliminada."]);
+    }
+
     public function enviarSri(Factura $factura)
     {
         // TODO: implementar ciclo SRI (XML + firma + webservice)
         // Pendiente — commit separado
         return response()->json(['message' => 'Funcionalidad SRI pendiente']);
+    }
+
+    /** Descarga el XML de la factura (autorizado si existe; si no, el generado sin firmar). */
+    public function xml(Factura $factura, FacturaXmlService $xml)
+    {
+        $factura->load(['empresa', 'detalles', 'pagos']);
+
+        return response($xml->xml($factura), 200, [
+            'Content-Type'        => 'application/xml; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="Factura-' . $factura->numero_completo . '.xml"',
+        ]);
+    }
+
+    /**
+     * RIDE (representación impresa) en PDF: se muestra en línea (para el visor
+     * modal) y con ?download=1 se descarga — mismo contrato que PdfPreviewModal.
+     */
+    public function ride(Request $request, Factura $factura, FacturaXmlService $xml)
+    {
+        $factura->load(['empresa', 'detalles', 'pagos']);
+        $pdf    = $this->renderRide($factura, $xml);
+        $nombre = 'RIDE-' . $factura->numero_completo . '.pdf';
+
+        return $request->boolean('download') ? $pdf->download($nombre) : $pdf->stream($nombre);
+    }
+
+    private function renderRide(Factura $factura, FacturaXmlService $xml)
+    {
+        $clave = $xml->claveAcceso($factura);
+
+        return Pdf::loadView('pdf.factura', [
+            'factura' => $factura,
+            'clave'   => $clave,
+            'logo'    => $this->logoEmpresa($factura->empresa),
+            'barcode' => 'data:image/png;base64,' . base64_encode(
+                (new \Picqer\Barcode\BarcodeGeneratorPNG())->getBarcode($clave, \Picqer\Barcode\BarcodeGeneratorPNG::TYPE_CODE_128, 1, 40)
+            ),
+        ])->setPaper('a4');
+    }
+
+    /**
+     * Logo del RIDE como data URI (DomPDF lo necesita embebido). Prioridad: el
+     * logo cargado en la empresa; luego public/images/logo-import.png si la
+     * empresa es Import; por último el logo de Altamira.
+     */
+    private function logoEmpresa(Empresa $empresa): ?string
+    {
+        $candidatos = [];
+        if ($empresa->logo) {
+            $candidatos[] = storage_path('app/public/' . ltrim($empresa->logo, '/'));
+            $candidatos[] = public_path(ltrim($empresa->logo, '/'));
+        }
+        if (stripos($empresa->nombre_comercial . ' ' . $empresa->razon_social, 'import') !== false) {
+            $candidatos[] = public_path('images/logo-import.png');
+        }
+        $candidatos[] = public_path('images/logo-altamira.png');
+
+        foreach ($candidatos as $ruta) {
+            if (is_file($ruta)) {
+                $mime = mime_content_type($ruta) ?: 'image/png';
+                return "data:{$mime};base64," . base64_encode(file_get_contents($ruta));
+            }
+        }
+
+        return null;
+    }
+
+    public function enviarCorreo(Request $request, Factura $factura, FacturaXmlService $xml): JsonResponse
+    {
+        $data = $request->validate(['email' => 'required|email|max:200']);
+
+        if ($factura->estado !== 'activa' || $factura->estado_sri !== 'autorizada') {
+            return response()->json(['mensaje' => 'Solo se envía por correo una factura activa y autorizada por el SRI.'], 422);
+        }
+
+        $factura->load(['empresa', 'detalles', 'pagos']);
+
+        try {
+            $pdf = $this->renderRide($factura, $xml)->output();
+            Mail::to($data['email'])->send(new FacturaMail($factura, $pdf));
+        } catch (\Throwable $e) {
+            return response()->json(['mensaje' => 'No se pudo enviar el correo: ' . $e->getMessage()], 500);
+        }
+
+        $factura->update(['email_enviado' => true]);
+        $this->auditoria->documento('enviar_correo', 'ventas', 'facturas', $factura->id, "Factura {$factura->numero_completo} enviada a {$data['email']}");
+
+        return response()->json(['mensaje' => "Factura enviada a {$data['email']}."]);
     }
 
     public function clienteGuardar(Request $request)

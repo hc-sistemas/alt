@@ -8,6 +8,7 @@ use App\Services\AuditoriaService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -27,27 +28,47 @@ class TipoEquipoController extends Controller
         ]);
     }
 
-    public function store(Request $request): RedirectResponse
+    /** Reglas comunes: descripción única sin distinguir mayúsculas (el legacy la guardaba en mayúsculas). */
+    private function reglas(?int $ignorarId = null): array
     {
-        $data = $request->validate([
-            'descripcion' => ['required', 'string', 'max:100'],
-            'estado'      => ['boolean'],
-        ]);
+        return [
+            'descripcion' => [
+                'required', 'string', 'max:100',
+                function ($attr, $value, $fail) use ($ignorarId) {
+                    $existe = TallerTipoEquipo::whereRaw('upper(descripcion) = ?', [mb_strtoupper(trim($value))])
+                        ->when($ignorarId, fn($q) => $q->where('id', '!=', $ignorarId))
+                        ->exists();
+                    if ($existe) {
+                        $fail('Ya existe un tipo de equipo con esa descripción.');
+                    }
+                },
+            ],
+            'estado' => ['boolean'],
+        ];
+    }
 
-        $tipoEquipo = TallerTipoEquipo::create($data);
+    public function store(Request $request): RedirectResponse|JsonResponse
+    {
+        $data = $request->validate($this->reglas());
+        $data['descripcion'] = mb_strtoupper(trim($data['descripcion']));
+
+        $tipoEquipo = TallerTipoEquipo::create($data + ['estado' => true]);
 
         $this->auditoria->documento('crear', 'taller', 'tipos_equipo', $tipoEquipo->id,
             "Tipo de equipo {$tipoEquipo->descripcion} creado");
+
+        // Creación rápida desde el formulario de ingreso (fetch JSON).
+        if ($request->expectsJson() && !$request->header('X-Inertia')) {
+            return response()->json(['id' => $tipoEquipo->id, 'descripcion' => $tipoEquipo->descripcion]);
+        }
 
         return back()->with('success', 'Tipo de equipo creado correctamente.');
     }
 
     public function update(Request $request, TallerTipoEquipo $tipoEquipo): RedirectResponse
     {
-        $data = $request->validate([
-            'descripcion' => ['required', 'string', 'max:100'],
-            'estado'      => ['boolean'],
-        ]);
+        $data = $request->validate($this->reglas($tipoEquipo->id));
+        $data['descripcion'] = mb_strtoupper(trim($data['descripcion']));
 
         $tipoEquipo->update($data);
 

@@ -44,7 +44,7 @@ const navItems: NavItem[] = [
             { nombre: 'Inventario General', href: '/inventario/kardex/saldos' },
             { nombre: 'Movimientos', href: '/inventario/traslados' },
             { nombre: 'Activos Fijos', href: '/inventario/activos' },
-            { nombre: 'Listas de Precio', href: '/inventario/listas' },
+            { nombre: 'Lista de Precios', href: '/inventario/listas' },
             { nombre: 'Recepciones', href: '/inventario/recepciones' },
         ],
         subgrupos: [
@@ -91,6 +91,7 @@ const navItems: NavItem[] = [
             { nombre: 'Conciliación Bancaria', href: '/bancos/conciliaciones' },
             { nombre: 'Cheques', href: '/bancos/cheques' },
             { nombre: 'Reportes', href: '/bancos/reportes' },
+            { nombre: 'Configuración de cobros', href: '/bancos/configuracion-cobros' },
         ]
     },
     {
@@ -107,6 +108,7 @@ const navItems: NavItem[] = [
         nombre: 'RRHH', clave: 'rrhh', icon: Users,
         hijos: [
             { nombre: 'Colaboradores',       href: '/rrhh/colaboradores'  },
+            { nombre: 'Departamentos',       href: '/rrhh/departamentos'  },
             { nombre: 'Asistencia',          href: '/rrhh/asistencia'     },
             { nombre: 'Horas Extras',        href: '/rrhh/horas-extras'   },
             { nombre: 'Nómina',              href: '/rrhh/nomina'         },
@@ -203,7 +205,25 @@ export default function Sidebar({ collapsed, onCollapse, mobileOpen, onMobileClo
         return () => document.removeEventListener('inertia:navigate', handle)
     }, [])
 
-    const isActive = (href: string) => url.startsWith(href)
+    // Solo el enlace con la coincidencia más específica queda activo: evita que
+    // "/inventario/kardex" se marque también estando en "/inventario/kardex/saldos".
+    const hrefActivo = useMemo(() => {
+        const path = url.split('?')[0]
+        // Ajuste de inventario se abre desde Inventario General, no desde Kárdex.
+        if (path === '/inventario/kardex/ajuste' || path.startsWith('/inventario/kardex/ajuste/')) {
+            return '/inventario/kardex/saldos'
+        }
+        const todos = navItems.flatMap(i => [
+            ...(i.href ? [i.href] : []),
+            ...(i.hijos?.map(h => h.href) ?? []),
+            ...(i.subgrupos?.flatMap(sg => sg.hijos.map(h => h.href)) ?? []),
+        ])
+        return todos
+            .filter(h => path === h || path.startsWith(h + '/'))
+            .sort((a, b) => b.length - a.length)[0]
+    }, [url])
+
+    const isActive = (href: string) => href === hrefActivo
 
     const content = (
         <div className="flex flex-col h-full"

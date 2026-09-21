@@ -324,6 +324,7 @@ export interface KardexMovimientoExtendido {
     documento_numero: string | null
     documento_id: number | null
     observacion: string | null
+    bodega?: { id: number; nombre: string } | null
     es_ingreso: boolean | null
     cantidad: number
     costo_unitario: number
@@ -831,6 +832,7 @@ export interface Colaborador {
     fecha_salida: string | null
     tipo_contrato: 'indefinido' | 'plazo_fijo' | 'honorarios' | null
     cargo: string | null
+    departamento_id?: number | null
     departamento: string | null
     comision_porcentaje: number
     sueldo_base: number
@@ -1105,4 +1107,15 @@ export interface TallerIngreso {
     equipo?: TallerEquipo
     usuario?: { id: number; nombre: string }
     ordenes_trabajo?: TallerOrdenTrabajo[]
+    componentes?: TallerRevComponente[]
+}
+
+export interface TallerRevComponente {
+    id: number
+    ingreso_id: number
+    nombre: string
+    funciona: boolean
+    accion: number // 0 = reparación, 1 = reemplazo
+    descripcion: string | null
+    costo: number
 }

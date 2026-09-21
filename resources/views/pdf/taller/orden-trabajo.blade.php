@@ -107,8 +107,8 @@
             <td class="img-cell" rowspan="2">
                 <div class="img-box">
                     <div class="img-inner">
-                        @if($ingreso->imagen)
-                            <img src="{{ $ingreso->imagen }}">
+                        @if($imagenDataUri ?? null)
+                            <img src="{{ $imagenDataUri }}">
                         @else
                             <span class="img-placeholder">Imagen del Equipo</span>
                         @endif
@@ -139,6 +139,15 @@
         <p><span class="lbl">Descripcion:</span> {{ $ot?->descripcion_trabajo ?? '' }}</p>
         <p><span class="lbl">Fecha Inicio:</span> {{ $ot?->fecha_inicio ? \Carbon\Carbon::parse($ot->fecha_inicio)->format('Y-m-d') : '—' }}</p>
         <p><span class="lbl">Observaciones generales:</span> {{ $ingreso->observaciones ?? '' }}</p>
+        @if($ingreso->componentes->isNotEmpty())
+        <p style="margin-top:6px"><span class="lbl">Revisión de componentes:</span></p>
+        <table style="width:100%;border-collapse:collapse;font-size:8.5px;margin-bottom:6px">
+            <tr style="background:#eee"><td style="border:1px solid #B9B9B9;padding:2px 4px">Componente</td><td style="border:1px solid #B9B9B9;padding:2px 4px">Funciona</td><td style="border:1px solid #B9B9B9;padding:2px 4px">Acción</td><td style="border:1px solid #B9B9B9;padding:2px 4px">Detalle</td></tr>
+            @foreach($ingreso->componentes as $c)
+            <tr><td style="border:1px solid #B9B9B9;padding:2px 4px">{{ $c->nombre }}</td><td style="border:1px solid #B9B9B9;padding:2px 4px">{{ $c->funciona ? 'Sí' : 'No' }}</td><td style="border:1px solid #B9B9B9;padding:2px 4px">{{ $c->accion == 1 ? 'Reemplazo' : 'Reparación' }}</td><td style="border:1px solid #B9B9B9;padding:2px 4px">{{ $c->descripcion }}</td></tr>
+            @endforeach
+        </table>
+        @endif
         <p class="nota">Nota: Si en el lapso de 3 meses luego de la notificación de arreglo su equipo no es retirado podrá ser rematado.</p>
     </div>
 

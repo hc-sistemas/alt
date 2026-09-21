@@ -182,6 +182,28 @@ class CompraController extends Controller
                 "Ya existe una compra con el documento {$request->num_documento} de este proveedor.");
         }
 
+        // La parte contable debe estar lista antes de registrar la compra (período abierto +
+        // parámetros de cuentas). Sin esto la factura quedaba sin asiento.
+        $tipoAsiento = match (true) {
+            $request->boolean('gasto_no_deducible')  => 'no_deducible',
+            $request->tipo_documento === 'EXT'        => 'gasto',
+            !collect($request->detalles)->contains(fn($d) => !empty($d['producto_id'])) => 'gasto',
+            default                                   => 'inventario',
+        };
+        try {
+            $this->asientoService->validarConfiguracion(
+                (int) $empresaId,
+                \App\Services\AsientoService::codigosCompra(
+                    $tipoAsiento,
+                    (float) ($request->retencion_ir ?? 0) > 0,
+                    (float) ($request->retencion_iva ?? 0) > 0,
+                ),
+                $request->fecha_emision,
+            );
+        } catch (\DomainException $e) {
+            return back()->with('error', $e->getMessage())->withInput();
+        }
+
         try {
             DB::transaction(function () use ($request, $empresaId) {
                 $subtotal0   = 0;
@@ -266,6 +288,8 @@ class CompraController extends Controller
                     ));
                 }
 
+                // Bodega ve la recepción pendiente de inmediato (Inventario → Recepciones)
+                $this->crearRecepcionPendiente($compra, (int) $empresaId);
             });
 
             return back()->with('success',
@@ -283,7 +307,29 @@ class CompraController extends Controller
             return back()->with('error', 'Solo se pueden activar facturas en estado pendiente.');
         }
 
+        if (RecepcionBodega::where('compra_id', $compra->id)->where('estado', 'pendiente')->exists()) {
+            return back()->with('error',
+                'Esta factura tiene una recepción de bodega pendiente: el ingreso se confirma desde Inventario → Recepciones.');
+        }
+
         $empresaId = session('empresa_activa_id');
+
+        try {
+            $compra->loadMissing('detalles');
+            $tipoAsiento = match (true) {
+                (bool) $compra->gasto_no_deducible       => 'no_deducible',
+                $compra->tipo_documento === 'EXT'         => 'gasto',
+                !$compra->detalles->contains(fn($d) => $d->producto_id !== null) => 'gasto',
+                default                                   => 'inventario',
+            };
+            $this->asientoService->validarConfiguracion(
+                (int) $empresaId,
+                \App\Services\AsientoService::codigosCompra($tipoAsiento, (float) $compra->retencion_ir > 0, (float) $compra->retencion_iva > 0),
+                $compra->fecha_emision?->toDateString(),
+            );
+        } catch (\DomainException $e) {
+            return back()->with('error', $e->getMessage());
+        }
 
         DB::transaction(function () use ($compra, $empresaId) {
             $compra->update(['estado' => 'activa']);
@@ -549,12 +595,52 @@ class CompraController extends Controller
         return ($ej && $ej->estaCerrado()) ? $ej : null;
     }
 
+    // ── Crea la recepción de bodega en estado pendiente (una sola por compra) con una
+    //    línea por producto. Idempotente: no hace nada si ya existe, si la compra no
+    //    tiene productos, o si no hay bodega destino. ─────────────────────────────────
+    private function crearRecepcionPendiente(Compra $compra, int $empresaId): void
+    {
+        if (RecepcionBodega::where('compra_id', $compra->id)->exists()) {
+            return;
+        }
+
+        $detalles = CompraDetalle::where('compra_id', $compra->id)->whereNotNull('producto_id')->get();
+        if ($detalles->isEmpty()) {
+            return;
+        }
+
+        $bodegaId = $compra->bodega_id
+            ?? Bodega::where('empresa_id', $empresaId)->where('tipo', 'general')->value('id');
+        if (!$bodegaId) {
+            return;
+        }
+
+        $recepcion = RecepcionBodega::create([
+            'empresa_id' => $empresaId,
+            'compra_id'  => $compra->id,
+            'bodega_id'  => $bodegaId,
+            'estado'     => 'pendiente',
+        ]);
+
+        foreach ($detalles as $detalle) {
+            \App\Models\RecepcionDetalle::create([
+                'recepcion_id'      => $recepcion->id,
+                'compra_detalle_id' => $detalle->id,
+                'producto_id'       => $detalle->producto_id,
+                'cantidad_esperada' => $detalle->cantidad,
+                'cantidad_recibida' => 0,
+                'estado'            => 'pendiente',
+            ]);
+        }
+    }
+
     // ── Limpiar recepción y etiquetas de una compra antes de regenerarla o
     //    eliminarla — evita violar el FK de compra_id al reversar/eliminar. ─────
     private function limpiarRecepcionYEtiquetas(Compra $compra): void
     {
         $recepcion = RecepcionBodega::where('compra_id', $compra->id)->first();
         if ($recepcion) {
+            \App\Models\RecepcionEscaneo::where('recepcion_id', $recepcion->id)->delete();
             \App\Models\RecepcionDetalle::where('recepcion_id', $recepcion->id)->delete();
             $recepcion->delete();
         }
@@ -1003,6 +1089,7 @@ class CompraController extends Controller
         // ── Pendiente: nunca entró al inventario ni generó CxP/asiento ──────────
         if ($compra->estaPendiente()) {
             DB::transaction(function () use ($compra, $request, $estadoAnterior) {
+                $this->limpiarRecepcionYEtiquetas($compra);
                 $compra->update(['estado' => 'anulada']);
                 DB::table('log_cambios_criticos')->insert([
                     'usuario_id'     => Auth::id(),
@@ -1360,6 +1447,11 @@ class CompraController extends Controller
                     $compra->refresh();
                     $compra->load('detalles');
                     $this->aplicarEfectosOperativos($compra, $empresaId);
+                } else {
+                    // Pendiente: las líneas cambiaron, la recepción (y sus etiquetas) se regeneran
+                    $this->limpiarRecepcionYEtiquetas($compra);
+                    $compra->refresh();
+                    $this->crearRecepcionPendiente($compra, (int) $empresaId);
                 }
             });
         } catch (\Throwable $e) {
@@ -1417,6 +1509,8 @@ class CompraController extends Controller
                         Retencion::whereIn('id', $retencionIds)->delete();
                     }
 
+                    $this->limpiarRecepcionYEtiquetas($compra);
+                } else {
                     $this->limpiarRecepcionYEtiquetas($compra);
                 }
 

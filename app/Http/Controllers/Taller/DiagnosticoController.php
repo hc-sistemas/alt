@@ -15,13 +15,21 @@ use Inertia\Response;
 
 class DiagnosticoController extends Controller
 {
+    /** Estados de OT en los que todavía tiene sentido registrar o resolver un diagnóstico. */
+    private const ESTADOS_ABIERTOS = ['pendiente', 'en_proceso'];
+
     public function __construct(
         private AuditoriaService $auditoria,
     ) {}
 
-    public function create(TallerOrdenTrabajo $orden): Response
+    public function create(TallerOrdenTrabajo $orden): Response|RedirectResponse
     {
         abort_if((int) $orden->empresa_id !== (int) session('empresa_activa_id'), 403);
+
+        if (!in_array($orden->estado, self::ESTADOS_ABIERTOS, true)) {
+            return redirect()->route('taller.ordenes.show', $orden->id)
+                ->with('flash', ['tipo' => 'error', 'mensaje' => 'Solo se puede diagnosticar una orden pendiente o en proceso.']);
+        }
 
         $orden->load(['ingreso.cliente', 'ingreso.equipo']);
 
@@ -34,9 +42,13 @@ class DiagnosticoController extends Controller
     {
         abort_if((int) $orden->empresa_id !== (int) session('empresa_activa_id'), 403);
 
+        if (!in_array($orden->estado, self::ESTADOS_ABIERTOS, true)) {
+            return back()->with('flash', ['tipo' => 'error', 'mensaje' => 'Solo se puede diagnosticar una orden pendiente o en proceso.']);
+        }
+
         $data = $request->validate([
             'diagnostico'     => 'required|string',
-            'tiempo_estimado' => 'nullable|integer',
+            'tiempo_estimado' => 'nullable|integer|min:0',
             'tipo_tiempo'     => 'nullable|string|in:horas,dias',
         ]);
 
@@ -57,7 +69,8 @@ class DiagnosticoController extends Controller
                 $orden->save();
             }
 
-            $orden->ingreso()->update(['estado' => 1]);
+            // "En diagnóstico" solo si el ingreso aún no avanzó a proceso/listo.
+            $orden->ingreso()->where('estado', '<', 1)->update(['estado' => 1]);
 
             return $diagnostico;
         });
@@ -71,14 +84,22 @@ class DiagnosticoController extends Controller
 
     public function aprobar(Request $request, TallerDiagnostico $diagnostico): RedirectResponse
     {
-        abort_if((int) $diagnostico->orden->empresa_id !== (int) session('empresa_activa_id'), 403);
+        $orden = $diagnostico->orden;
+        abort_if((int) $orden->empresa_id !== (int) session('empresa_activa_id'), 403);
+
+        if ($diagnostico->estado !== 'pendiente') {
+            return back()->with('flash', ['tipo' => 'error', 'mensaje' => 'Este diagnóstico ya fue resuelto.']);
+        }
+        if (!in_array($orden->estado, self::ESTADOS_ABIERTOS, true)) {
+            return back()->with('flash', ['tipo' => 'error', 'mensaje' => 'La orden ya no admite cambios de diagnóstico.']);
+        }
 
         $data = $request->validate([
             'aprueba'     => 'required|boolean',
             'observacion' => 'nullable|string',
         ]);
 
-        DB::transaction(function () use ($diagnostico, $data) {
+        DB::transaction(function () use ($diagnostico, $orden, $data) {
             $diagnostico->cliente_aprueba = $data['aprueba'];
             $diagnostico->fecha_aprobacion = now();
             $diagnostico->observacion_aprobacion = $data['observacion'] ?? null;
@@ -87,7 +108,6 @@ class DiagnosticoController extends Controller
             $diagnostico->save();
 
             if ($data['aprueba']) {
-                $orden = $diagnostico->orden;
                 $orden->estado = 'en_proceso';
                 $orden->save();
                 $orden->ingreso()->update(['estado' => 2]);

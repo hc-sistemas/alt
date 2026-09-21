@@ -58,8 +58,8 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
     const [bcFechaDesde, setBcFechaDesde] = useState('')
     const [bcFechaHasta, setBcFechaHasta] = useState('')
 
-    // Estado filtros Balance General
-    const [bgEjercicio, setBgEjercicio] = useState('')
+    // Estado filtros Balance General — fecha de corte, no período mensual
+    const [bgFechaCorte, setBgFechaCorte] = useState(ultimoDia)
 
     // Estado filtros Estado Resultados
     const [erEjercicio,  setErEjercicio]  = useState('')
@@ -150,7 +150,7 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
 
     const generarBalanceGeneral = () => {
         const params = new URLSearchParams()
-        if (bgEjercicio) params.set('ejercicio_id', bgEjercicio)
+        if (bgFechaCorte) params.set('fecha_hasta', bgFechaCorte)
         abrirPdf(route('contabilidad.reportes.balance-general') + '?' + params, 'Balance General')
     }
 
@@ -465,14 +465,16 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
                             </div>
                         </div>
                         <div className="p-5 space-y-3">
+                            {/* Un balance es una foto ACUMULADA a una fecha, no
+                                los movimientos de un mes: por eso el filtro es
+                                una fecha de corte y no un período. */}
                             <div>
-                                <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>Período contable</label>
-                                <select value={bgEjercicio} onChange={e => setBgEjercicio(e.target.value)} className="input-field select-field">
-                                    <option value="">Todos los períodos</option>
-                                    {ejercicios.map(e => (
-                                        <option key={e.id} value={e.id}>{meses[e.mes]} {e.anio}{e.estado === 'abierto' ? ' (Abierto)' : ''}</option>
-                                    ))}
-                                </select>
+                                <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>Fecha de corte</label>
+                                <input type="date" value={bgFechaCorte} onChange={e => setBgFechaCorte(e.target.value)}
+                                       className="input-field" />
+                                <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                                    Saldos acumulados desde el inicio hasta esta fecha.
+                                </p>
                             </div>
                             <button onClick={generarBalanceGeneral}
                                 className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90 hover:-translate-y-0.5"

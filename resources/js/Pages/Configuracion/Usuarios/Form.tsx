@@ -9,7 +9,16 @@ import { Save } from 'lucide-react'
 import { usePermiso } from '@/Hooks/usePermiso'
 import type { Usuario, Perfil, Empresa, CentroCosto, PageProps } from '@/types'
 
+interface ColaboradorDisponible {
+    id: number
+    empresa_id: number
+    apellidos: string
+    nombres: string
+    cedula_ruc: string
+}
+
 interface Props extends PageProps {
+    colaboradores_disponibles?: ColaboradorDisponible[]
     usuario?: Usuario & { empresas?: Empresa[] }
     perfiles: Perfil[]
     empresas: Empresa[]
@@ -17,7 +26,7 @@ interface Props extends PageProps {
 }
 
 export default function UsuarioForm() {
-    const { usuario, perfiles, empresas, centros_costo } = usePage<Props>().props
+    const { usuario, perfiles, empresas, centros_costo, colaboradores_disponibles = [] } = usePage<Props>().props
     const { puede } = usePermiso('configuracion')
     const esEdicion = !!usuario
 
@@ -35,6 +44,16 @@ export default function UsuarioForm() {
         codigo_aprobacion_confirmation: '',
         empresas: usuario?.empresas?.map(e => e.id) ?? [],
         estado: usuario?.estado ?? true,
+        // Vínculo con RRHH (solo al crear): todo empleado es también colaborador
+        es_empleado: true,
+        colaborador_modo: 'crear' as 'crear' | 'vincular',
+        colaborador_id: '',
+        colab_apellidos: '',
+        colab_nombres: '',
+        colab_cedula_ruc: '',
+        colab_fecha_ingreso: new Date().toISOString().slice(0, 10),
+        colab_sueldo_base: '',
+        colab_cargo: '',
     })
 
     function submit(e: FormEvent) {
@@ -54,6 +73,12 @@ export default function UsuarioForm() {
             setData('empresas', [...empresasActuales, id])
         }
     }
+
+    const disponibles = colaboradores_disponibles.filter(c =>
+        (data.empresas as number[]).includes(c.empresa_id))
+
+    const selectStyle = { borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }
+    const selectClass = 'flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm'
 
     const esAdminPlus = ['super_admin', 'admin'].includes(
         perfiles.find(p => p.id === Number(data.perfil_id))?.nombre ?? ''
@@ -202,6 +227,111 @@ export default function UsuarioForm() {
                         {errors.empresas && <p className="text-xs text-red-400">{errors.empresas}</p>}
                     </div>
                 </section>
+
+                {/* Empleado / Colaborador (RRHH) — solo al crear */}
+                {!esEdicion && (
+                    <section>
+                        <h2 className="text-base font-semibold mb-1 pb-2 border-b"
+                            style={{ color: 'var(--text-main)', borderColor: 'var(--border)' }}>
+                            Empleado (RRHH)
+                        </h2>
+                        <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
+                            Un usuario que trabaja en la empresa también es colaborador: así puede timbrar
+                            asistencia y aparece en nómina. Desmárcalo para usuarios externos (ej. contador externo).
+                        </p>
+                        <label className="flex items-center gap-2 text-sm mb-4 cursor-pointer"
+                            style={{ color: 'var(--text-main)' }}>
+                            <input type="checkbox" checked={data.es_empleado}
+                                onChange={e => setData('es_empleado', e.target.checked)} />
+                            Es empleado de la empresa
+                        </label>
+
+                        {data.es_empleado && (
+                            <div className="space-y-4">
+                                <div className="flex gap-2">
+                                    {(['crear', 'vincular'] as const).map(m => (
+                                        <button key={m} type="button" onClick={() => setData('colaborador_modo', m)}
+                                            className="px-3 py-1.5 rounded-lg border text-sm transition-all"
+                                            style={{
+                                                borderColor: data.colaborador_modo === m ? '#F59E0B' : 'var(--border)',
+                                                color: data.colaborador_modo === m ? '#F59E0B' : 'var(--text-muted)',
+                                            }}>
+                                            {m === 'crear' ? 'Crear ficha de colaborador' : 'Vincular a colaborador existente'}
+                                        </button>
+                                    ))}
+                                </div>
+
+                                {data.colaborador_modo === 'vincular' ? (
+                                    <div className="space-y-1.5">
+                                        <Label>Colaborador *</Label>
+                                        <select value={data.colaborador_id}
+                                            onChange={e => setData('colaborador_id', e.target.value)}
+                                            className={selectClass} style={selectStyle}>
+                                            <option value="">Seleccionar colaborador sin usuario...</option>
+                                            {disponibles.map(c => (
+                                                <option key={c.id} value={c.id}>
+                                                    {c.apellidos} {c.nombres} — {c.cedula_ruc}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        {disponibles.length === 0 && (
+                                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                                No hay colaboradores sin usuario en las empresas seleccionadas.
+                                            </p>
+                                        )}
+                                        {errors.colaborador_id && <p className="text-xs text-red-400">{errors.colaborador_id}</p>}
+                                    </div>
+                                ) : (
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        <div className="space-y-1.5">
+                                            <Label>Apellidos *</Label>
+                                            <Input value={data.colab_apellidos}
+                                                onChange={e => setData('colab_apellidos', e.target.value)}
+                                                error={errors.colab_apellidos} />
+                                            {errors.colab_apellidos && <p className="text-xs text-red-400">{errors.colab_apellidos}</p>}
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <Label>Nombres *</Label>
+                                            <Input value={data.colab_nombres}
+                                                onChange={e => setData('colab_nombres', e.target.value)}
+                                                error={errors.colab_nombres} />
+                                            {errors.colab_nombres && <p className="text-xs text-red-400">{errors.colab_nombres}</p>}
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <Label>Cédula / RUC *</Label>
+                                            <Input value={data.colab_cedula_ruc} maxLength={13}
+                                                onChange={e => setData('colab_cedula_ruc', e.target.value)}
+                                                error={errors.colab_cedula_ruc} />
+                                            {errors.colab_cedula_ruc && <p className="text-xs text-red-400">{errors.colab_cedula_ruc}</p>}
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <Label>Fecha de ingreso *</Label>
+                                            <Input type="date" value={data.colab_fecha_ingreso}
+                                                onChange={e => setData('colab_fecha_ingreso', e.target.value)}
+                                                error={errors.colab_fecha_ingreso} />
+                                            {errors.colab_fecha_ingreso && <p className="text-xs text-red-400">{errors.colab_fecha_ingreso}</p>}
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <Label>Sueldo base *</Label>
+                                            <Input type="number" step="0.01" min="0" value={data.colab_sueldo_base}
+                                                onChange={e => setData('colab_sueldo_base', e.target.value)}
+                                                error={errors.colab_sueldo_base} />
+                                            {errors.colab_sueldo_base && <p className="text-xs text-red-400">{errors.colab_sueldo_base}</p>}
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <Label>Cargo</Label>
+                                            <Input value={data.colab_cargo}
+                                                onChange={e => setData('colab_cargo', e.target.value)} />
+                                        </div>
+                                        <p className="sm:col-span-2 text-xs" style={{ color: 'var(--text-muted)' }}>
+                                            El resto de la ficha (horario, banco, décimos, etc.) se completa después en RRHH → Colaboradores.
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </section>
+                )}
 
                 {/* Código de aprobación */}
                 {esAdminPlus && (

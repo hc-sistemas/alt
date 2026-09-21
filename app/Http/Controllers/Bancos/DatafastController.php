@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\BancoCaja;
 use App\Models\DatafastLiquidacion;
 use App\Models\DatafastLote;
+use App\Models\MovimientoBancario;
 use App\Models\ParametroContable;
 use App\Services\AsientoService;
 use Illuminate\Http\RedirectResponse;
@@ -187,6 +188,24 @@ class DatafastController extends Controller
                 $bancoDestino = BancoCaja::find($request->banco_destino_id);
                 $bancoDestino?->actualizarSaldo($valorNeto, 'ingreso');
 
+                // El depósito neto debe verse en Movimientos (y poder conciliarse con el estado de cuenta)
+                $movDeposito = $bancoDestino ? MovimientoBancario::create([
+                    'empresa_id'     => $empresaId,
+                    'banco_caja_id'  => $bancoDestino->id,
+                    'tipo'           => 'ingreso',
+                    'sub_tipo'       => 'deposito',
+                    'fecha'          => $request->fecha_deposito,
+                    'monto'          => $valorNeto,
+                    'beneficiario'   => 'Datafast',
+                    'num_documento'  => $lote->numero_lote,
+                    'descripcion'    => "Depósito Datafast lote {$lote->numero_lote}",
+                    'documento_tipo' => 'DATAFAST',
+                    'documento_id'   => $liquidacion->id,
+                    'anulado'        => false,
+                    'conciliado'     => false,
+                    'created_by'     => Auth::id(),
+                ]) : null;
+
                 try {
                     $ctaVouchers = ParametroContable::getCuentaId('cta_vouchers', $empresaId);
                     $ctaBancos   = $bancoDestino?->cuenta_id;
@@ -243,6 +262,7 @@ class DatafastController extends Controller
                             esAutomatico: true,
                         );
                         $liquidacion->update(['asiento_id' => $asiento->id]);
+                        $movDeposito?->update(['asiento_id' => $asiento->id]);
                     }
                 } catch (\Exception $e) {
                     // No bloquear si cuentas no configuradas

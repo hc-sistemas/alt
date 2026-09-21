@@ -6,7 +6,9 @@ import { Button } from '@/Components/ui/button'
 import { Badge } from '@/Components/ui/badge'
 import PdfPreviewModal from '@/Components/shared/PdfPreviewModal'
 import { formatFecha } from '@/lib/utils'
-import { ArrowRight, FileText } from 'lucide-react'
+import { confirmarEliminar } from '@/lib/swal'
+import { usePermiso } from '@/Hooks/usePermiso'
+import { ArrowRight, FileText, Pencil, Trash2 } from 'lucide-react'
 import type { PageProps, TallerIngreso } from '@/types'
 
 interface Props extends PageProps {
@@ -34,6 +36,18 @@ export default function IngresoShow() {
     const { ingreso } = usePage<Props>().props
     const cfgIngreso = ESTADO_INGRESO[ingreso.estado] ?? ESTADO_INGRESO[0]
     const [pdfAbierto, setPdfAbierto] = useState(false)
+    const { puede } = usePermiso('taller')
+    const componentes = ingreso.componentes ?? []
+    const facturado = (ingreso.ordenes_trabajo ?? []).some(o => o.estado === 'facturado')
+    const urlImagen = ingreso.imagen
+        ? (/^https?:\/\//i.test(ingreso.imagen) ? ingreso.imagen : route('taller.ingresos.imagen', ingreso.id))
+        : null
+
+    async function eliminar() {
+        if (await confirmarEliminar(`el ingreso #${ingreso.id}`)) {
+            router.delete(route('taller.ingresos.destroy', ingreso.id))
+        }
+    }
 
     return (
         <AppLayout title={`Ingreso #${ingreso.id}`}>
@@ -86,10 +100,10 @@ export default function IngresoShow() {
                         </div>
                     )}
 
-                    {ingreso.imagen && (
+                    {urlImagen && (
                         <div className="text-sm">
                             <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>Imagen</p>
-                            <img src={ingreso.imagen} alt="Imagen del equipo"
+                            <img src={urlImagen} alt="Imagen del equipo"
                                 className="rounded-lg border max-w-xs"
                                 style={{ borderColor: 'var(--border)' }} />
                         </div>
@@ -150,6 +164,35 @@ export default function IngresoShow() {
                     </div>
                 </div>
 
+                {/* Revisión de componentes */}
+                {componentes.length > 0 && (
+                    <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+                        <div className="px-4 py-3" style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
+                            <h3 className="text-sm font-semibold" style={{ color: 'var(--text-main)' }}>Revisión de componentes</h3>
+                        </div>
+                        <table className="w-full text-sm">
+                            <thead>
+                                <tr style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
+                                    {['Componente', 'Funciona', 'Acción', 'Costo', 'Detalle'].map(h => (
+                                        <th key={h} className="text-left px-4 py-2.5 font-medium text-xs" style={{ color: 'var(--text-muted)' }}>{h}</th>
+                                    ))}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {componentes.map(c => (
+                                    <tr key={c.id} className="border-t" style={{ borderColor: 'var(--border)', color: 'var(--text-main)' }}>
+                                        <td className="px-4 py-2.5">{c.nombre}</td>
+                                        <td className="px-4 py-2.5">{c.funciona ? 'Sí' : 'No'}</td>
+                                        <td className="px-4 py-2.5">{c.accion === 1 ? 'Reemplazo' : 'Reparación'}</td>
+                                        <td className="px-4 py-2.5">{c.costo ? Number(c.costo).toFixed(2) : '—'}</td>
+                                        <td className="px-4 py-2.5" style={{ color: 'var(--text-muted)' }}>{c.descripcion ?? '—'}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+
                 {/* Órdenes de trabajo */}
                 <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
                     <div className="px-4 py-3" style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
@@ -202,10 +245,24 @@ export default function IngresoShow() {
                     <Button variant="outline" onClick={() => router.visit(route('taller.ingresos.index'))}>
                         Volver a Ingresos
                     </Button>
-                    <Button variant="outline" onClick={() => setPdfAbierto(true)}>
-                        <FileText className="w-4 h-4" />
-                        Ver PDF
-                    </Button>
+                    <div className="flex gap-2">
+                        {puede('eliminar') && (
+                            <Button variant="outline" onClick={() => void eliminar()}>
+                                <Trash2 className="w-4 h-4" />
+                                Eliminar
+                            </Button>
+                        )}
+                        {puede('editar') && !facturado && (
+                            <Button variant="outline" onClick={() => router.visit(route('taller.ingresos.edit', ingreso.id))}>
+                                <Pencil className="w-4 h-4" />
+                                Editar
+                            </Button>
+                        )}
+                        <Button variant="outline" onClick={() => setPdfAbierto(true)}>
+                            <FileText className="w-4 h-4" />
+                            Ver PDF
+                        </Button>
+                    </div>
                 </div>
             </div>
 

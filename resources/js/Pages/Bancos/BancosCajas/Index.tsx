@@ -273,7 +273,7 @@ function BancoModal({ banco, cuentas, centrosCosto, cuentasAutoMap, tiposRequier
     const requiereCentroCosto = tiposRequierenCentroCosto.includes(data.tipo)
 
     function handleTipoChange(tipo: string) {
-        setData('tipo', tipo)
+        setData('tipo', tipo as typeof data.tipo)
         // Cambiar cuenta auto solo si la cuenta actual también es una auto (o no hay)
         const esAutoActual = cuentaSeleccionada
             ? Object.values(cuentasAutoMap).includes(cuentaSeleccionada.codigo)

@@ -6,17 +6,34 @@ import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import BuscadorClienteModal from '@/Components/shared/BuscadorClienteModal'
+import CapturaImagen from '@/Components/taller/CapturaImagen'
+import axios from '@/lib/axios'
 import { toastError } from '@/lib/toast'
-import { Search, Save, X, AlertTriangle, RotateCcw } from 'lucide-react'
+import { Search, Save, X, AlertTriangle, RotateCcw, Plus, Trash2 } from 'lucide-react'
 import { usePermiso } from '@/Hooks/usePermiso'
-import type { PageProps, Cliente, TallerTipoEquipo, TallerEquipo } from '@/types'
+import type { PageProps, Cliente, TallerTipoEquipo, TallerEquipo, TallerIngreso } from '@/types'
+
+interface Tecnico {
+    id: number
+    nombre: string
+}
 
 interface Props extends PageProps {
     clientes: Cliente[]
     tiposEquipo: TallerTipoEquipo[]
+    tecnicos: Tecnico[]
+    ingreso: TallerIngreso | null
 }
 
 type EstadoBusquedaEquipo = 'idle' | 'searching' | 'found' | 'new'
+
+interface ComponenteForm {
+    nombre: string
+    funciona: boolean
+    accion: 0 | 1
+    descripcion: string
+    costo: string
+}
 
 const equipoVacio = {
     tipo_id: '' as number | '',
@@ -28,26 +45,68 @@ const equipoVacio = {
     observaciones: '',
 }
 
+const componenteVacio: ComponenteForm = { nombre: '', funciona: true, accion: 0, descripcion: '', costo: '' }
+
+const selectCls = 'mt-1 w-full h-9 rounded-md border px-3 text-sm'
+const selectStyle = { background: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-main)' }
+const textareaCls = 'mt-1 w-full rounded-md border px-3 py-2 text-sm resize-none focus:outline-none'
+const textareaStyle = { background: 'transparent', borderColor: 'var(--border)', color: 'var(--text-main)' }
+
+function equipoAForm(e: TallerEquipo) {
+    return {
+        tipo_id: (e.tipo_id ?? '') as number | '',
+        marca: e.marca ?? '',
+        modelo: e.modelo ?? '',
+        color: e.color ?? '',
+        medida: e.medida ?? '',
+        adicional: e.adicional ?? '',
+        observaciones: e.observaciones ?? '',
+    }
+}
+
 export default function IngresoForm() {
-    const { clientes, tiposEquipo, errors } = usePage<Props>().props
+    const { clientes, tiposEquipo: tiposIniciales, tecnicos, ingreso, errors } = usePage<Props>().props
     const { puede } = usePermiso('taller')
+    const editando = ingreso !== null
+    const ot = ingreso?.ordenes_trabajo?.[ingreso.ordenes_trabajo.length - 1]
 
     // — Cliente
-    const [identificacion, setIdentificacion] = useState('')
-    const [clienteSeleccionado, setClienteSeleccionado] = useState<Cliente | null>(null)
+    const [identificacion, setIdentificacion] = useState(ingreso?.cliente?.identificacion ?? '')
+    const [clienteSeleccionado, setClienteSeleccionado] = useState<Cliente | null>(ingreso?.cliente ?? null)
     const [modalCliente, setModalCliente] = useState<Cliente[]>([])
     const [mensajeCliente, setMensajeCliente] = useState('')
 
     // — Equipo
-    const [numeroSerie, setNumeroSerie] = useState('')
-    const [estadoEquipo, setEstadoEquipo] = useState<EstadoBusquedaEquipo>('idle')
-    const [equipoEncontrado, setEquipoEncontrado] = useState<TallerEquipo | null>(null)
-    const [equipoForm, setEquipoForm] = useState({ ...equipoVacio })
+    const [tiposEquipo, setTiposEquipo] = useState<TallerTipoEquipo[]>(tiposIniciales)
+    const [numeroSerie, setNumeroSerie] = useState(ingreso?.equipo?.numero_serie ?? '')
+    const [estadoEquipo, setEstadoEquipo] = useState<EstadoBusquedaEquipo>(ingreso?.equipo ? 'found' : 'idle')
+    const [equipoEncontrado, setEquipoEncontrado] = useState<TallerEquipo | null>(ingreso?.equipo ?? null)
+    const [equipoForm, setEquipoForm] = useState(ingreso?.equipo ? equipoAForm(ingreso.equipo) : { ...equipoVacio })
+    const [nuevoTipo, setNuevoTipo] = useState<string | null>(null)
 
     // — Datos del ingreso
-    const [diagnosticoInicial, setDiagnosticoInicial] = useState('')
-    const [observaciones, setObservaciones] = useState('')
-    const [imagen, setImagen] = useState('')
+    const [diagnosticoInicial, setDiagnosticoInicial] = useState(ingreso?.diagnostico_inicial ?? '')
+    const [observaciones, setObservaciones] = useState(ingreso?.observaciones ?? '')
+    const [tecnicoId, setTecnicoId] = useState(ot?.tecnico_id ? String(ot.tecnico_id) : '')
+    const [descripcionTrabajo, setDescripcionTrabajo] = useState(ot?.descripcion_trabajo ?? '')
+
+    // — Imagen: `imagenData` es la foto nueva (data URL); la existente se sirve por ruta autenticada.
+    const imagenExistente = ingreso?.imagen
+        ? (/^https?:\/\//i.test(ingreso.imagen) ? ingreso.imagen : route('taller.ingresos.imagen', ingreso.id))
+        : null
+    const [imagenData, setImagenData] = useState<string | null>(null)
+    const [quitarImagen, setQuitarImagen] = useState(false)
+
+    // — Revisión de componentes
+    const [componentes, setComponentes] = useState<ComponenteForm[]>(
+        (ingreso?.componentes ?? []).map(c => ({
+            nombre: c.nombre,
+            funciona: c.funciona,
+            accion: (c.accion === 1 ? 1 : 0) as 0 | 1,
+            descripcion: c.descripcion ?? '',
+            costo: c.costo ? String(c.costo) : '',
+        }))
+    )
 
     const [guardando, setGuardando] = useState(false)
 
@@ -90,12 +149,12 @@ export default function IngresoForm() {
         if (!serie) return
         setEstadoEquipo('searching')
         try {
-            const res = await fetch(route('taller.equipos.buscar', { serie }), {
-                headers: { Accept: 'application/json' },
-            })
-            const data = await res.json() as { found: boolean; equipo: TallerEquipo | null }
+            const { data } = await axios.get<{ found: boolean; equipo: TallerEquipo | null }>(
+                route('taller.equipos.buscar', { serie })
+            )
             if (data.found && data.equipo) {
                 setEquipoEncontrado(data.equipo)
+                setEquipoForm(equipoAForm(data.equipo))
                 setEstadoEquipo('found')
             } else {
                 setEquipoEncontrado(null)
@@ -115,6 +174,28 @@ export default function IngresoForm() {
         setEstadoEquipo('idle')
     }
 
+    const crearTipo = async () => {
+        const descripcion = (nuevoTipo ?? '').trim()
+        if (!descripcion) return
+        try {
+            const { data } = await axios.post<{ id: number; descripcion: string }>(
+                route('taller.tipos-equipo.store'), { descripcion }
+            )
+            setTiposEquipo(t => [...t, { id: data.id, descripcion: data.descripcion, estado: true }]
+                .sort((a, b) => a.descripcion.localeCompare(b.descripcion)))
+            setEquipoForm(f => ({ ...f, tipo_id: data.id }))
+            setNuevoTipo(null)
+        } catch (err) {
+            const e = err as { response?: { data?: { errors?: { descripcion?: string[] } } } }
+            toastError(e.response?.data?.errors?.descripcion?.[0] ?? 'No se pudo crear el tipo de equipo.')
+        }
+    }
+
+    // ── Handlers: componentes ────────────────────────────────────────────────
+
+    const actualizarComponente = (i: number, cambios: Partial<ComponenteForm>) =>
+        setComponentes(cs => cs.map((c, idx) => idx === i ? { ...c, ...cambios } : c))
+
     // ── Submit ───────────────────────────────────────────────────────────────
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -122,19 +203,19 @@ export default function IngresoForm() {
 
         const errs: string[] = []
         if (!clienteSeleccionado) errs.push('Debe seleccionar un cliente.')
-        if (estadoEquipo === 'idle') {
+        if (estadoEquipo === 'idle' || estadoEquipo === 'searching') {
             errs.push('Debe buscar o registrar el equipo.')
-        }
-        if (estadoEquipo === 'new') {
+        } else {
             if (!equipoForm.tipo_id) errs.push('El tipo de equipo es obligatorio.')
             if (!equipoForm.marca.trim()) errs.push('La marca del equipo es obligatoria.')
             if (!equipoForm.modelo.trim()) errs.push('El modelo del equipo es obligatorio.')
         }
         if (!diagnosticoInicial.trim()) errs.push('El diagnóstico inicial es obligatorio.')
+        if (componentes.some(c => !c.nombre.trim())) errs.push('Todos los componentes revisados necesitan un nombre.')
         if (errs.length > 0) { errs.forEach(toastError); return }
         setGuardando(true)
 
-        router.post(route('taller.ingresos.store'), {
+        const payload = {
             cliente_id: clienteSeleccionado!.id,
             equipo: {
                 equipo_id: estadoEquipo === 'found' ? equipoEncontrado?.id ?? null : null,
@@ -149,24 +230,117 @@ export default function IngresoForm() {
             },
             diagnostico_inicial: diagnosticoInicial || null,
             observaciones: observaciones || null,
-            imagen: imagen || null,
-        }, {
+            tecnico_id: tecnicoId || null,
+            descripcion_trabajo: descripcionTrabajo || null,
+            imagen_data: imagenData,
+            quitar_imagen: quitarImagen && !imagenData,
+            componentes: componentes.map(c => ({
+                nombre: c.nombre.trim(),
+                funciona: c.funciona,
+                accion: c.accion,
+                descripcion: c.descripcion || null,
+                costo: c.costo ? Number(c.costo) : 0,
+            })),
+        }
+
+        const opciones = {
             onError: () => setGuardando(false),
             onFinish: () => setGuardando(false),
-        })
+        }
+
+        if (editando) {
+            router.put(route('taller.ingresos.update', ingreso!.id), payload, opciones)
+        } else {
+            router.post(route('taller.ingresos.store'), payload, opciones)
+        }
     }
 
     const tipoLabel: Record<string, string> = { '04': 'RUC', '05': 'CÉDULA', '06': 'PASAPORTE', '07': 'CONSUMIDOR' }
+    const titulo = editando ? `Editar Ingreso #${ingreso!.id}` : 'Nuevo Ingreso al Taller'
+    const puedeGuardar = editando ? puede('editar') : puede('crear')
+    const vistaImagen = imagenData ?? (quitarImagen ? null : imagenExistente)
+
+    const camposEquipo = (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+                <Label style={{ color: 'var(--text-main)' }}>Tipo *</Label>
+                <select
+                    className={selectCls}
+                    style={selectStyle}
+                    value={equipoForm.tipo_id}
+                    onChange={e => setEquipoForm(f => ({ ...f, tipo_id: e.target.value ? Number(e.target.value) : '' }))}
+                >
+                    <option value="">-- Seleccione --</option>
+                    {tiposEquipo.map(t => (
+                        <option key={t.id} value={t.id}>{t.descripcion}</option>
+                    ))}
+                </select>
+                {nuevoTipo === null ? (
+                    puede('crear') && (
+                        <button type="button" className="mt-1 text-xs underline" style={{ color: 'var(--text-muted)' }}
+                            onClick={() => setNuevoTipo('')}>
+                            + Nuevo tipo
+                        </button>
+                    )
+                ) : (
+                    <div className="mt-1 flex items-center gap-1">
+                        <Input value={nuevoTipo} autoFocus placeholder="Descripción del tipo..."
+                            onChange={e => setNuevoTipo(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void crearTipo() } }} />
+                        <Button type="button" size="sm" onClick={() => void crearTipo()}>Crear</Button>
+                        <Button type="button" size="sm" variant="ghost" onClick={() => setNuevoTipo(null)}>
+                            <X className="w-4 h-4" />
+                        </Button>
+                    </div>
+                )}
+            </div>
+            <div>
+                <Label style={{ color: 'var(--text-main)' }}>Marca *</Label>
+                <Input className="mt-1" value={equipoForm.marca}
+                    onChange={e => setEquipoForm(f => ({ ...f, marca: e.target.value }))} />
+            </div>
+            <div>
+                <Label style={{ color: 'var(--text-main)' }}>Modelo *</Label>
+                <Input className="mt-1" value={equipoForm.modelo}
+                    onChange={e => setEquipoForm(f => ({ ...f, modelo: e.target.value }))} />
+            </div>
+            <div>
+                <Label style={{ color: 'var(--text-main)' }}>Color</Label>
+                <Input className="mt-1" value={equipoForm.color}
+                    onChange={e => setEquipoForm(f => ({ ...f, color: e.target.value }))} />
+            </div>
+            <div>
+                <Label style={{ color: 'var(--text-main)' }}>Medida</Label>
+                <Input className="mt-1" value={equipoForm.medida}
+                    onChange={e => setEquipoForm(f => ({ ...f, medida: e.target.value }))} />
+            </div>
+            <div>
+                <Label style={{ color: 'var(--text-main)' }}>Adicional</Label>
+                <Input className="mt-1" value={equipoForm.adicional}
+                    onChange={e => setEquipoForm(f => ({ ...f, adicional: e.target.value }))} />
+            </div>
+            <div className="md:col-span-3">
+                <Label style={{ color: 'var(--text-main)' }}>Observaciones del equipo</Label>
+                <textarea
+                    rows={2}
+                    className={textareaCls}
+                    style={textareaStyle}
+                    value={equipoForm.observaciones}
+                    onChange={e => setEquipoForm(f => ({ ...f, observaciones: e.target.value }))}
+                />
+            </div>
+        </div>
+    )
 
     return (
         <AppLayout>
-            <Head title="Nuevo Ingreso" />
+            <Head title={titulo} />
             <PageHeader
-                title="Nuevo Ingreso al Taller"
+                title={titulo}
                 breadcrumbs={[
                     { label: 'Taller', href: route('taller.ingresos.index') },
                     { label: 'Ingresos', href: route('taller.ingresos.index') },
-                    { label: 'Nuevo' },
+                    { label: editando ? `#${ingreso!.id}` : 'Nuevo' },
                 ]}
             />
 
@@ -247,10 +421,10 @@ export default function IngresoForm() {
                             <Input
                                 value={numeroSerie}
                                 onChange={e => { setNumeroSerie(e.target.value); if (estadoEquipo !== 'idle') setEstadoEquipo('idle') }}
-                                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); buscarEquipoPorSerie() } }}
+                                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void buscarEquipoPorSerie() } }}
                                 placeholder="Número de serie del equipo..."
                             />
-                            <Button type="button" variant="outline" loading={estadoEquipo === 'searching'} onClick={buscarEquipoPorSerie}>
+                            <Button type="button" variant="outline" loading={estadoEquipo === 'searching'} onClick={() => void buscarEquipoPorSerie()}>
                                 <Search className="w-4 h-4" />
                                 Buscar
                             </Button>
@@ -262,94 +436,7 @@ export default function IngresoForm() {
                         </div>
                     </div>
 
-                    {estadoEquipo === 'found' && equipoEncontrado && (
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div>
-                                <Label style={{ color: 'var(--text-main)' }}>Tipo</Label>
-                                <Input className="mt-1" value={equipoEncontrado.tipo?.descripcion ?? '—'} readOnly
-                                    style={{ color: 'var(--text-muted)', cursor: 'not-allowed' }} />
-                            </div>
-                            <div>
-                                <Label style={{ color: 'var(--text-main)' }}>Marca</Label>
-                                <Input className="mt-1" value={equipoEncontrado.marca ?? '—'} readOnly
-                                    style={{ color: 'var(--text-muted)', cursor: 'not-allowed' }} />
-                            </div>
-                            <div>
-                                <Label style={{ color: 'var(--text-main)' }}>Modelo</Label>
-                                <Input className="mt-1" value={equipoEncontrado.modelo ?? '—'} readOnly
-                                    style={{ color: 'var(--text-muted)', cursor: 'not-allowed' }} />
-                            </div>
-                            <div>
-                                <Label style={{ color: 'var(--text-main)' }}>Color</Label>
-                                <Input className="mt-1" value={equipoEncontrado.color ?? '—'} readOnly
-                                    style={{ color: 'var(--text-muted)', cursor: 'not-allowed' }} />
-                            </div>
-                            <div>
-                                <Label style={{ color: 'var(--text-main)' }}>Medida</Label>
-                                <Input className="mt-1" value={equipoEncontrado.medida ?? '—'} readOnly
-                                    style={{ color: 'var(--text-muted)', cursor: 'not-allowed' }} />
-                            </div>
-                            <div>
-                                <Label style={{ color: 'var(--text-main)' }}>Adicional</Label>
-                                <Input className="mt-1" value={equipoEncontrado.adicional ?? '—'} readOnly
-                                    style={{ color: 'var(--text-muted)', cursor: 'not-allowed' }} />
-                            </div>
-                        </div>
-                    )}
-
-                    {estadoEquipo === 'new' && (
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div>
-                                <Label style={{ color: 'var(--text-main)' }}>Tipo *</Label>
-                                <select
-                                    className="mt-1 w-full h-9 rounded-md border px-3 text-sm"
-                                    style={{ background: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
-                                    value={equipoForm.tipo_id}
-                                    onChange={e => setEquipoForm(f => ({ ...f, tipo_id: e.target.value ? Number(e.target.value) : '' }))}
-                                >
-                                    <option value="">-- Seleccione --</option>
-                                    {tiposEquipo.map(t => (
-                                        <option key={t.id} value={t.id}>{t.descripcion}</option>
-                                    ))}
-                                </select>
-                            </div>
-                            <div>
-                                <Label style={{ color: 'var(--text-main)' }}>Marca *</Label>
-                                <Input className="mt-1" value={equipoForm.marca}
-                                    onChange={e => setEquipoForm(f => ({ ...f, marca: e.target.value }))} />
-                            </div>
-                            <div>
-                                <Label style={{ color: 'var(--text-main)' }}>Modelo *</Label>
-                                <Input className="mt-1" value={equipoForm.modelo}
-                                    onChange={e => setEquipoForm(f => ({ ...f, modelo: e.target.value }))} />
-                            </div>
-                            <div>
-                                <Label style={{ color: 'var(--text-main)' }}>Color</Label>
-                                <Input className="mt-1" value={equipoForm.color}
-                                    onChange={e => setEquipoForm(f => ({ ...f, color: e.target.value }))} />
-                            </div>
-                            <div>
-                                <Label style={{ color: 'var(--text-main)' }}>Medida</Label>
-                                <Input className="mt-1" value={equipoForm.medida}
-                                    onChange={e => setEquipoForm(f => ({ ...f, medida: e.target.value }))} />
-                            </div>
-                            <div>
-                                <Label style={{ color: 'var(--text-main)' }}>Adicional</Label>
-                                <Input className="mt-1" value={equipoForm.adicional}
-                                    onChange={e => setEquipoForm(f => ({ ...f, adicional: e.target.value }))} />
-                            </div>
-                            <div className="md:col-span-3">
-                                <Label style={{ color: 'var(--text-main)' }}>Observaciones del equipo</Label>
-                                <textarea
-                                    rows={2}
-                                    className="mt-1 w-full rounded-md border px-3 py-2 text-sm resize-none focus:outline-none"
-                                    style={{ background: 'transparent', borderColor: 'var(--border)', color: 'var(--text-main)' }}
-                                    value={equipoForm.observaciones}
-                                    onChange={e => setEquipoForm(f => ({ ...f, observaciones: e.target.value }))}
-                                />
-                            </div>
-                        </div>
-                    )}
+                    {(estadoEquipo === 'found' || estadoEquipo === 'new') && camposEquipo}
                 </div>
 
                 {/* ── SECCIÓN 3: Datos del ingreso ── */}
@@ -361,46 +448,134 @@ export default function IngresoForm() {
                         <Label style={{ color: 'var(--text-main)' }}>Diagnóstico inicial *</Label>
                         <textarea
                             rows={3}
-                            className="mt-1 w-full rounded-md border px-3 py-2 text-sm resize-none focus:outline-none"
-                            style={{ background: 'transparent', borderColor: 'var(--border)', color: 'var(--text-main)' }}
+                            className={textareaCls}
+                            style={textareaStyle}
                             placeholder="Descripción del problema reportado por el cliente..."
                             value={diagnosticoInicial}
                             onChange={e => setDiagnosticoInicial(e.target.value)}
                         />
                     </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <Label style={{ color: 'var(--text-main)' }}>Técnico</Label>
+                            <select className={selectCls} style={selectStyle}
+                                value={tecnicoId} onChange={e => setTecnicoId(e.target.value)}>
+                                <option value="">Sin asignar</option>
+                                {tecnicos.map(t => (
+                                    <option key={t.id} value={t.id}>{t.nombre}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div>
+                            <Label style={{ color: 'var(--text-main)' }}>Trabajo a realizar</Label>
+                            <textarea
+                                rows={2}
+                                className={textareaCls}
+                                style={textareaStyle}
+                                value={descripcionTrabajo}
+                                onChange={e => setDescripcionTrabajo(e.target.value)}
+                            />
+                        </div>
+                    </div>
                     <div>
                         <Label style={{ color: 'var(--text-main)' }}>Observaciones</Label>
                         <textarea
                             rows={2}
-                            className="mt-1 w-full rounded-md border px-3 py-2 text-sm resize-none focus:outline-none"
-                            style={{ background: 'transparent', borderColor: 'var(--border)', color: 'var(--text-main)' }}
+                            className={textareaCls}
+                            style={textareaStyle}
                             value={observaciones}
                             onChange={e => setObservaciones(e.target.value)}
                         />
                     </div>
                     <div>
-                        <Label style={{ color: 'var(--text-main)' }}>Imagen (URL)</Label>
-                        <Input
-                            className="mt-1"
-                            value={imagen}
-                            onChange={e => setImagen(e.target.value)}
-                            placeholder="https://..."
-                        />
+                        <Label style={{ color: 'var(--text-main)' }}>Foto del equipo</Label>
+                        <div className="mt-2">
+                            <CapturaImagen
+                                valor={vistaImagen}
+                                onChange={data => {
+                                    setImagenData(data)
+                                    setQuitarImagen(data === null)
+                                }}
+                            />
+                        </div>
                     </div>
                 </div>
 
-                {/* ── SECCIÓN 4: Acciones ── */}
+                {/* ── SECCIÓN 4: Revisión de componentes ── */}
+                <div className="rounded-xl p-5 border space-y-4" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+                    <div className="flex items-center justify-between">
+                        <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+                            Revisión de componentes
+                        </p>
+                        <Button type="button" variant="outline" size="sm"
+                            onClick={() => setComponentes(cs => [...cs, { ...componenteVacio }])}>
+                            <Plus className="w-4 h-4" />
+                            Agregar
+                        </Button>
+                    </div>
+
+                    {componentes.length === 0 ? (
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                            Sin componentes revisados. Agregue los que se inspeccionaron al recibir el equipo (opcional).
+                        </p>
+                    ) : componentes.map((c, i) => (
+                        <div key={i} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end border-t pt-3"
+                            style={{ borderColor: 'var(--border)' }}>
+                            <div className="md:col-span-3">
+                                <Label style={{ color: 'var(--text-main)' }}>Componente *</Label>
+                                <Input className="mt-1" value={c.nombre}
+                                    onChange={e => actualizarComponente(i, { nombre: e.target.value })} />
+                            </div>
+                            <div className="md:col-span-2">
+                                <Label style={{ color: 'var(--text-main)' }}>Funciona</Label>
+                                <select className={selectCls} style={selectStyle}
+                                    value={c.funciona ? '1' : '0'}
+                                    onChange={e => actualizarComponente(i, { funciona: e.target.value === '1' })}>
+                                    <option value="1">Sí</option>
+                                    <option value="0">No</option>
+                                </select>
+                            </div>
+                            <div className="md:col-span-2">
+                                <Label style={{ color: 'var(--text-main)' }}>Acción</Label>
+                                <select className={selectCls} style={selectStyle}
+                                    value={c.accion}
+                                    onChange={e => actualizarComponente(i, { accion: e.target.value === '1' ? 1 : 0 })}>
+                                    <option value="0">Reparación</option>
+                                    <option value="1">Reemplazo</option>
+                                </select>
+                            </div>
+                            <div className="md:col-span-2">
+                                <Label style={{ color: 'var(--text-main)' }}>Costo</Label>
+                                <Input className="mt-1" type="number" min="0" step="0.01" value={c.costo}
+                                    onChange={e => actualizarComponente(i, { costo: e.target.value })} />
+                            </div>
+                            <div className="md:col-span-2">
+                                <Label style={{ color: 'var(--text-main)' }}>Detalle</Label>
+                                <Input className="mt-1" value={c.descripcion}
+                                    onChange={e => actualizarComponente(i, { descripcion: e.target.value })} />
+                            </div>
+                            <div className="md:col-span-1 flex justify-end">
+                                <Button type="button" variant="ghost" size="icon" title="Quitar"
+                                    onClick={() => setComponentes(cs => cs.filter((_, idx) => idx !== i))}>
+                                    <Trash2 className="w-4 h-4" />
+                                </Button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+
+                {/* ── Acciones ── */}
                 <div className="flex items-center justify-between pb-2">
-                    <Link href={route('taller.ingresos.index')}>
+                    <Link href={editando ? route('taller.ingresos.show', ingreso!.id) : route('taller.ingresos.index')}>
                         <Button type="button" variant="ghost">
                             <X className="w-4 h-4" />
                             Cancelar
                         </Button>
                     </Link>
-                    {puede('crear') && (
+                    {puedeGuardar && (
                         <Button type="submit" loading={guardando}>
                             <Save className="w-4 h-4" />
-                            Guardar Ingreso
+                            {editando ? 'Guardar Cambios' : 'Guardar Ingreso'}
                         </Button>
                     )}
                 </div>

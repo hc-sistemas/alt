@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Head, usePage, router, Link } from '@inertiajs/react'
-import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
 import { Button } from '@/Components/ui/button'
@@ -9,6 +8,10 @@ import { Input } from '@/Components/ui/input'
 import { Badge } from '@/Components/ui/badge'
 import { cn, formatMoneda, formatFecha } from '@/lib/utils'
 import { Plus, Search, Eye, Ban, FileText, ChevronLeft, ChevronRight, ArrowRightLeft, X, Trash2 } from 'lucide-react'
+import AccionIcono, { COLOR_ACCION } from '@/Components/shared/AccionIcono'
+import PdfIcon from '@/Components/shared/PdfIcon'
+import PdfPreviewModal from '@/Components/shared/PdfPreviewModal'
+import { anularConPin, eliminarDocumento } from '@/lib/ventasDocumentos'
 import { usePermiso } from '@/Hooks/usePermiso'
 import type { PageProps, PaginatedData } from '@/types'
 
@@ -19,11 +22,14 @@ interface ProformaCliente {
 
 interface Proforma {
     id: number
-    numero_completo: string
+    numero: string
     fecha_emision: string
     fecha_vencimiento: string
     total: number
     estado: 'pendiente' | 'facturada' | 'vencida' | 'anulada'
+    cliente_nuevo?: boolean
+    desc_pct?: number
+    vendedor?: string | null
     cliente: ProformaCliente | null
 }
 
@@ -55,8 +61,10 @@ const ESTADO_CONFIG = {
 }
 
 export default function Index() {
-    const { proformas, filtros } = usePage<Props>().props
+    const { proformas, filtros, auth } = usePage<Props>().props
     const { puede } = usePermiso('ventas')
+    const esSuperAdmin = auth.user?.perfil === 'super_admin'
+    const [pdf, setPdf] = useState<{ id: number; numero: string } | null>(null)
 
     const [filtro, setFiltro] = useState<Filtros>({
         estado: filtros.estado ?? '',
@@ -76,7 +84,7 @@ export default function Index() {
     const limpiarFiltros = () => {
         const limpio: Filtros = { estado: '', cliente: '', fecha_desde: '', fecha_hasta: '' }
         setFiltro(limpio)
-        router.get(route('ventas.proformas.index'), {}, { preserveState: false })
+        router.get(route('ventas.proformas.index'), limpio as Record<string, string>, { preserveState: false })
     }
 
     const handleConvertir = (p: Proforma) => {
@@ -96,6 +104,10 @@ export default function Index() {
             setErrorPago('Todas las formas de pago deben tener forma y monto válido.')
             return
         }
+        if (Number(modalConvertir.desc_pct ?? 0) > 0 && formasPago.some(p => p.forma === 'tarjeta' || p.forma === 'datafast')) {
+            setErrorPago('Con tarjeta de crédito no hay descuento de ningún tipo. Esta proforma tiene descuento.')
+            return
+        }
         setErrorPago('')
         setConvirtiendo(true)
         router.post(
@@ -108,19 +120,16 @@ export default function Index() {
         )
     }
 
-    const handleAnular = async (p: Proforma) => {
-        const result = await Swal.fire({
-            title: 'Anular proforma',
-            text: `¿Desea anular la proforma ${p.numero_completo}? Esta acción no se puede deshacer.`,
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonText: 'Sí, anular',
-            cancelButtonText: 'Cancelar',
-            confirmButtonColor: '#ef4444',
+    const handleAnular = (p: Proforma) =>
+        anularConPin({ url: route('ventas.proformas.anular', p.id), etiqueta: 'proforma', numero: p.numero })
+
+    const handleEliminar = (p: Proforma) =>
+        eliminarDocumento({
+            url: route('ventas.proformas.destroy', p.id),
+            etiqueta: 'proforma',
+            numero: p.numero,
+            detalle: ' con todos sus detalles',
         })
-        if (!result.isConfirmed) return
-        router.delete(route('ventas.proformas.destroy', p.id), { preserveState: true })
-    }
 
     const hayFiltros = Object.values(filtro).some(v => v !== '')
 
@@ -150,7 +159,7 @@ export default function Index() {
 
             <div className="p-6 space-y-4">
                 {/* Filtros */}
-                <div className="flex items-center gap-3 flex-wrap">
+                <div className="filter-toolbar flex items-end gap-3 flex-wrap">
                     <Input
                         type="date"
                         value={filtro.fecha_desde}
@@ -193,8 +202,8 @@ export default function Index() {
                                 value={filtro.cliente}
                                 onChange={e => setFiltro(p => ({ ...p, cliente: e.target.value }))}
                                 onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
-                                placeholder="Cliente o RUC..."
-                                className="pl-9 w-52 rounded-r-none border-r-0"
+                                placeholder="Cliente, RUC, producto, N° proforma..."
+                                className="pl-9 w-72 rounded-r-none border-r-0"
                             />
                         </div>
                         <button className="flex items-center justify-center w-9 h-9 rounded-r-md border text-sm font-medium shrink-0"
@@ -229,10 +238,10 @@ export default function Index() {
                             <table className="w-full text-sm">
                                 <thead>
                                     <tr style={{ borderBottom: '1px solid var(--border)', background: 'rgba(0,0,0,.04)' }}>
-                                        {['Número', 'Fecha', 'Vencimiento', 'Cliente', 'Total', 'Estado', 'Acciones'].map(h => (
+                                        {['No', 'Fecha', 'Vence', 'Prof. No', 'Cliente', 'Nuevo', 'V. Total', 'Desc/Max', 'Vendedor', 'Estado', 'Acciones'].map(h => (
                                             <th
                                                 key={h}
-                                                className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide"
+                                                className="text-left px-3 py-3 text-[10px] font-semibold uppercase tracking-wide whitespace-nowrap"
                                                 style={{ color: 'var(--text-muted)' }}
                                             >
                                                 {h}
@@ -241,71 +250,75 @@ export default function Index() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {proformas.data.map(p => {
+                                    {proformas.data.map((p, idx) => {
                                         const cfg = ESTADO_CONFIG[p.estado] ?? ESTADO_CONFIG.pendiente
                                         const esPendiente = p.estado === 'pendiente'
+                                        const celda = 'px-3 py-3 text-[10px]'
                                         return (
                                             <tr
                                                 key={p.id}
                                                 className="hover:bg-amber-500/5 transition-colors"
                                                 style={{ borderBottom: '1px solid var(--border)' }}
                                             >
-                                                <td className="px-4 py-3 font-mono text-xs font-medium" style={{ color: 'var(--text-main)' }}>
-                                                    {p.numero_completo}
+                                                <td className={celda} style={{ color: 'var(--text-muted)' }}>
+                                                    {(proformas.from ?? 1) + idx}
                                                 </td>
-                                                <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-muted)' }}>
+                                                <td className={`${celda} whitespace-nowrap`} style={{ color: 'var(--text-muted)' }}>
                                                     {formatFecha(p.fecha_emision)}
                                                 </td>
-                                                <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-muted)' }}>
+                                                <td className={`${celda} whitespace-nowrap`} style={{ color: 'var(--text-muted)' }}>
                                                     {p.fecha_vencimiento ? formatFecha(p.fecha_vencimiento) : '—'}
                                                 </td>
-                                                <td className="px-4 py-3">
+                                                <td className={`${celda} font-mono font-medium whitespace-nowrap`} style={{ color: 'var(--text-main)' }}>
+                                                    {p.numero}
+                                                </td>
+                                                <td className={celda}>
                                                     {p.cliente ? (
                                                         <>
-                                                            <p className="text-xs font-medium" style={{ color: 'var(--text-main)' }}>{p.cliente.razon_social}</p>
-                                                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{p.cliente.identificacion}</p>
+                                                            <p className="font-medium uppercase" style={{ color: 'var(--text-main)' }}>{p.cliente.razon_social}</p>
+                                                            <p style={{ color: 'var(--text-muted)' }}>{p.cliente.identificacion}</p>
                                                         </>
                                                     ) : (
                                                         <span style={{ color: 'var(--text-muted)' }}>—</span>
                                                     )}
                                                 </td>
-                                                <td className="px-4 py-3 text-xs font-semibold" style={{ color: 'var(--text-main)' }}>
+                                                <td className={`${celda} font-semibold`} style={{ color: 'var(--text-main)' }}>
+                                                    {p.cliente_nuevo ? 'SI' : ''}
+                                                </td>
+                                                <td className={`${celda} text-right font-bold whitespace-nowrap`} style={{ color: 'var(--text-main)' }}>
                                                     {formatMoneda(p.total)}
                                                 </td>
-                                                <td className="px-4 py-3">
-                                                    <Badge variant={cfg.variant}>{cfg.label}</Badge>
+                                                <td className={`${celda} text-right whitespace-nowrap`} style={{ color: 'var(--text-muted)' }}>
+                                                    {Number(p.desc_pct ?? 0).toFixed(2)}%
                                                 </td>
-                                                <td className="px-4 py-3">
-                                                    <div className="flex items-center gap-1">
-                                                        <Link href={route('ventas.proformas.show', p.id)}>
-                                                            <button
-                                                                type="button"
-                                                                className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors hover:bg-amber-500/10"
-                                                                style={{ color: 'var(--primary)' }}
-                                                            >
-                                                                <Eye className="w-3.5 h-3.5" />
-                                                                Ver
-                                                            </button>
-                                                        </Link>
+                                                <td className={`${celda} uppercase`} style={{ color: 'var(--text-main)' }}>
+                                                    {p.vendedor ?? '—'}
+                                                </td>
+                                                <td className={celda}>
+                                                    <Badge variant={cfg.variant} className="text-[10px]">{cfg.label}</Badge>
+                                                </td>
+                                                <td className="px-3 py-2">
+                                                    <div className="flex items-center gap-0.5">
+                                                        <AccionIcono titulo="Ver detalle" color={COLOR_ACCION.ver} href={route('ventas.proformas.show', p.id)}>
+                                                            <Eye className="w-4 h-4" />
+                                                        </AccionIcono>
+                                                        <AccionIcono titulo="Ver PDF" color={COLOR_ACCION.pdf} onClick={() => setPdf({ id: p.id, numero: p.numero })}>
+                                                            <PdfIcon className="w-5 h-5" />
+                                                        </AccionIcono>
                                                         {esPendiente && puede('editar') && (
-                                                            <button
-                                                                type="button"
-                                                                className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors hover:bg-emerald-500/10 text-emerald-400"
-                                                                onClick={() => handleConvertir(p)}
-                                                            >
-                                                                <ArrowRightLeft className="w-3.5 h-3.5" />
-                                                                Convertir
-                                                            </button>
+                                                            <AccionIcono titulo="Convertir a factura" color={COLOR_ACCION.convertir} onClick={() => handleConvertir(p)}>
+                                                                <ArrowRightLeft className="w-4 h-4" />
+                                                            </AccionIcono>
                                                         )}
-                                                        {esPendiente && puede('eliminar') && (
-                                                            <button
-                                                                type="button"
-                                                                className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors hover:bg-red-500/10 text-red-400"
-                                                                onClick={() => void handleAnular(p)}
-                                                            >
-                                                                <Ban className="w-3.5 h-3.5" />
-                                                                Anular
-                                                            </button>
+                                                        {esPendiente && puede('anular') && (
+                                                            <AccionIcono titulo="Anular proforma" color={COLOR_ACCION.anular} onClick={() => void handleAnular(p)}>
+                                                                <Ban className="w-4 h-4" />
+                                                            </AccionIcono>
+                                                        )}
+                                                        {esSuperAdmin && p.estado !== 'facturada' && (
+                                                            <AccionIcono titulo="Eliminar proforma (solo SuperAdmin)" color={COLOR_ACCION.eliminar} onClick={() => void handleEliminar(p)}>
+                                                                <Trash2 className="w-4 h-4" />
+                                                            </AccionIcono>
                                                         )}
                                                     </div>
                                                 </td>
@@ -353,6 +366,13 @@ export default function Index() {
                     )}
                 </div>
             </div>
+            <PdfPreviewModal
+                abierto={pdf !== null}
+                onCerrar={() => setPdf(null)}
+                url={pdf ? route('ventas.proformas.pdf', pdf.id) : ''}
+                titulo={`Proforma ${pdf?.numero ?? ''}`}
+                nombreDescarga={`Proforma-${pdf?.numero ?? ''}.pdf`}
+            />
             {modalConvertir && createPortal(
                 <>
                     <div

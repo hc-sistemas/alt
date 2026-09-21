@@ -19,8 +19,6 @@ use Inertia\Response;
 
 class LiquidacionesController extends Controller
 {
-    private const SBU_2026 = 460.0;
-
     public function __construct(private AsientoService $asientoService) {}
 
     public function index(Request $request): Response
@@ -108,7 +106,7 @@ class LiquidacionesController extends Controller
 
             $decimoCuarto = 0.0;
             if ($col->decimo_cuarto === 'acumula') {
-                $decimoCuarto = round(self::SBU_2026 * $mesesLaborados / 12, 2);
+                $decimoCuarto = round(\App\Services\NominaCalculoService::SBU * $mesesLaborados / 12, 2);
             }
 
             $decimosAcumulados = round($decimoTercero + $decimoCuarto, 2);
@@ -116,8 +114,11 @@ class LiquidacionesController extends Controller
             $vacaciones = round((float)$col->sueldo_base * $diasLaborados / 720, 2);
 
             $fondosReserva = 0.0;
+            // Fondos de reserva: se generan desde el 2º año (mes 13 en adelante),
+            // 1/12 del sueldo por cada mes (mismo 8.33% que la nómina mensual).
+            // La fórmula anterior multiplicaba además por meses/12, subestimando el valor.
             if ($col->fondos_reserva === 'acumula' && $mesesLaborados >= 13) {
-                $fondosReserva = round((float)$col->sueldo_base * $mesesLaborados / 12 * 0.0833, 2);
+                $fondosReserva = round((float)$col->sueldo_base * ($mesesLaborados - 12) / 12, 2);
             }
 
             $anticiposDescontar = round(

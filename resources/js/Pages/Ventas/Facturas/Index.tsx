@@ -10,9 +10,13 @@ import { Input } from '@/Components/ui/input'
 import { Badge } from '@/Components/ui/badge'
 import { cn, formatMoneda, formatFecha } from '@/lib/utils'
 import {
-    Plus, Search, Eye, Ban, ChevronLeft, ChevronRight, FileText,
+    Plus, Search, Eye, Ban, Mail, Trash2, ChevronLeft, ChevronRight, FileText,
 } from 'lucide-react'
 import { usePermiso } from '@/Hooks/usePermiso'
+import { toastError } from '@/lib/toast'
+import PdfIcon from '@/Components/shared/PdfIcon'
+import PdfPreviewModal from '@/Components/shared/PdfPreviewModal'
+import { ACCION_CLS, accionesFactura, enviarFacturaPorCorreo, enviarFacturaSri } from '@/lib/facturaAcciones'
 import type { PageProps, PaginatedData } from '@/types'
 
 // ── Tipos locales ─────────────────────────────────────────────────────────────
@@ -25,6 +29,7 @@ interface FacturaPago {
 interface FacturaCliente {
     razon_social: string
     identificacion: string
+    email?: string | null
 }
 
 interface Factura {
@@ -33,8 +38,16 @@ interface Factura {
     fecha_emision: string
     total: number
     estado: 'activa' | 'anulada'
-    estado_sri: 'pendiente' | 'autorizada' | 'rechazada' | 'anulada'
+    estado_sri: 'pendiente' | 'recibida' | 'autorizada' | 'rechazada' | 'anulada'
+    email_enviado?: boolean
     tiene_descuento_especial: boolean
+    email_cliente?: string | null
+    identificacion?: string | null
+    razon_social?: string | null
+    tipo?: number
+    cliente_nuevo?: boolean
+    desc_pct?: number
+    vendedor?: string | null
     cliente: FacturaCliente | null
     pagos: FacturaPago[]
 }
@@ -55,22 +68,39 @@ interface Props extends PageProps {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const SRI_CONFIG: Record<string, { label: string; variant: 'secondary' | 'success' | 'danger' | 'warning' }> = {
-    pendiente:  { label: 'Pendiente',  variant: 'secondary' },
+const SRI_CONFIG: Record<string, { label: string; variant: 'secondary' | 'info' | 'success' | 'danger' | 'warning' }> = {
+    pendiente:  { label: 'No enviada', variant: 'secondary' },
+    recibida:   { label: 'Recibida',   variant: 'info' },
     autorizada: { label: 'Autorizada', variant: 'success' },
     rechazada:  { label: 'Rechazada',  variant: 'danger' },
     anulada:    { label: 'Anulada',    variant: 'warning' },
 }
 
-const ESTADO_CONFIG: Record<string, { label: string; variant: 'success' | 'danger' }> = {
-    activa:  { label: 'Activa',  variant: 'success' },
-    anulada: { label: 'Anulada', variant: 'danger' },
+const FORMA_PAGO_TEXTO: Record<string, string> = {
+    efectivo:      'Efectivo',
+    transferencia: 'Transferencia bancaria',
+    tarjeta:       'Tarjeta de crédito',
+    cheque:        'Cheque',
+    credito:       'Crédito',
 }
 
-function formaPagoResumen(pagos: FacturaPago[]): string {
+/** Formas de pago legibles; tarjeta y crédito en rojo subrayado. */
+function formaPagoTexto(pagos: FacturaPago[]): React.ReactNode {
     if (pagos.length === 0) return '—'
-    if (pagos.length === 1) return pagos[0].forma_pago
-    return 'Múltiple'
+    return pagos.map((p, i) => {
+        const resaltar = p.forma_pago === 'tarjeta' || p.forma_pago === 'credito'
+        return (
+            <span key={i}>
+                {i > 0 && ' / '}
+                <span
+                    className={resaltar ? 'font-semibold underline text-red-500' : undefined}
+                    style={resaltar ? undefined : { color: 'var(--text-main)' }}
+                >
+                    {FORMA_PAGO_TEXTO[p.forma_pago] ?? p.forma_pago}
+                </span>
+            </span>
+        )
+    })
 }
 
 function esMismoDia(fecha: string): boolean {
@@ -82,8 +112,38 @@ function esMismoDia(fecha: string): boolean {
 // ── Componente ────────────────────────────────────────────────────────────────
 
 export default function Index() {
-    const { facturas, filtros } = usePage<Props>().props
+    const { facturas, filtros, auth } = usePage<Props>().props
     const { puede } = usePermiso('ventas')
+    const esSuperAdmin = auth.user?.perfil === 'super_admin'
+
+    // Eliminación total (solo SuperAdmin): exige escribir el número de la factura.
+    const handleEliminar = async (factura: Factura) => {
+        const { value: confirmacion } = await Swal.fire({
+            title: 'Eliminar factura',
+            html:
+                `<p style="margin-bottom:12px;font-size:14px;text-align:left;">` +
+                `Se eliminará la factura <b>${factura.numero_completo}</b> con sus detalles, pagos y cuenta por cobrar, ` +
+                `se devolverá el stock y se revertirá su asiento contable. <b>No se puede deshacer.</b></p>` +
+                `<p style="margin-bottom:6px;font-size:13px;text-align:left;">Escriba el número de la factura para confirmar:</p>`,
+            input: 'text',
+            inputPlaceholder: factura.numero_completo,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Eliminar definitivamente',
+            cancelButtonText: 'Cancelar',
+            confirmButtonColor: '#dc2626',
+            inputValidator: v => (v?.trim() === factura.numero_completo ? undefined : 'El número no coincide.'),
+        })
+        if (!confirmacion) return
+
+        router.delete(route('ventas.facturas.destroy', factura.id), {
+            data: { confirmacion },
+            preserveScroll: true,
+            onError: errors => Object.values(errors).forEach(msg => { if (msg) toastError(msg) }),
+        })
+    }
+
+    const [ride, setRide] = useState<{ id: number; numero: string } | null>(null)
 
     const [filtro, setFiltro] = useState<Filtros>({
         fecha_desde: filtros.fecha_desde ?? '',
@@ -176,22 +236,12 @@ export default function Index() {
 
             <div className="p-6 space-y-4">
                 {/* Barra de filtros */}
-                <div className="flex items-center gap-3 mb-4 flex-nowrap overflow-x-auto">
+                <div className="filter-toolbar flex items-end gap-3 mb-4 flex-nowrap overflow-x-auto">
                     <select value={filtro.estado} onChange={e => setFiltro(p => ({ ...p, estado: e.target.value }))}
                         className="input-field shrink-0"
                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
                         <option value="">Todos los estados</option>
                         <option value="activa">Activa</option>
-                        <option value="anulada">Anulada</option>
-                    </select>
-
-                    <select value={filtro.estado_sri} onChange={e => setFiltro(p => ({ ...p, estado_sri: e.target.value }))}
-                        className="input-field shrink-0"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
-                        <option value="">Todos los SRI</option>
-                        <option value="pendiente">Pendiente</option>
-                        <option value="autorizada">Autorizada</option>
-                        <option value="rechazada">Rechazada</option>
                         <option value="anulada">Anulada</option>
                     </select>
 
@@ -219,7 +269,7 @@ export default function Index() {
                                 value={filtro.cliente}
                                 onChange={e => setFiltro(p => ({ ...p, cliente: e.target.value }))}
                                 onKeyDown={e => e.key === 'Enter' && aplicarFiltros()}
-                                placeholder="Nombre o RUC..."
+                                placeholder="Cliente, RUC, producto, N° factura..."
                                 className="pl-9 w-52 rounded-r-none border-r-0"
                             />
                         </div>
@@ -258,10 +308,10 @@ export default function Index() {
                             <table className="w-full text-sm">
                                 <thead>
                                     <tr style={{ borderBottom: '1px solid var(--border)', background: 'rgba(0,0,0,.04)' }}>
-                                        {['Número', 'Fecha', 'Cliente', 'Total', 'Forma pago', 'Estado SRI', 'Estado', 'Acciones'].map(h => (
+                                        {['No', 'Tipo', 'Fecha', 'Fac. No', 'Cliente', 'Nuevo', 'V. Total', 'Desc/Max', 'Vendedor', 'Forma de pago', 'SRI', 'E-mail', 'Acciones'].map(h => (
                                             <th
                                                 key={h}
-                                                className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide"
+                                                className="text-left px-3 py-3 text-[10px] font-semibold uppercase tracking-wide whitespace-nowrap"
                                                 style={{ color: 'var(--text-muted)' }}
                                             >
                                                 {h}
@@ -270,10 +320,11 @@ export default function Index() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {facturas.data.map(f => {
+                                    {facturas.data.map((f, idx) => {
                                         const sriCfg  = SRI_CONFIG[f.estado_sri]  ?? SRI_CONFIG.pendiente
-                                        const estCfg  = ESTADO_CONFIG[f.estado]   ?? ESTADO_CONFIG.activa
+                                        const acc = accionesFactura(f)
                                         const puedeAnular = f.estado === 'activa' && esMismoDia(f.fecha_emision)
+                                        const celda = 'px-3 py-3 text-[10px]'
 
                                         return (
                                             <tr
@@ -281,11 +332,27 @@ export default function Index() {
                                                 className="hover:bg-amber-500/5 transition-colors"
                                                 style={{ borderBottom: '1px solid var(--border)' }}
                                             >
-                                                {/* Número — subrayado si tiene descuento especial */}
-                                                <td className="px-4 py-3">
+                                                <td className={celda} style={{ color: 'var(--text-muted)' }}>
+                                                    {(facturas.from ?? 1) + idx}
+                                                </td>
+
+                                                <td
+                                                    className={`${celda} font-semibold`}
+                                                    style={{ color: 'var(--text-main)' }}
+                                                    title={f.tipo === 2 ? 'Nota de venta' : 'Factura'}
+                                                >
+                                                    {f.tipo === 2 ? 'NV' : 'F'}
+                                                </td>
+
+                                                <td className={`${celda} whitespace-nowrap`} style={{ color: 'var(--text-muted)' }}>
+                                                    {formatFecha(f.fecha_emision)}
+                                                </td>
+
+                                                {/* Fac. No — subrayado si tiene descuento especial */}
+                                                <td className={`${celda} whitespace-nowrap`}>
                                                     <span
                                                         className={cn(
-                                                            'font-mono text-xs font-medium',
+                                                            'font-mono font-medium',
                                                             f.tiene_descuento_especial && 'underline decoration-dotted decoration-amber-500'
                                                         )}
                                                         style={{ color: 'var(--text-main)' }}
@@ -295,39 +362,43 @@ export default function Index() {
                                                     </span>
                                                 </td>
 
-                                                <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-muted)' }}>
-                                                    {formatFecha(f.fecha_emision)}
+                                                <td className={celda}>
+                                                    <p className="font-medium uppercase" style={{ color: 'var(--text-main)' }}>
+                                                        {f.razon_social ?? f.cliente?.razon_social ?? '—'}
+                                                    </p>
+                                                    <p style={{ color: 'var(--text-muted)' }}>
+                                                        {f.identificacion ?? f.cliente?.identificacion ?? ''}
+                                                    </p>
                                                 </td>
 
-                                                <td className="px-4 py-3">
-                                                    {f.cliente ? (
-                                                        <>
-                                                            <p className="text-xs font-medium" style={{ color: 'var(--text-main)' }}>
-                                                                {f.cliente.razon_social}
-                                                            </p>
-                                                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                                                                {f.cliente.identificacion}
-                                                            </p>
-                                                        </>
-                                                    ) : (
-                                                        <span style={{ color: 'var(--text-muted)' }}>—</span>
-                                                    )}
+                                                <td className={`${celda} font-semibold`} style={{ color: 'var(--text-main)' }}>
+                                                    {f.cliente_nuevo ? 'SI' : ''}
                                                 </td>
 
-                                                <td className="px-4 py-3 text-xs font-semibold" style={{ color: 'var(--text-main)' }}>
+                                                <td className={`${celda} text-right font-bold whitespace-nowrap`} style={{ color: 'var(--text-main)' }}>
                                                     {formatMoneda(f.total)}
                                                 </td>
 
-                                                <td className="px-4 py-3 text-xs capitalize" style={{ color: 'var(--text-muted)' }}>
-                                                    {formaPagoResumen(f.pagos)}
+                                                <td className={`${celda} text-right whitespace-nowrap`} style={{ color: 'var(--text-muted)' }}>
+                                                    {Number(f.desc_pct ?? 0).toFixed(2)}%
                                                 </td>
 
-                                                <td className="px-4 py-3">
-                                                    <Badge variant={sriCfg.variant}>{sriCfg.label}</Badge>
+                                                <td className={`${celda} uppercase`} style={{ color: 'var(--text-main)' }}>
+                                                    {f.vendedor ?? '—'}
                                                 </td>
 
-                                                <td className="px-4 py-3">
-                                                    <Badge variant={estCfg.variant}>{estCfg.label}</Badge>
+                                                <td className={`${celda} uppercase`}>
+                                                    {formaPagoTexto(f.pagos)}
+                                                </td>
+
+                                                <td className={celda}>
+                                                    <Badge variant={sriCfg.variant} className="text-[10px]">{sriCfg.label}</Badge>
+                                                </td>
+
+                                                <td className={`${celda} font-semibold`}>
+                                                    {f.email_enviado
+                                                        ? <span className="text-emerald-400">ENVIADO</span>
+                                                        : <span style={{ color: 'var(--text-muted)' }}>—</span>}
                                                 </td>
 
                                                 <td className="px-4 py-3">
@@ -337,21 +408,64 @@ export default function Index() {
                                                                 type="button"
                                                                 className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors hover:bg-amber-500/10"
                                                                 style={{ color: 'var(--primary)' }}
-                                                                title="Ver detalle"
+                                                                title="Ver detalle" aria-label="Ver detalle"
                                                             >
-                                                                <Eye className="w-3.5 h-3.5" />
-                                                                Ver
+                                                                <Eye className="w-4 h-4" />
                                                             </button>
                                                         </Link>
+                                                        {acc.sri && puede('editar') && (
+                                                            <button
+                                                                type="button"
+                                                                className={`flex items-center justify-center p-1.5 rounded transition-colors ${ACCION_CLS.sri.texto} ${ACCION_CLS.sri.fondo}`}
+                                                                onClick={() => void enviarFacturaSri(f.id)}
+                                                                title="Enviar al SRI" aria-label="Enviar al SRI"
+                                                            >
+                                                                <span className="text-[10px] font-bold leading-4">SRI</span>
+                                                            </button>
+                                                        )}
+                                                        {acc.correo && puede('editar') && (
+                                                            <button
+                                                                type="button"
+                                                                className={`flex items-center justify-center p-1.5 rounded transition-colors ${ACCION_CLS.correo.texto} ${ACCION_CLS.correo.fondo}`}
+                                                                onClick={() => void enviarFacturaPorCorreo(f.id, f.numero_completo, f.email_cliente ?? f.cliente?.email)}
+                                                                title="Enviar por correo" aria-label="Enviar por correo"
+                                                            >
+                                                                <Mail className="w-4 h-4" />
+                                                            </button>
+                                                        )}
+                                                        <a
+                                                            href={route('ventas.facturas.xml', f.id)}
+                                                            className={`flex items-center justify-center p-1.5 rounded transition-colors ${ACCION_CLS.xml.texto} ${ACCION_CLS.xml.fondo}`}
+                                                            title="Descargar XML" aria-label="Descargar XML"
+                                                        >
+                                                            <span className="text-[10px] font-bold leading-4">XML</span>
+                                                        </a>
+                                                        <button
+                                                            type="button"
+                                                            className={`flex items-center justify-center p-1.5 rounded transition-colors ${ACCION_CLS.ride.texto} ${ACCION_CLS.ride.fondo}`}
+                                                            onClick={() => setRide({ id: f.id, numero: f.numero_completo })}
+                                                            title="Ver RIDE (PDF)" aria-label="Ver RIDE (PDF)"
+                                                        >
+                                                            <PdfIcon className="w-5 h-5" />
+                                                        </button>
                                                         {puedeAnular && puede('anular') && (
                                                             <button
                                                                 type="button"
-                                                                className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors hover:bg-red-500/10 text-red-400"
+                                                                className="flex items-center justify-center p-1.5 rounded transition-colors hover:bg-red-500/10 text-red-400"
                                                                 onClick={() => handleAnular(f)}
-                                                                title="Anular factura"
+                                                                title="Anular factura" aria-label="Anular factura"
                                                             >
-                                                                <Ban className="w-3.5 h-3.5" />
-                                                                Anular
+                                                                <Ban className="w-4 h-4" />
+                                                            </button>
+                                                        )}
+                                                        {esSuperAdmin && f.estado_sri !== 'autorizada' && f.estado_sri !== 'recibida' && (
+                                                            <button
+                                                                type="button"
+                                                                className="flex items-center justify-center p-1.5 rounded transition-colors hover:bg-red-600/15 text-red-600"
+                                                                onClick={() => void handleEliminar(f)}
+                                                                title="Eliminar factura (solo SuperAdmin)" aria-label="Eliminar factura"
+                                                            >
+                                                                <Trash2 className="w-4 h-4" />
                                                             </button>
                                                         )}
                                                     </div>
@@ -405,6 +519,13 @@ export default function Index() {
                     )}
                 </div>
             </div>
+            <PdfPreviewModal
+                abierto={ride !== null}
+                onCerrar={() => setRide(null)}
+                url={ride ? route('ventas.facturas.ride', ride.id) : ''}
+                titulo={`RIDE — Factura ${ride?.numero ?? ''}`}
+                nombreDescarga={`RIDE-${ride?.numero ?? ''}.pdf`}
+            />
         </AppLayout>
     )
 }

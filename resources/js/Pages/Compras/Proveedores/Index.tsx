@@ -535,7 +535,7 @@ export default function ProveedoresIndex() {
                     {proveedores.map(p => (
                         <div key={p.id}
                             className={cn(
-                                'group grid grid-cols-12 gap-3 px-4 py-3 border-b items-center transition-colors text-sm',
+                                'group grid grid-cols-12 gap-3 px-4 py-3 border-b items-center transition-colors text-[11px]',
                                 !p.estado && 'opacity-50',
                             )}
                             style={{ borderColor: 'var(--border)', background: 'transparent' }}
@@ -545,32 +545,32 @@ export default function ProveedoresIndex() {
                             <div className="col-span-3 min-w-0">
                                 <p className="font-medium truncate" style={{ color: 'var(--text-main)' }}>{p.razon_social}</p>
                                 {p.nombre_comercial && (
-                                    <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{p.nombre_comercial}</p>
+                                    <p className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>{p.nombre_comercial}</p>
                                 )}
                             </div>
                             <div className="col-span-2">
-                                <p className="font-mono text-xs" style={{ color: 'var(--text-main)' }}>{p.identificacion}</p>
-                                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{p.tipo_identificacion}</p>
+                                <p className="font-mono text-[11px]" style={{ color: 'var(--text-main)' }}>{p.identificacion}</p>
+                                <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{p.tipo_identificacion}</p>
                             </div>
                             <div className="col-span-1">
                                 <TipoBadge tipo={p.tipo} />
                             </div>
                             <div className="col-span-2 min-w-0">
-                                <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{p.email ?? '—'}</p>
-                                {p.telefono && <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{p.telefono}</p>}
+                                <p className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>{p.email ?? '—'}</p>
+                                {p.telefono && <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{p.telefono}</p>}
                             </div>
                             <div className="col-span-1 text-right">
                                 {p.tiene_credito
-                                    ? <span className="text-xs text-green-600 dark:text-green-400 font-medium">{p.dias_credito}d</span>
-                                    : <span className="text-xs" style={{ color: 'var(--text-muted)' }}>—</span>
+                                    ? <span className="text-[11px] text-green-600 dark:text-green-400 font-medium">{p.dias_credito}d</span>
+                                    : <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>—</span>
                                 }
                             </div>
                             <div className="col-span-1 text-right">
                                 {(p.saldo_pendiente ?? 0) > 0
-                                    ? <span className="text-xs font-semibold text-orange-600 dark:text-orange-400">
+                                    ? <span className="text-[11px] font-semibold text-orange-600 dark:text-orange-400">
                                         ${Number(p.saldo_pendiente).toFixed(2)}
                                       </span>
-                                    : <span className="text-xs" style={{ color: 'var(--text-muted)' }}>$0.00</span>
+                                    : <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>$0.00</span>
                                 }
                             </div>
                             <div className="col-span-1 flex justify-center">

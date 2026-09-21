@@ -1,13 +1,13 @@
 import { Head, router, usePage } from '@inertiajs/react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
 import BuscadorProductoModal from '@/Components/shared/BuscadorProductoModal'
-import type { Resultado } from '@/Components/shared/BuscadorProductoModal'
+import type { Resultado, BuscadorProductoModalHandle } from '@/Components/shared/BuscadorProductoModal'
 import { Button } from '@/Components/ui/button'
 import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
-import { Plus, Save, AlertTriangle, X } from 'lucide-react'
+import { Save, AlertTriangle, X } from 'lucide-react'
 import { toastExito, toastError } from '@/lib/toast'
 import { usePermiso } from '@/Hooks/usePermiso'
 import type { PageProps } from '@/types'
@@ -61,6 +61,15 @@ export default function KardexAjuste() {
             : lineaVacia(),
     ])
     const [guardando, setGuardando] = useState(false)
+    const buscadorRefs = useRef<(BuscadorProductoModalHandle | null)[]>([])
+    const enfocarNueva = useRef(false)
+
+    useEffect(() => {
+        if (enfocarNueva.current) {
+            enfocarNueva.current = false
+            buscadorRefs.current[detalles.length - 1]?.focus()
+        }
+    }, [detalles.length])
 
     // Precarga el stock disponible de la línea inicial cuando se llega con
     // producto_id + bodega_id ya resueltos por query string (ej. desde el
@@ -111,6 +120,22 @@ export default function KardexAjuste() {
 
     function addLinea() {
         setDetalles(prev => [...prev, lineaVacia()])
+        enfocarNueva.current = true
+    }
+
+    // Enter en el último campo de la fila (costo si es entrada, cantidad si es
+    // salida) agrega una fila nueva, siempre que la fila esté completa y sea la última.
+    function enterEnLinea(e: React.KeyboardEvent, idx: number, esUltimoCampo: boolean) {
+        if (e.key !== 'Enter') return
+        e.preventDefault()
+        if (!esUltimoCampo) {
+            document.getElementById(`aj-costo-${idx}`)?.focus()
+            return
+        }
+        const d = detalles[idx]
+        const completa = d.producto_id !== null && parseInt(d.cantidad, 10) >= 1 &&
+            (d.tipo_ajuste === 'negativo' || d.costo_unitario !== '')
+        if (completa && idx === detalles.length - 1) addLinea()
     }
 
     function removeLinea(idx: number) {
@@ -173,10 +198,18 @@ export default function KardexAjuste() {
                 ]}
             />
 
-            <form onSubmit={submit} className="p-6 max-w-5xl space-y-6">
+            <form
+                onSubmit={submit}
+                // Enter nunca envía el formulario: solo el botón "Registrar ajuste".
+                onKeyDown={e => {
+                    const t = e.target as HTMLElement
+                    if (e.key === 'Enter' && (t.tagName === 'INPUT' || t.tagName === 'SELECT')) e.preventDefault()
+                }}
+                className="p-6 max-w-5xl space-y-6"
+            >
                 {/* Bodega + motivo */}
-                <div className="rounded-xl border p-5 space-y-4" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
-                    <div className="space-y-1.5 max-w-sm">
+                <div className="rounded-xl border p-5 flex flex-wrap items-end gap-4" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
+                    <div className="space-y-1.5 w-full sm:w-72 shrink-0">
                         <Label>Bodega *</Label>
                         <select
                             value={bodegaIdSel}
@@ -191,12 +224,12 @@ export default function KardexAjuste() {
                         </select>
                     </div>
 
-                    <div className="space-y-1.5">
+                    <div className="space-y-1.5 flex-1 min-w-[240px]">
                         <Label>Motivo *</Label>
-                        <textarea
+                        <input
+                            type="text"
                             value={motivo}
                             onChange={e => setMotivo(e.target.value)}
-                            rows={2}
                             placeholder="Ej: Conteo físico, mercadería dañada, ajuste de sistema..."
                             className="input-field"
                             style={{ borderColor: 'var(--border)', color: 'var(--text-main)' }}
@@ -211,10 +244,9 @@ export default function KardexAjuste() {
                         <h3 className="text-sm font-semibold" style={{ color: 'var(--text-main)' }}>
                             Productos a ajustar
                         </h3>
-                        <Button type="button" variant="outline" onClick={addLinea}>
-                            <Plus className="w-4 h-4" />
-                            Agregar producto
-                        </Button>
+                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                            Enter en el último campo agrega otra fila
+                        </span>
                     </div>
 
                     <div className="overflow-x-auto">
@@ -257,6 +289,7 @@ export default function KardexAjuste() {
                                                 ) : (
                                                     <div className="space-y-1">
                                                         <BuscadorProductoModal
+                                                            ref={el => { buscadorRefs.current[idx] = el }}
                                                             onSelect={p => seleccionarProducto(idx, p)}
                                                             disabled={!bodegaIdSel}
                                                         />
@@ -277,8 +310,8 @@ export default function KardexAjuste() {
                                                     value={det.tipo_ajuste}
                                                     onChange={e => updateLinea(idx, { tipo_ajuste: e.target.value as 'positivo' | 'negativo' })}
                                                 >
-                                                    <option value="positivo">Positivo (Entrada)</option>
-                                                    <option value="negativo">Negativo (Salida)</option>
+                                                    <option value="positivo">Ingreso</option>
+                                                    <option value="negativo">Egreso</option>
                                                 </select>
                                             </td>
 
@@ -291,7 +324,10 @@ export default function KardexAjuste() {
                                                     className={cn(tdInput, 'text-right')}
                                                     style={tdInputStyle}
                                                     value={det.cantidad}
-                                                    onKeyDown={e => ['.', ','].includes(e.key) && e.preventDefault()}
+                                                    onKeyDown={e => {
+                                                        if (['.', ','].includes(e.key)) e.preventDefault()
+                                                        enterEnLinea(e, idx, det.tipo_ajuste === 'negativo')
+                                                    }}
                                                     onChange={e => {
                                                         const val = e.target.value
                                                         if (val === '' || /^\d+$/.test(val)) updateLinea(idx, { cantidad: val })
@@ -317,7 +353,9 @@ export default function KardexAjuste() {
                                                         step="0.01"
                                                         className={cn(tdInput, 'text-right')}
                                                         style={tdInputStyle}
+                                                        id={`aj-costo-${idx}`}
                                                         value={det.costo_unitario}
+                                                        onKeyDown={e => enterEnLinea(e, idx, true)}
                                                         onChange={e => updateLinea(idx, { costo_unitario: e.target.value })}
                                                         placeholder="0.00"
                                                     />
@@ -357,7 +395,7 @@ export default function KardexAjuste() {
                             Registrar ajuste
                         </Button>
                     )}
-                    <Button type="button" variant="outline"
+                    <Button type="button" variant="outline" className="ml-auto"
                         onClick={() => router.visit(redirect_to)}>
                         Cancelar
                     </Button>

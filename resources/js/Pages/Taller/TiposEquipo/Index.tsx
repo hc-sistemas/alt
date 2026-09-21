@@ -8,6 +8,7 @@ import { Label } from '@/Components/ui/label'
 import { Plus, Pencil, Trash2, X, Save, Search } from 'lucide-react'
 import { toastExito, toastError } from '@/lib/toast'
 import { confirmarEliminar } from '@/lib/swal'
+import axios from '@/lib/axios'
 import { usePermiso } from '@/Hooks/usePermiso'
 import type { PaginatedData, PageProps } from '@/types'
 
@@ -88,23 +89,16 @@ export default function TiposEquipoIndex() {
         if (!confirmado) return
         setErrorEliminar(null)
         try {
-            const res = await fetch(route('taller.tipos-equipo.destroy', tipoEquipo.id), {
-                method: 'DELETE',
-                headers: {
-                    'X-CSRF-TOKEN': (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content ?? '',
-                    'Accept': 'application/json',
-                    'X-Inertia': 'true',
-                },
-            })
-            if (res.status === 422) {
-                const json = await res.json()
-                setErrorEliminar(json.message)
-                toastError(json.message)
-                return
-            }
+            await axios.delete(route('taller.tipos-equipo.destroy', tipoEquipo.id))
             router.reload({ only: ['tiposEquipo'] })
             toastExito('Tipo de equipo eliminado correctamente')
-        } catch {
+        } catch (err) {
+            const e = err as { response?: { status?: number; data?: { message?: string } } }
+            if (e.response?.status === 422 && e.response.data?.message) {
+                setErrorEliminar(e.response.data.message)
+                toastError(e.response.data.message)
+                return
+            }
             toastError('Error al eliminar')
         }
     }

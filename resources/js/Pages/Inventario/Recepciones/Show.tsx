@@ -80,6 +80,7 @@ export default function RecepcionShow() {
     const [etiquetas, setEtiquetas] = useState<EtiquetaItem[]>([])
     const [cargando, setCargando] = useState(true)
     const [confirmando, setConfirmando] = useState(false)
+    const [generandoEtiquetas, setGenerandoEtiquetas] = useState(false)
     const [scanValue, setScanValue] = useState('')
     const [scanError, setScanError] = useState<string | null>(null)
     const [codigoReciente, setCodigoReciente] = useState<string | null>(null)
@@ -104,6 +105,51 @@ export default function RecepcionShow() {
             setCargando(false)
         }
     }, [recepcion.id])
+
+    // Bodega imprime las etiquetas desde aquí (permiso de Inventario, sin depender de Compras):
+    // una etiqueta por unidad esperada de cada producto.
+    async function generarEtiquetas() {
+        setGenerandoEtiquetas(true)
+        try {
+            const csrf = document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content ?? ''
+            const rd = await fetch(route('inventario.recepciones.etiquetasData', recepcion.id), {
+                headers: { 'Accept': 'application/json' },
+            })
+            const json = await rd.json() as {
+                detalles?: { id: number; producto_id: number; codigo: string; descripcion: string; num_etiquetas: number }[]
+                error?: string
+            }
+            if (!rd.ok || json.error) throw new Error(json.error ?? `Error ${rd.status}`)
+            const detalles = json.detalles ?? []
+            if (detalles.length === 0) throw new Error('Esta recepción no tiene productos con código registrado.')
+
+            const res = await fetch(route('inventario.recepciones.etiquetasPdf', recepcion.id), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': csrf },
+                body: JSON.stringify({
+                    productos: detalles.map(d => ({
+                        producto_id:   d.producto_id,
+                        detalle_id:    d.id,
+                        codigo:        d.codigo,
+                        descripcion:   d.descripcion,
+                        num_etiquetas: d.num_etiquetas,
+                    })),
+                }),
+            })
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({})) as { message?: string; mensaje?: string }
+                throw new Error(err.mensaje ?? err.message ?? 'No se pudieron generar las etiquetas')
+            }
+            const blob = await res.blob()
+            window.open(URL.createObjectURL(blob), '_blank')
+            toastExito('Etiquetas generadas')
+            await cargarEtiquetas()
+        } catch (e) {
+            toastError(e instanceof Error ? e.message : 'Error al generar las etiquetas')
+        } finally {
+            setGenerandoEtiquetas(false)
+        }
+    }
 
     const isFirstRender = useRef(true)
     useEffect(() => {
@@ -336,6 +382,12 @@ export default function RecepcionShow() {
                 ) : grupos.length === 0 ? (
                     <div className="rounded-xl border p-8 text-center" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
                         <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No hay etiquetas generadas para esta compra.</p>
+                        {isPendiente && puede('editar') && (
+                            <Button type="button" className="mt-4" onClick={generarEtiquetas} disabled={generandoEtiquetas}>
+                                <ScanBarcode className="w-4 h-4 mr-2" />
+                                {generandoEtiquetas ? 'Generando…' : 'Generar etiquetas'}
+                            </Button>
+                        )}
                     </div>
                 ) : (
                     <div className="space-y-4">

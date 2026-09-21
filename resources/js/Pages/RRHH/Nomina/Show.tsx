@@ -203,14 +203,16 @@ function EditarModal({ nominaId, detalle, onClose }: EditarModalProps) {
 // Modal Registrar Pago
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface PagarModalProps { nominaId: number; onClose: () => void }
+interface BancoOpt { id: number; nombre: string; tipo: string; saldo_actual: number | string }
+interface PagarModalProps { nominaId: number; bancos: BancoOpt[]; onClose: () => void }
 
-function PagarModal({ nominaId, onClose }: PagarModalProps) {
+function PagarModal({ nominaId, bancos, onClose }: PagarModalProps) {
     const hoy = new Date().toISOString().split('T')[0]
     const [form, setForm] = useState({
         fecha_pago:       hoy,
         tipo_comprobante: 'transferencia_masiva',
         num_comprobante:  '',
+        banco_caja_id:    '',
     })
     const [loading, setLoading] = useState(false)
 
@@ -234,6 +236,23 @@ function PagarModal({ nominaId, onClose }: PagarModalProps) {
                             <label className="input-label">Fecha de pago</label>
                             <input type="date" className="input-field" value={form.fecha_pago}
                                 onChange={e => setForm(f => ({ ...f, fecha_pago: e.target.value }))} required />
+                        </div>
+                        <div>
+                            <label className="input-label">Pagar desde (banco o caja)</label>
+                            <select className="input-field" value={form.banco_caja_id}
+                                onChange={e => setForm(f => ({ ...f, banco_caja_id: e.target.value }))} required>
+                                <option value="">— Seleccionar —</option>
+                                {bancos.map(b => (
+                                    <option key={b.id} value={b.id}>
+                                        {b.nombre} (saldo ${Number(b.saldo_actual).toFixed(2)})
+                                    </option>
+                                ))}
+                            </select>
+                            {bancos.length === 0 && (
+                                <p className="text-[11px] mt-1 text-amber-500">
+                                    No hay bancos ni cajas registrados. Créalos en Bancos → Bancos y Cajas.
+                                </p>
+                            )}
                         </div>
                         <div>
                             <label className="input-label">Tipo de comprobante</label>
@@ -268,6 +287,7 @@ function PagarModal({ nominaId, onClose }: PagarModalProps) {
 
 interface Props extends PageProps {
     nomina: Nomina
+    bancos: BancoOpt[]
 }
 
 // Edición manual de contingencia: SOLO Contador o Súper Administrador,
@@ -277,7 +297,7 @@ interface Props extends PageProps {
 const PERFILES_EDICION_MANUAL = ['super_admin', 'contador']
 
 export default function NominaShow() {
-    const { nomina, flash, auth } = usePage<Props>().props
+    const { nomina, flash, auth, bancos } = usePage<Props>().props
     const { puede } = usePermiso('rrhh')
     const puedeEditarManual = !!auth?.user?.perfil && PERFILES_EDICION_MANUAL.includes(auth.user.perfil)
 
@@ -327,7 +347,7 @@ export default function NominaShow() {
                 )
             })()}
             {showPagar && (
-                <PagarModal nominaId={nomina.id} onClose={() => setShowPagar(false)} />
+                <PagarModal nominaId={nomina.id} bancos={bancos ?? []} onClose={() => setShowPagar(false)} />
             )}
 
             <PageHeader

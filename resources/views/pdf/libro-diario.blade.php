@@ -71,6 +71,9 @@
     <div class="h-left">
         <div class="empresa">{{ $empresa->nombre_comercial ?? 'Altamira Light &amp; Sound' }}</div>
         <div class="titulo">LIBRO DIARIO</div>
+        <div style="font-size:10px;font-weight:bold;color:#1A1A2E;margin-top:2px;">
+            {{ $periodo ?? '' }}
+        </div>
         <div class="sub">
             RUC: {{ $empresa->ruc ?? '—' }} &middot; {{ $empresa->direccion_matriz ?? 'Quito, Ecuador' }}
         </div>

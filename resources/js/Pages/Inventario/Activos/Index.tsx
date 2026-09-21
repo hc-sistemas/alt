@@ -6,6 +6,7 @@ import PdfPreviewModal from '@/Components/shared/PdfPreviewModal'
 import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Plus, Search, Pencil, Trash2, Eye, FileText, FileSpreadsheet } from 'lucide-react'
+import { fechaHoy } from '@/lib/utils'
 import { confirmarEliminar } from '@/lib/swal'
 import { toastExito, toastError } from '@/lib/toast'
 import { usePermiso } from '@/Hooks/usePermiso'
@@ -37,8 +38,8 @@ export default function ActivosIndex() {
 
     const [search, setSearch] = useState(filters.search ?? '')
     const [estado, setEstado] = useState(filters.estado ?? '')
-    const [fechaDesde, setFechaDesde] = useState(filters.fecha_desde ?? '')
-    const [fechaHasta, setFechaHasta] = useState(filters.fecha_hasta ?? '')
+    const [fechaDesde, setFechaDesde] = useState(filters.fecha_desde ?? (activos !== null ? '' : fechaHoy()))
+    const [fechaHasta, setFechaHasta] = useState(filters.fecha_hasta ?? (activos !== null ? '' : fechaHoy()))
     const [pdfModal, setPdfModal] = useState(false)
 
     const haBuscado = activos !== null

@@ -8,7 +8,7 @@ import FilterToolbar from '@/Components/shared/FilterToolbar'
 import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
-import { cn } from '@/lib/utils'
+import { cn, fechaHoy } from '@/lib/utils'
 import { formatFecha } from '@/utils/contabilidad'
 import {
     Plus, X, FileText, Download, ChevronLeft, ChevronRight, ChevronDown,
@@ -1924,8 +1924,10 @@ export default function ComprasIndex() {
     const [xmlPrefill, setXmlPrefill] = useState<Partial<PrefillExterior> | null>(null)
     const [buscar, setBuscar]       = useState(filtros.buscar ?? '')
     const [estado, setEstado]       = useState(filtros.estado ?? '')
-    const [fechaDesde, setFechaDesde] = useState(filtros.fecha_desde ?? '')
-    const [fechaHasta, setFechaHasta] = useState(filtros.fecha_hasta ?? '')
+    // Por defecto la fecha de hoy (local); si ya se buscó, se respeta lo enviado (incluso vacío)
+    const hoy = fechaHoy()
+    const [fechaDesde, setFechaDesde] = useState(filtros.fecha_desde ?? (haBuscado ? '' : hoy))
+    const [fechaHasta, setFechaHasta] = useState(filtros.fecha_hasta ?? (haBuscado ? '' : hoy))
     const [modalPdf, setModalPdf] = useState(false)
     const [urlPdf,   setUrlPdf]   = useState('')
     const [cargandoPdf, setCargandoPdf] = useState(false)
@@ -2367,7 +2369,7 @@ export default function ComprasIndex() {
                     {comprasData.map(c => (
                         <div key={c.id}
                             className={cn(
-                                'group grid grid-cols-12 gap-2 px-4 py-3 border-b items-center text-sm transition-colors',
+                                'group grid grid-cols-12 gap-2 px-4 py-3 border-b items-center text-[11px] transition-colors',
                                 c.estado === 'anulada' && 'opacity-50',
                             )}
                             style={{ borderColor: 'var(--border)', background: 'transparent' }}
@@ -2375,7 +2377,7 @@ export default function ComprasIndex() {
                             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                         >
                             <div className="col-span-2 min-w-0">
-                                <p className="font-mono text-xs font-medium truncate flex items-center gap-1" style={{ color: 'var(--text-main)' }}>
+                                <p className="font-mono text-[11px] font-medium truncate flex items-center gap-1" style={{ color: 'var(--text-main)' }}>
                                     {c.num_documento}
                                     {!c.asiento_id && c.asiento_error && (
                                         <span title={`Sin asiento contable: ${c.asiento_error}`} className="shrink-0 cursor-help">
@@ -2385,12 +2387,12 @@ export default function ComprasIndex() {
                                 </p>
                             </div>
                             <div className="col-span-1 text-center">
-                                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
                                     {formatFecha(c.fecha_emision)}
                                 </p>
                             </div>
                             <div className="col-span-2 min-w-0">
-                                <p className="text-xs truncate" style={{ color: 'var(--text-main)' }}>
+                                <p className="text-[11px] truncate" style={{ color: 'var(--text-main)' }}>
                                     {(c.proveedor as Proveedor | undefined)?.razon_social ?? '—'}
                                 </p>
                             </div>
@@ -2400,17 +2402,17 @@ export default function ComprasIndex() {
                                 </span>
                             </div>
                             <div className="col-span-1 text-right">
-                                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
                                     ${(Number(c.subtotal_0) + Number(c.subtotal_iva)).toFixed(2)}
                                 </p>
                             </div>
                             <div className="col-span-1 text-right">
-                                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
                                     ${Number(c.total_iva).toFixed(2)}
                                 </p>
                             </div>
                             <div className="col-span-1 text-right">
-                                <p className="text-xs font-bold" style={{ color: 'var(--primary)' }}>
+                                <p className="text-[11px] font-bold" style={{ color: 'var(--primary)' }}>
                                     ${Number(c.total).toFixed(2)}
                                 </p>
                             </div>

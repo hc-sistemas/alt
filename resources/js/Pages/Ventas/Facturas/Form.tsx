@@ -12,7 +12,7 @@ import BuscadorClienteModal from '@/Components/shared/BuscadorClienteModal'
 import DescuentoEspecialModal from '@/Components/Ventas/DescuentoEspecialModal'
 import { cn, formatMoneda } from '@/lib/utils'
 import { toastError } from '@/lib/toast'
-import { Plus, Save, X, Send, Search } from 'lucide-react'
+import { Save, X, Search } from 'lucide-react'
 import { usePermiso } from '@/Hooks/usePermiso'
 import type { PageProps, Empresa, Usuario, Cliente } from '@/types'
 
@@ -75,11 +75,18 @@ interface Props extends PageProps {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+// Con tarjeta de crédito no hay descuento de ningún tipo.
+const esTarjeta = (forma: string) => forma === 'tarjeta' || forma === 'datafast'
+const MSG_SIN_DESCUENTO_TARJETA = 'Con tarjeta de crédito no hay descuento de ningún tipo.'
+
+const redondear = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100
+
 function calcularLinea(linea: DetalleLinea): DetalleLinea {
     const base = linea.cantidad * linea.precio_unitario
-    const descuento_valor = base * (linea.descuento_pct / 100)
-    const subtotal = base - descuento_valor
-    const valor_iva = subtotal * (linea.porcentaje_iva / 100)
+    // Redondeo a 2 decimales por línea (igual que el servidor) para que los valores sean exactos
+    const descuento_valor = redondear(base * (linea.descuento_pct / 100))
+    const subtotal = redondear(base - descuento_valor)
+    const valor_iva = redondear(subtotal * (linea.porcentaje_iva / 100))
     return { ...linea, descuento_valor, subtotal, valor_iva, total: subtotal + valor_iva }
 }
 
@@ -128,20 +135,21 @@ function ClienteField({ label, value, onChange, type = 'text', onKeyDown }: {
     onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void
 }) {
     return (
-        <tr style={{ borderBottom: '1px solid var(--border)' }}>
+        <tr>
             <td
-                className="py-1 px-2 text-xs font-semibold w-28 select-none whitespace-nowrap"
+                className="py-0 px-2 text-xs font-semibold w-28 select-none whitespace-nowrap"
                 style={{ color: 'var(--text-muted)' }}
             >
                 {label}:
             </td>
-            <td className="py-0.5 px-1">
+            <td className="py-px px-1">
                 <Input
                     type={type}
                     value={value}
                     onChange={e => onChange(e.target.value)}
                     onKeyDown={onKeyDown}
                     placeholder=""
+                    className="h-6 px-2 py-0 text-xs"
                 />
             </td>
         </tr>
@@ -216,14 +224,16 @@ export default function Form() {
     // ── Computed ──────────────────────────────────────────────────────────────
 
     const totales = useMemo(() => {
-        let subtotal0 = 0, subtotal15 = 0, descTotal = 0, iva = 0
+        let subtotal0 = 0, subtotal15 = 0, descTotal = 0
         for (const d of detalles) {
             if (d.porcentaje_iva === 0) subtotal0 += d.subtotal
             else subtotal15 += d.subtotal
             descTotal += d.descuento_valor
-            iva += d.valor_iva
         }
-        return { subtotal0, subtotal15, descTotal, iva, total: subtotal0 + subtotal15 + iva }
+        // El IVA se calcula sobre la base imponible total (como el servidor / SRI)
+        subtotal0 = redondear(subtotal0); subtotal15 = redondear(subtotal15); descTotal = redondear(descTotal)
+        const iva = redondear(subtotal15 * 0.15)
+        return { subtotal0, subtotal15, descTotal, iva, total: redondear(subtotal0 + subtotal15 + iva) }
     }, [detalles])
 
     // Suma cantidades de un mismo producto repetido en varias líneas, para no
@@ -242,11 +252,16 @@ export default function Form() {
     }, [detalles])
 
     const totalPagado = useMemo(() => pagos.reduce((acc, p) => acc + p.valor, 0), [pagos])
+    const pagaConTarjeta = pagos.some(p => esTarjeta(p.forma_pago))
     const diferencia = Math.round((totalPagado - totales.total) * 100) / 100
 
     // ── Handlers: descuento especial global ──────────────────────────────────
 
     const handleCheckboxDescuento = async (checked: boolean) => {
+        if (checked && pagaConTarjeta) {
+            toastError(MSG_SIN_DESCUENTO_TARJETA)
+            return
+        }
         if (checked) {
             setModalDescuentoGlobal(true)
         } else if (descuentoEspecialActivo) {
@@ -388,14 +403,19 @@ export default function Form() {
 
     const handleDescuentoChange = (idx: number, valor: number) => {
         const linea = detalles[idx]
+        if (pagaConTarjeta && valor > 0) {
+            toastError(MSG_SIN_DESCUENTO_TARJETA)
+            return
+        }
         // El tope de producto solo aplica sin autorización especial — con
         // descuento especial activo (PIN de supervisor) el vendedor puede
         // superarlo, hasta el límite de perfil aprobado vía limites_descuento.
         if (!descuentoEspecialActivo && valor > linea.descuento_max_producto && linea.descuento_max_producto < 100) {
             updateDetalle(idx, {
                 descuento_pct: linea.descuento_max_producto,
-                _desc_error: `Descuento máximo para este producto: ${linea.descuento_max_producto}%`,
+                _desc_error: '',
             })
+            toastError(`Descuento máximo para este producto: ${linea.descuento_max_producto}%`)
         } else {
             updateDetalle(idx, { descuento_pct: valor, _desc_error: '' })
         }
@@ -424,7 +444,7 @@ export default function Form() {
                 descripcion: p.nombre,
                 precio_unitario: Math.round(p.pvp * 100) / 100,
                 costo: p.costo,
-                porcentaje_iva: p.porcentaje_iva,
+                porcentaje_iva: p.porcentaje_iva > 0 ? 15 : 0, // el servidor factura siempre al 15% si el producto grava IVA
                 descuento_max_producto: p.descuento_max,
                 descuento_pct: 0,
                 aprobacion_id_precio: null,
@@ -477,8 +497,51 @@ export default function Form() {
         })
     }
 
+    // Al elegir tarjeta todo descuento pasa a 0, sin preguntar.
+    const cambiarFormaPago = (idx: number, nueva: string) => {
+        if (nueva === 'credito' && !puedeUsarCredito(idx)) return
+
+        if (esTarjeta(nueva)) {
+            setDetalles(prev => prev.map(d => (
+                d.descuento_pct > 0 ? calcularLinea({ ...d, descuento_pct: 0, _desc_error: '' }) : d
+            )))
+            setDescuentoEspecialActivo(false)
+            setAprobacionGlobalId(null)
+        }
+
+        updatePago(idx, {
+            forma_pago: nueva,
+            dias_credito: nueva === 'credito' ? (clienteSeleccionado?.dias_credito ?? 30) : 0,
+        })
+    }
+
     function puedeUsarCredito(idx: number): boolean {
         return !pagos.some((p, i) => i !== idx && p.forma_pago === 'credito')
+    }
+
+    // Enter dentro de un campo nunca guarda la factura (solo el botón "Guardar Factura").
+    // En su lugar agrega la siguiente fila de producto / forma de pago si estás en la última.
+    const handleFormKeyDown = (e: React.KeyboardEvent<HTMLFormElement>) => {
+        if (e.key !== 'Enter') return
+        const t = e.target as HTMLElement
+        if (t.tagName !== 'INPUT' && t.tagName !== 'SELECT') return
+        e.preventDefault()
+        if (t.hasAttribute('data-busqueda') || t.closest('[data-cliente]')) return
+
+        const filaPago = t.closest<HTMLElement>('[data-fila-pago]')
+        if (filaPago) {
+            const idx = Number(filaPago.dataset.filaPago)
+            if (idx === pagos.length - 1 && pagos[idx].valor > 0) addPago()
+            return
+        }
+        const filaDet = t.closest<HTMLElement>('[data-fila-detalle]')
+        if (filaDet) {
+            const idx = Number(filaDet.dataset.filaDetalle)
+            if (idx === detalles.length - 1 && detalles[idx].producto_id !== null) {
+                addDetalle()
+                setTimeout(() => document.querySelector<HTMLInputElement>(`[data-busqueda="${idx + 1}"]`)?.focus(), 0)
+            }
+        }
     }
 
     // ── Submit ────────────────────────────────────────────────────────────────
@@ -488,9 +551,15 @@ export default function Form() {
 
         const erroresGlobales: string[] = []
         if (!clienteSeleccionado) erroresGlobales.push('Debe seleccionar un cliente.')
-        if (detalles.length === 0) erroresGlobales.push('Agregue al menos un producto.')
-        if (Math.abs(diferencia) > 0.01) {
+        const conProducto = detalles.filter(d => d.producto_id !== null)
+        if (conProducto.length === 0) erroresGlobales.push('Agregue al menos un producto.')
+        else if (conProducto.length < detalles.length) erroresGlobales.push('Hay filas de producto vacías. Complételas o elimínelas.')
+        // Los valores están redondeados a centavos: las formas de pago deben sumar exactamente el total.
+        if (Math.abs(diferencia) >= 0.005) {
             erroresGlobales.push(`Las formas de pago no cuadran. Diferencia: ${formatMoneda(Math.abs(diferencia))}`)
+        }
+        if (pagaConTarjeta && (detalles.some(d => d.descuento_pct > 0) || descuentoEspecialActivo)) {
+            erroresGlobales.push(MSG_SIN_DESCUENTO_TARJETA)
         }
         if (excesosStock.some(Boolean)) {
             erroresGlobales.push('Hay productos con cantidad mayor al stock disponible.')
@@ -547,12 +616,12 @@ export default function Form() {
     const vendedorActual = vendedores.find(v => v.id === vendedorId)
     const tipoLabel: Record<string, string> = { '04': 'RUC', '05': 'CÉDULA', '06': 'PASAPORTE', '07': 'CONSUMIDOR' }
 
-    const tdInput = "w-full text-xs py-1 px-1.5 rounded border focus:outline-none"
+    const tdInput = "w-full text-xs py-0.5 px-1.5 rounded border focus:outline-none"
     const tdInputStyle = { background: 'var(--bg-main)', borderColor: 'var(--border)', color: 'var(--text-main)' }
     // Slot de altura fija debajo del input (16px) — siempre presente, con o sin
     // texto, para que Bodega/Cantidad/Precio/Desc% queden a la misma altura
     // entre sí y entre líneas de producto distintas.
-    const hintSlotCls = "h-4 mt-0.5 text-[11px] font-medium leading-4 whitespace-nowrap overflow-hidden"
+    const hintSlotCls = "h-3 mt-0 text-[10px] font-medium leading-3 whitespace-nowrap overflow-hidden"
 
     // ── Render ────────────────────────────────────────────────────────────────
 
@@ -568,8 +637,13 @@ export default function Form() {
                 ]}
             />
 
-            <form onSubmit={handleSubmit} className="p-4 space-y-4 max-w-7xl">
+            <form onSubmit={handleSubmit} onKeyDown={handleFormKeyDown} className="p-4 space-y-4 max-w-7xl [&_input::-webkit-inner-spin-button]:appearance-none [&_input::-webkit-outer-spin-button]:appearance-none [&_input[type=number]]:[appearance:textfield]">
 
+                {/* Encabezado (derecha) + Cliente (izquierda) en la misma fila */}
+                <div className="flex flex-col lg:flex-row-reverse lg:items-start gap-4">
+
+                {/* Columna derecha: encabezado + vendedor / formas de pago */}
+                <div className="flex flex-col flex-1 min-w-0 gap-4">
                 {/* ── 1. Encabezado compacto ── */}
                 <div
                     className="flex flex-wrap items-center gap-6 px-4 py-2.5 rounded-xl border"
@@ -608,16 +682,156 @@ export default function Form() {
                     )}
                 </div>
 
-                {/* ── 2. Cliente ── */}
+                {/* ── 4. Vendedor + Formas de pago ── */}
                 <div
-                    className="rounded-xl p-4 border max-w-xl"
+                    className="rounded-xl p-3 border"
                     style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
                 >
-                    <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--text-muted)' }}>
+                    {/* Vendedor */}
+                    <div className="flex items-center gap-2 mb-2">
+                        <span className="text-xs font-semibold uppercase" style={{ color: 'var(--text-muted)' }}>
+                            Vendedor:
+                        </span>
+                        {esVendedor ? (
+                            <span className="text-sm font-medium" style={{ color: 'var(--text-main)' }}>
+                                {auth.user?.nombre ?? vendedorActual?.nombre ?? '—'}
+                            </span>
+                        ) : (
+                            <select
+                                className="h-7 rounded-md border px-2 text-sm"
+                                style={{ background: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
+                                value={vendedorId}
+                                onChange={e => setVendedorId(Number(e.target.value))}
+                            >
+                                {vendedores.map(v => (
+                                    <option key={v.id} value={v.id}>{v.nombre}</option>
+                                ))}
+                            </select>
+                        )}
+                        <span
+                            className="ml-auto text-xs font-semibold uppercase tracking-wider"
+                            style={{ color: 'var(--text-muted)' }}
+                        >
+                            Formas de Pago
+                        </span>
+                    </div>
+
+                    {/* Líneas de pago */}
+                    <div className="space-y-1">
+                        {pagos.map((p, idx) => (
+                            <div key={idx} data-fila-pago={idx}>
+                            <div className="flex flex-wrap items-end gap-3">
+
+                                {/* Forma */}
+                                <div>
+                                    {idx === 0 && <p className="text-xs mb-0.5" style={{ color: 'var(--text-muted)' }}>FORMA</p>}
+                                    <select
+                                        className="h-7 rounded-md border px-2 text-sm capitalize"
+                                        style={{ background: 'var(--bg-main)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
+                                        value={p.forma_pago}
+                                        onChange={e => cambiarFormaPago(idx, e.target.value)}
+                                    >
+                                        {formas_pago.map(f => (
+                                            <option
+                                                key={f}
+                                                value={f}
+                                                className="capitalize"
+                                                disabled={f === 'credito' && !puedeUsarCredito(idx)}
+                                            >
+                                                {f}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                {/* N_DOC */}
+                                <div>
+                                    {idx === 0 && (
+                                        <p className="text-xs mb-0.5" style={{ color: 'var(--text-muted)' }}>
+                                            {p.forma_pago === 'cheque' ? 'N° CHEQUE' : 'N_DOC'}
+                                        </p>
+                                    )}
+                                    <input
+                                        className="h-7 w-32 rounded-md border px-2 text-sm focus:outline-none"
+                                        style={{ background: 'var(--bg-main)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
+                                        placeholder="Número..."
+                                        value={p.num_cheque ?? ''}
+                                        onChange={e => updatePago(idx, { num_cheque: e.target.value || null })}
+                                    />
+                                </div>
+
+                                {/* Cantidad */}
+                                <div>
+                                    {idx === 0 && <p className="text-xs mb-0.5" style={{ color: 'var(--text-muted)' }}>CANTIDAD</p>}
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        className="h-7 w-32 rounded-md border px-2 text-sm text-right focus:outline-none"
+                                        style={{ background: 'var(--bg-main)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
+                                        value={p.valor}
+                                        onChange={e => updatePago(idx, { valor: Number(e.target.value) })}
+                                    />
+                                </div>
+
+                                {/* Días (solo crédito) */}
+                                {p.forma_pago === 'credito' && (
+                                    <div>
+                                        {idx === 0 && <p className="text-xs mb-0.5" style={{ color: 'var(--text-muted)' }}>DÍAS</p>}
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            className="h-7 w-20 rounded-md border px-2 text-sm text-right focus:outline-none"
+                                            style={{ background: 'var(--bg-main)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
+                                            value={p.dias_credito || (clienteSeleccionado?.dias_credito ?? 30)}
+                                            onChange={e => updatePago(idx, { dias_credito: Number(e.target.value) })}
+                                        />
+                                    </div>
+                                )}
+
+                                {/* Eliminar línea */}
+                                {pagos.length > 1 && (
+                                    <button
+                                        type="button"
+                                        className="p-1 rounded hover:bg-red-500/10 transition-colors mb-0.5"
+                                        onClick={() => removePago(idx)}
+                                        title="Eliminar línea de pago"
+                                    >
+                                        <X className="w-4 h-4 text-red-400" />
+                                    </button>
+                                )}
+                            </div>
+                            {erroresPago[idx] && (
+                                <p className="text-xs mt-0.5" style={{ color: '#ef4444' }}>
+                                    {erroresPago[idx]}
+                                </p>
+                            )}
+                            </div>
+                        ))}
+
+                        {/* Diferencia */}
+                        <div className="flex items-center justify-end pt-0">
+                            <span className={cn('text-xs', Math.abs(diferencia) <= 0.01 ? 'text-emerald-400' : 'text-red-400')}>
+                                Diferencia:{' '}
+                                <strong>{formatMoneda(Math.abs(diferencia))}</strong>
+                                {Math.abs(diferencia) <= 0.01 && ' ✓'}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                </div>
+
+                {/* ── 2. Cliente ── */}
+                <div
+                    className="rounded-xl p-4 border w-full lg:w-xl shrink-0"
+                    style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
+                >
+                    <p className="text-xs font-bold uppercase tracking-wider mb-3 text-(--primary-hover) dark:text-(--primary)">
                         Cliente
                     </p>
 
-                    <div style={{ maxWidth: 480 }}>
+                    <div data-cliente style={{ maxWidth: 480 }}>
                         <table className="w-full">
                             <tbody>
                                 <ClienteField
@@ -689,20 +903,17 @@ export default function Form() {
                         </div>
                     </div>
                 </div>
+                </div>
 
                 {/* ── 3. Tabla de productos ── */}
                 <div
-                    className="rounded-xl p-4 border"
+                    className="rounded-xl p-3 border"
                     style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
                 >
-                    <div className="flex items-center justify-between mb-3">
-                        <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+                    <div className="flex items-center justify-between mb-2">
+                        <p className="text-xs font-bold uppercase tracking-wider text-(--primary-hover) dark:text-(--primary)">
                             Detalle de Productos
                         </p>
-                        <Button type="button" size="sm" onClick={addDetalle}>
-                            <Plus className="w-3.5 h-3.5" />
-                            Agregar producto
-                        </Button>
                     </div>
 
                     <div className="overflow-x-auto">
@@ -731,15 +942,15 @@ export default function Form() {
                             </thead>
                             <tbody>
                                 {detalles.map((det, idx) => (
-                                    <tr key={idx} style={{ borderBottom: '1px solid var(--border)' }}>
+                                    <tr key={idx} data-fila-detalle={idx} style={{ borderBottom: '1px solid var(--border)' }}>
 
                                         {/* N° */}
-                                        <td className="py-2 px-1.5 text-center align-top" style={{ color: 'var(--text-muted)' }}>
+                                        <td className="py-1 px-1.5 text-center align-top" style={{ color: 'var(--text-muted)' }}>
                                             {idx + 1}
                                         </td>
 
                                         {/* Producto */}
-                                        <td className="py-2 px-1 align-top">
+                                        <td className="py-1 px-1 align-top">
                                             {det.producto_id !== null ? (
                                                 <div
                                                     className="flex items-center gap-1 min-w-0 px-1.5 py-0.5 rounded"
@@ -778,6 +989,7 @@ export default function Form() {
                                                         />
                                                         <input
                                                             type="text"
+                                                            data-busqueda={idx}
                                                             className="w-full h-7 pl-6 pr-2 text-xs rounded border focus:outline-none"
                                                             style={{
                                                                 background: 'var(--bg-main)',
@@ -805,7 +1017,7 @@ export default function Form() {
                                         </td>
 
                                         {/* Cantidad — enteros + texto de stock */}
-                                        <td className="py-2 px-1 align-top">
+                                        <td className="py-1 px-1 align-top">
                                             <input
                                                 type="number"
                                                 min={1}
@@ -844,7 +1056,7 @@ export default function Form() {
                                         </td>
 
                                         {/* Precio */}
-                                        <td className="py-2 px-1 align-top">
+                                        <td className="py-1 px-1 align-top">
                                             <input
                                                 type="number"
                                                 min="0"
@@ -863,7 +1075,7 @@ export default function Form() {
                                         </td>
 
                                         {/* Desc% + texto de máximo permitido */}
-                                        <td className="py-2 px-1 align-top">
+                                        <td className="py-1 px-1 align-top">
                                             <input
                                                 type="number"
                                                 min="0"
@@ -872,6 +1084,8 @@ export default function Form() {
                                                 className={cn(tdInput, 'text-right')}
                                                 style={tdInputStyle}
                                                 value={det.descuento_pct}
+                                                disabled={pagaConTarjeta}
+                                                title={pagaConTarjeta ? MSG_SIN_DESCUENTO_TARJETA : undefined}
                                                 onChange={e => handleDescuentoChange(idx, Number(e.target.value))}
                                             />
                                             <div
@@ -879,23 +1093,23 @@ export default function Form() {
                                                 style={{ color: det._desc_error ? 'var(--color-danger)' : 'var(--color-warning)' }}
                                             >
                                                 {det._desc_error || (det.producto_id !== null
-                                                    ? (descuentoEspecialActivo ? 'Descuento especial activo — sin tope de producto' : `Max. ${det.descuento_max_producto}%`)
+                                                    ? (pagaConTarjeta ? 'Sin descuento con tarjeta' : descuentoEspecialActivo ? 'Descuento especial activo — sin tope de producto' : `Max. ${det.descuento_max_producto}%`)
                                                     : '')}
                                             </div>
                                         </td>
 
                                         {/* Desc$ */}
-                                        <td className="py-2 px-1.5 text-right align-top" style={{ color: 'var(--text-muted)' }}>
+                                        <td className="py-1 px-1.5 text-right align-top" style={{ color: 'var(--text-muted)' }}>
                                             {formatMoneda(det.descuento_valor)}
                                         </td>
 
                                         {/* V.Tot */}
-                                        <td className="py-2 px-1.5 text-right font-semibold align-top" style={{ color: 'var(--text-main)' }}>
-                                            {formatMoneda(det.total)}
+                                        <td className="py-1 px-1.5 text-right font-semibold align-top" style={{ color: 'var(--text-main)' }}>
+                                            {formatMoneda(det.subtotal)}
                                         </td>
 
                                         {/* Eliminar */}
-                                        <td className="py-2 px-1 text-center align-top">
+                                        <td className="py-1 px-1 text-center align-top">
                                             <button
                                                 type="button"
                                                 className="p-0.5 rounded hover:bg-red-500/10 transition-colors"
@@ -912,179 +1126,16 @@ export default function Form() {
                     </div>
                 </div>
 
-                {/* ── 4. Vendedor + Formas de pago ── */}
-                <div
-                    className="rounded-xl p-4 border"
-                    style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
-                >
-                    {/* Vendedor */}
-                    <div className="flex items-center gap-2 mb-3">
-                        <span className="text-xs font-semibold uppercase" style={{ color: 'var(--text-muted)' }}>
-                            Vendedor:
-                        </span>
-                        {esVendedor ? (
-                            <span className="text-sm font-medium" style={{ color: 'var(--text-main)' }}>
-                                {auth.user?.nombre ?? vendedorActual?.nombre ?? '—'}
-                            </span>
-                        ) : (
-                            <select
-                                className="h-7 rounded-md border px-2 text-sm"
-                                style={{ background: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
-                                value={vendedorId}
-                                onChange={e => setVendedorId(Number(e.target.value))}
-                            >
-                                {vendedores.map(v => (
-                                    <option key={v.id} value={v.id}>{v.nombre}</option>
-                                ))}
-                            </select>
-                        )}
-                        <span
-                            className="ml-auto text-xs font-semibold uppercase tracking-wider"
-                            style={{ color: 'var(--text-muted)' }}
-                        >
-                            Formas de Pago
-                        </span>
-                        <Button type="button" size="sm" onClick={addPago}>
-                            <Plus className="w-3.5 h-3.5" />
-                            Agregar forma de pago
-                        </Button>
-                    </div>
-
-                    {/* Líneas de pago */}
-                    <div className="space-y-2">
-                        {pagos.map((p, idx) => (
-                            <div key={idx}>
-                            <div className="flex flex-wrap items-end gap-3">
-
-                                {/* Forma */}
-                                <div>
-                                    {idx === 0 && <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>FORMA</p>}
-                                    <select
-                                        className="h-8 rounded-md border px-2 text-sm capitalize"
-                                        style={{ background: 'var(--bg-main)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
-                                        value={p.forma_pago}
-                                        onChange={e => {
-                                            const nueva = e.target.value
-                                            if (nueva === 'credito' && !puedeUsarCredito(idx)) return
-                                            updatePago(idx, {
-                                                forma_pago: nueva,
-                                                dias_credito: nueva === 'credito'
-                                                    ? (clienteSeleccionado?.dias_credito ?? 30)
-                                                    : 0,
-                                            })
-                                        }}
-                                    >
-                                        {formas_pago.map(f => (
-                                            <option
-                                                key={f}
-                                                value={f}
-                                                className="capitalize"
-                                                disabled={f === 'credito' && !puedeUsarCredito(idx)}
-                                            >
-                                                {f}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-
-                                {/* N_DOC */}
-                                <div>
-                                    {idx === 0 && (
-                                        <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>
-                                            {p.forma_pago === 'cheque' ? 'N° CHEQUE' : 'N_DOC'}
-                                        </p>
-                                    )}
-                                    <input
-                                        className="h-8 w-32 rounded-md border px-2 text-sm focus:outline-none"
-                                        style={{ background: 'var(--bg-main)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
-                                        placeholder="Número..."
-                                        value={p.num_cheque ?? ''}
-                                        onChange={e => updatePago(idx, { num_cheque: e.target.value || null })}
-                                    />
-                                </div>
-
-                                {/* Banco */}
-                                <div>
-                                    {idx === 0 && <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>BANCO</p>}
-                                    <input
-                                        className="h-8 w-36 rounded-md border px-2 text-sm focus:outline-none"
-                                        style={{ background: 'var(--bg-main)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
-                                        placeholder="Banco..."
-                                        value={p.banco ?? ''}
-                                        onChange={e => updatePago(idx, { banco: e.target.value || null })}
-                                    />
-                                </div>
-
-                                {/* Cantidad */}
-                                <div>
-                                    {idx === 0 && <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>CANTIDAD</p>}
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        step="0.01"
-                                        className="h-8 w-32 rounded-md border px-2 text-sm text-right focus:outline-none"
-                                        style={{ background: 'var(--bg-main)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
-                                        value={p.valor}
-                                        onChange={e => updatePago(idx, { valor: Number(e.target.value) })}
-                                    />
-                                </div>
-
-                                {/* Días (solo crédito) */}
-                                {p.forma_pago === 'credito' && (
-                                    <div>
-                                        {idx === 0 && <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>DÍAS</p>}
-                                        <input
-                                            type="number"
-                                            min="1"
-                                            className="h-8 w-20 rounded-md border px-2 text-sm text-right focus:outline-none"
-                                            style={{ background: 'var(--bg-main)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
-                                            value={p.dias_credito || (clienteSeleccionado?.dias_credito ?? 30)}
-                                            onChange={e => updatePago(idx, { dias_credito: Number(e.target.value) })}
-                                        />
-                                    </div>
-                                )}
-
-                                {/* Eliminar línea */}
-                                {pagos.length > 1 && (
-                                    <button
-                                        type="button"
-                                        className="p-1 rounded hover:bg-red-500/10 transition-colors mb-0.5"
-                                        onClick={() => removePago(idx)}
-                                        title="Eliminar línea de pago"
-                                    >
-                                        <X className="w-4 h-4 text-red-400" />
-                                    </button>
-                                )}
-                            </div>
-                            {erroresPago[idx] && (
-                                <p className="text-xs mt-0.5" style={{ color: '#ef4444' }}>
-                                    {erroresPago[idx]}
-                                </p>
-                            )}
-                            </div>
-                        ))}
-
-                        {/* Diferencia */}
-                        <div className="flex items-center justify-end pt-1">
-                            <span className={cn('text-sm', Math.abs(diferencia) <= 0.01 ? 'text-emerald-400' : 'text-red-400')}>
-                                Diferencia:{' '}
-                                <strong>{formatMoneda(Math.abs(diferencia))}</strong>
-                                {Math.abs(diferencia) <= 0.01 && ' ✓'}
-                            </span>
-                        </div>
-                    </div>
-                </div>
-
                 {/* ── 5. Observaciones + Totales (60 / 40) ── */}
                 <div className="grid grid-cols-5 gap-4">
 
                     {/* Observaciones — 60% */}
                     <div className="col-span-3">
-                        <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: 'var(--text-muted)' }}>
+                        <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>
                             Observaciones
                         </p>
                         <textarea
-                            rows={5}
+                            rows={3}
                             className="w-full rounded-md border px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-(--primary) transition-shadow"
                             style={{ background: 'transparent', borderColor: 'var(--border)', color: 'var(--text-main)' }}
                             placeholder="Observaciones adicionales para la factura..."
@@ -1137,14 +1188,6 @@ export default function Form() {
                         </Button>
                     </Link>
                     <div className="flex gap-3">
-                        {puede('editar') && (
-                            <span title="Funcionalidad en desarrollo">
-                                <Button type="button" variant="secondary" disabled>
-                                    <Send className="w-4 h-4" />
-                                    Enviar al SRI
-                                </Button>
-                            </span>
-                        )}
                         {puede('crear') && (
                             <Button type="submit" loading={guardando}>
                                 <Save className="w-4 h-4" />

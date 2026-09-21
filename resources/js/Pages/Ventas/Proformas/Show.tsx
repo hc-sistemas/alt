@@ -1,14 +1,16 @@
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Head, usePage, router, Link } from '@inertiajs/react'
-import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
 import { Button } from '@/Components/ui/button'
 import { Badge } from '@/Components/ui/badge'
+import PdfIcon from '@/Components/shared/PdfIcon'
+import PdfPreviewModal from '@/Components/shared/PdfPreviewModal'
 import { formatMoneda, formatFecha } from '@/lib/utils'
-import { ArrowLeft, ArrowRightLeft, Ban, X, Plus, Trash2 } from 'lucide-react'
+import { ArrowRightLeft, Ban, X, Plus, Trash2 } from 'lucide-react'
 import { usePermiso } from '@/Hooks/usePermiso'
+import { anularConPin } from '@/lib/ventasDocumentos'
 import type { PageProps } from '@/types'
 
 interface ProformaDetalle {
@@ -18,32 +20,33 @@ interface ProformaDetalle {
     precio_unitario: number
     descuento_pct: number
     subtotal: number
-    porcentaje_iva: number
-    valor_iva: number
     total: number
+    producto?: { codigo: string } | null
 }
 
 interface ProformaCliente {
     razon_social: string
     identificacion: string
-    email?: string
-    telefono?: string
-    direccion?: string
+    tipo_identificacion?: string | null
+    email?: string | null
+    telefono?: string | null
+    direccion?: string | null
+    ciudad?: string | null
+    pais?: string | null
 }
 
 interface ProformaFull {
     id: number
-    numero_completo: string
+    numero: string
     fecha_emision: string
     fecha_vencimiento: string
     estado: 'pendiente' | 'facturada' | 'vencida' | 'anulada'
     subtotal: number
     descuento_total: number
-    subtotal_iva: number
-    iva_total: number
+    total_iva: number
     total: number
     observaciones: string | null
-    vendedor_nombre: string | null
+    usuario?: { nombre: string } | null
     cliente: ProformaCliente | null
     detalles: ProformaDetalle[]
 }
@@ -67,12 +70,30 @@ const ESTADO_CONFIG = {
     anulada: { label: 'Anulada', variant: 'warning' as const },
 }
 
-function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
+const TIPO_ID_LABEL: Record<string, string> = { '04': 'RUC', '05': 'CÉDULA', '06': 'PASAPORTE', '07': 'CONSUMIDOR' }
+const TITULO = 'text-xs font-bold uppercase tracking-wider text-(--primary-hover) dark:text-(--primary)'
+const CARD = { background: 'var(--bg-card)', borderColor: 'var(--border)' }
+const MUTED = { color: 'var(--text-muted)' }
+const MAIN = { color: 'var(--text-main)' }
+
+const redondear = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100
+
+// Campo de solo lectura con el mismo aspecto que los del formulario
+function CampoLectura({ label, value }: { label: string; value: React.ReactNode }) {
     return (
-        <div>
-            <p className="text-xs mb-0.5" style={{ color: 'var(--text-muted)' }}>{label}</p>
-            <p className="text-sm font-medium" style={{ color: 'var(--text-main)' }}>{value}</p>
-        </div>
+        <tr>
+            <td className="py-0 px-2 text-xs font-semibold w-28 select-none whitespace-nowrap" style={MUTED}>
+                {label}:
+            </td>
+            <td className="py-px px-1">
+                <div
+                    className="h-6 w-full rounded-md border px-2 text-xs flex items-center overflow-hidden whitespace-nowrap"
+                    style={{ background: 'var(--bg-main)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
+                >
+                    {value || ''}
+                </div>
+            </td>
+        </tr>
     )
 }
 
@@ -81,13 +102,20 @@ export default function Show() {
     const { puede } = usePermiso('ventas')
     const esPendiente = proforma.estado === 'pendiente'
     const cfg = ESTADO_CONFIG[proforma.estado] ?? ESTADO_CONFIG.pendiente
+    const cliente = proforma.cliente
 
+    const [verPdf, setVerPdf] = useState(false)
     const [modalConvertir, setModalConvertir] = useState(false)
     const [formasPago, setFormasPago] = useState<FormaPago[]>([
         { forma: 'efectivo', monto: proforma.total }
     ])
     const [convirtiendo, setConvirtiendo] = useState(false)
     const [errorPago, setErrorPago] = useState('')
+
+    // Base gravada = IVA / 15%; el resto de la base es 0%
+    const iva = Number(proforma.total_iva)
+    const subtotal15 = iva > 0 ? redondear(iva / 0.15) : 0
+    const subtotal0 = Math.max(0, redondear(Number(proforma.subtotal) - subtotal15))
 
     const handleConvertir = () => {
         setFormasPago([{ forma: 'efectivo', monto: proforma.total }])
@@ -105,6 +133,10 @@ export default function Show() {
             setErrorPago('Todas las formas de pago deben tener forma y monto válido.')
             return
         }
+        if (Number(proforma.descuento_total) > 0 && formasPago.some(p => p.forma === 'tarjeta' || p.forma === 'datafast')) {
+            setErrorPago('Con tarjeta de crédito no hay descuento de ningún tipo. Esta proforma tiene descuento.')
+            return
+        }
         setErrorPago('')
         setConvirtiendo(true)
         router.post(
@@ -118,157 +150,173 @@ export default function Show() {
         setModalConvertir(false)
     }
 
-    const handleAnular = async () => {
-        const result = await Swal.fire({
-            title: 'Anular proforma',
-            text: `¿Desea anular la proforma ${proforma.numero_completo}?`,
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonText: 'Sí, anular',
-            cancelButtonText: 'Cancelar',
-            confirmButtonColor: '#ef4444',
-        })
-        if (!result.isConfirmed) return
-        router.delete(route('ventas.proformas.destroy', proforma.id))
-    }
+    const handleAnular = () =>
+        anularConPin({ url: route('ventas.proformas.anular', proforma.id), etiqueta: 'proforma', numero: proforma.numero })
 
     return (
         <AppLayout>
-            <Head title={`Proforma ${proforma.numero_completo}`} />
+            <Head title={`Proforma ${proforma.numero}`} />
             <PageHeader
-                title={`Proforma ${proforma.numero_completo}`}
+                title={`Proforma ${proforma.numero}`}
                 breadcrumbs={[
                     { label: 'Ventas' },
                     { label: 'Proformas', href: route('ventas.proformas.index') },
-                    { label: proforma.numero_completo },
+                    { label: proforma.numero },
                 ]}
-                actions={
+            />
+
+            <div className="p-4 space-y-4 max-w-7xl">
+
+                {/* Cliente (izquierda) + encabezado (derecha) */}
+                <div className="flex flex-col lg:flex-row-reverse lg:items-start gap-4">
+
+                    <div className="flex flex-col flex-1 min-w-0 gap-4">
+                        <div className="flex flex-wrap items-center gap-6 px-4 py-2.5 rounded-xl border" style={CARD}>
+                            <span className="text-sm" style={MUTED}>
+                                Proforma N°:{' '}
+                                <span className="font-mono font-semibold" style={MAIN}>{proforma.numero}</span>
+                            </span>
+                            <span className="text-sm" style={MUTED}>
+                                Fecha: <span className="font-medium" style={MAIN}>{formatFecha(proforma.fecha_emision)}</span>
+                            </span>
+                            <span className="text-sm" style={MUTED}>
+                                Vence: <span className="font-medium" style={MAIN}>{proforma.fecha_vencimiento ? formatFecha(proforma.fecha_vencimiento) : '—'}</span>
+                            </span>
+                            <span className="text-sm" style={MUTED}>
+                                Vendedor: <span className="font-medium" style={MAIN}>{proforma.usuario?.nombre ?? '—'}</span>
+                            </span>
+                            <Badge variant={cfg.variant}>{cfg.label}</Badge>
+                        </div>
+                    </div>
+
+                    <div className="rounded-xl p-4 border w-full lg:w-xl shrink-0" style={CARD}>
+                        <p className={`${TITULO} mb-3`}>Cliente</p>
+                        <div style={{ maxWidth: 480 }}>
+                            <table className="w-full">
+                                <tbody>
+                                    <CampoLectura label={TIPO_ID_LABEL[cliente?.tipo_identificacion ?? '04'] ?? 'RUC/CC'} value={cliente?.identificacion} />
+                                    <CampoLectura label="NOMBRE" value={cliente?.razon_social} />
+                                    <CampoLectura label="DIRECCIÓN" value={cliente?.direccion} />
+                                    <CampoLectura label="TELÉFONO" value={cliente?.telefono} />
+                                    <CampoLectura label="EMAIL" value={cliente?.email} />
+                                    <CampoLectura label="CIUDAD" value={cliente?.ciudad} />
+                                    <CampoLectura label="PAÍS" value={cliente?.pais ?? 'ECUADOR'} />
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Detalle de productos (V.Tot sin IVA, igual que el formulario) */}
+                <div className="rounded-xl p-3 border" style={CARD}>
+                    <p className={`${TITULO} mb-2`}>Detalle de Productos</p>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                            <thead>
+                                <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                                    {[
+                                        { l: 'N°', c: 'w-8 text-center' },
+                                        { l: 'Producto', c: 'min-w-55 text-left' },
+                                        { l: 'Cant', c: 'w-16 text-right' },
+                                        { l: 'Precio', c: 'w-24 text-right' },
+                                        { l: 'Desc%', c: 'w-20 text-right' },
+                                        { l: 'Desc$', c: 'w-20 text-right' },
+                                        { l: 'V.Tot', c: 'w-24 text-right' },
+                                    ].map(col => (
+                                        <th key={col.l} className={`py-1.5 px-1.5 font-medium ${col.c}`} style={MUTED}>{col.l}</th>
+                                    ))}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {proforma.detalles.map((d, idx) => {
+                                    const descuento = redondear(Number(d.cantidad) * Number(d.precio_unitario) * (Number(d.descuento_pct) / 100))
+                                    return (
+                                        <tr key={d.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                                            <td className="py-1 px-1.5 text-center" style={MUTED}>{idx + 1}</td>
+                                            <td className="py-1 px-1.5" style={MAIN}>
+                                                <span className="font-mono font-semibold" style={{ color: 'var(--primary)' }}>{d.producto?.codigo ?? '—'}</span>
+                                                {' — '}{d.descripcion}
+                                            </td>
+                                            <td className="py-1 px-1.5 text-right" style={MAIN}>{Number(d.cantidad)}</td>
+                                            <td className="py-1 px-1.5 text-right" style={MAIN}>{formatMoneda(d.precio_unitario)}</td>
+                                            <td className="py-1 px-1.5 text-right" style={MUTED}>{Number(d.descuento_pct)}</td>
+                                            <td className="py-1 px-1.5 text-right" style={MUTED}>{formatMoneda(descuento)}</td>
+                                            <td className="py-1 px-1.5 text-right font-semibold" style={MAIN}>{formatMoneda(d.subtotal)}</td>
+                                        </tr>
+                                    )
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                {/* Observaciones + Totales (60 / 40) */}
+                <div className="grid grid-cols-5 gap-4">
+                    <div className="col-span-3">
+                        <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={MUTED}>Observaciones</p>
+                        <div
+                            className="w-full min-h-18 rounded-md border px-3 py-2 text-sm whitespace-pre-wrap"
+                            style={{ borderColor: 'var(--border)', ...MAIN }}
+                        >
+                            {proforma.observaciones || <span style={MUTED}>—</span>}
+                        </div>
+                    </div>
+                    <div className="col-span-2 flex flex-col justify-end">
+                        <table className="w-full">
+                            <tbody>
+                                {[
+                                    { label: 'SUBTOTAL 15%:', value: subtotal15 },
+                                    { label: 'SUBTOTAL SIN IMP.:', value: subtotal0 },
+                                    { label: 'TOTAL DESCUENTO:', value: proforma.descuento_total },
+                                    { label: 'TOTAL IVA:', value: proforma.total_iva },
+                                ].map(row => (
+                                    <tr key={row.label}>
+                                        <td className="py-0.5 pr-3 text-right text-xs font-medium" style={MUTED}>{row.label}</td>
+                                        <td className="py-0.5 text-right text-xs font-semibold w-28" style={MAIN}>{formatMoneda(row.value)}</td>
+                                    </tr>
+                                ))}
+                                <tr style={{ borderTop: '2px solid var(--border)' }}>
+                                    <td className="pt-2 pr-3 text-right text-sm font-bold" style={MUTED}>TOTAL VALOR:</td>
+                                    <td className="pt-2 text-right text-base font-bold w-28" style={{ color: 'var(--primary)' }}>{formatMoneda(proforma.total)}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                {/* Acciones */}
+                <div className="flex justify-between pt-3 border-t" style={{ borderColor: 'var(--border)' }}>
+                    <Link href={route('ventas.proformas.index')}>
+                        <Button variant="outline">Volver</Button>
+                    </Link>
                     <div className="flex gap-2">
+                        <Button variant="outline" onClick={() => setVerPdf(true)}>
+                            <PdfIcon className="w-4 h-4 text-red-500" />
+                            PDF
+                        </Button>
                         {esPendiente && puede('editar') && (
-                            <Button size="sm" onClick={() => void handleConvertir()}>
+                            <Button onClick={() => handleConvertir()}>
                                 <ArrowRightLeft className="w-4 h-4" />
                                 Convertir a Factura
                             </Button>
                         )}
-                        {esPendiente && puede('eliminar') && (
-                            <Button size="sm" variant="destructive" onClick={() => void handleAnular()}>
+                        {esPendiente && puede('anular') && (
+                            <Button variant="destructive" onClick={() => void handleAnular()}>
                                 <Ban className="w-4 h-4" />
                                 Anular
                             </Button>
                         )}
                     </div>
-                }
-            />
-
-            <div className="p-6 space-y-6 max-w-5xl">
-
-                {/* Estado y acciones rápidas */}
-                <div className="flex items-center gap-3">
-                    <Badge variant={cfg.variant}>{cfg.label}</Badge>
-                    <Link href={route('ventas.proformas.index')}>
-                        <button type="button" className="flex items-center gap-1 text-xs transition-colors hover:text-amber-500" style={{ color: 'var(--text-muted)' }}>
-                            <ArrowLeft className="w-3.5 h-3.5" />
-                            Volver a Proformas
-                        </button>
-                    </Link>
                 </div>
-
-                {/* Datos del documento */}
-                <div
-                    className="rounded-xl p-5 border"
-                    style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
-                >
-                    <p className="text-xs font-semibold uppercase tracking-wider mb-4" style={{ color: 'var(--text-muted)' }}>
-                        Datos del Documento
-                    </p>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                        <InfoRow label="Número" value={<span className="font-mono">{proforma.numero_completo}</span>} />
-                        <InfoRow label="Fecha emisión" value={formatFecha(proforma.fecha_emision)} />
-                        <InfoRow label="Fecha vencimiento" value={proforma.fecha_vencimiento ? formatFecha(proforma.fecha_vencimiento) : '—'} />
-                        <InfoRow label="Vendedor" value={proforma.vendedor_nombre ?? '—'} />
-                    </div>
-                </div>
-
-                {/* Cliente */}
-                {proforma.cliente && (
-                    <div
-                        className="rounded-xl p-5 border"
-                        style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
-                    >
-                        <p className="text-xs font-semibold uppercase tracking-wider mb-4" style={{ color: 'var(--text-muted)' }}>
-                            Cliente
-                        </p>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                            <InfoRow label="Razón Social" value={proforma.cliente.razon_social} />
-                            <InfoRow label="Identificación" value={proforma.cliente.identificacion} />
-                            {proforma.cliente.email && <InfoRow label="Email" value={proforma.cliente.email} />}
-                            {proforma.cliente.telefono && <InfoRow label="Teléfono" value={proforma.cliente.telefono} />}
-                            {proforma.cliente.direccion && <InfoRow label="Dirección" value={proforma.cliente.direccion} />}
-                        </div>
-                    </div>
-                )}
-
-                {/* Detalle */}
-                <div
-                    className="rounded-xl border overflow-hidden"
-                    style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
-                >
-                    <div className="px-5 py-4 border-b" style={{ borderColor: 'var(--border)' }}>
-                        <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
-                            Detalle de Productos
-                        </p>
-                    </div>
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-xs">
-                            <thead>
-                                <tr style={{ borderBottom: '1px solid var(--border)', background: 'rgba(0,0,0,.04)' }}>
-                                    {['Descripción', 'Cant.', 'Precio', 'Desc%', 'Subtotal', 'IVA', 'Total'].map((h, i) => (
-                                        <th key={i} className={`px-4 py-3 text-left font-semibold uppercase tracking-wide ${i >= 1 ? 'text-right' : ''}`} style={{ color: 'var(--text-muted)' }}>
-                                            {h}
-                                        </th>
-                                    ))}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {proforma.detalles.map(d => (
-                                    <tr key={d.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                                        <td className="px-4 py-3" style={{ color: 'var(--text-main)' }}>{d.descripcion}</td>
-                                        <td className="px-4 py-3 text-right" style={{ color: 'var(--text-muted)' }}>{d.cantidad}</td>
-                                        <td className="px-4 py-3 text-right" style={{ color: 'var(--text-muted)' }}>{formatMoneda(d.precio_unitario)}</td>
-                                        <td className="px-4 py-3 text-right" style={{ color: 'var(--text-muted)' }}>{d.descuento_pct > 0 ? `${d.descuento_pct}%` : '—'}</td>
-                                        <td className="px-4 py-3 text-right" style={{ color: 'var(--text-main)' }}>{formatMoneda(d.subtotal)}</td>
-                                        <td className="px-4 py-3 text-right" style={{ color: 'var(--text-muted)' }}>{formatMoneda(d.valor_iva)}</td>
-                                        <td className="px-4 py-3 text-right font-semibold" style={{ color: 'var(--text-main)' }}>{formatMoneda(d.total)}</td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                            <tfoot>
-                                <tr style={{ borderTop: '2px solid var(--border)' }}>
-                                    <td colSpan={4} className="px-4 py-3" />
-                                    <td className="px-4 py-3 text-right text-xs" style={{ color: 'var(--text-muted)' }}>
-                                        Subtotal: <strong style={{ color: 'var(--text-main)' }}>{formatMoneda(proforma.subtotal_iva)}</strong><br />
-                                        IVA: <strong style={{ color: 'var(--text-main)' }}>{formatMoneda(proforma.iva_total)}</strong>
-                                    </td>
-                                    <td />
-                                    <td className="px-4 py-3 text-right">
-                                        <span className="text-lg font-bold" style={{ color: 'var(--primary)' }}>{formatMoneda(proforma.total)}</span>
-                                    </td>
-                                </tr>
-                            </tfoot>
-                        </table>
-                    </div>
-                </div>
-
-                {proforma.observaciones && (
-                    <div
-                        className="rounded-xl p-5 border"
-                        style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
-                    >
-                        <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: 'var(--text-muted)' }}>Observaciones</p>
-                        <p className="text-sm" style={{ color: 'var(--text-main)' }}>{proforma.observaciones}</p>
-                    </div>
-                )}
             </div>
+
+            <PdfPreviewModal
+                abierto={verPdf}
+                onCerrar={() => setVerPdf(false)}
+                url={verPdf ? route('ventas.proformas.pdf', proforma.id) : ''}
+                titulo={`Proforma ${proforma.numero}`}
+                nombreDescarga={`Proforma-${proforma.numero}.pdf`}
+            />
 
             {modalConvertir && createPortal(
                 <>

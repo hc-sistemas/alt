@@ -62,7 +62,7 @@ class CierreCajaController extends Controller
 
             $cierres = $query->orderByDesc('fecha')->orderByDesc('id')
                 ->take(30)->get()
-                ->map(function ($c) {
+                ->map(function ($c) use ($empresaId) {
                     // OJO: el orden importa — Carbon\Carbon::diffInDays() no es
                     // conmutativo, `now()->diffInDays($fecha)` da NEGATIVO cuando
                     // $fecha es anterior a hoy (confirmado con dato real: -5.85 en
@@ -70,7 +70,18 @@ class CierreCajaController extends Controller
                     // abs()+(int) por seguridad extra ante cualquier variación de
                     // Carbon.
                     $diasAbierta = $c->estado === 'abierto' ? (int) abs($c->fecha->diffInDays(now())) : 0;
+                    // Lo que deberían haber cobrado las ventas de ese centro de costo ese día
+                    $esperado = null;
+                    if ($c->estado === 'abierto') {
+                        $esperado = app(\App\Services\CobroBancoService::class)->ventasEsperadas(
+                            (int) $empresaId,
+                            $c->centro_costo_id ?? $c->bancoCaja?->centro_costo_id,
+                            $c->fecha->toDateString(),
+                        );
+                    }
+
                     return [
+                        'esperado'         => $esperado,
                         'id'               => $c->id,
                         'caja'             => $c->bancoCaja?->nombre,
                         'centro_costo'     => $c->centroCosto?->nombre,
@@ -138,10 +149,14 @@ class CierreCajaController extends Controller
             return back()->with('error', 'Ya hay una caja abierta para hoy en esta caja.');
         }
 
+        // Si no se indica centro de costo, se toma el de la caja (así el cierre puede leer las ventas)
+        $centroCostoId = $request->centro_costo_id
+            ?: BancoCaja::where('id', $request->banco_caja_id)->value('centro_costo_id');
+
         CierreCaja::create([
             'empresa_id'          => $empresaId,
             'banco_caja_id'       => $request->banco_caja_id,
-            'centro_costo_id'     => $request->centro_costo_id,
+            'centro_costo_id'     => $centroCostoId,
             'fecha'               => now()->toDateString(),
             'usuario_apertura_id' => Auth::id(),
             'monto_inicial'       => $request->monto_inicial,
@@ -174,9 +189,17 @@ class CierreCajaController extends Controller
 
         // Simular total_facturado con lo cobrado si ventas no está conectado (= 0)
         // Cuando Dev 1 conecte ventas, total_facturado vendrá pre-cargado desde facturas
+        // Total facturado = lo que las ventas del día de ese centro de costo debieron cobrar
+        // (facturas no anuladas, sin crédito). Si no hay centro de costo o no hubo ventas, se
+        // mantiene el comportamiento anterior (lo cobrado).
+        $ventas = app(\App\Services\CobroBancoService::class)->ventasEsperadas(
+            (int) session('empresa_activa_id'),
+            $cierre->centro_costo_id ?? $cierre->bancoCaja?->centro_costo_id,
+            $cierre->fecha->toDateString(),
+        );
         $totalFacturado = ((float) $cierre->total_facturado > 0.01)
             ? (float) $cierre->total_facturado
-            : $totalCobrado;
+            : ($ventas['total'] > 0.01 ? $ventas['total'] : $totalCobrado);
 
         $diferencia = $totalCobrado - $totalFacturado;
 

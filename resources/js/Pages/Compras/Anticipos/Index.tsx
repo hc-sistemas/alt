@@ -8,7 +8,7 @@ import FilterToolbar from '@/Components/shared/FilterToolbar'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { Button } from '@/Components/ui/button'
-import { cn } from '@/lib/utils'
+import { cn, fechaHoy } from '@/lib/utils'
 import {
     CreditCard, Plus, CheckCircle,
     Clock, AlertTriangle, X, ArrowLeftRight, Search
@@ -369,6 +369,8 @@ export default function AnticiposIndex() {
     const [buscar,      setBuscar]      = useState(filtros.buscar       ?? '')
     const [estado,      setEstado]      = useState(filtros.estado       ?? '')
     const [proveedorId, setProveedorId] = useState(filtros.proveedor_id ?? '')
+    const [fechaDesde,  setFechaDesde]  = useState(filtros.fecha_desde ?? (anticipos !== null ? '' : fechaHoy()))
+    const [fechaHasta,  setFechaHasta]  = useState(filtros.fecha_hasta ?? (anticipos !== null ? '' : fechaHoy()))
     const [modalNuevo,  setModalNuevo]  = useState(false)
     const [cruzarActivo, setCruzarActivo] = useState<Anticipo | null>(null)
 
@@ -395,11 +397,14 @@ export default function AnticiposIndex() {
     function cambiarBuscar(v: string)      { setBuscar(v);      setFiltrosSucios(true) }
     function cambiarEstado(v: string)      { setEstado(v);      setFiltrosSucios(true) }
     function cambiarProveedorId(v: string) { setProveedorId(v); setFiltrosSucios(true) }
+    function cambiarFechaDesde(v: string)  { setFechaDesde(v);  setFiltrosSucios(true) }
+    function cambiarFechaHasta(v: string)  { setFechaHasta(v);  setFiltrosSucios(true) }
 
     function aplicarFiltros() {
         router.get(route('compras.anticipos.index'), {
             buscar, estado,
             ...(proveedorId && { proveedor_id: proveedorId }),
+            fecha_desde: fechaDesde, fecha_hasta: fechaHasta,
             buscado: '1',
         }, {
             preserveState: true,
@@ -508,6 +513,19 @@ export default function AnticiposIndex() {
                             <option key={p.id} value={p.id}>{p.razon_social}</option>
                         ))}
                     </select>
+
+                    <div className="flex flex-col gap-1 shrink-0">
+                        <label className="text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>Desde</label>
+                        <input type="date" value={fechaDesde} onChange={e => cambiarFechaDesde(e.target.value)}
+                            className="input-field text-xs"
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '150px' }} />
+                    </div>
+                    <div className="flex flex-col gap-1 shrink-0">
+                        <label className="text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>Hasta</label>
+                        <input type="date" value={fechaHasta} onChange={e => cambiarFechaHasta(e.target.value)}
+                            className="input-field text-xs"
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '150px' }} />
+                    </div>
                 </FilterToolbar>
             </div>
 
@@ -556,7 +574,7 @@ export default function AnticiposIndex() {
                     {anticipos.map(a => (
                         <div key={a.id}
                             className={cn(
-                                'grid grid-cols-12 gap-3 px-4 py-3 border-b items-center text-sm transition-colors',
+                                'grid grid-cols-12 gap-3 px-4 py-3 border-b items-center text-[11px] transition-colors',
                                 a.estado === 'cruzado' && 'opacity-60'
                             )}
                             style={{ borderBottomColor: 'var(--border)', background: 'transparent' }}
@@ -564,7 +582,7 @@ export default function AnticiposIndex() {
                             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                         >
                             <div className="col-span-1">
-                                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{a.fecha}</p>
+                                <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{a.fecha}</p>
                             </div>
                             <div className="col-span-2 min-w-0">
                                 <p className="font-semibold truncate" style={{ color: 'var(--text-main)' }}>
@@ -572,27 +590,27 @@ export default function AnticiposIndex() {
                                 </p>
                             </div>
                             <div className="col-span-1 min-w-0">
-                                <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
+                                <p className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>
                                     {a.importacion ?? '—'}
                                 </p>
                             </div>
                             <div className="col-span-2">
-                                <p className="font-mono text-xs" style={{ color: 'var(--primary)' }}>
+                                <p className="font-mono text-[11px]" style={{ color: 'var(--primary)' }}>
                                     {a.num_transferencia ?? '—'}
                                 </p>
                             </div>
                             <div className="col-span-2 min-w-0">
-                                <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
+                                <p className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>
                                     {a.banco ?? '—'}
                                 </p>
                             </div>
                             <div className="col-span-1 text-right">
-                                <p className="font-medium text-xs" style={{ color: 'var(--text-main)' }}>
+                                <p className="font-medium text-[11px]" style={{ color: 'var(--text-main)' }}>
                                     {formatMoney(a.monto)}
                                 </p>
                             </div>
                             <div className="col-span-1 text-right">
-                                <p className="font-bold text-xs"
+                                <p className="font-bold text-[11px]"
                                     style={{ color: Number(a.saldo) > 0 ? '#f59e0b' : '#10b981' }}>
                                     {formatMoney(a.saldo)}
                                 </p>

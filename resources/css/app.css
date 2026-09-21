@@ -520,3 +520,31 @@ body.modal-open { overflow: hidden; }
         grid-template-columns: 1fr;
     }
 }
+
+/* Tailwind v4 deja los botones con cursor por defecto: se restaura el puntero
+   en todos los elementos clicables (sin layer, para ganar sobre el preflight). */
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+summary,
+select:not(:disabled),
+input[type="checkbox"]:not(:disabled),
+input[type="radio"]:not(:disabled),
+input[type="submit"]:not(:disabled),
+input[type="button"]:not(:disabled),
+label[for] {
+    cursor: pointer;
+}
+
+button:disabled,
+input:disabled,
+select:disabled {
+    cursor: not-allowed;
+}
+
+/* Barra de filtros estándar (FilterToolbar): todos los controles a la misma
+   altura que el input de búsqueda y el botón de lupa (36px), alineados por la base. */
+.filter-toolbar .input-field {
+    height: 2.25rem;
+    padding-top: 0;
+    padding-bottom: 0;
+}

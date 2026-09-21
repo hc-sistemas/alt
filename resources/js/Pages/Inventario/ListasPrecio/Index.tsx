@@ -4,7 +4,7 @@ import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
 import { Input } from '@/Components/ui/input'
-import { Search, FileSpreadsheet, Upload } from 'lucide-react'
+import { Search, FileSpreadsheet, Upload, Settings } from 'lucide-react'
 import { toastExito, toastError } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 import { usePermiso } from '@/Hooks/usePermiso'
@@ -102,8 +102,8 @@ function tienePromoGuardada(row: ListaPrecioRow): boolean {
 export default function ListasPrecioIndex() {
     const { listas, filters, marcas, categorias, bodegas } = usePage<Props>().props
     const { puede } = usePermiso('inventario')
-    // Código, Nombre, Marca, PVP+IVA, Desc. PVP%, PVD+IVA, Desc. PVD% (7) + bodegas + Promo (1)
-    const totalColumnas = 8 + bodegas.length
+    // #, Código, Nombre, Marca, PVP+IVA, Desc. PVP%, PVD+IVA, Desc. PVD% (7) + bodegas + Promo (1)
+    const totalColumnas = 9 + bodegas.length
 
     const [search, setSearch]   = useState(filters.search ?? '')
     const [marcaId, setMarcaId] = useState(filters.marca_id ?? '')
@@ -232,36 +232,14 @@ export default function ListasPrecioIndex() {
         }
     }
 
-    async function descargarPlantilla() {
-        try {
-            const response = await fetch(route('inventario.listas.index') + '?sin_paginar=1', {
-                headers: {
-                    'Accept': 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest',
-                },
-            })
-            if (!response.ok) { toastError('Error al obtener los productos'); return }
-            const json: SinPaginarResponse = await response.json()
-            const filas = json.props.filas
-            const XLSX = await import('xlsx')
-            const rows = filas.map(r => ({
-                codigo:         r.codigo,
-                nombre:         r.nombre,
-                pvp_lista:      r.lista_pvp_precio != null ? Number(r.lista_pvp_precio) : Number(r.pvp_base),
-                pvd_lista:      r.lista_pvd_precio != null ? Number(r.lista_pvd_precio) : Number(r.pvd_base),
-                descuento_pvp:  r.lista_pvp_descuento_max != null ? Number(r.lista_pvp_descuento_max) : 0,
-                descuento_pvd:  r.lista_pvd_descuento_max != null ? Number(r.lista_pvd_descuento_max) : 0,
-                descuento_promo: r.lista_pvp_descuento_max_promo != null ? Number(r.lista_pvp_descuento_max_promo) : '',
-                vigencia_desde: fmtDate(r.vigencia_desde),
-                vigencia_hasta: fmtDate(r.vigencia_hasta),
-            }))
-            const ws = XLSX.utils.json_to_sheet(rows)
-            const wb = XLSX.utils.book_new()
-            XLSX.utils.book_append_sheet(wb, ws, 'Precios')
-            XLSX.writeFile(wb, 'plantilla_precios.xlsx')
-        } catch {
-            toastError('Error al generar la plantilla')
-        }
+    // El Excel lo arma el servidor (encabezado de empresa/bodegas y bordes) y
+    // respeta los filtros activos de la pantalla.
+    function descargarPlantilla() {
+        window.location.href = route('inventario.listas.exportar', {
+            search: search || undefined,
+            marca_id: marcaId || undefined,
+            categoria_id: catId || undefined,
+        })
     }
 
     function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -333,10 +311,12 @@ export default function ListasPrecioIndex() {
                     <button
                         type="button"
                         onClick={() => startPromoEdit(row)}
-                        className="text-xs font-medium hover:underline whitespace-nowrap"
-                        style={{ color: 'var(--primary)' }}
+                        title="Agregar promo"
+                        aria-label="Agregar promo"
+                        className="flex items-center justify-center w-7 h-7 rounded-md border"
+                        style={{ background: 'var(--primary)', color: 'black', borderColor: 'var(--primary)' }}
                     >
-                        Agregar promo
+                        <Settings className="w-4 h-4" />
                     </button>
                 </td>
             )
@@ -348,7 +328,10 @@ export default function ListasPrecioIndex() {
                 onClick={() => puede('editar') && startPromoEdit(row)}
                 title={puede('editar') ? 'Clic para editar la promo' : undefined}
             >
-                {fmt(row.lista_pvp_descuento_max_promo)}% · {fmtDate(row.vigencia_desde)} a {fmtDate(row.vigencia_hasta)}
+                <div className="font-semibold leading-tight">{fmt(row.lista_pvp_descuento_max_promo)}%</div>
+                <div className="text-[10px] leading-tight whitespace-nowrap">
+                    {fmtDate(row.vigencia_desde)} a {fmtDate(row.vigencia_hasta)}
+                </div>
             </td>
         )
     }
@@ -363,10 +346,10 @@ export default function ListasPrecioIndex() {
     }
 
     return (
-        <AppLayout title="Listas de Precio">
-            <Head title="Listas de Precio" />
+        <AppLayout title="Lista de Precios">
+            <Head title="Lista de Precios" />
             <PageHeader
-                title="Listas de Precio"
+                title="Lista de Precios"
                 description={
                     <>
                         Precios especiales PVP/PVD por producto. Clic en una celda para editar.
@@ -382,7 +365,7 @@ export default function ListasPrecioIndex() {
                         </span>
                     </>
                 }
-                breadcrumbs={[{ label: 'Inventario' }, { label: 'Listas de Precio' }]}
+                breadcrumbs={[{ label: 'Inventario' }, { label: 'Lista de Precios' }]}
                 actions={
                     puede('crear') ? (
                         <button
@@ -471,28 +454,39 @@ export default function ListasPrecioIndex() {
                         <thead>
                             <tr style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
                                 {[
-                                    'Código', 'Nombre', 'Marca',
+                                    '#', 'Código', 'Nombre', 'Marca',
                                     'PVP+IVA', 'Desc. PVP%',
                                     'PVD+IVA', 'Desc. PVD%',
                                 ].map(h => (
-                                    <th key={h}
-                                        className="text-left px-1.5 py-2 font-medium text-[11px] uppercase tracking-wider whitespace-nowrap"
+                                    <th key={h} rowSpan={2}
+                                        className="text-center px-1.5 py-2 font-medium text-[11px] uppercase tracking-wider whitespace-nowrap"
                                         style={{ color: 'var(--text-muted)' }}>
                                         {h}
                                     </th>
                                 ))}
-                                {bodegas.map(b => (
-                                    <th key={b.id}
-                                        className="text-right px-2 py-3 font-medium text-xs uppercase tracking-wider whitespace-nowrap"
-                                        style={{ color: 'var(--text-muted)' }}>
-                                        Stock {b.nombre}
+                                {bodegas.length > 0 && (
+                                    <th colSpan={bodegas.length}
+                                        className="text-center px-1.5 py-2 font-medium text-[11px] uppercase tracking-wider whitespace-nowrap"
+                                        style={{ color: 'var(--text-muted)', borderBottom: '1px solid var(--border)', borderLeft: '1px solid var(--border)' }}>
+                                        Stock bodegas
                                     </th>
-                                ))}
-                                <th className="text-left px-2 py-3 font-medium text-xs uppercase tracking-wider whitespace-nowrap text-amber-400"
+                                )}
+                                <th rowSpan={2} className="text-center px-2 py-3 font-medium text-xs uppercase tracking-wider whitespace-nowrap text-amber-400"
                                     style={{ borderLeft: '1px solid var(--border)' }}>
                                     Promo
                                 </th>
                             </tr>
+                            {bodegas.length > 0 && (
+                                <tr style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
+                                    {bodegas.map(b => (
+                                        <th key={b.id}
+                                            className="text-center px-1.5 py-2 font-medium text-[10px] leading-tight uppercase tracking-wide w-16 max-w-16"
+                                            style={{ color: 'var(--text-muted)', borderLeft: '1px solid var(--border)' }}>
+                                            {b.nombre.replace(/^bodega\s+/i, '')}
+                                        </th>
+                                    ))}
+                                </tr>
+                            )}
                         </thead>
                         <tbody>
                             {listas.data.length === 0 ? (
@@ -504,7 +498,7 @@ export default function ListasPrecioIndex() {
                                         <p>Ajusta los filtros para encontrar productos</p>
                                     </td>
                                 </tr>
-                            ) : listas.data.map(row => {
+                            ) : listas.data.map((row, idx) => {
                                 const active = isRowEditing(row.producto_id)
                                 const blurHandler = () => {
                                     if (!editing) return
@@ -524,6 +518,10 @@ export default function ListasPrecioIndex() {
                                             background: active ? 'var(--bg-card)' : undefined,
                                         }}
                                     >
+                                        {/* # */}
+                                        <td className={cn(tdBase, 'font-mono text-right')} style={{ color: 'var(--text-muted)' }}>
+                                            {listas.from + idx}
+                                        </td>
                                         {/* Código */}
                                         <td className={cn(tdBase, 'font-mono font-medium')} style={{ color: 'var(--text-muted)' }}>
                                             {row.codigo}
@@ -583,7 +581,7 @@ export default function ListasPrecioIndex() {
                                             </>
                                         )}
                                         {bodegas.map(b => (
-                                            <td key={b.id} className={tdMuted} style={{ color: 'var(--text-muted)' }}>
+                                            <td key={b.id} className={cn(tdMuted, 'w-16 max-w-16')} style={{ color: 'var(--text-muted)' }}>
                                                 {Number(row.inventario?.[b.id] ?? 0).toFixed(2)}
                                             </td>
                                         ))}

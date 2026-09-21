@@ -1,5 +1,6 @@
 import { Head, Link, router, usePage } from '@inertiajs/react'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { fechaHoy } from '@/lib/utils'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
 import { Button } from '@/Components/ui/button'
@@ -337,8 +338,8 @@ export default function RecepcionesIndex() {
     const [modalAbierto, setModalAbierto] = useState(false)
     const [search, setSearch]         = useState(filtros.search ?? '')
     const [estado, setEstado]         = useState(filtros.estado ?? '')
-    const [fechaDesde, setFechaDesde] = useState(filtros.fecha_desde ?? '')
-    const [fechaHasta, setFechaHasta] = useState(filtros.fecha_hasta ?? '')
+    const [fechaDesde, setFechaDesde] = useState(filtros.fecha_desde ?? (recepciones !== null ? '' : fechaHoy()))
+    const [fechaHasta, setFechaHasta] = useState(filtros.fecha_hasta ?? (recepciones !== null ? '' : fechaHoy()))
 
     const haBuscado = recepciones !== null
 

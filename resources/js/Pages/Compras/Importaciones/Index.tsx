@@ -9,7 +9,7 @@ import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import ConfirmModal from '@/Components/shared/ConfirmModal'
 import axios from '@/lib/axios'
-import { cn } from '@/lib/utils'
+import { cn, fechaHoy } from '@/lib/utils'
 import {
     Plus, Pencil, Package, Plane, Anchor, CheckCircle2,
     X, DollarSign, Loader2, Eye, ExternalLink, AlertCircle, Copy, Search,
@@ -45,7 +45,9 @@ const CONCEPTOS_COSTO = [
     'Advalorem',
     'FODINFA',
     'ICE',
+    'Flete Internacional',
     'Flete Marítimo',
+    'Aranceles / Tributos Aduaneros',
     'Gastos Destino Ecuador',
     'Honorarios Aduanero',
     'Almacenaje',
@@ -1527,8 +1529,8 @@ export default function ImportacionesIndex() {
     const [buscar,      setBuscar]      = useState(filtros.buscar       ?? '')
     const [estado,      setEstado]      = useState(filtros.estado       ?? '')
     const [proveedorId, setProveedorId] = useState(filtros.proveedor_id ?? '')
-    const [fechaDesde,  setFechaDesde]  = useState(filtros.fecha_desde  ?? '')
-    const [fechaHasta,  setFechaHasta]  = useState(filtros.fecha_hasta  ?? '')
+    const [fechaDesde,  setFechaDesde]  = useState(filtros.fecha_desde  ?? (importaciones !== null ? '' : fechaHoy()))
+    const [fechaHasta,  setFechaHasta]  = useState(filtros.fecha_hasta  ?? (importaciones !== null ? '' : fechaHoy()))
 
     // Cambiar cualquier filtro después de haber buscado marca los
     // resultados como "obsoletos" respecto al filtro actual — la tabla NO
@@ -1690,7 +1692,7 @@ export default function ImportacionesIndex() {
 
                     {importaciones.map(i => (
                         <div key={i.id}
-                            className="group grid grid-cols-12 gap-3 px-4 py-3 border-b items-center text-sm transition-colors"
+                            className="group grid grid-cols-12 gap-3 px-4 py-3 border-b items-center text-[11px] transition-colors"
                             style={{ borderColor: 'var(--border)', background: 'transparent' }}
                             onMouseEnter={e => (e.currentTarget.style.background = 'rgba(245,158,11,0.04)')}
                             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
@@ -1698,31 +1700,31 @@ export default function ImportacionesIndex() {
                             <div className="col-span-3 min-w-0">
                                 <p className="font-medium truncate" style={{ color: 'var(--text-main)' }}>{i.nombre}</p>
                                 {i.pais_embarque && (
-                                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{i.pais_embarque}</p>
+                                    <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{i.pais_embarque}</p>
                                 )}
                             </div>
                             <div className="col-span-2 min-w-0">
-                                <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{i.proveedor ?? '—'}</p>
+                                <p className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>{i.proveedor ?? '—'}</p>
                             </div>
                             <div className="col-span-1">
-                                <p className="font-mono text-xs" style={{ color: 'var(--text-main)' }}>{i.num_invoice ?? '—'}</p>
+                                <p className="font-mono text-[11px]" style={{ color: 'var(--text-main)' }}>{i.num_invoice ?? '—'}</p>
                             </div>
                             <div className="col-span-1 text-right">
-                                <p className="text-xs font-medium" style={{ color: 'var(--text-main)' }}>
+                                <p className="text-[11px] font-medium" style={{ color: 'var(--text-main)' }}>
                                     ${Number(i.costo_fob).toFixed(2)}
                                 </p>
                                 <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{i.divisa ?? 'USD'}</p>
                             </div>
                             <div className="col-span-1 text-right">
                                 {Number(i.costo_total) > 0
-                                    ? <p className="text-xs font-bold" style={{ color: 'var(--primary)' }}>
+                                    ? <p className="text-[11px] font-bold" style={{ color: 'var(--primary)' }}>
                                         ${Number(i.costo_total).toFixed(2)}
                                       </p>
-                                    : <p className="text-xs" style={{ color: 'var(--text-muted)' }}>—</p>
+                                    : <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>—</p>
                                 }
                             </div>
                             <div className="col-span-1 text-center">
-                                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{i.fecha_partida ?? '—'}</p>
+                                <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{i.fecha_partida ?? '—'}</p>
                             </div>
                             <div className="col-span-1 flex justify-center">
                                 <EstadoBadge estado={i.estado} />

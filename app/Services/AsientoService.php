@@ -34,29 +34,37 @@ class AsientoService
         // automático) con fecha dentro de un mes ya cerrado se colaba igual,
         // quedando vinculado al período abierto actual pero con una fecha que
         // pertenece a un mes que ya no debería aceptar movimientos nuevos.
-        $fechaAsiento    = $fecha ? \Carbon\Carbon::parse($fecha) : now();
-        $ejercicioDelMes = EjercicioContable::where('empresa_id', $empresaId)
+        // El asiento SIEMPRE pertenece al período de SU PROPIA fecha.
+        //
+        // Antes esto se resolvía en dos pasos inconsistentes: se validaba el
+        // período de la fecha, pero después se guardaba `ejercicio_id` = el
+        // último período abierto de la empresa. Consecuencias reales:
+        //   - un asiento con fecha de un mes SIN fila en ejercicios_contables
+        //     pasaba el candado sin control y quedaba archivado en el período
+        //     abierto actual (agujero para registrar en meses pasados o
+        //     futuros arbitrarios);
+        //   - el Cierre Fiscal Anual selecciona los asientos del año vía
+        //     ejercicio->anio, así que los asientos mal clasificados quedaban
+        //     fuera del cierre (o dentro del año equivocado);
+        //   - el filtro "Ejercicio" de Asientos y de los reportes devolvía
+        //     movimientos que no son de ese mes.
+        $fechaAsiento = $fecha ? \Carbon\Carbon::parse($fecha) : now();
+        $ejercicio    = EjercicioContable::where('empresa_id', $empresaId)
             ->where('anio', $fechaAsiento->year)
             ->where('mes', $fechaAsiento->month)
             ->first();
 
-        if ($ejercicioDelMes && $ejercicioDelMes->estaCerrado()) {
+        if (!$ejercicio) {
             throw new \Exception(
-                "El período {$ejercicioDelMes->periodo_label} está cerrado. " .
-                "No se pueden crear ni modificar asientos con fecha en un período cerrado."
+                'No existe el período contable ' . $fechaAsiento->format('m/Y') . '. ' .
+                'Ábralo en Contabilidad → Ejercicios antes de registrar movimientos con esa fecha.'
             );
         }
 
-        $ejercicio = EjercicioContable::where('empresa_id', $empresaId)
-            ->where('estado', 'abierto')
-            ->orderByDesc('anio')
-            ->orderByDesc('mes')
-            ->first();
-
-        if (!$ejercicio) {
+        if ($ejercicio->estaCerrado()) {
             throw new \Exception(
-                'No hay un período contable abierto. ' .
-                'Abra un período en Contabilidad → Ejercicios antes de registrar asientos.'
+                "El período {$ejercicio->periodo_label} está cerrado. " .
+                "No se pueden crear ni modificar asientos con fecha en un período cerrado."
             );
         }
 
@@ -96,7 +104,44 @@ class AsientoService
             }
         }
 
-        // 5. Crear en transacción
+        // 5. Crear en transacción.
+        //
+        // El número se genera con MAX()+1, así que dos guardados simultáneos
+        // pueden pedir el mismo. Con el índice único (empresa_id, numero) eso
+        // ahora revienta en vez de duplicar en silencio: se reintenta unas
+        // pocas veces tomando el siguiente número libre.
+        $intentos = 0;
+        while (true) {
+            try {
+                return $this->persistir(
+                    $empresaId, $ejercicio, $concepto, $partidas,
+                    $documentoTipo, $documentoId, $documentoRef,
+                    $esAutomatico, $fecha, $totalDebe, $totalHaber
+                );
+            } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
+                if (++$intentos >= 5) {
+                    throw new \Exception(
+                        'No se pudo asignar un número de asiento libre. Intente nuevamente.'
+                    );
+                }
+                usleep(50_000 * $intentos);
+            }
+        }
+    }
+
+    private function persistir(
+        int     $empresaId,
+        EjercicioContable $ejercicio,
+        string  $concepto,
+        array   $partidas,
+        ?string $documentoTipo,
+        ?int    $documentoId,
+        ?string $documentoRef,
+        bool    $esAutomatico,
+        ?string $fecha,
+        float   $totalDebe,
+        float   $totalHaber,
+    ): AsientoContable {
         return DB::transaction(function () use (
             $empresaId, $ejercicio, $concepto, $partidas,
             $documentoTipo, $documentoId, $documentoRef,
@@ -179,6 +224,11 @@ class AsientoService
                 documentoId:  $asiento->id,
                 documentoRef: $asiento->numero,
                 esAutomatico: false,
+                // La reversión va con la MISMA fecha del asiento original, no
+                // con la de hoy: si no, anular en octubre un asiento de
+                // septiembre dejaba el ingreso en septiembre y la reversa en
+                // octubre, descuadrando los dos meses a la vez.
+                fecha:        $asiento->fecha?->toDateString(),
             );
 
             DB::table('log_cambios_criticos')->insert([
@@ -200,53 +250,147 @@ class AsientoService
     // HELPERS PRIVADOS
     // ══════════════════════════════════════════════════════════
 
-    // Mapa de códigos de parámetro → códigos del plan de cuentas verificados contra BD
+    // Mapa de códigos de parámetro → códigos del plan de cuentas.
+    //
+    // CORREGIDO (2026-09-20) — auditoría del módulo de Contabilidad. El mapa
+    // anterior estaba roto de dos formas distintas y por eso NINGÚN asiento
+    // automático llegaba a generarse (26 de 42 códigos no existían en la BD):
+    //
+    //   1. FORMATO. El plan de cuentas real del cliente NO usa el segmento
+    //      final con cero a la izquierda en las clases 1, 2, 3, 4 y 5.1: la
+    //      cuenta es '1.1.1.1' (Caja General), no '1.1.1.01'. Solo las clases
+    //      5.2, 5.3 y 5.4 usan dos dígitos ('5.2.2.06'). Es inconsistente en
+    //      los datos reales, así que además de corregir los valores de este
+    //      mapa, cuentaId() normaliza los códigos antes de comparar (ver
+    //      normalizarCodigo()): así '1.1.1.01' y '1.1.1.1' resuelven igual y
+    //      el sistema no se vuelve a romper si el cliente renumera.
+    //
+    //   2. SEMÁNTICA. Varios códigos apuntaban a una cuenta que existe pero
+    //      NO es la que dice el nombre del parámetro. Los peores:
+    //        - cta_ganancias_acumuladas → 3.1.3.01 = "Superavit por
+    //          Revaluacion PPE" (la real es 3.1.4.1). El cierre fiscal anual
+    //          arrastraba la utilidad del ejercicio al superávit por
+    //          revaluación.
+    //        - cta_utilidad_periodo → 3.1.4.01 = "Ganancias Acumuladas"
+    //          (la real es 3.1.5.1 "Utilidad del Periodo").
+    //        - cta_aporte_patronal → 5.2.1.03 = "Comisiones y Bonos"
+    //          (la real es 5.2.1.04). Toda la nómina registraba el aporte
+    //          patronal IESS como comisiones — y de ahí en adelante todo el
+    //          bloque de nómina estaba corrido un número.
+    //        - cta_anticipos_clientes → 2.1.6.01 = "Porcion Corriente de
+    //          Obligaciones LP" (la real es 2.1.1.3).
+    //
+    // Verificado cuenta por cuenta contra plan_cuentas de la BD `altamira`.
     private const FALLBACK_PLAN = [
-        'cta_caja_general'            => '1.1.1.01',
-        'cta_cajas_chicas'            => '1.1.1.02',
-        'cta_bancos_locales'          => '1.1.1.03',
-        'cta_bancos_exterior'         => '1.1.1.04',
-        'cta_vouchers'                => '1.1.1.05',
-        'cta_clientes_locales'        => '1.1.3.01',
-        'cta_clientes_exterior'       => '1.1.3.02',
-        'cta_anticipos_proveedores'   => '1.1.3.03',
-        'cta_anticipos_empleados'     => '1.1.3.04',
-        'cta_inventario_mercaderia'   => '1.1.4.01',
-        'cta_inventario_transito'     => '1.1.4.03',
-        'cta_iva_compras'             => '1.1.5.01',
-        'cta_retencion_iva_cobrada'   => '1.1.5.02',
-        'cta_retencion_ir_cobrada'    => '1.1.5.03',
-        'cta_proveedores_locales'     => '2.1.1.01',
-        'cta_proveedores_exterior'    => '2.1.1.02',
-        'cta_retencion_ir'            => '2.1.3.01',
-        'cta_retencion_iva'           => '2.1.3.02',
-        'cta_iva_ventas'              => '2.1.3.04',
-        'cta_nomina_por_pagar'        => '2.1.4.01',
-        'cta_iess_por_pagar'          => '2.1.4.02',
-        'cta_anticipos_clientes'      => '2.1.6.01',
-        'cta_ganancias_acumuladas'    => '3.1.3.01',
-        'cta_perdidas_acumuladas'     => '3.1.3.02',
-        'cta_utilidad_periodo'        => '3.1.4.01',
-        'cta_perdida_periodo'         => '3.1.4.02',
-        'cta_ventas_locales'          => '4.1.1.01',
-        'cta_devoluciones_ventas'     => '4.1.3.01',
-        'cta_costo_ventas'            => '5.1.1.01',
-        'cta_costo_ventas_importadas' => '5.1.1.02',
-        'cta_ajuste_inventario'       => '5.1.1.04',
-        'cta_ajuste_conciliacion'     => '5.4.1.03',
-        'cta_sueldos_salarios'        => '5.2.1.01',
-        'cta_aporte_patronal'         => '5.2.1.03',
-        'cta_comisiones_bancarias'    => '5.3.1.02',
-        'cta_gastos_no_deducibles'    => '5.4.1.01',
-        // Gastos operativos — compras sin producto asignado
-        'cta_gasto_compras_default'   => '5.2.2.06',
-        'cta_gasto_servicios'         => '5.2.2.01',
-        'cta_gasto_arrendamiento'     => '5.2.2.02',
-        'cta_gasto_servicios_basicos' => '5.2.2.03',
-        'cta_gasto_publicidad'        => '5.2.2.11',
+        // ── Activo ────────────────────────────────────────────────────────
+        'cta_caja_general'              => '1.1.1.1',  // Caja General
+        'cta_cajas_chicas'              => '1.1.1.2',  // Cajas Chicas y Fondos
+        'cta_bancos_locales'            => '1.1.1.3',  // Bancos Locales
+        'cta_bancos_exterior'           => '1.1.1.4',  // Bancos del Exterior
+        'cta_vouchers'                  => '1.1.1.5',  // Dinero Electrónico / Pasarelas
+        'cta_clientes_locales'          => '1.1.3.1',  // Clientes Locales
+        'cta_clientes_exterior'         => '1.1.3.2',  // Clientes del Exterior
+        'cta_anticipos_proveedores'     => '1.1.3.3',  // Anticipos a Proveedores
+        'cta_anticipos_empleados'       => '1.1.3.4',  // Préstamos y Anticipos a Empleados
+        'cta_provision_incobrables'     => '1.1.3.5',  // (-) Provisión Cuentas Incobrables
+        'cta_inventario_mercaderia'     => '1.1.4.1',  // Inventario de Mercadería
+        'cta_inventario_transito'       => '1.1.4.3',  // Inventario en Tránsito
+        'cta_iva_compras'               => '1.1.5.1',  // Crédito Tributario por IVA
+        'cta_retencion_iva_cobrada'     => '1.1.5.2',  // Cred. Trib. Retenciones de IVA
+        'cta_retencion_ir_cobrada'      => '1.1.5.3',  // Cred. Trib. Retenciones de IR
+        // ── Pasivo ────────────────────────────────────────────────────────
+        'cta_proveedores_locales'       => '2.1.1.1',  // Proveedores Locales
+        'cta_proveedores_exterior'      => '2.1.1.2',  // Proveedores del Exterior
+        'cta_anticipos_clientes'        => '2.1.1.3',  // Anticipos de Clientes
+        'cta_retencion_ir'              => '2.1.3.1',  // Retenciones Fuente IR por Pagar
+        'cta_retencion_iva'             => '2.1.3.2',  // Retenciones de IVA por Pagar
+        'cta_impuesto_renta_pagar'      => '2.1.3.3',  // Impuesto a la Renta por Pagar
+        'cta_iva_ventas'                => '2.1.3.4',  // IVA Ventas por Pagar
+        'cta_nomina_por_pagar'          => '2.1.4.1',  // Nómina por Pagar
+        'cta_iess_por_pagar'            => '2.1.4.2',  // Oblig. IESS Aporte Patronal 11.15%
+        'cta_iess_personal_por_pagar'   => '2.1.4.3',  // Oblig. IESS Aporte Personal 9.45%
+        'cta_decimo_tercero_pagar'      => '2.1.4.5',  // Décimo Tercer Sueldo por Pagar
+        'cta_decimo_cuarto_pagar'       => '2.1.4.6',  // Décimo Cuarto Sueldo por Pagar
+        'cta_vacaciones_pagar'          => '2.1.4.7',  // Vacaciones por Pagar
+        'cta_fondos_reserva_pagar'      => '2.1.4.8',  // Fondos de Reserva por Pagar
+        'cta_participacion_trabajadores'=> '2.1.4.9',  // Utilidades a Trabajadores 15%
+        // ── Patrimonio ────────────────────────────────────────────────────
+        'cta_ganancias_acumuladas'      => '3.1.4.1',  // Ganancias Acumuladas
+        'cta_perdidas_acumuladas'       => '3.1.4.2',  // (-) Pérdidas Acumuladas
+        'cta_utilidad_periodo'          => '3.1.5.1',  // Utilidad del Periodo
+        'cta_perdida_periodo'           => '3.1.5.2',  // (-) Pérdida del Periodo
+        // ── Ingresos ──────────────────────────────────────────────────────
+        'cta_ventas_locales'            => '4.1.1.1',  // Venta de Mercancías Locales
+        'cta_ventas_exterior'           => '4.1.1.2',  // Venta de Mercancías al Exterior
+        'cta_ingresos_servicios'        => '4.1.2.1',  // Ingresos por Servicios Técnicos
+        'cta_devoluciones_ventas'       => '4.1.3.1',  // (-) Devoluciones en Ventas
+        'cta_descuentos_ventas'         => '4.1.3.2',  // (-) Descuentos y Rebajas en Ventas
+        // ── Costo de ventas ───────────────────────────────────────────────
+        'cta_costo_ventas'              => '5.1.1.1',  // Costo de Ventas Mercancías Locales
+        'cta_costo_ventas_importadas'   => '5.1.1.2',  // Costo de Ventas Mercancías Importadas
+        'cta_costo_servicios'           => '5.1.1.3',  // Costo de Prestación de Servicios
+        'cta_ajuste_inventario'         => '5.1.1.4',  // Ajustes por Faltantes o Mermas
+        // ── Gastos de personal ────────────────────────────────────────────
+        'cta_sueldos_salarios'          => '5.2.1.01', // Sueldos y Salarios
+        'cta_horas_extras'              => '5.2.1.02', // Horas Extras y Suplementarias
+        'cta_aporte_patronal'           => '5.2.1.04', // Aporte Patronal IESS 11.15%
+        'cta_decimo_tercero'            => '5.2.1.05', // Décimo Tercer Sueldo
+        'cta_decimo_cuarto'             => '5.2.1.06', // Décimo Cuarto Sueldo
+        'cta_vacaciones'                => '5.2.1.07', // Vacaciones
+        'cta_fondos_reserva'            => '5.2.1.08', // Fondos de Reserva
+        // ── Gastos generales / financieros / otros ────────────────────────
+        'cta_gasto_compras_default'     => '5.2.2.06', // Suministros de Oficina
+        'cta_gasto_servicios'           => '5.2.2.01', // Honorarios Profesionales
+        'cta_gasto_arrendamiento'       => '5.2.2.02', // Arrendamientos de Locales
+        'cta_gasto_servicios_basicos'   => '5.2.2.03', // Servicios Básicos
+        'cta_gasto_publicidad'          => '5.2.2.11', // Publicidad y Marketing
+        'cta_comisiones_bancarias'      => '5.3.1.02', // Comisiones Bancarias y Pasarelas
+        'cta_gastos_no_deducibles'      => '5.4.1.01', // Gastos No Deducibles Locales
+        'cta_ajuste_conciliacion'       => '5.4.1.03', // Otros Gastos Extraordinarios
     ];
 
-    private function cuentaId(string $codigo, int $empresaId): int
+    /** Mapa parámetro → código de cuenta, para el autoconfigurador de la UI. */
+    public static function planPorDefecto(): array
+    {
+        return self::FALLBACK_PLAN;
+    }
+
+    /**
+     * Normaliza un código de cuenta para poder compararlo sin depender de los
+     * ceros a la izquierda de cada segmento: '1.1.1.01' y '1.1.1.1' son el
+     * mismo código. El plan de cuentas real del cliente mezcla ambos formatos
+     * (clases 1–4 y 5.1 con un dígito, 5.2–5.4 con dos), así que comparar el
+     * string tal cual dejaba sin resolver más de la mitad de los parámetros.
+     */
+    private static function normalizarCodigo(string $codigo): string
+    {
+        return implode('.', array_map(
+            fn($seg) => ltrim($seg, '0') === '' ? '0' : ltrim($seg, '0'),
+            explode('.', trim($codigo))
+        ));
+    }
+
+    /**
+     * Busca una cuenta del plan por código tolerando el formato de los ceros
+     * a la izquierda. Devuelve null si no existe o no acepta movimientos.
+     */
+    public static function buscarCuentaPorCodigo(string $codigo): ?PlanCuenta
+    {
+        $exacta = PlanCuenta::where('codigo', $codigo)
+            ->where('permite_asientos', true)->where('estado', true)->first();
+        if ($exacta) {
+            return $exacta;
+        }
+
+        $objetivo = self::normalizarCodigo($codigo);
+
+        return PlanCuenta::where('permite_asientos', true)
+            ->where('estado', true)
+            ->get(['id', 'codigo', 'nombre', 'tipo', 'permite_asientos', 'estado'])
+            ->first(fn($c) => self::normalizarCodigo($c->codigo) === $objetivo);
+    }
+
+    public function cuentaId(string $codigo, int $empresaId): int
     {
         // 1. Buscar en parametros_contables
         $id = ParametroContable::getCuentaId($codigo, $empresaId);
@@ -257,10 +401,7 @@ class AsientoService
         // 2. Fallback: buscar en plan_cuentas por código conocido (sin filtro empresa_id)
         $planCodigo = self::FALLBACK_PLAN[$codigo] ?? null;
         if ($planCodigo) {
-            $cuenta = PlanCuenta::where('codigo', $planCodigo)
-                ->where('permite_asientos', true)
-                ->where('estado', true)
-                ->first();
+            $cuenta = self::buscarCuentaPorCodigo($planCodigo);
 
             if ($cuenta) {
                 // Auto-guardar para que futuras llamadas sean directas
@@ -276,6 +417,144 @@ class AsientoService
             "Parámetro contable '{$codigo}' no configurado. " .
             "Configure los parámetros en Contabilidad → Configuración."
         );
+    }
+
+    /**
+     * Pago de nómina: cancela el pasivo generado al procesar (HABER cta_nomina_por_pagar en nomina())
+     * contra la cuenta del banco/caja desde la que se paga.
+     */
+    public function pagoNominaDesdeCuenta(
+        int     $empresaId,
+        int     $nominaId,
+        string  $referencia,
+        float   $monto,
+        ?int    $ctaBancoId = null,
+        ?string $fecha      = null,
+    ): AsientoContable {
+        return $this->crear(
+            empresaId: $empresaId,
+            concepto:  "Pago nómina {$referencia}",
+            partidas: [
+                ['cuenta_id' => $this->cuentaId('cta_nomina_por_pagar', $empresaId),
+                 'debe' => $monto, 'haber' => 0, 'descripcion' => "Pago nómina {$referencia}"],
+                ['cuenta_id' => $ctaBancoId ?? $this->cuentaId('cta_bancos_locales', $empresaId),
+                 'debe' => 0, 'haber' => $monto, 'descripcion' => "Pago nómina {$referencia}"],
+            ],
+            documentoTipo: 'NOMPAG',
+            documentoId:   $nominaId,
+            documentoRef:  $referencia,
+            esAutomatico:  true,
+            fecha:         $fecha,
+        );
+    }
+
+    /**
+     * Parámetros contables que necesita compraRegistrada() según el tipo de asiento.
+     * Debe mantenerse en sincronía con esa función.
+     */
+    public static function codigosCompra(string $tipoAsiento, bool $retIR = false, bool $retIVA = false): array
+    {
+        if ($tipoAsiento === 'no_deducible') {
+            return ['cta_gastos_no_deducibles', 'cta_proveedores_locales'];
+        }
+
+        $codigos = [
+            $tipoAsiento === 'inventario' ? 'cta_inventario_mercaderia' : 'cta_gasto_compras_default',
+            'cta_iva_compras',
+            'cta_proveedores_locales',
+        ];
+        if ($retIR)  $codigos[] = 'cta_retencion_ir';
+        if ($retIVA) $codigos[] = 'cta_retencion_iva';
+
+        return $codigos;
+    }
+
+    /**
+     * Parámetros contables que necesita facturaAutorizada() según las formas
+     * de pago usadas y si la factura mueve inventario. Se usa con
+     * validarConfiguracion() ANTES de emitir la factura.
+     */
+    public static function codigosFactura(array $formasPago = [], bool $conInventario = false): array
+    {
+        $codigos = ['cta_ventas_locales', 'cta_iva_ventas'];
+
+        foreach ($formasPago ?: ['efectivo'] as $fp) {
+            $forma = is_array($fp) ? ($fp['forma'] ?? 'efectivo') : $fp;
+            $codigos[] = match (strtolower(trim((string) $forma))) {
+                'credito', 'crédito'                              => 'cta_clientes_locales',
+                'transferencia', 'deposito', 'depósito', 'cheque' => 'cta_bancos_locales',
+                'tarjeta', 'tarjeta_credito',
+                'tarjeta_debito', 'datafast'                      => 'cta_vouchers',
+                default                                           => 'cta_caja_general',
+            };
+        }
+
+        if ($conInventario) {
+            $codigos[] = 'cta_costo_ventas';
+            $codigos[] = 'cta_inventario_mercaderia';
+        }
+
+        return array_values(array_unique($codigos));
+    }
+
+    /**
+     * Costo (a costo promedio) de la mercadería que salió por un documento.
+     * Se lee del kárdex, que es la fuente de verdad del costo: así el asiento
+     * de costo de ventas usa exactamente el mismo valor que descargó el stock
+     * y contabilidad e inventario no pueden divergir.
+     */
+    public static function costoSalidaDocumento(string $docTipo, int $docId): float
+    {
+        return (float) DB::table('inventario_movimientos')
+            ->where('doc_tipo', strtoupper($docTipo))
+            ->where('doc_id', $docId)
+            ->where('tipo', 'salida')
+            ->sum('costo_total');
+    }
+
+    /**
+     * Verifica que la parte contable esté lista ANTES de ejecutar una operación que genera
+     * asientos: período abierto (y mes de la fecha no cerrado) y parámetros contables
+     * resolubles. Lanza \DomainException con un mensaje que dice qué hacer.
+     */
+    public function validarConfiguracion(int $empresaId, array $codigos = [], ?string $fecha = null): void
+    {
+        $problemas = [];
+        $fechaAsiento = $fecha ? \Carbon\Carbon::parse($fecha) : now();
+
+        // Mismo criterio que crear(): el período que importa es el del mes de
+        // la FECHA del documento, no "cualquier período abierto".
+        $ejercicioDelMes = EjercicioContable::where('empresa_id', $empresaId)
+            ->where('anio', $fechaAsiento->year)
+            ->where('mes', $fechaAsiento->month)
+            ->first();
+
+        if (!$ejercicioDelMes) {
+            $problemas[] = 'No existe el período contable ' . $fechaAsiento->format('m/Y')
+                . '. Ábralo en Contabilidad → Ejercicios.';
+        } elseif ($ejercicioDelMes->estaCerrado()) {
+            $problemas[] = "El período {$ejercicioDelMes->periodo_label} está cerrado. "
+                . 'Reábralo en Contabilidad → Ejercicios o use una fecha de un período abierto.';
+        }
+
+        $faltantes = [];
+        foreach (array_unique($codigos) as $codigo) {
+            try {
+                $this->cuentaId($codigo, $empresaId);
+            } catch (\Throwable) {
+                $faltantes[] = $codigo;
+            }
+        }
+        if ($faltantes) {
+            $problemas[] = 'Faltan parámetros contables: ' . implode(', ', $faltantes)
+                . '. Configúrelos en Contabilidad → Parámetros Contables.';
+        }
+
+        if ($problemas) {
+            throw new \DomainException(
+                'No se puede continuar: la contabilidad no está lista. ' . implode(' ', $problemas)
+            );
+        }
     }
 
     private function registrarAuditoria(string $accion, AsientoContable $asiento): void
@@ -347,37 +626,127 @@ class AsientoService
     // MÉTODOS PARA DEV 1 — Ventas
     // ══════════════════════════════════════════════════════════
 
+    /**
+     * Cuenta de contrapartida (por dónde entra el dinero) según la forma de pago.
+     * 'credito' no es un cobro: es una Cuenta por Cobrar al cliente.
+     */
+    public function cuentaCobroPorForma(string $formaPago, int $empresaId): int
+    {
+        return match (strtolower(trim($formaPago))) {
+            'credito', 'crédito' => $this->cuentaId('cta_clientes_locales', $empresaId),
+            'transferencia',
+            'deposito', 'depósito',
+            'cheque'             => $this->cuentaId('cta_bancos_locales',   $empresaId),
+            'tarjeta',
+            'tarjeta_credito',
+            'tarjeta_debito',
+            'datafast'           => $this->cuentaId('cta_vouchers',         $empresaId),
+            default              => $this->cuentaId('cta_caja_general',     $empresaId),
+        };
+    }
+
+    /**
+     * Asiento de emisión de factura de venta.
+     *
+     * Registra las DOS mitades que exige el sistema de inventario permanente:
+     *
+     *   (1) Reconocimiento del ingreso
+     *         DEBE  Caja / Bancos / Vouchers / Clientes  (una partida POR CADA
+     *               forma de pago — ver abajo)
+     *         HABER Ventas                               subtotal
+     *         HABER IVA en Ventas por Pagar              iva
+     *
+     *   (2) Reconocimiento del costo y baja del inventario  ← FALTABA POR COMPLETO
+     *         DEBE  Costo de Ventas                      costo promedio vendido
+     *         HABER Inventario de Mercadería             costo promedio vendido
+     *
+     * Sin (2) el inventario contable solo crecía con las compras y nunca se
+     * descargaba: el activo quedaba inflado, el kárdex y la contabilidad
+     * divergían para siempre, y el Estado de Resultados mostraba la venta
+     * completa con costo cero (utilidad y base imponible irreales).
+     *
+     * $formasPago permite repartir el débito entre varias cuentas. Antes se
+     * tomaba solo la forma de mayor monto y se cargaba el 100% del total ahí:
+     * una factura de $1.000 con $300 en efectivo y $700 a crédito debitaba
+     * $1.000 a Caja y no registraba nada en Clientes, dejando la CxC sin
+     * respaldo contable.
+     */
     public function facturaAutorizada(
-        int    $empresaId,
-        int    $facturaId,
-        string $numeroFactura,
-        float  $subtotal,
-        float  $iva,
-        float  $total,
-        string $formaPago = 'efectivo',
+        int     $empresaId,
+        int     $facturaId,
+        string  $numeroFactura,
+        float   $subtotal,
+        float   $iva,
+        float   $total,
+        string  $formaPago  = 'efectivo',
+        ?array  $formasPago = null,
+        float   $costoVenta = 0,
+        ?string $fecha      = null,
     ): AsientoContable {
 
-        $cuentaCobro = match($formaPago) {
-            'efectivo'      => $this->cuentaId('cta_caja_general',     $empresaId),
-            'transferencia' => $this->cuentaId('cta_bancos_locales',   $empresaId),
-            'tarjeta'       => $this->cuentaId('cta_vouchers',         $empresaId),
-            'credito'       => $this->cuentaId('cta_clientes_locales', $empresaId),
-            default         => $this->cuentaId('cta_caja_general',     $empresaId),
-        };
+        $partidas = [];
 
-        $partidas = [
-            ['cuenta_id' => $cuentaCobro,
-             'debe'  => $total, 'haber' => 0,
-             'descripcion' => "Factura {$numeroFactura}"],
-            ['cuenta_id' => $this->cuentaId('cta_ventas_locales', $empresaId),
-             'debe'  => 0, 'haber' => $subtotal,
-             'descripcion' => "Venta — {$numeroFactura}"],
+        // ── (1) Débito: una partida por forma de pago ──────────────────────
+        $desglose = [];
+        foreach ($formasPago ?? [] as $fp) {
+            $monto = round((float)($fp['monto'] ?? 0), 2);
+            if ($monto <= 0) continue;
+            $desglose[] = ['forma' => (string)($fp['forma'] ?? 'efectivo'), 'monto' => $monto];
+        }
+
+        // Si no vino el desglose (o no suma el total) se usa la forma principal
+        // por el total, que es el comportamiento anterior.
+        $sumaDesglose = round(array_sum(array_column($desglose, 'monto')), 2);
+        if (!$desglose || abs($sumaDesglose - round($total, 2)) > 0.01) {
+            $desglose = [['forma' => $formaPago, 'monto' => round($total, 2)]];
+        }
+
+        // Agrupa por cuenta: varias formas pueden caer en la misma (ej. dos
+        // transferencias) y no tiene sentido duplicar la línea.
+        $porCuenta = [];
+        foreach ($desglose as $d) {
+            $cta = $this->cuentaCobroPorForma($d['forma'], $empresaId);
+            $porCuenta[$cta] = round(($porCuenta[$cta] ?? 0) + $d['monto'], 2);
+        }
+        foreach ($porCuenta as $cuentaId => $monto) {
+            $partidas[] = [
+                'cuenta_id'   => $cuentaId,
+                'debe'        => $monto,
+                'haber'       => 0,
+                'descripcion' => "Factura {$numeroFactura}",
+            ];
+        }
+
+        // ── (1) Crédito: ingreso e IVA ─────────────────────────────────────
+        $partidas[] = [
+            'cuenta_id'   => $this->cuentaId('cta_ventas_locales', $empresaId),
+            'debe'        => 0,
+            'haber'       => round($subtotal, 2),
+            'descripcion' => "Venta — {$numeroFactura}",
         ];
         if ($iva > 0) {
             $partidas[] = [
                 'cuenta_id'   => $this->cuentaId('cta_iva_ventas', $empresaId),
-                'debe'  => 0, 'haber' => $iva,
-                'descripcion' => "IVA 15% — {$numeroFactura}",
+                'debe'        => 0,
+                'haber'       => round($iva, 2),
+                'descripcion' => "IVA en ventas — {$numeroFactura}",
+            ];
+        }
+
+        // ── (2) Costo de ventas / baja de inventario ───────────────────────
+        $costoVenta = round($costoVenta, 2);
+        if ($costoVenta > 0) {
+            $partidas[] = [
+                'cuenta_id'   => $this->cuentaId('cta_costo_ventas', $empresaId),
+                'debe'        => $costoVenta,
+                'haber'       => 0,
+                'descripcion' => "Costo de ventas — {$numeroFactura}",
+            ];
+            $partidas[] = [
+                'cuenta_id'   => $this->cuentaId('cta_inventario_mercaderia', $empresaId),
+                'debe'        => 0,
+                'haber'       => $costoVenta,
+                'descripcion' => "Baja de inventario por venta — {$numeroFactura}",
             ];
         }
 
@@ -385,19 +754,19 @@ class AsientoService
             empresaId: $empresaId, concepto: "Venta factura {$numeroFactura}",
             partidas: $partidas, documentoTipo: 'FAC',
             documentoId: $facturaId, documentoRef: $numeroFactura, esAutomatico: true,
+            fecha: $fecha,
         );
     }
 
     public function anticipoCliente(
-        int    $empresaId,
-        int    $documentoId,
-        string $referencia,
-        float  $monto,
-        string $formaPago = 'efectivo',
+        int     $empresaId,
+        int     $documentoId,
+        string  $referencia,
+        float   $monto,
+        string  $formaPago = 'efectivo',
+        ?string $fecha     = null,
     ): AsientoContable {
-        $cta = $formaPago === 'transferencia'
-            ? $this->cuentaId('cta_bancos_locales', $empresaId)
-            : $this->cuentaId('cta_caja_general',   $empresaId);
+        $cta = $this->cuentaCobroPorForma($formaPago, $empresaId);
 
         return $this->crear(
             empresaId: $empresaId, concepto: "Anticipo cliente — {$referencia}",
@@ -410,15 +779,17 @@ class AsientoService
             ],
             documentoTipo: 'FAC', documentoId: $documentoId,
             documentoRef: $referencia, esAutomatico: true,
+            fecha: $fecha,
         );
     }
 
     public function cobro(
-        int    $empresaId,
-        int    $documentoId,
-        string $referencia,
-        float  $monto,
-        string $formaPago = 'transferencia',
+        int     $empresaId,
+        int     $documentoId,
+        string  $referencia,
+        float   $monto,
+        string  $formaPago = 'transferencia',
+        ?string $fecha     = null,
     ): AsientoContable {
         $cta = $formaPago === 'efectivo'
             ? $this->cuentaId('cta_caja_general',   $empresaId)
@@ -435,29 +806,63 @@ class AsientoService
             ],
             documentoTipo: 'CXC', documentoId: $documentoId,
             documentoRef: $referencia, esAutomatico: true,
+            fecha: $fecha,
         );
     }
 
+    /**
+     * Nota de crédito emitida (devolución o anulación parcial de una venta).
+     *
+     * Correcciones sobre la versión anterior:
+     *   - El débito va a "(-) Devoluciones en Ventas" (cuenta regularizadora
+     *     de ingresos, 4.1.3.1) en vez de debitar directamente la cuenta de
+     *     Ventas. Así la devolución queda trazable en el Estado de Resultados
+     *     en lugar de desaparecer restando del ingreso bruto — que es
+     *     justamente para lo que existe cta_devoluciones_ventas, parametrizada
+     *     desde el primer día y hasta ahora nunca usada.
+     *   - La contrapartida ya no es siempre Clientes: si la venta original fue
+     *     de contado, lo que sale es efectivo/banco, no una CxC. Se elige con
+     *     $formaPago igual que en la factura.
+     *   - Reversa el costo de ventas y reingresa el inventario ($costoVenta)
+     *     cuando la NC devuelve mercadería.
+     */
     public function notaCreditoEmitida(
-        int    $empresaId,
-        int    $notaCreditoId,
-        string $referencia,
-        float  $subtotal,
-        float  $iva,
+        int     $empresaId,
+        int     $notaCreditoId,
+        string  $referencia,
+        float   $subtotal,
+        float   $iva,
+        string  $formaPago  = 'credito',
+        float   $costoVenta = 0,
+        ?string $fecha      = null,
     ): AsientoContable {
         $partidas = [
-            ['cuenta_id' => $this->cuentaId('cta_ventas_locales', $empresaId),
-             'debe' => $subtotal, 'haber' => 0,
-             'descripcion' => "Devolución NC {$referencia}"],
-            ['cuenta_id' => $this->cuentaId('cta_clientes_locales', $empresaId),
-             'debe' => 0, 'haber' => $subtotal + $iva,
+            ['cuenta_id' => $this->cuentaId('cta_devoluciones_ventas', $empresaId),
+             'debe' => round($subtotal, 2), 'haber' => 0,
+             'descripcion' => "Devolución en ventas NC {$referencia}"],
+            ['cuenta_id' => $this->cuentaCobroPorForma($formaPago, $empresaId),
+             'debe' => 0, 'haber' => round($subtotal + $iva, 2),
              'descripcion' => "NC {$referencia}"],
         ];
         if ($iva > 0) {
             $partidas[] = [
                 'cuenta_id'   => $this->cuentaId('cta_iva_ventas', $empresaId),
-                'debe' => $iva, 'haber' => 0,
+                'debe' => round($iva, 2), 'haber' => 0,
                 'descripcion' => "IVA NC {$referencia}",
+            ];
+        }
+
+        $costoVenta = round($costoVenta, 2);
+        if ($costoVenta > 0) {
+            $partidas[] = [
+                'cuenta_id'   => $this->cuentaId('cta_inventario_mercaderia', $empresaId),
+                'debe' => $costoVenta, 'haber' => 0,
+                'descripcion' => "Reingreso de inventario por NC {$referencia}",
+            ];
+            $partidas[] = [
+                'cuenta_id'   => $this->cuentaId('cta_costo_ventas', $empresaId),
+                'debe' => 0, 'haber' => $costoVenta,
+                'descripcion' => "Reversa costo de ventas NC {$referencia}",
             ];
         }
 
@@ -465,6 +870,7 @@ class AsientoService
             empresaId: $empresaId, concepto: "Nota de crédito {$referencia}",
             partidas: $partidas, documentoTipo: 'NC',
             documentoId: $notaCreditoId, documentoRef: $referencia, esAutomatico: true,
+            fecha: $fecha,
         );
     }
 
@@ -506,11 +912,12 @@ class AsientoService
         $sumSueldosNeto    = round($sumSueldosNeto, 2);
         $sumAportePatronal = round($sumAportePatronal, 2);
 
-        // Cuenta IESS personal (2.1.4.03) — búsqueda directa en plan_cuentas
-        $cuentaIessPersonalId = PlanCuenta::where('codigo', '2.1.4.03')->value('id');
-        if (!$cuentaIessPersonalId) {
-            throw new \Exception('Cuenta 2.1.4.03 (IESS Aporte Personal) no encontrada en el plan de cuentas.');
-        }
+        // Cuenta IESS personal — pasa por cuentaId() como cualquier otra para
+        // que sea configurable desde Parámetros Contables y tolere el formato
+        // del código. Antes buscaba literalmente '2.1.4.03', que NO existe en
+        // el plan real (la cuenta es '2.1.4.3'), así que el asiento de nómina
+        // fallaba siempre con "Cuenta no encontrada en el plan de cuentas".
+        $cuentaIessPersonalId = $this->cuentaId('cta_iess_personal_por_pagar', $empresaId);
 
         $partidas = [];
 
@@ -554,6 +961,32 @@ class AsientoService
             documentoRef:  "NOM-{$nomina->anio}-{$nomina->mes}",
             esAutomatico:  true,
             fecha:         $nomina->fecha_emision?->toDateString(),
+        );
+    }
+
+    // Pago de nómina: DEBE Nómina por pagar / HABER Bancos.
+    public function pagoNomina(\App\Models\Nomina $nomina, string $fechaPago, string $comprobante): AsientoContable
+    {
+        $empresaId = $nomina->empresa_id;
+        $periodo   = $nomina->periodo_label;
+        $monto     = round((float) $nomina->total_neto, 2);
+
+        return $this->crear(
+            empresaId:     $empresaId,
+            concepto:      "Pago de nómina {$periodo} — comprobante {$comprobante}",
+            partidas: [
+                ['cuenta_id' => $this->cuentaId('cta_nomina_por_pagar', $empresaId),
+                 'debe' => $monto, 'haber' => 0,
+                 'descripcion' => "Pago nómina {$periodo}"],
+                ['cuenta_id' => $this->cuentaId('cta_bancos_locales', $empresaId),
+                 'debe' => 0, 'haber' => $monto,
+                 'descripcion' => "Pago nómina {$periodo} — {$comprobante}"],
+            ],
+            documentoTipo: 'NOMPAG',
+            documentoId:   $nomina->id,
+            documentoRef:  "NOMPAG-{$nomina->anio}-{$nomina->mes}",
+            esAutomatico:  true,
+            fecha:         $fechaPago,
         );
     }
 
@@ -628,11 +1061,12 @@ class AsientoService
     }
 
     public function ajusteInventario(
-        int    $empresaId,
-        int    $documentoId,
-        string $referencia,
-        float  $monto,
-        string $tipo = 'faltante',
+        int     $empresaId,
+        int     $documentoId,
+        string  $referencia,
+        float   $monto,
+        string  $tipo  = 'faltante',
+        ?string $fecha = null,
     ): AsientoContable {
         $partidas = $tipo === 'faltante' ? [
             ['cuenta_id' => $this->cuentaId('cta_ajuste_inventario',    $empresaId),
@@ -655,6 +1089,7 @@ class AsientoService
             concepto: "Ajuste inventario {$tipo} — {$referencia}",
             partidas: $partidas, documentoTipo: 'INV',
             documentoId: $documentoId, documentoRef: $referencia, esAutomatico: true,
+            fecha: $fecha,
         );
     }
 
@@ -903,10 +1338,11 @@ class AsientoService
 
     // ── Asiento de ajuste por diferencia en conciliación bancaria ──────────────
     public function ajusteConciliacion(
-        int    $empresaId,
-        int    $conciliacionId,
-        float  $diferencia,
-        string $descripcion = 'Ajuste conciliación bancaria',
+        int     $empresaId,
+        int     $conciliacionId,
+        float   $diferencia,
+        string  $descripcion = 'Ajuste conciliación bancaria',
+        ?string $fecha       = null,
     ): AsientoContable {
         // Si diferencia > 0 → falta dinero en sistema (ingreso no registrado)
         // Si diferencia < 0 → sobra en sistema (egreso no registrado)
@@ -928,6 +1364,7 @@ class AsientoService
             partidas: $partidas,
             documentoTipo: 'CONCILIACION', documentoId: $conciliacionId,
             documentoRef: "CONC-{$conciliacionId}", esAutomatico: true,
+            fecha: $fecha,
         );
     }
 }

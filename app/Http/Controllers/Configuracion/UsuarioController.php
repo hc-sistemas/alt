@@ -9,6 +9,8 @@ use App\Models\Empresa;
 use App\Models\Perfil;
 use App\Models\Usuario;
 use App\Services\AuditoriaService;
+use App\Services\NominaCalculoService;
+use Illuminate\Validation\Rule;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -19,7 +21,10 @@ use Inertia\Response;
 
 class UsuarioController extends Controller
 {
-    public function __construct(private AuditoriaService $auditoria) {}
+    public function __construct(
+        private AuditoriaService $auditoria,
+        private NominaCalculoService $nominaCalculoService,
+    ) {}
 
     public function index(Request $request): Response
     {
@@ -49,11 +54,43 @@ class UsuarioController extends Controller
             'perfiles' => Perfil::orderBy('nombre')->get(['id', 'nombre']),
             'empresas' => Empresa::where('estado', true)->orderBy('nombre_comercial')->get(['id', 'nombre_comercial', 'ruc']),
             'centros_costo' => CentroCosto::where('estado', true)->with('empresa')->orderBy('nombre')->get(['id', 'nombre', 'empresa_id']),
+            'colaboradores_disponibles' => $this->colaboradoresDisponibles(),
         ]);
+    }
+
+    // Colaboradores activos que todavía no tienen usuario (para vincular al crear uno).
+    private function colaboradoresDisponibles()
+    {
+        return Colaborador::whereNull('usuario_id')
+            ->where('estado', true)
+            ->orderBy('apellidos')->orderBy('nombres')
+            ->get(['id', 'empresa_id', 'apellidos', 'nombres', 'cedula_ruc']);
     }
 
     public function store(Request $request): RedirectResponse
     {
+        $reglasEmpleado = [
+            'es_empleado'      => ['boolean'],
+            'colaborador_modo' => ['nullable', 'in:crear,vincular'],
+        ];
+        if ($request->boolean('es_empleado')) {
+            if ($request->input('colaborador_modo') === 'vincular') {
+                $reglasEmpleado['colaborador_id'] = ['required', 'integer', 'exists:colaboradores,id',
+                    Rule::unique('colaboradores', 'id')->where(fn($q) => $q->whereNotNull('usuario_id'))];
+            } else {
+                $reglasEmpleado += [
+                    'colab_apellidos'     => ['required', 'string', 'max:100'],
+                    'colab_nombres'       => ['required', 'string', 'max:100'],
+                    'colab_cedula_ruc'    => ['required', 'string', 'max:13', 'unique:colaboradores,cedula_ruc'],
+                    'colab_fecha_ingreso' => ['required', 'date'],
+                    'colab_sueldo_base'   => ['required', 'numeric', 'min:0'],
+                    'colab_cargo'         => ['nullable', 'string', 'max:100'],
+                ];
+            }
+        }
+
+        $request->validate($reglasEmpleado);
+
         $data = $request->validate([
             'nombre' => ['required', 'string', 'max:100'],
             'email' => ['required', 'email', 'unique:usuarios,email'],
@@ -69,13 +106,45 @@ class UsuarioController extends Controller
             'estado' => ['boolean'],
         ]);
 
-        $usuario = Usuario::create([
-            ...$data,
-            'password' => Hash::make($data['password']),
-            'codigo_aprobacion' => isset($data['codigo_aprobacion']) ? Hash::make($data['codigo_aprobacion']) : null,
-        ]);
+        $usuario = DB::transaction(function () use ($data, $request) {
+            $usuario = Usuario::create([
+                ...$data,
+                'password' => Hash::make($data['password']),
+                'codigo_aprobacion' => isset($data['codigo_aprobacion']) ? Hash::make($data['codigo_aprobacion']) : null,
+            ]);
 
-        $usuario->empresas()->sync($data['empresas']);
+            $usuario->empresas()->sync($data['empresas']);
+
+            if ($request->boolean('es_empleado')) {
+                if ($request->input('colaborador_modo') === 'vincular') {
+                    $colaborador = Colaborador::findOrFail($request->input('colaborador_id'));
+                    $tieneAcceso = in_array((int) $colaborador->empresa_id, array_map('intval', $data['empresas']), true);
+                    if (!$tieneAcceso) {
+                        throw \Illuminate\Validation\ValidationException::withMessages([
+                            'colaborador_id' => 'El usuario debe tener acceso a la empresa del colaborador.',
+                        ]);
+                    }
+                } else {
+                    $colaborador = Colaborador::create([
+                        'empresa_id'    => $data['empresa_id'],
+                        'apellidos'     => $request->input('colab_apellidos'),
+                        'nombres'       => $request->input('colab_nombres'),
+                        'cedula_ruc'    => $request->input('colab_cedula_ruc'),
+                        'fecha_ingreso' => $request->input('colab_fecha_ingreso'),
+                        'sueldo_base'   => $request->input('colab_sueldo_base'),
+                        'cargo'         => $request->input('colab_cargo'),
+                        'email'         => Colaborador::where('email', $data['email'])->exists() ? null : $data['email'],
+                        'telefono'      => $data['telefono'] ?? null,
+                        'estado'        => (bool) ($data['estado'] ?? true),
+                    ]);
+                    $this->nominaCalculoService->agregarANominasAbiertas($colaborador);
+                }
+
+                $colaborador->vincularUsuario($usuario);
+            }
+
+            return $usuario;
+        });
 
         $this->auditoria->documento('crear', 'configuracion', 'usuarios', $usuario->id,
             "Usuario {$usuario->username} creado con perfil {$usuario->perfil->nombre}");
@@ -123,8 +192,14 @@ class UsuarioController extends Controller
             unset($data['codigo_aprobacion']);
         }
 
+        $estadoAnterior = (bool) $usuario->estado;
+
         $usuario->update($data);
         $usuario->empresas()->sync($data['empresas']);
+
+        if ($estadoAnterior !== (bool) $usuario->estado) {
+            $this->sincronizarEstadoColaborador($usuario);
+        }
 
         $this->auditoria->documento('editar', 'configuracion', 'usuarios', $usuario->id,
             "Usuario {$usuario->username} actualizado");
@@ -136,11 +211,20 @@ class UsuarioController extends Controller
     public function toggleEstado(Usuario $usuario): RedirectResponse
     {
         $usuario->update(['estado' => !$usuario->estado]);
+        $this->sincronizarEstadoColaborador($usuario);
 
         $this->auditoria->documento('editar', 'configuracion', 'usuarios', $usuario->id,
             "Usuario {$usuario->username} " . ($usuario->estado ? 'activado' : 'desactivado'));
 
         return back()->with('success', 'Estado actualizado.');
+    }
+
+    // Activar/desactivar el usuario mantiene en sincronía al colaborador vinculado
+    // (el sentido inverso ya lo hace ColaboradorController::toggle()).
+    private function sincronizarEstadoColaborador(Usuario $usuario): void
+    {
+        Colaborador::where('usuario_id', $usuario->id)
+            ->update(['estado' => (bool) $usuario->estado]);
     }
 
     public function show(Usuario $usuario): Response
@@ -160,14 +244,27 @@ class UsuarioController extends Controller
             'colaborador_id' => ['nullable', 'integer', 'exists:colaboradores,id'],
         ]);
 
-        DB::transaction(function () use ($usuario, $data) {
-            // Quitar cualquier vínculo anterior de este usuario
-            Colaborador::where('usuario_id', $usuario->id)->update(['usuario_id' => null]);
+        $nuevo = !empty($data['colaborador_id']) ? Colaborador::findOrFail($data['colaborador_id']) : null;
 
-            if (!empty($data['colaborador_id'])) {
-                // Quitar cualquier usuario previo que tuviera este colaborador
-                Colaborador::where('id', $data['colaborador_id'])
-                    ->update(['usuario_id' => $usuario->id]);
+        if ($nuevo) {
+            $tieneAcceso = (int) $usuario->empresa_id === (int) $nuevo->empresa_id
+                || $usuario->empresas()->where('empresas.id', $nuevo->empresa_id)->exists();
+            if (!$tieneAcceso) {
+                return back()->with('error', 'El usuario no tiene acceso a la empresa de ese colaborador.');
+            }
+        }
+
+        DB::transaction(function () use ($usuario, $nuevo) {
+            // Libera el colaborador que este usuario tuviera antes (ambas columnas)
+            $actual = Colaborador::where('usuario_id', $usuario->id)->first();
+            if ($actual && (!$nuevo || $actual->id !== $nuevo->id)) {
+                $actual->vincularUsuario(null);
+            }
+
+            if ($nuevo) {
+                $nuevo->vincularUsuario($usuario);
+            } else {
+                Usuario::where('id', $usuario->id)->update(['colaborador_id' => null]);
             }
         });
 

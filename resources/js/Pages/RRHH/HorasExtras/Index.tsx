@@ -7,7 +7,7 @@ import FilterToolbar from '@/Components/shared/FilterToolbar'
 import DesgloseHorasExtraModal from '@/Components/shared/DesgloseHorasExtraModal'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
-import { cn, formatFecha } from '@/lib/utils'
+import { cn, formatFecha, fechaHoy } from '@/lib/utils'
 import { Check, X, Info, Search, Eye } from 'lucide-react'
 import { usePermiso } from '@/Hooks/usePermiso'
 import type { HorasExtrasAprobacion, Colaborador, PageProps, PaginatedData } from '@/types'
@@ -267,7 +267,11 @@ export default function HorasExtrasIndex() {
     const { puede } = usePermiso('rrhh')
 
     const [modal, setModal] = useState<{ tipo: 'aprobar' | 'rechazar' | 'detalle'; extra: HoraExtra } | null>(null)
-    const [filtro, setFiltro] = useState(filtros)
+    const [filtro, setFiltro] = useState({
+        ...filtros,
+        fecha_desde: filtros.fecha_desde ?? (extras !== null ? '' : fechaHoy()),
+        fecha_hasta: filtros.fecha_hasta ?? (extras !== null ? '' : fechaHoy()),
+    })
 
     // Cambiar cualquier filtro después de haber buscado no vacía la tabla —
     // solo la atenúa (opacity-60) hasta que se presione Buscar de nuevo.

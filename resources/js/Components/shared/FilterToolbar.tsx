@@ -30,7 +30,7 @@ interface Props {
 // exportar, que se repiten idénticos en casi todos los módulos.
 export default function FilterToolbar({ children, search, searchWidth, onExport, exportHref, exportDisabled, exportTitle, extraActions }: Props) {
     return (
-        <div className="flex items-center gap-3 mb-4 flex-wrap">
+        <div className="filter-toolbar flex items-end gap-3 mb-4 flex-wrap">
             {children}
 
             {search && (

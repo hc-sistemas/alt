@@ -86,7 +86,7 @@ export default function Index() {
 
             <div className="p-6 space-y-4">
                 {/* Filtros */}
-                <div className="flex items-center gap-3 flex-wrap">
+                <div className="filter-toolbar flex items-end gap-3 flex-wrap">
                     <Input
                         type="date"
                         value={filtro.fecha_desde}

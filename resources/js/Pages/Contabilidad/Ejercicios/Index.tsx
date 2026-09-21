@@ -76,7 +76,7 @@ export default function EjerciciosIndex() {
                                   line-height:1.5">
                             Una vez cerrado <strong>${ejercicio.periodo_label}</strong>,
                             nadie podrá crear ni anular asientos en ese mes.
-                            Solo el Super Admin podrá reabrirlo.
+                            Podrá reabrirlo el Super Admin o el Contador mientras el ejercicio fiscal del año no esté cerrado.
                         </p>
                     </div>
 
@@ -157,6 +157,58 @@ conciliación bancaria completada..."
                         `Período ${ejercicio.periodo_label} cerrado correctamente`
                     ),
                     onError: () => notify.error('Error al cerrar el período'),
+                }
+            )
+        }
+    }
+
+    const confirmarReapertura = async (ejercicio: EjercicioContable) => {
+        injectSwalStyles()
+        const { value: motivo } = await Swal.fire({
+            ...swalBase,
+            title: `Reabrir ${ejercicio.periodo_label}`,
+            html: `
+                <div style="text-align:left">
+                    <div style="background:#fef3c7;border:1px solid #fcd34d;
+                                border-radius:10px;padding:14px;margin-bottom:16px;font-size:13px">
+                        Al reabrir el período se podrán volver a registrar y modificar asientos
+                        con fecha en <strong>${ejercicio.periodo_label}</strong>.
+                        Los reportes ya emitidos de ese mes pueden dejar de coincidir.
+                        <br><br>
+                        Vuelva a cerrarlo cuando termine los ajustes.
+                    </div>
+                    <label style="display:block;font-size:12px;font-weight:600;margin-bottom:6px">
+                        Motivo de la reapertura (mínimo 10 caracteres)
+                    </label>
+                    <textarea id="motivo-reapertura" rows="3"
+                              style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:8px;font-size:13px"
+                              placeholder="Ej. Registro de factura de proveedor recibida con atraso"></textarea>
+                </div>`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#f59e0b',
+            cancelButtonColor: '#6b7280',
+            confirmButtonText: '🔓 Sí, reabrir período',
+            cancelButtonText: 'Cancelar',
+            reverseButtons: true,
+            focusCancel: true,
+            preConfirm: () => {
+                const motivo = (document.getElementById('motivo-reapertura') as HTMLTextAreaElement)?.value
+                if (!motivo || motivo.length < 10) {
+                    Swal.showValidationMessage('El motivo debe tener al menos 10 caracteres')
+                    return false
+                }
+                return motivo
+            },
+        })
+
+        if (motivo) {
+            router.patch(
+                route('contabilidad.ejercicios.reabrir', ejercicio.id),
+                { motivo },
+                {
+                    onSuccess: () => notify.success(`Período ${ejercicio.periodo_label} reabierto`),
+                    onError:   () => notify.error('No se pudo reabrir el período'),
                 }
             )
         }
@@ -293,8 +345,23 @@ conciliación bancaria completada..."
                                                     </button>
                                                 )
                                             ) : (
-                                                <Lock size={15} className="text-gray-300 cursor-not-allowed"
-                                                      title="Período cerrado permanentemente" />
+                                                /* Antes aquí solo había un candado gris inerte con el
+                                                   título "cerrado permanentemente": no existía forma de
+                                                   reabrir un mes, así que un documento atrasado de ese
+                                                   período era imposible de registrar. */
+                                                puede('editar') ? (
+                                                    <button
+                                                        onClick={() => confirmarReapertura(e)}
+                                                        title="Reabrir período"
+                                                        className="p-1.5 rounded-lg transition-colors
+                                                                   hover:bg-amber-100 dark:hover:bg-amber-900/30">
+                                                        <Unlock size={15} className="text-amber-500" />
+                                                    </button>
+                                                ) : (
+                                                    <span title="Período cerrado" className="inline-flex">
+                                                        <Lock size={15} className="text-gray-300 cursor-not-allowed" />
+                                                    </span>
+                                                )
                                             )}
                                         </td>
                                     </tr>

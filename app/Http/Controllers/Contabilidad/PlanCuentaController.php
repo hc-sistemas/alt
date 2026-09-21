@@ -48,6 +48,39 @@ class PlanCuentaController extends Controller
         if ($request->padre_id) {
             $padre = PlanCuenta::findOrFail($request->padre_id);
             $nivel = $padre->nivel + 1;
+
+            // Coherencia de la jerarquía. No se validaba nada: se podía crear
+            // una cuenta de tipo "ingreso" colgando de un padre "activo", y
+            // como TODOS los reportes clasifican por cuenta.tipo, esa cuenta
+            // aparecía en la sección equivocada del balance descuadrándolo.
+            if ($padre->tipo !== $request->tipo) {
+                return back()->with('error',
+                    "La cuenta debe ser del mismo tipo que su padre ({$padre->codigo} es de tipo " .
+                    ucfirst($padre->tipo) . ", y se intentó crear una de tipo " .
+                    ucfirst($request->tipo) . ').');
+            }
+
+            // El código de la hija tiene que colgar del código del padre; si no,
+            // el árbol del plan y los prefijos que usan los reportes (5.1 costo
+            // de ventas, 1.1.1 efectivo, etc.) dejan de significar nada.
+            if (!str_starts_with($request->codigo, $padre->codigo . '.')) {
+                return back()->with('error',
+                    "El código debe comenzar con el del padre: {$padre->codigo}. " .
+                    "Ejemplo válido: {$padre->codigo}.01");
+            }
+
+            // Una cuenta que ya recibe movimientos no puede volverse de
+            // agrupación: su saldo quedaría mezclado con el de sus hijas.
+            if ($padre->permite_asientos && $padre->total_asientos > 0) {
+                return back()->with('error',
+                    "La cuenta {$padre->codigo} ya tiene {$padre->total_asientos} asiento(s) registrados, " .
+                    'así que no puede convertirse en cuenta de agrupación. Use otra cuenta padre.');
+            }
+
+            // El padre pasa a ser cuenta de agrupación.
+            if ($padre->permite_asientos) {
+                $padre->update(['permite_asientos' => false]);
+            }
         }
 
         $cuenta = PlanCuenta::create([
@@ -73,6 +106,23 @@ class PlanCuentaController extends Controller
             'descripcion'      => 'nullable|string|max:500',
             'permite_asientos' => 'boolean',
         ]);
+
+        // Apagar `permite_asientos` en una cuenta con movimientos la hace
+        // DESAPARECER de todos los estados financieros: el balance de
+        // comprobación, el balance general, el estado de resultados y el cierre
+        // anual filtran `permite_asientos = true`. El saldo se queda en el libro
+        // pero deja de sumar en los reportes, y el balance descuadra sin que
+        // nada lo explique. toggleEstado() ya protegía este caso; update() no.
+        if ($request->has('permite_asientos')
+            && !$request->boolean('permite_asientos')
+            && $cuenta->permite_asientos
+            && $cuenta->total_asientos > 0
+        ) {
+            return back()->with('error',
+                "No se puede quitar 'permite asientos' a {$cuenta->codigo}: tiene " .
+                "{$cuenta->total_asientos} asiento(s) registrados y su saldo desaparecería " .
+                'de los estados financieros.');
+        }
 
         $cuenta->update($request->only(['nombre', 'descripcion', 'permite_asientos']));
 

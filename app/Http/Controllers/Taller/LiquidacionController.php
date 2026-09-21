@@ -37,7 +37,15 @@ class LiquidacionController extends Controller
     {
         abort_if((int) $orden->empresa_id !== (int) session('empresa_activa_id'), 403);
 
-        $orden->load(['ingreso.cliente', 'ingreso.equipo', 'repuestos.producto', 'tecnico']);
+        if (!in_array($orden->estado, ['listo', 'entregado'], true)) {
+            return redirect()->route('taller.ordenes.show', $orden->id)
+                ->with('flash', ['tipo' => 'error', 'mensaje' => 'La orden debe estar en estado "Listo" para liquidarse.']);
+        }
+
+        $orden->load([
+            'ingreso.cliente', 'ingreso.equipo', 'tecnico',
+            'repuestos' => fn($q) => $q->where('estado', 'reservado')->with('producto'),
+        ]);
 
         return Inertia::render('Taller/Liquidacion/Show', [
             'orden' => $orden,
@@ -50,7 +58,7 @@ class LiquidacionController extends Controller
 
         $data = $request->validate([
             'costo_mano_obra' => 'required|numeric|min:0',
-            'forma_pago'      => 'required|string',
+            'forma_pago'      => 'required|string|in:efectivo,transferencia,tarjeta,cheque,datafast',
             'observaciones'   => 'nullable|string',
         ]);
 
@@ -58,7 +66,15 @@ class LiquidacionController extends Controller
             return back()->withErrors(['error' => 'Esta orden ya fue facturada.']);
         }
 
-        $orden->load('repuestos.producto', 'ingreso.cliente');
+        if (!in_array($orden->estado, ['listo', 'entregado'], true)) {
+            return back()->withErrors(['error' => 'La orden debe estar en estado "Listo" para liquidarse.']);
+        }
+
+        // Solo los repuestos vigentes (reservados); los devueltos por una anulación previa no se cobran.
+        $orden->load([
+            'repuestos' => fn($q) => $q->where('estado', 'reservado')->with('producto'),
+            'ingreso.cliente',
+        ]);
 
         if ($orden->repuestos->isEmpty() && (float) $data['costo_mano_obra'] === 0.0) {
             return back()->withErrors(['error' => 'La orden no tiene repuestos ni costo de mano de obra.']);
@@ -77,6 +93,12 @@ class LiquidacionController extends Controller
 
         try {
             $factura = DB::transaction(function () use ($orden, $data, $empresaId, $bodegaId) {
+                // Bloqueo para evitar doble liquidación concurrente de la misma OT.
+                $bloqueada = TallerOrdenTrabajo::lockForUpdate()->find($orden->id);
+                if (!in_array($bloqueada->estado, ['listo', 'entregado'], true)) {
+                    throw new \RuntimeException('La orden ya no está disponible para liquidar.');
+                }
+
                 $subtotal0 = 0;
                 $subtotal15 = 0;
                 $totalIva = 0;
@@ -198,6 +220,15 @@ class LiquidacionController extends Controller
         // Factura real (ventas + inventario + pago), pero nunca pasaba por
         // AsientoService: la venta quedaba invisible para la contabilidad.
         try {
+            // Costo de los repuestos que salieron de bodega por esta orden. En
+            // Taller el kárdex registra las salidas como TALLER_OT con doc_id =
+            // id del repuesto, no como FACTURA, así que se suman por ahí.
+            $costoRepuestos = (float) DB::table('inventario_movimientos')
+                ->where('doc_tipo', 'TALLER_OT')
+                ->whereIn('doc_id', $orden->repuestos()->pluck('id'))
+                ->where('tipo', 'salida')
+                ->sum('costo_total');
+
             $asientoFactura = $this->asiento->facturaAutorizada(
                 empresaId:     $empresaId,
                 facturaId:     $factura->id,
@@ -206,11 +237,29 @@ class LiquidacionController extends Controller
                 iva:           (float) $factura->total_iva,
                 total:         (float) $factura->total,
                 formaPago:     $data['forma_pago'],
+                costoVenta:    $costoRepuestos,
+                fecha:         $factura->fecha_emision?->toDateString(),
             );
             $factura->update(['asiento_id' => $asientoFactura->id]);
             $orden->update(['asiento_id' => $asientoFactura->id]);
-        } catch (\Throwable) {
-            // Asiento contable falla de forma silenciosa para no romper la liquidación
+        } catch (\Throwable $e) {
+            \Log::warning("Contabilidad: liquidación Taller {$factura->numero_completo} sin asiento: {$e->getMessage()}");
+            $this->asiento->notificarAsientoFallido(
+                empresaId:  (int) $empresaId,
+                tabla:      'facturas',
+                registroId: $factura->id,
+                referencia: "Liquidación Taller — factura {$factura->numero_completo}",
+                mensaje:    $e->getMessage(),
+            );
+        }
+
+        // Bancos: igual que Ventas, el cobro entra a la caja/banco configurado.
+        // Nunca bloquea la liquidación.
+        try {
+            app(\App\Services\CobroBancoService::class)
+                ->ingresosFactura($factura->fresh(['pagos']), $factura->fresh()->asiento_id);
+        } catch (\Throwable $e) {
+            \Log::warning("Bancos: cobro de factura {$factura->numero_completo} (Taller) no registrado: {$e->getMessage()}");
         }
 
         $this->auditoria->documento('crear', 'taller', 'liquidacion', $orden->id,
@@ -231,7 +280,11 @@ class LiquidacionController extends Controller
             'precio_venta' => 'required|numeric|min:0',
         ]);
 
-        $producto = Producto::findOrFail($data['producto_id']);
+        if ($orden->estado !== 'en_proceso') {
+            return back()->with('flash', ['tipo' => 'error', 'mensaje' => 'Solo se pueden agregar repuestos a órdenes en proceso.']);
+        }
+
+        $producto = Producto::where('estado', true)->findOrFail($data['producto_id']);
 
         try {
             $bodegaId = $this->bodegaTallerId();
@@ -253,9 +306,7 @@ class LiquidacionController extends Controller
 
                 $this->inventario->reservarStock($data['producto_id'], $bodegaId, $data['cantidad'], 'taller_ot', $repuesto->id);
 
-                $orden->costo_repuestos += $data['precio_venta'] * $data['cantidad'];
-                $orden->costo_total = $orden->costo_mano_obra + $orden->costo_repuestos;
-                $orden->save();
+                $this->recalcularCostos($orden);
             });
         } catch (\RuntimeException $e) {
             return back()->with('flash', ['tipo' => 'error', 'mensaje' => $e->getMessage()]);
@@ -267,8 +318,45 @@ class LiquidacionController extends Controller
         return back()->with('flash', ['tipo' => 'exito', 'mensaje' => 'Repuesto agregado correctamente.']);
     }
 
-    public function saldoDisponible(Request $request): JsonResponse
+    public function quitarRepuesto(TallerOrdenTrabajo $orden, TallerOtRepuesto $repuesto): RedirectResponse
     {
+        abort_if((int) $orden->empresa_id !== (int) session('empresa_activa_id'), 403);
+        abort_if((int) $repuesto->orden_id !== (int) $orden->id, 404);
+
+        if ($repuesto->estado !== 'reservado' || $orden->estado === 'facturado') {
+            return back()->with('flash', ['tipo' => 'error', 'mensaje' => 'Solo se pueden quitar repuestos reservados de una orden no facturada.']);
+        }
+
+        try {
+            $bodegaId = $this->bodegaTallerId();
+        } catch (\RuntimeException $e) {
+            return back()->with('flash', ['tipo' => 'error', 'mensaje' => $e->getMessage()]);
+        }
+
+        DB::transaction(function () use ($orden, $repuesto, $bodegaId) {
+            $this->inventario->liberarReserva((int) $repuesto->producto_id, $bodegaId, (float) $repuesto->cantidad);
+            $repuesto->delete();
+            $this->recalcularCostos($orden);
+        });
+
+        $this->auditoria->documento('eliminar', 'taller', 'ot_repuestos', $orden->id,
+            "Repuesto #{$repuesto->id} quitado de la orden " . ($orden->numero ?? $orden->id));
+
+        return back()->with('flash', ['tipo' => 'exito', 'mensaje' => 'Repuesto quitado y reserva liberada.']);
+    }
+
+    private function recalcularCostos(TallerOrdenTrabajo $orden): void
+    {
+        $orden->costo_repuestos = (float) $orden->repuestos()->where('estado', 'reservado')
+            ->selectRaw('COALESCE(SUM(precio_venta * cantidad), 0) as t')->value('t');
+        $orden->costo_total = (float) $orden->costo_mano_obra + (float) $orden->costo_repuestos;
+        $orden->save();
+    }
+
+    public function saldoDisponible(Request $request, TallerOrdenTrabajo $orden): JsonResponse
+    {
+        abort_if((int) $orden->empresa_id !== (int) session('empresa_activa_id'), 403);
+
         $request->validate([
             'producto_id' => 'required|integer',
         ]);

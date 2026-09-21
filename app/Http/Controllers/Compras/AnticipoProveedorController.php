@@ -40,6 +40,12 @@ class AnticipoProveedorController extends Controller
             if ($request->filled('proveedor_id')) {
                 $query->where('proveedor_id', $request->proveedor_id);
             }
+            if ($request->filled('fecha_desde')) {
+                $query->where('fecha', '>=', $request->fecha_desde);
+            }
+            if ($request->filled('fecha_hasta')) {
+                $query->where('fecha', '<=', $request->fecha_hasta);
+            }
             if ($request->filled('buscar')) {
                 $q = $request->buscar;
                 $query->where(function ($qb) use ($q) {
@@ -104,7 +110,7 @@ class AnticipoProveedorController extends Controller
             'proveedoresInternacionales' => $proveedoresInternacionales,
             'importaciones'              => $importaciones,
             'bancos'                     => $bancos,
-            'filtros'                    => $request->only(['estado', 'proveedor_id', 'buscar']),
+            'filtros'                    => $request->only(['estado', 'proveedor_id', 'buscar', 'fecha_desde', 'fecha_hasta']),
         ]);
     }
 

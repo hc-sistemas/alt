@@ -6,7 +6,7 @@ import PageHeader from '@/Components/shared/PageHeader'
 import FilterToolbar from '@/Components/shared/FilterToolbar'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
-import { cn } from '@/lib/utils'
+import { cn, fechaHoy } from '@/lib/utils'
 import { Plus, X, CreditCard, CheckCircle, Search } from 'lucide-react'
 import { usePermiso } from '@/Hooks/usePermiso'
 import type { BancoCaja, DatafastLote, PageProps } from '@/types'
@@ -225,7 +225,11 @@ export default function DatafastIndex() {
     const [showLote, setShowLote] = useState(false)
     const [liquidarLote, setLiquidarLote] = useState<LoteRow | null>(null)
 
-    const [filtro, setFiltro] = useState(filtros)
+    const [filtro, setFiltro] = useState({
+        ...filtros,
+        fecha_desde: filtros.fecha_desde ?? (lotes !== null ? '' : fechaHoy()),
+        fecha_hasta: filtros.fecha_hasta ?? (lotes !== null ? '' : fechaHoy()),
+    })
 
     // Cambiar cualquier filtro después de haber buscado no vacía la tabla —
     // solo la atenúa (opacity-60) hasta que se presione Buscar de nuevo.

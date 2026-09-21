@@ -36,6 +36,7 @@ use App\Http\Controllers\Bancos\DatafastController;
 use App\Http\Controllers\Bancos\ConciliacionController;
 use App\Http\Controllers\Bancos\ChequesController;
 use App\Http\Controllers\Bancos\BancoReporteController;
+use App\Http\Controllers\Bancos\ConfiguracionCobrosController;
 use App\Http\Controllers\Ventas\AprobacionController;
 use App\Http\Controllers\Ventas\FacturaController;
 use App\Http\Controllers\Ventas\ProformaController;
@@ -51,6 +52,7 @@ use App\Http\Controllers\RRHH\HorasExtrasController;
 use App\Http\Controllers\RRHH\NominaController;
 use App\Http\Controllers\RRHH\PrestamosController;
 use App\Http\Controllers\RRHH\LiquidacionesController;
+use App\Http\Controllers\RRHH\DepartamentoController;
 use App\Http\Controllers\ManualesController;
 use App\Http\Controllers\Reportes\ReporteSriController;
 use App\Http\Controllers\Taller\TipoEquipoController;
@@ -386,6 +388,7 @@ Route::middleware('auth')->group(function () {
             Route::get('activos/{activoFijo}/edit', [ActivoFijoController::class, 'edit'])->name('activos.edit');
 
             Route::get('listas', [ListaPrecioController::class, 'index'])->name('listas.index');
+            Route::get('listas/exportar', [ListaPrecioController::class, 'exportar'])->name('listas.exportar');
 
             Route::get('recepciones', [RecepcionController::class, 'index'])->name('recepciones.index');
             Route::get('recepciones/buscar-compra', [RecepcionController::class, 'buscarCompra'])->name('recepciones.buscarCompra');
@@ -408,6 +411,8 @@ Route::middleware('auth')->group(function () {
                 Route::put('activos/{activoFijo}', [ActivoFijoController::class, 'update'])->name('activos.update');
                 Route::post('activos/{activoFijo}/depreciar', [ActivoFijoController::class, 'depreciar'])->name('activos.depreciar');
                 Route::put('listas/{producto}', [ListaPrecioController::class, 'update'])->name('listas.update');
+                Route::get('recepciones/{recepcion}/etiquetas-data', [RecepcionController::class, 'etiquetasData'])->name('recepciones.etiquetasData');
+                Route::post('recepciones/{recepcion}/etiquetas-pdf', [RecepcionController::class, 'generarEtiquetas'])->name('recepciones.etiquetasPdf');
                 Route::post('recepciones/{recepcion}/escanear', [RecepcionController::class, 'escanear'])->name('recepciones.escanear');
                 Route::post('recepciones/{recepcion}/confirmar', [RecepcionController::class, 'confirmar'])->name('recepciones.confirmar');
             });
@@ -490,6 +495,7 @@ Route::middleware('auth')->group(function () {
             Route::get('/pdf',                   [MovimientoBancarioController::class, 'pdf'])          ->name('pdf');
             Route::middleware('permiso:bancos,crear')->group(function () {
                 Route::post('/',                     [MovimientoBancarioController::class, 'store'])       ->name('store');
+                Route::post('/transferir',           [MovimientoBancarioController::class, 'transferir'])  ->name('transferir');
             });
             Route::middleware('permiso:bancos,anular')->group(function () {
                 Route::patch('/{movimiento}/anular', [MovimientoBancarioController::class, 'anular'])      ->name('anular');
@@ -547,6 +553,13 @@ Route::middleware('auth')->group(function () {
             });
         });
 
+        Route::prefix('bancos/configuracion-cobros')->name('bancos.cobros-config.')->group(function () {
+            Route::get('/', [ConfiguracionCobrosController::class, 'index'])->name('index');
+            Route::middleware('permiso:bancos,editar')->group(function () {
+                Route::put('/', [ConfiguracionCobrosController::class, 'update'])->name('update');
+            });
+        });
+
         Route::prefix('bancos/reportes')->name('bancos.reportes.')->group(function () {
             Route::get('/',                [BancoReporteController::class, 'index'])               ->name('index');
             Route::get('/estado-cuenta',   [BancoReporteController::class, 'estadoCuenta'])        ->name('estado-cuenta');
@@ -578,6 +591,20 @@ Route::middleware('auth')->group(function () {
             Route::middleware('permiso:rrhh,editar')->group(function () {
                 Route::put('/{colaborador}',             [ColaboradorController::class, 'update']) ->name('update');
                 Route::patch('/{colaborador}/toggle',    [ColaboradorController::class, 'toggle']) ->name('toggle');
+            });
+        });
+
+        Route::prefix('departamentos')->name('departamentos.')->group(function () {
+            Route::get('/', [DepartamentoController::class, 'index'])->name('index');
+            Route::middleware('permiso:rrhh,crear')->group(function () {
+                Route::post('/', [DepartamentoController::class, 'store'])->name('store');
+            });
+            Route::middleware('permiso:rrhh,editar')->group(function () {
+                Route::put('/{departamento}',          [DepartamentoController::class, 'update'])->name('update');
+                Route::patch('/{departamento}/toggle', [DepartamentoController::class, 'toggle'])->name('toggle');
+            });
+            Route::middleware('permiso:rrhh,eliminar')->group(function () {
+                Route::delete('/{departamento}', [DepartamentoController::class, 'destroy'])->name('destroy');
             });
         });
 
@@ -673,15 +700,19 @@ Route::middleware('auth')->group(function () {
             Route::get('/crear',                  [FacturaController::class, 'create'])         ->name('create');
             Route::get('/saldo-disponible',       [FacturaController::class, 'saldoDisponible'])->name('saldo-disponible');
             Route::get('/{factura}',              [FacturaController::class, 'show'])           ->name('show');
+            Route::get('/{factura}/xml',          [FacturaController::class, 'xml'])            ->name('xml');
+            Route::get('/{factura}/ride',         [FacturaController::class, 'ride'])           ->name('ride');
             Route::middleware('permiso:ventas,crear')->group(function () {
                 Route::post('/',                      [FacturaController::class, 'store'])          ->name('store');
                 Route::post('/cliente-guardar',       [FacturaController::class, 'clienteGuardar']) ->name('cliente-guardar');
             });
             Route::middleware('permiso:ventas,editar')->group(function () {
                 Route::post('/{factura}/enviar-sri',  [FacturaController::class, 'enviarSri'])      ->name('enviar-sri');
+                Route::post('/{factura}/enviar-correo', [FacturaController::class, 'enviarCorreo']) ->name('enviar-correo');
             });
             Route::middleware('permiso:ventas,anular')->group(function () {
                 Route::patch('/{factura}/anular',     [FacturaController::class, 'anular'])         ->name('anular');
+                Route::delete('/{factura}',           [FacturaController::class, 'destroy'])        ->name('destroy');
             });
         });
 
@@ -690,6 +721,7 @@ Route::middleware('auth')->group(function () {
             Route::get('/crear',                             [PrefacturaController::class, 'create'])             ->name('create');
             Route::get('/saldo-disponible',                  [PrefacturaController::class, 'saldoDisponible'])    ->name('saldo-disponible');
             Route::get('/{prefactura}',                      [PrefacturaController::class, 'show'])               ->name('show');
+            Route::get('/{prefactura}/pdf',                  [PrefacturaController::class, 'pdf'])                ->name('pdf');
             Route::middleware('permiso:ventas,crear')->group(function () {
                 Route::post('/',                                 [PrefacturaController::class, 'store'])              ->name('store');
             });
@@ -697,19 +729,25 @@ Route::middleware('auth')->group(function () {
                 Route::post('/{prefactura}/abonar',              [PrefacturaController::class, 'abonar'])             ->name('abonar');
                 Route::post('/{prefactura}/convertir-a-factura', [PrefacturaController::class, 'convertirAFactura']) ->name('convertir');
             });
+            Route::middleware('permiso:ventas,anular')->group(function () {
+                Route::patch('/{prefactura}/anular',             [PrefacturaController::class, 'anular'])             ->name('anular');
+                Route::delete('/{prefactura}',                   [PrefacturaController::class, 'destroy'])            ->name('destroy');
+            });
         });
 
         Route::prefix('ventas/proformas')->name('ventas.proformas.')->group(function () {
             Route::get('/',                                 [ProformaController::class, 'index'])             ->name('index');
             Route::get('/crear',                            [ProformaController::class, 'create'])            ->name('create');
             Route::get('/{proforma}',                       [ProformaController::class, 'show'])              ->name('show');
+            Route::get('/{proforma}/pdf',                   [ProformaController::class, 'pdf'])               ->name('pdf');
             Route::middleware('permiso:ventas,crear')->group(function () {
                 Route::post('/',                                [ProformaController::class, 'store'])             ->name('store');
             });
             Route::middleware('permiso:ventas,editar')->group(function () {
                 Route::post('/{proforma}/convertir-a-factura',  [ProformaController::class, 'convertirAFactura'])->name('convertir');
             });
-            Route::middleware('permiso:ventas,eliminar')->group(function () {
+            Route::middleware('permiso:ventas,anular')->group(function () {
+                Route::patch('/{proforma}/anular',              [ProformaController::class, 'anular'])            ->name('anular');
                 Route::delete('/{proforma}',                    [ProformaController::class, 'destroy'])           ->name('destroy');
             });
         });
@@ -773,6 +811,7 @@ Route::middleware('auth')->group(function () {
             Route::get('/ingresos/crear', [IngresoController::class, 'create'])->name('ingresos.create');
             Route::get('/ingresos/{ingreso}', [IngresoController::class, 'show'])->name('ingresos.show');
             Route::get('/ingresos/{ingreso}/pdf', [IngresoController::class, 'pdfOrdenTrabajo'])->name('ingresos.pdf');
+            Route::get('/ingresos/{ingreso}/imagen', [IngresoController::class, 'imagen'])->name('ingresos.imagen');
             Route::get('/equipos/buscar', [IngresoController::class, 'buscarEquipo'])->name('equipos.buscar');
             Route::get('/ordenes', [OrdenTrabajoController::class, 'index'])->name('ordenes.index');
             Route::get('/ordenes/{orden}', [OrdenTrabajoController::class, 'show'])->name('ordenes.show');
@@ -790,6 +829,9 @@ Route::middleware('auth')->group(function () {
             });
 
             Route::middleware('permiso:taller,editar')->group(function () {
+                Route::get('/ingresos/{ingreso}/editar', [IngresoController::class, 'edit'])->name('ingresos.edit');
+                Route::put('/ingresos/{ingreso}', [IngresoController::class, 'update'])->name('ingresos.update');
+                Route::delete('/ordenes/{orden}/repuestos/{repuesto}', [LiquidacionController::class, 'quitarRepuesto'])->name('ordenes.repuestos.destroy');
                 Route::patch('/tipos-equipo/{tipoEquipo}', [TipoEquipoController::class, 'update'])->name('tipos-equipo.update');
                 Route::patch('/ordenes/{orden}/estado', [OrdenTrabajoController::class, 'cambiarEstado'])->name('ordenes.cambiar-estado');
                 Route::patch('/diagnosticos/{diagnostico}/aprobar', [DiagnosticoController::class, 'aprobar'])->name('diagnosticos.aprobar');
@@ -797,6 +839,7 @@ Route::middleware('auth')->group(function () {
             });
 
             Route::middleware('permiso:taller,eliminar')->group(function () {
+                Route::delete('/ingresos/{ingreso}', [IngresoController::class, 'destroy'])->name('ingresos.destroy');
                 Route::delete('/tipos-equipo/{tipoEquipo}', [TipoEquipoController::class, 'destroy'])->name('tipos-equipo.destroy');
             });
         });

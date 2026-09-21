@@ -205,6 +205,100 @@ class MovimientoBancarioController extends Controller
         }
     }
 
+    /**
+     * Transferencia entre cuentas propias (banco↔banco, caja→banco, banco→caja, etc.).
+     * Crea DOS movimientos enlazados (egreso en el origen, ingreso en el destino) con
+     * documento_tipo=TRANSFERENCIA y documento_id = id del egreso, y un único asiento
+     * (DEBE cuenta destino / HABER cuenta origen) cuando ambas cuentas contables existen y
+     * difieren. Si el asiento no se puede generar, la transferencia completa se revierte.
+     */
+    public function transferir(Request $request): RedirectResponse
+    {
+        $empresaId = session('empresa_activa_id');
+
+        $request->validate([
+            'banco_origen_id'  => 'required|exists:bancos_cajas,id',
+            'banco_destino_id' => 'required|exists:bancos_cajas,id|different:banco_origen_id',
+            'fecha'            => 'required|date',
+            'monto'            => 'required|numeric|min:0.01',
+            'num_documento'    => 'nullable|string|max:50',
+            'descripcion'      => 'required|string|max:500',
+        ], [
+            'banco_destino_id.different' => 'La cuenta destino debe ser distinta de la de origen.',
+            'descripcion.required'       => 'La descripción es obligatoria.',
+        ]);
+
+        try {
+            DB::transaction(function () use ($request, $empresaId) {
+                $origen  = BancoCaja::where('empresa_id', $empresaId)->findOrFail($request->banco_origen_id);
+                $destino = BancoCaja::where('empresa_id', $empresaId)->findOrFail($request->banco_destino_id);
+                $monto   = (float) $request->monto;
+
+                if (!$origen->estado || !$destino->estado) {
+                    throw new \Exception('Ambas cuentas deben estar activas.');
+                }
+                if ((float) $origen->saldo_actual < $monto) {
+                    throw new \Exception(
+                        "Saldo insuficiente en {$origen->nombre}. Disponible: \$" . number_format((float) $origen->saldo_actual, 2)
+                    );
+                }
+
+                $base = [
+                    'empresa_id'     => $empresaId,
+                    'sub_tipo'       => 'transferencia',
+                    'fecha'          => $request->fecha,
+                    'monto'          => $monto,
+                    'num_documento'  => $request->num_documento,
+                    'documento_tipo' => 'TRANSFERENCIA',
+                    'anulado'        => false,
+                    'conciliado'     => false,
+                    'created_by'     => Auth::id(),
+                ];
+
+                $egreso = MovimientoBancario::create($base + [
+                    'banco_caja_id' => $origen->id,
+                    'tipo'          => 'egreso',
+                    'beneficiario'  => $destino->nombre,
+                    'descripcion'   => "Transferencia a {$destino->nombre} — {$request->descripcion}",
+                ]);
+                $egreso->update(['documento_id' => $egreso->id]);
+
+                $ingreso = MovimientoBancario::create($base + [
+                    'banco_caja_id' => $destino->id,
+                    'tipo'          => 'ingreso',
+                    'beneficiario'  => $origen->nombre,
+                    'descripcion'   => "Transferencia desde {$origen->nombre} — {$request->descripcion}",
+                    'documento_id'  => $egreso->id,
+                ]);
+
+                $origen->actualizarSaldo($monto, 'egreso');
+                $destino->actualizarSaldo($monto, 'ingreso');
+
+                // Asiento solo si ambas cuentas tienen cuenta contable y son distintas
+                if ($origen->cuenta_id && $destino->cuenta_id && $origen->cuenta_id !== $destino->cuenta_id) {
+                    $asiento = $this->asientoService->crear(
+                        empresaId:     $empresaId,
+                        concepto:      "Transferencia {$origen->nombre} → {$destino->nombre} — {$request->descripcion}",
+                        partidas: [
+                            ['cuenta_id' => $destino->cuenta_id, 'debe' => $monto, 'haber' => 0,      'descripcion' => "Transferencia desde {$origen->nombre}"],
+                            ['cuenta_id' => $origen->cuenta_id,  'debe' => 0,      'haber' => $monto, 'descripcion' => "Transferencia a {$destino->nombre}"],
+                        ],
+                        documentoTipo: 'BANCO',
+                        documentoId:   $egreso->id,
+                        esAutomatico:  true,
+                        fecha:         $request->fecha,
+                    );
+                    $egreso->update(['asiento_id' => $asiento->id]);
+                    $ingreso->update(['asiento_id' => $asiento->id]);
+                }
+            });
+        } catch (\Throwable $e) {
+            return back()->with('error', $e->getMessage())->withInput();
+        }
+
+        return back()->with('success', 'Transferencia registrada correctamente.');
+    }
+
     public function exportExcel(Request $request): \Symfony\Component\HttpFoundation\BinaryFileResponse
     {
         $empresaId = session('empresa_activa_id');
@@ -294,8 +388,35 @@ class MovimientoBancarioController extends Controller
             return back()->with('error',
                 'No se puede anular: el movimiento ya fue conciliado con el banco.');
         }
+        $origen = [
+            'DATAFAST'  => 'la liquidación de un lote Datafast',
+            'NOMINA'    => 'el pago de una nómina',
+            'COBRO_CXC' => 'el cobro de una cuenta por cobrar',
+            'CXP'       => 'el pago de una cuenta por pagar con cheque (anule el cheque desde Bancos → Cheques)',
+            'FACTURA_VENTA' => 'una factura de venta (se revierte al anular la factura)',
+        ][$movimiento->documento_tipo] ?? null;
+        if ($origen) {
+            return back()->with('error', "Este movimiento proviene de {$origen} y no se anula desde aquí.");
+        }
 
-        DB::transaction(function () use ($movimiento, $request) {
+        // Una transferencia entre cuentas son dos movimientos enlazados: se anulan juntos.
+        $par = null;
+        if ($movimiento->documento_tipo === 'TRANSFERENCIA') {
+            $par = MovimientoBancario::where('documento_tipo', 'TRANSFERENCIA')
+                ->where('documento_id', $movimiento->documento_id)
+                ->where('id', '!=', $movimiento->id)
+                ->first();
+            if ($par && $par->anulado) {
+                return back()->with('error', 'La otra parte de esta transferencia ya está anulada.');
+            }
+            if ($par && $par->conciliado) {
+                return back()->with('error',
+                    'No se puede anular: la otra parte de la transferencia ya fue conciliada con el banco.');
+            }
+        }
+
+        DB::transaction(function () use ($movimiento, $par, $request) {
+          foreach (array_filter([$movimiento, $par]) as $movimiento) {
             $tipoReversa = $movimiento->tipo === 'ingreso' ? 'egreso' : 'ingreso';
 
             // Anular el asiento contable original (genera su propio asiento de reversa)
@@ -350,6 +471,7 @@ class MovimientoBancarioController extends Controller
                 'valor_nuevo'    => "true — {$request->motivo} (reversión: movimiento #{$reversion->id})",
                 'ip_address'     => $request->ip(),
             ]);
+          }
         });
 
         return back()->with('success', 'Movimiento anulado. Se generó un movimiento de reversión y su asiento contable.');

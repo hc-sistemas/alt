@@ -92,16 +92,17 @@ class AsientoContableController extends Controller
     {
         $empresaId = session('empresa_activa_id');
 
-        // CORRECCIÓN 4: verificar permiso
-        $perfil = Auth::user()->perfil->nombre ?? '';
-        if (!in_array($perfil, ['super_admin', 'admin', 'contador'])) {
-            return back()->with('error',
-                'No tienes permiso para crear asientos contables.');
-        }
+        // La autorización la resuelve el middleware `permiso:contabilidad,crear`
+        // de la ruta. El chequeo por nombre de perfil que había aquí duplicaba
+        // ese control con otro criterio distinto, así que la matriz de permisos
+        // de Configuración no servía para nada en esta pantalla: un perfil con
+        // el permiso concedido igual recibía "No tienes permiso".
 
         $request->validate([
             'concepto'               => 'required|string|max:500',
-            'fecha'                  => 'required|date',
+            // Un asiento no puede tener fecha futura: contabilizaría un hecho
+            // económico que todavía no ocurrió y descuadraría cualquier corte.
+            'fecha'                  => 'required|date|before_or_equal:today',
             'partidas'               => 'required|array|min:2',
             'partidas.*.cuenta_id'       => 'required|exists:plan_cuentas,id',
             'partidas.*.centro_costo_id' => 'nullable|integer|exists:centros_costo,id',
@@ -111,6 +112,7 @@ class AsientoContableController extends Controller
         ], [
             'concepto.required'             => 'El concepto es obligatorio.',
             'fecha.required'                => 'La fecha es obligatoria.',
+            'fecha.before_or_equal'         => 'No se pueden registrar asientos con fecha futura.',
             'partidas.min'                  => 'El asiento requiere mínimo 2 partidas.',
             'partidas.*.cuenta_id.required' => 'Selecciona una cuenta en cada partida.',
         ]);
@@ -146,8 +148,24 @@ class AsientoContableController extends Controller
         }
     }
 
+    /**
+     * El route-model binding resuelve el asiento por id sin mirar la empresa,
+     * y AsientoContable no tiene global scope. Con Matriz activa se podía
+     * abrir, imprimir, anular y ELIMINAR asientos de Altamira Import poniendo
+     * el id en la URL. Todas las acciones que reciben un {asiento} pasan por
+     * aquí.
+     */
+    private function verificarEmpresa(AsientoContable $asiento): void
+    {
+        if ((int) $asiento->empresa_id !== (int) session('empresa_activa_id')) {
+            abort(404);
+        }
+    }
+
     public function show(AsientoContable $asiento): Response
     {
+        $this->verificarEmpresa($asiento);
+
         $asiento->load([
             'ejercicio',
             'creadoPor',
@@ -162,6 +180,8 @@ class AsientoContableController extends Controller
 
     public function anular(Request $request, AsientoContable $asiento): RedirectResponse
     {
+        $this->verificarEmpresa($asiento);
+
         $perfil = Auth::user()->perfil->nombre ?? '';
         if ($perfil !== 'super_admin') {
             return back()->with('error',
@@ -188,6 +208,8 @@ class AsientoContableController extends Controller
     // CORRECCIÓN 4: eliminar físico (solo super_admin, máx 24 h)
     public function destroy(AsientoContable $asiento): RedirectResponse
     {
+        $this->verificarEmpresa($asiento);
+
         $perfil = Auth::user()->perfil->nombre ?? '';
         if ($perfil !== 'super_admin') {
             return back()->with('error',
@@ -213,6 +235,16 @@ class AsientoContableController extends Controller
         }
 
         $numero = $asiento->numero;
+
+        // plan_cuentas.total_asientos solo se incrementaba, nunca se
+        // decrementaba: una cuenta cuyo único asiento se eliminaba quedaba
+        // marcada para siempre como "tiene movimientos" y ya no se podía
+        // desactivar ni eliminar. Se descuenta al borrar.
+        $cuentaIds = $asiento->detalles()->pluck('cuenta_id')->unique();
+        PlanCuenta::whereIn('id', $cuentaIds)
+            ->where('total_asientos', '>', 0)
+            ->decrement('total_asientos');
+
         $asiento->detalles()->delete();
         $asiento->delete();
 
@@ -299,35 +331,12 @@ class AsientoContableController extends Controller
         return $pdf->stream('reporte-asientos-' . now()->format('Y-m-d') . '.pdf');
     }
 
+    // Este Libro Diario estaba duplicado carácter por carácter con el de
+    // ReporteContableController, pero solo aquel imprime el período que cubre
+    // y eleva el memory_limit. Se delega para que exista una sola versión.
     public function libroDiario(Request $request): \Illuminate\Http\Response
     {
-        $empresaId = session('empresa_activa_id');
-
-        $query = AsientoContable::with(['ejercicio', 'creadoPor', 'detalles.cuenta'])
-            ->where('empresa_id', $empresaId)
-            ->where('estado', 1);
-
-        if ($request->filled('ejercicio_id')) {
-            $query->where('ejercicio_id', $request->ejercicio_id);
-        }
-        if ($request->filled('fecha_desde')) {
-            $query->where('fecha', '>=', $request->fecha_desde);
-        }
-        if ($request->filled('fecha_hasta')) {
-            $query->where('fecha', '<=', $request->fecha_hasta);
-        }
-
-        $asientos   = $query->orderBy('fecha')->orderBy('id')->get();
-        $empresa    = Empresa::find($empresaId);
-        $totalDebe  = $asientos->sum('total_debe');
-        $totalHaber = $asientos->sum('total_haber');
-
-        $pdf = Pdf::loadView(
-            'pdf.libro-diario',
-            compact('asientos', 'empresa', 'totalDebe', 'totalHaber')
-        )->setPaper('a4', 'landscape');
-
-        return $pdf->stream('libro-diario-' . now()->format('Y-m-d') . '.pdf');
+        return app(ReporteContableController::class)->libroDiario($request);
     }
 
     public function mayorCuenta(Request $request): \Illuminate\Http\Response
@@ -335,43 +344,23 @@ class AsientoContableController extends Controller
         $empresaId = session('empresa_activa_id');
         $request->validate(['cuenta_id' => 'required|exists:plan_cuentas,id']);
 
-        $cuenta = PlanCuenta::findOrFail($request->cuenta_id);
-
-        $detalles = \App\Models\AsientoDetalle::with(['asiento.ejercicio'])
-            ->where('cuenta_id', $request->cuenta_id)
-            ->whereHas('asiento', fn($q) =>
-                $q->where('empresa_id', $empresaId)->where('estado', 1)
-            )
-            ->orderBy('id')
-            ->get();
-
-        if ($request->filled('fecha_desde')) {
-            $detalles = $detalles->filter(fn($d) =>
-                $d->asiento?->fecha?->toDateString() >= $request->fecha_desde
-            );
-        }
-        if ($request->filled('fecha_hasta')) {
-            $detalles = $detalles->filter(fn($d) =>
-                $d->asiento?->fecha?->toDateString() <= $request->fecha_hasta
-            );
-        }
-
-        $totalDebe  = $detalles->sum('debe');
-        $totalHaber = $detalles->sum('haber');
-        $saldo      = $totalDebe - $totalHaber;
-        $empresa    = Empresa::find($empresaId);
-
-        $pdf = Pdf::loadView(
-            'pdf.mayor-cuenta',
-            compact('cuenta', 'detalles', 'totalDebe', 'totalHaber', 'saldo', 'empresa')
-        )->setPaper('a4', 'portrait');
-
-        return $pdf->stream('mayor-' . $cuenta->codigo . '-' . now()->format('Y-m-d') . '.pdf');
+        // Se delega en ReporteContableController::mayor(), que es la
+        // implementación buena y única.
+        //
+        // La copia que vivía aquí traía TODOS los detalles de la cuenta a
+        // memoria y recién después filtraba las fechas con Collection::filter()
+        // en PHP (en la cuenta más activa son 6.218 filas para imprimir un mes),
+        // y además le faltaban el saldo anterior y el saldo corrido que sí tiene
+        // la otra. Eran dos "Mayor Contable" distintos según desde qué pantalla
+        // se entrara.
+        return app(ReporteContableController::class)->mayor($request);
     }
 
     // CORRECCIÓN 5: imprimir PDF individual
     public function imprimirPdf(AsientoContable $asiento): \Illuminate\Http\Response
     {
+        $this->verificarEmpresa($asiento);
+
         $asiento->load(['ejercicio','creadoPor','detalles.cuenta','detalles.centroCosto']);
         $empresa = Empresa::find(session('empresa_activa_id'));
 

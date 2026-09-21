@@ -78,7 +78,7 @@ export default function KardexIndex() {
             }
             const filaSaldoAnterior = {
                 ...base,
-                'Fecha': '', 'Tipo Doc.': '', 'Documento No': '', 'Observaciones': 'SALDO ANTERIOR', 'Transacción': '',
+                'Fecha': '', 'Tipo Doc.': '', 'Documento No': '', 'Observaciones': 'SALDO ANTERIOR', 'Transacción': '', 'Bodega': '',
                 'Cant. Ingreso': '', 'Costo/U Ingreso': '', 'Costo/T Ingreso': '',
                 'Cant. Egreso': '', 'Costo/U Egreso': '', 'Costo/T Egreso': '',
                 'Saldo': Number(saldo_anterior),
@@ -90,6 +90,7 @@ export default function KardexIndex() {
                 'Documento No':  m.documento_numero ?? (m.documento_id ? `#${m.documento_id}` : ''),
                 'Observaciones': m.observacion ?? '',
                 'Transacción':   m.tipo_descriptivo,
+                'Bodega':        m.bodega?.nombre ?? '',
                 'Cant. Ingreso':   m.es_ingreso === true ? Number(m.cantidad) : '',
                 'Costo/U Ingreso': m.es_ingreso === true ? Number(m.costo_unitario) : '',
                 'Costo/T Ingreso': m.es_ingreso === true ? Number(m.costo_total) : '',
@@ -117,8 +118,8 @@ export default function KardexIndex() {
         return hora ? `${f} ${hora.substring(0, 5)}` : f
     }
 
-    const thBase = 'px-2.5 py-2 font-medium text-xs uppercase tracking-wider whitespace-nowrap'
-    const tdBase = 'px-2.5 py-2'
+    const thBase = 'px-2 py-2 font-medium text-[10px] uppercase tracking-wider whitespace-nowrap'
+    const tdBase = 'px-2 py-2'
     const groupBorder = '2px solid var(--border)'
 
     const haBuscado = !!filters.fecha_desde && !!filters.fecha_hasta
@@ -133,7 +134,7 @@ export default function KardexIndex() {
 
             <div className="p-6 space-y-4">
                 {/* Cabecera de filtros */}
-                <div className="flex items-center gap-3 flex-wrap">
+                <div className="filter-toolbar flex items-end gap-3 flex-wrap">
                     <select value={bodegaId} onChange={e => setBodegaId(e.target.value)}
                         className="input-field shrink-0"
                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
@@ -213,7 +214,7 @@ export default function KardexIndex() {
                 {/* Tabla única de resultados */}
                 {resultados.length > 0 && (
                     <div className="rounded-xl border overflow-x-auto" style={{ borderColor: 'var(--border)' }}>
-                        <table className="w-full text-xs" style={{ minWidth: 1060 }}>
+                        <table className="w-full text-[10px]">
                             <thead>
                                 <tr style={{ background: 'var(--bg-card)' }}>
                                     <th colSpan={5} className={`${thBase} text-center`}
@@ -223,6 +224,10 @@ export default function KardexIndex() {
                                     <th className={`${thBase} text-center`}
                                         style={{ color: 'var(--text-main)', borderBottom: '1px solid var(--border)', borderRight: groupBorder }}>
                                         Transacción
+                                    </th>
+                                    <th rowSpan={2} className={`${thBase} text-center`}
+                                        style={{ color: 'var(--text-main)', borderBottom: '1px solid var(--border)', borderRight: groupBorder }}>
+                                        Bodega
                                     </th>
                                     <th colSpan={3} className={`${thBase} text-center`}
                                         style={{ color: '#059669', borderBottom: '1px solid var(--border)', borderRight: groupBorder, background: 'color-mix(in srgb, #059669 6%, var(--bg-card))' }}>
@@ -239,18 +244,18 @@ export default function KardexIndex() {
                                 </tr>
                                 <tr style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
                                     <th className={`${thBase} text-left`} style={{ color: 'var(--text-muted)' }}>No</th>
-                                    <th className={`${thBase} text-left`} style={{ color: 'var(--text-muted)' }}>Fecha de transacción</th>
+                                    <th className={`${thBase} text-left`} style={{ color: 'var(--text-muted)' }}>Fecha</th>
                                     <th className={`${thBase} text-left`} style={{ color: 'var(--text-muted)' }}>Tipo</th>
-                                    <th className={`${thBase} text-left`} style={{ color: 'var(--text-muted)' }}>Documento No</th>
-                                    <th className={`${thBase} text-left`} style={{ color: 'var(--text-muted)', borderRight: groupBorder }}>Observaciones</th>
+                                    <th className={`${thBase} text-left`} style={{ color: 'var(--text-muted)' }}>Doc. No</th>
+                                    <th className={`${thBase} text-left`} style={{ color: 'var(--text-muted)', borderRight: groupBorder }}>Obs.</th>
                                     <th className={`${thBase} text-left`} style={{ color: 'var(--text-muted)', borderRight: groupBorder }}>Tipo</th>
-                                    <th className={`${thBase} text-right`} style={{ color: 'var(--text-muted)' }}>Cantidad</th>
-                                    <th className={`${thBase} text-right`} style={{ color: 'var(--text-muted)' }}>Costo/U</th>
-                                    <th className={`${thBase} text-right`} style={{ color: 'var(--text-muted)', borderRight: groupBorder }}>Costo/T</th>
-                                    <th className={`${thBase} text-right`} style={{ color: 'var(--text-muted)' }}>Cantidad</th>
-                                    <th className={`${thBase} text-right`} style={{ color: 'var(--text-muted)' }}>Costo/U</th>
-                                    <th className={`${thBase} text-right`} style={{ color: 'var(--text-muted)', borderRight: groupBorder }}>Costo/T</th>
-                                    <th className={`${thBase} text-right`} style={{ color: 'var(--text-muted)' }}>Cantidad</th>
+                                    <th className={`${thBase} text-right`} style={{ color: 'var(--text-muted)' }}>Cant.</th>
+                                    <th className={`${thBase} text-right`} style={{ color: 'var(--text-muted)' }}>C/U</th>
+                                    <th className={`${thBase} text-right`} style={{ color: 'var(--text-muted)', borderRight: groupBorder }}>C/T</th>
+                                    <th className={`${thBase} text-right`} style={{ color: 'var(--text-muted)' }}>Cant.</th>
+                                    <th className={`${thBase} text-right`} style={{ color: 'var(--text-muted)' }}>C/U</th>
+                                    <th className={`${thBase} text-right`} style={{ color: 'var(--text-muted)', borderRight: groupBorder }}>C/T</th>
+                                    <th className={`${thBase} text-right`} style={{ color: 'var(--text-muted)' }}>Cant.</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -329,17 +334,14 @@ function ProductoKardexRows({
         <>
             {/* Fila de producto + SALDO ANTERIOR */}
             <tr className="border-t-2" style={{ borderColor: 'var(--border)', background: 'color-mix(in srgb, var(--primary) 4%, var(--bg-main))' }}>
-                <td className={tdBase}></td>
-                <td className={tdBase}></td>
-                <td className={`${tdBase} whitespace-nowrap`} style={{ color: 'var(--text-main)' }}>
-                    <span className="font-mono text-xs mr-1.5" style={{ color: 'var(--text-muted)' }}>{producto.codigo}</span>
+                <td colSpan={5} className={`${tdBase} text-center`} style={{ color: 'var(--text-main)', borderRight: groupBorder }}>
+                    <span className="font-mono text-[10px] mr-1.5" style={{ color: 'var(--text-muted)' }}>{producto.codigo}</span>
                     <span className="font-semibold">{producto.nombre}</span>
                 </td>
-                <td className={tdBase}></td>
-                <td className={tdBase} style={{ borderRight: groupBorder }}></td>
-                <td className={`${tdBase} font-bold text-xs uppercase`} style={{ color: 'var(--text-main)', borderRight: groupBorder }}>
+                <td className={`${tdBase} font-bold text-[10px] uppercase`} style={{ color: 'var(--text-main)', borderRight: groupBorder }}>
                     SALDO ANTERIOR
                 </td>
+                <td className={tdBase} style={{ borderRight: groupBorder }}></td>
                 <td className={`${tdBase} text-right`} style={{ color: 'var(--text-muted)' }}>—</td>
                 <td className={`${tdBase} text-right`} style={{ color: 'var(--text-muted)' }}>—</td>
                 <td className={`${tdBase} text-right`} style={{ color: 'var(--text-muted)', borderRight: groupBorder }}>—</td>
@@ -353,7 +355,7 @@ function ProductoKardexRows({
 
             {movimientos.length === 0 ? (
                 <tr className="border-t" style={{ borderColor: 'var(--border)' }}>
-                    <td colSpan={13} className="text-center py-4 text-sm" style={{ color: 'var(--text-muted)' }}>
+                    <td colSpan={14} className="text-center py-4 text-sm" style={{ color: 'var(--text-muted)' }}>
                         No hay movimientos para este producto con los filtros aplicados.
                     </td>
                 </tr>
@@ -376,9 +378,13 @@ function ProductoKardexRows({
                         title={m.observacion ?? ''}>
                         {m.observacion ?? '—'}
                     </td>
-                    <td className={`${tdBase} text-xs uppercase whitespace-nowrap`}
+                    <td className={`${tdBase} text-[10px] uppercase whitespace-nowrap`}
                         style={{ color: 'var(--text-main)', borderRight: groupBorder }}>
                         {m.tipo_descriptivo}
+                    </td>
+                    <td className={`${tdBase} whitespace-nowrap`}
+                        style={{ color: 'var(--text-muted)', borderRight: groupBorder }}>
+                        {m.bodega?.nombre ?? '—'}
                     </td>
 
                     {/* Ingresos */}
@@ -423,9 +429,10 @@ function ProductoKardexRows({
                 <td className={tdBase}></td>
                 <td className={tdBase}></td>
                 <td className={tdBase} style={{ borderRight: groupBorder }}></td>
-                <td className={`${tdBase} font-bold text-xs uppercase`} style={{ color: 'var(--text-main)', borderRight: groupBorder }}>
+                <td className={`${tdBase} font-bold text-[10px] uppercase`} style={{ color: 'var(--text-main)', borderRight: groupBorder }}>
                     TOTAL
                 </td>
+                <td className={tdBase} style={{ borderRight: groupBorder }}></td>
                 <td className={`${tdBase} text-right font-mono font-bold`} style={{ color: '#059669' }}>
                     {totalIngresosCant > 0 ? fmtQty(totalIngresosCant) : '—'}
                 </td>

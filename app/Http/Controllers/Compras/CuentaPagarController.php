@@ -127,6 +127,16 @@ class CuentaPagarController extends Controller
 
         $banco = BancoCaja::findOrFail($request->banco_caja_id);
 
+        try {
+            app(AsientoService::class)->validarConfiguracion(
+                (int) $cuentaPagar->empresa_id,
+                ['cta_proveedores_locales', 'cta_bancos_locales'],
+                $request->fecha_pago,
+            );
+        } catch (\DomainException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
         if ((float) $banco->saldo_actual < (float) $request->monto_pago) {
             return back()->with('error',
                 "Saldo insuficiente en {$banco->nombre}. " .
@@ -135,6 +145,9 @@ class CuentaPagarController extends Controller
             );
         }
 
+        // Si el asiento falla (período cerrado/no abierto, parámetro contable faltante) la
+        // transacción se revierte completa; se devuelve un error legible en vez de un 500.
+        try {
         DB::transaction(function () use ($request, $cuentaPagar, $banco) {
             $monto  = (float) $request->monto_pago;
 
@@ -176,6 +189,9 @@ class CuentaPagarController extends Controller
                 $request->fecha_pago,
             );
         });
+        } catch (\Throwable $e) {
+            return back()->with('error', 'No se pudo registrar el pago: ' . $e->getMessage());
+        }
 
         return back()->with('success', 'Pago registrado correctamente.');
     }
