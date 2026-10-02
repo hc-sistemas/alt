@@ -28,6 +28,10 @@ class ModuloSeeder extends Seeder
             ['nombre' => 'Taller', 'clave' => 'taller', 'icono' => 'Wrench', 'orden' => 8],
             ['nombre' => 'Reportes', 'clave' => 'reportes', 'icono' => 'BarChart2', 'orden' => 9],
             ['nombre' => 'Configuración', 'clave' => 'configuracion', 'icono' => 'Settings', 'orden' => 10],
+            // Módulo propio, separado de RRHH (CHECKLIST_ERRORES_COMPLICACIONES.md,
+            // ítem C4): Vendedor/Bodeguero/Técnico deben poder marcar su propia
+            // asistencia sin acceso al resto de RRHH.
+            ['nombre' => 'Asistencia', 'clave' => 'asistencia', 'icono' => 'ClipboardList', 'orden' => 11],
         ];
 
         $creados = [];
@@ -62,10 +66,11 @@ class ModuloSeeder extends Seeder
                 'ventas' => ['ver'],
                 'inventario' => ['ver'],
                 'reportes' => ['ver'],
+                'asistencia' => ['ver'],
             ],
-            'vendedor' => ['ventas' => ['ver', 'crear', 'editar'], 'inventario' => ['ver'], 'reportes' => ['ver']],
-            'bodeguero' => ['inventario' => ['ver', 'crear', 'editar', 'eliminar'], 'ventas' => ['ver']],
-            'tecnico' => ['taller' => ['ver', 'crear', 'editar', 'eliminar']],
+            'vendedor' => ['ventas' => ['ver', 'crear', 'editar'], 'inventario' => ['ver'], 'reportes' => ['ver'], 'asistencia' => ['ver', 'crear']],
+            'bodeguero' => ['inventario' => ['ver', 'crear', 'editar', 'eliminar'], 'ventas' => ['ver'], 'asistencia' => ['ver', 'crear']],
+            'tecnico' => ['taller' => ['ver', 'crear', 'editar', 'eliminar'], 'asistencia' => ['ver', 'crear']],
         ];
 
         foreach ($matrizPermisos as $nombrePerfil => $permisosPerfil) {

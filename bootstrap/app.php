@@ -19,7 +19,8 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
 
         $middleware->alias([
-            'permiso' => \App\Http\Middleware\VerificarPermiso::class,
+            'permiso'       => \App\Http\Middleware\VerificarPermiso::class,
+            'solo_perfiles' => \App\Http\Middleware\SoloPerfiles::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

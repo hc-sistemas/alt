@@ -22,7 +22,6 @@ interface ProductoVenta {
     nombre: string
     pvp: number
     pvd: number
-    costo: number
     descuento_max: number
     porcentaje_iva: number
     stock_disponible: number
@@ -675,11 +674,11 @@ export default function Form() {
                                         </td>
                                         <td className="py-1 px-1 align-top">
                                             <input
-                                                type="number" min="0" step="0.01"
+                                                type="number" readOnly tabIndex={-1}
                                                 value={det.precio_unitario}
-                                                className={cn(tdInput, 'text-right')}
-                                                style={tdInputStyle}
-                                                onChange={e => updateDetalle(idx, { precio_unitario: Number(e.target.value) })}
+                                                className={cn(tdInput, 'text-right cursor-not-allowed')}
+                                                style={{ ...tdInputStyle, background: 'var(--bg-card)', color: 'var(--text-muted)' }}
+                                                title="El precio no se puede editar. Para bajar el valor de la línea, use el descuento."
                                             />
                                             <div className={hintSlotCls} />
                                         </td>

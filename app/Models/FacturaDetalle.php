@@ -16,6 +16,7 @@ class FacturaDetalle extends Model
         'producto_id',
         'codigo_producto',
         'descripcion',
+        'es_regalo',
         'unidad',
         'cantidad',
         'precio_unitario',

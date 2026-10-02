@@ -132,8 +132,10 @@ class PrefacturaController extends Controller
             ->orderBy('razon_social')
             ->get();
 
+        // Sin 'costo': no se usa en Prefactura (no hay chequeo de precio bajo
+        // costo aquí) y no debe llegar al navegador del vendedor (CHECKLIST_ERRORES_COMPLICACIONES.md, A2).
         $productos = Producto::where('estado', true)
-            ->select('id', 'codigo', 'nombre', 'pvp', 'pvd', 'costo', 'porcentaje_iva')
+            ->select('id', 'codigo', 'nombre', 'pvp', 'pvd', 'porcentaje_iva')
             ->orderBy('nombre')
             ->get();
 
@@ -213,6 +215,12 @@ class PrefacturaController extends Controller
         $productoIds       = collect($request->detalles)->pluck('producto_id')->unique()->all();
         $maximosPermitidos = $this->descuento->mapaMaximosPermitidos($productoIds, $empresaId);
 
+        // Precio real desde la tabla productos (precio de lista, pvp). El
+        // vendedor no puede cambiar el precio, solo dar descuento: el precio
+        // que llega en el payload NUNCA se usa (ver
+        // CHECKLIST_ERRORES_COMPLICACIONES.md, ítem A1).
+        $preciosProductos = Producto::whereIn('id', $productoIds)->pluck('pvp', 'id');
+
         // Misma regla que FacturaController::store(): si el descuento supera el
         // límite del perfil o el tope del producto (promo vigente si aplica),
         // se exige una aprobación especial válida que cubra ese porcentaje.
@@ -224,7 +232,7 @@ class PrefacturaController extends Controller
         $baseIva    = 0;
         foreach ($request->detalles as $det) {
             $cantidad  = (float)$det['cantidad'];
-            $precio    = (float)$det['precio'];
+            $precio    = (float) ($preciosProductos[$det['producto_id']] ?? 0);
             $descPct   = (float)($det['descuento_pct'] ?? 0);
 
             if ($descPct < 0 || $descPct > 100) {
@@ -280,7 +288,7 @@ class PrefacturaController extends Controller
         }
 
         try {
-            $prefactura = DB::transaction(function () use ($request, $empresaId, $total, $tieneDescuentoEspecial, $aprobacionValida, $bodegaPrincipalId, $bodegaReservasId) {
+            $prefactura = DB::transaction(function () use ($request, $empresaId, $total, $tieneDescuentoEspecial, $aprobacionValida, $bodegaPrincipalId, $bodegaReservasId, $preciosProductos) {
                 $numero = $this->secuencial->siguiente($empresaId, 'PRE');
 
                 $prefactura = Prefactura::create([
@@ -299,7 +307,7 @@ class PrefacturaController extends Controller
 
                 foreach ($request->detalles as $det) {
                     $cantidad  = (float)$det['cantidad'];
-                    $precio    = (float)$det['precio'];
+                    $precio    = (float) ($preciosProductos[$det['producto_id']] ?? 0);
                     $descPct   = (float)($det['descuento_pct'] ?? 0);
                     $descuento = round($precio * $cantidad * ($descPct / 100), 2);
                     $neto      = round(($precio * $cantidad) - $descuento, 2);

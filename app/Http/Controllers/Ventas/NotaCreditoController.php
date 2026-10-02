@@ -108,6 +108,13 @@ class NotaCreditoController extends Controller
 
         $factura = Factura::with('detalles')->findOrFail($request->factura_id);
 
+        // create() ya exigía estado='activa', pero store() (el POST real)
+        // nunca lo revalidaba — un POST directo podía generar una NC sobre
+        // una factura ya anulada (CHECKLIST_ERRORES_COMPLICACIONES.md, "NC/Retención/Guía sin revalidar estado").
+        if ($factura->estado !== 'activa') {
+            return back()->withErrors(['error' => 'No se puede generar una nota de crédito sobre una factura anulada.']);
+        }
+
         // Validar cantidades contra los originales
         foreach ($request->detalles as $det) {
             $original = $factura->detalles->firstWhere('id', $det['detalle_id']);

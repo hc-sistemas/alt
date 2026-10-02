@@ -12,8 +12,23 @@ class Proveedor extends Model
 
     protected $table = 'proveedores';
 
+    /**
+     * Catálogo de tipo_contribuyente (CHECKLIST_ERRORES_COMPLICACIONES.md, E1).
+     * No son valores oficiales del SRI (el equipo pidió exactamente estos 5
+     * nombres) — no confundir con `Empresa::obligado_contabilidad` /
+     * `contribuyente_especial`, que son las columnas reales que sí usa el SRI
+     * para la propia empresa.
+     */
+    public const TIPOS_CONTRIBUYENTE = [
+        'no_obligado'                 => 'No obligado',
+        'obligado_contabilidad'       => 'Obligado a llevar contabilidad',
+        'sociedad'                    => 'Sociedad',
+        'contribuyente_especial'      => 'Contribuyente especial',
+        'gran_contribuyente_especial' => 'Gran contribuyente especial',
+    ];
+
     protected $fillable = [
-        'empresa_id', 'tipo', 'tipo_identificacion', 'identificacion',
+        'empresa_id', 'tipo', 'tipo_identificacion', 'tipo_contribuyente', 'identificacion',
         'razon_social', 'nombre_comercial', 'email', 'telefono',
         'direccion', 'ciudad', 'pais', 'divisa',
         'tiene_credito', 'dias_credito', 'estado',

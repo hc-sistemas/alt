@@ -512,6 +512,8 @@ export interface Proveedor {
     empresa_id: number
     tipo: 'nacional' | 'internacional'
     tipo_identificacion: string
+    // E1 (CHECKLIST_ERRORES_COMPLICACIONES.md): ver Proveedor::TIPOS_CONTRIBUYENTE en el backend.
+    tipo_contribuyente: string | null
     identificacion: string
     razon_social: string
     nombre_comercial: string | null

@@ -10,8 +10,9 @@ import { formatFecha, formatMoneda } from '@/lib/utils'
 import { toastError } from '@/lib/toast'
 import axios from '@/lib/axios'
 import { confirmarEliminar } from '@/lib/swal'
-import { Save, Search, Plus, Check, X, Trash2 } from 'lucide-react'
+import { Save, Search, Plus, Check, X, Trash2, FileText, Pencil } from 'lucide-react'
 import { usePermiso } from '@/Hooks/usePermiso'
+import PdfPreviewModal from '@/Components/shared/PdfPreviewModal'
 import type { PageProps, TallerOrdenTrabajo } from '@/types'
 
 interface Tecnico {
@@ -88,6 +89,23 @@ export default function OrdenTrabajoShow() {
     const [estado, setEstado] = useState(orden.estado)
     const [tecnicoId, setTecnicoId] = useState(orden.tecnico_id ? String(orden.tecnico_id) : '')
     const [actualizando, setActualizando] = useState(false)
+
+    // D1 (CHECKLIST_ERRORES_COMPLICACIONES.md): Ingresos y Órdenes de Trabajo
+    // fusionados en una sola pantalla — esta es la información y las acciones
+    // que antes solo vivían en Ingresos/Show.tsx.
+    const ingreso = orden.ingreso
+    const componentes = ingreso?.componentes ?? []
+    const [pdfIngresoAbierto, setPdfIngresoAbierto] = useState(false)
+    const urlImagenEquipo = ingreso?.imagen
+        ? (/^https?:\/\//i.test(ingreso.imagen) ? ingreso.imagen : route('taller.ingresos.imagen', ingreso.id))
+        : null
+
+    async function eliminarIngreso() {
+        if (!ingreso) return
+        if (await confirmarEliminar(`el ingreso #${ingreso.id}`)) {
+            router.delete(route('taller.ingresos.destroy', ingreso.id))
+        }
+    }
 
     function actualizarEstado() {
         setActualizando(true)
@@ -268,6 +286,14 @@ export default function OrdenTrabajoShow() {
                                 <p className="text-xs mb-0.5" style={{ color: 'var(--text-muted)' }}>Identificación</p>
                                 <p style={{ color: 'var(--text-main)' }}>{orden.ingreso?.cliente?.identificacion ?? '—'}</p>
                             </div>
+                            <div>
+                                <p className="text-xs mb-0.5" style={{ color: 'var(--text-muted)' }}>Teléfono</p>
+                                <p style={{ color: 'var(--text-main)' }}>{orden.ingreso?.cliente?.telefono ?? '—'}</p>
+                            </div>
+                            <div>
+                                <p className="text-xs mb-0.5" style={{ color: 'var(--text-muted)' }}>Email</p>
+                                <p style={{ color: 'var(--text-main)' }}>{orden.ingreso?.cliente?.email ?? '—'}</p>
+                            </div>
                         </div>
                     </div>
 
@@ -294,9 +320,78 @@ export default function OrdenTrabajoShow() {
                                 <p className="text-xs mb-0.5" style={{ color: 'var(--text-muted)' }}>Color</p>
                                 <p style={{ color: 'var(--text-main)' }}>{orden.ingreso?.equipo?.color ?? '—'}</p>
                             </div>
+                            {urlImagenEquipo && (
+                                <div>
+                                    <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>Imagen</p>
+                                    <img src={urlImagenEquipo} alt="Imagen del equipo"
+                                        className="rounded-lg border max-w-[200px]"
+                                        style={{ borderColor: 'var(--border)' }} />
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
+
+                {ingreso?.observaciones && (
+                    <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+                        <div className="px-4 py-3" style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
+                            <h3 className="text-sm font-semibold" style={{ color: 'var(--text-main)' }}>Observaciones de ingreso</h3>
+                        </div>
+                        <div className="p-4 text-sm">
+                            <p className="whitespace-pre-wrap" style={{ color: 'var(--text-muted)' }}>{ingreso.observaciones}</p>
+                        </div>
+                    </div>
+                )}
+
+                {componentes.length > 0 && (
+                    <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+                        <div className="px-4 py-3" style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
+                            <h3 className="text-sm font-semibold" style={{ color: 'var(--text-main)' }}>Revisión de componentes</h3>
+                        </div>
+                        <table className="w-full text-sm">
+                            <thead>
+                                <tr style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
+                                    {['Componente', 'Funciona', 'Acción', 'Costo', 'Detalle'].map(h => (
+                                        <th key={h} className="text-left px-4 py-2.5 font-medium text-xs" style={{ color: 'var(--text-muted)' }}>{h}</th>
+                                    ))}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {componentes.map(c => (
+                                    <tr key={c.id} className="border-t" style={{ borderColor: 'var(--border)', color: 'var(--text-main)' }}>
+                                        <td className="px-4 py-2.5">{c.nombre}</td>
+                                        <td className="px-4 py-2.5">{c.funciona ? 'Sí' : 'No'}</td>
+                                        <td className="px-4 py-2.5">{c.accion === 1 ? 'Reemplazo' : 'Reparación'}</td>
+                                        <td className="px-4 py-2.5">{c.costo ? Number(c.costo).toFixed(2) : '—'}</td>
+                                        <td className="px-4 py-2.5" style={{ color: 'var(--text-muted)' }}>{c.descripcion ?? '—'}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+
+                {/* Acciones sobre el ingreso — antes solo en Ingresos/Show.tsx (D1) */}
+                {ingreso && (
+                    <div className="flex gap-2 justify-end">
+                        {puede('eliminar') && !facturada && (
+                            <Button variant="outline" onClick={() => void eliminarIngreso()}>
+                                <Trash2 className="w-4 h-4" />
+                                Eliminar ingreso
+                            </Button>
+                        )}
+                        {puede('editar') && !facturada && (
+                            <Button variant="outline" onClick={() => router.visit(route('taller.ingresos.edit', ingreso.id))}>
+                                <Pencil className="w-4 h-4" />
+                                Editar ingreso
+                            </Button>
+                        )}
+                        <Button variant="outline" onClick={() => setPdfIngresoAbierto(true)}>
+                            <FileText className="w-4 h-4" />
+                            Ver PDF
+                        </Button>
+                    </div>
+                )}
 
                 {orden.ingreso?.diagnostico_inicial && (
                     <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
@@ -716,6 +811,16 @@ export default function OrdenTrabajoShow() {
                     </div>
                 </>,
                 document.body
+            )}
+
+            {ingreso && (
+                <PdfPreviewModal
+                    abierto={pdfIngresoAbierto}
+                    onCerrar={() => setPdfIngresoAbierto(false)}
+                    url={pdfIngresoAbierto ? route('taller.ingresos.pdf', ingreso.id) : ''}
+                    titulo={`Orden de Trabajo — Ingreso #${ingreso.id}`}
+                    nombreDescarga={`orden-trabajo-ingreso-${ingreso.id}.pdf`}
+                />
             )}
         </AppLayout>
     )

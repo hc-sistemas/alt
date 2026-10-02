@@ -8,6 +8,7 @@ use App\Models\Proveedor;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 use Maatwebsite\Excel\Facades\Excel;
@@ -84,6 +85,8 @@ class ProveedorController extends Controller
         $request->validate([
             'tipo'             => 'required|in:nacional,internacional',
             'tipo_identificacion' => 'required|string|max:20',
+            // E1 (CHECKLIST_ERRORES_COMPLICACIONES.md): ver Proveedor::TIPOS_CONTRIBUYENTE.
+            'tipo_contribuyente' => ['nullable', Rule::in(array_keys(Proveedor::TIPOS_CONTRIBUYENTE))],
             'identificacion'   => 'required|string|max:20',
             'razon_social'     => 'required|string|max:200',
             'nombre_comercial' => 'nullable|string|max:200',
@@ -108,7 +111,7 @@ class ProveedorController extends Controller
 
         Proveedor::create([
             ...$request->only([
-                'tipo', 'tipo_identificacion', 'identificacion', 'razon_social',
+                'tipo', 'tipo_identificacion', 'tipo_contribuyente', 'identificacion', 'razon_social',
                 'nombre_comercial', 'email', 'telefono', 'direccion', 'ciudad',
                 'pais', 'divisa', 'tiene_credito', 'dias_credito',
             ]),
@@ -125,6 +128,7 @@ class ProveedorController extends Controller
         $request->validate([
             'razon_social'     => 'required|string|max:200',
             'nombre_comercial' => 'nullable|string|max:200',
+            'tipo_contribuyente' => ['nullable', Rule::in(array_keys(Proveedor::TIPOS_CONTRIBUYENTE))],
             'email'            => 'nullable|email|max:200',
             'telefono'         => 'nullable|string|max:20',
             'direccion'        => 'nullable|string|max:300',
@@ -136,7 +140,7 @@ class ProveedorController extends Controller
         ]);
 
         $proveedor->update($request->only([
-            'razon_social', 'nombre_comercial', 'email', 'telefono',
+            'razon_social', 'nombre_comercial', 'tipo_contribuyente', 'email', 'telefono',
             'direccion', 'ciudad', 'pais', 'divisa',
             'tiene_credito', 'dias_credito',
         ]));

@@ -370,15 +370,26 @@ class IngresoController extends Controller
             ->with('success', 'Ingreso eliminado correctamente.');
     }
 
-    public function show(TallerIngreso $ingreso): Response
+    /**
+     * D1 (CHECKLIST_ERRORES_COMPLICACIONES.md): Ingresos y Órdenes de Trabajo
+     * se unieron en una sola pantalla. Como ahora un ingreso solo puede tener
+     * una orden (constraint UNIQUE en taller_ordenes_trabajo.ingreso_id — ver
+     * migración), "ver ingreso" redirige directo a esa orden, que ya trae
+     * cliente/equipo/diagnóstico/repuestos/liquidación en una sola vista.
+     */
+    public function show(TallerIngreso $ingreso): RedirectResponse
     {
         $this->autorizarEmpresa($ingreso);
 
-        $ingreso->load(['cliente', 'equipo.tipo', 'usuario', 'ordenesTrabajo.tecnico', 'componentes']);
+        $ordenId = $ingreso->ordenesTrabajo()->value('id');
 
-        return Inertia::render('Taller/Ingresos/Show', [
-            'ingreso' => $ingreso,
-        ]);
+        if (!$ordenId) {
+            // No debería pasar (store() siempre crea la orden junto al
+            // ingreso), pero si un dato viejo no la tiene, no se rompe.
+            abort(404, 'Este ingreso no tiene una orden de trabajo asociada.');
+        }
+
+        return redirect()->route('taller.ordenes.show', $ordenId);
     }
 
     /** Sirve la foto del equipo (disco privado) solo a usuarios de la misma empresa. */

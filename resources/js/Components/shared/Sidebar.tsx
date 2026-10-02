@@ -8,13 +8,35 @@ import {
 import { cn } from '@/lib/utils'
 import type { PageProps } from '@/types'
 
-const MODULOS_SIN_PERMISO = new Set(['dashboard', 'personas', 'manuales', 'reportes'])
+// 'dashboard' y 'reportes' salieron de esta lista (CHECKLIST_ERRORES_COMPLICACIONES.md,
+// ítems C2/C3): antes se mostraban a todo perfil sin mirar su permiso real.
+// 'personas' sigue aquí porque agrupa Clientes/Proveedores/Transportistas y
+// no existe un módulo 'personas' en la tabla modulos — Proveedores ya se
+// protege aparte con el permiso de Compras (ver C1), tanto en el menú
+// (hijosVisibles más abajo) como en las rutas.
+const MODULOS_SIN_PERMISO = new Set(['personas', 'manuales'])
+
+// `permiso` es opcional: solo lo llevan los hijos que necesitan un módulo
+// distinto al de su padre para mostrarse (ej. "Proveedores" dentro de
+// "Personas" exige el permiso de Compras — ver C1 en
+// CHECKLIST_ERRORES_COMPLICACIONES.md). Sin `permiso`, el hijo hereda la
+// visibilidad de su padre.
+// `perfiles` es para el caso más puntual de restringir por nombre de perfil
+// en vez de por módulo (ej. "Movimientos" dentro de Inventario, ítem C6:
+// mismo módulo 'inventario' que Vendedor/Técnico ya ven por otras pantallas,
+// pero solo Bodeguero/Admin/Contador deben ver este hijo).
+interface NavHijo {
+    nombre: string
+    href: string
+    permiso?: string
+    perfiles?: string[]
+}
 
 interface NavSubgrupo {
     nombre: string
     icon: React.ElementType
     clave: string
-    hijos: { nombre: string; href: string }[]
+    hijos: NavHijo[]
 }
 
 interface NavItem {
@@ -22,7 +44,7 @@ interface NavItem {
     clave: string
     icon: React.ElementType
     href?: string
-    hijos?: { nombre: string; href: string }[]
+    hijos?: NavHijo[]
     subgrupos?: NavSubgrupo[]
 }
 
@@ -42,7 +64,7 @@ const navItems: NavItem[] = [
             { nombre: 'Productos', href: '/inventario/productos' },
             { nombre: 'Kárdex', href: '/inventario/kardex' },
             { nombre: 'Inventario General', href: '/inventario/kardex/saldos' },
-            { nombre: 'Movimientos', href: '/inventario/traslados' },
+            { nombre: 'Movimientos', href: '/inventario/traslados', perfiles: ['admin', 'contador', 'bodeguero'] },
             { nombre: 'Activos Fijos', href: '/inventario/activos' },
             { nombre: 'Lista de Precios', href: '/inventario/listas' },
             { nombre: 'Recepciones', href: '/inventario/recepciones' },
@@ -109,13 +131,16 @@ const navItems: NavItem[] = [
         hijos: [
             { nombre: 'Colaboradores',       href: '/rrhh/colaboradores'  },
             { nombre: 'Departamentos',       href: '/rrhh/departamentos'  },
-            { nombre: 'Asistencia',          href: '/rrhh/asistencia'     },
             { nombre: 'Horas Extras',        href: '/rrhh/horas-extras'   },
             { nombre: 'Nómina',              href: '/rrhh/nomina'         },
             { nombre: 'Préstamos/Anticipos', href: '/rrhh/prestamos'      },
             { nombre: 'Liquidaciones',       href: '/rrhh/liquidaciones'  },
         ]
     },
+    // Ítem propio, separado de RRHH (CHECKLIST_ERRORES_COMPLICACIONES.md, C4):
+    // Vendedor/Bodeguero/Técnico tienen el módulo 'asistencia' pero no 'rrhh',
+    // así que necesitan verlo fuera del grupo RRHH (que ellos no ven).
+    { nombre: 'Asistencia', clave: 'asistencia', icon: ClipboardList, href: '/rrhh/asistencia' },
     {
         nombre: 'Taller', clave: 'taller', icon: Wrench,
         hijos: [
@@ -128,7 +153,7 @@ const navItems: NavItem[] = [
         nombre: 'Personas', clave: 'personas', icon: UserCircle,
         hijos: [
             { nombre: 'Clientes', href: '/personas/clientes' },
-            { nombre: 'Proveedores', href: '/personas/proveedores' },
+            { nombre: 'Proveedores', href: '/personas/proveedores', permiso: 'compras' },
             { nombre: 'Transportistas', href: '/personas/transportistas' },
         ]
     },
@@ -173,6 +198,17 @@ export default function Sidebar({ collapsed, onCollapse, mobileOpen, onMobileClo
         () => navItems.flatMap(i => i.subgrupos?.map(sg => sg.clave) ?? []),
         []
     )
+
+    // Un hijo con `permiso` propio (ej. Proveedores dentro de Personas) solo
+    // se muestra si el perfil tiene ver=true en ESE módulo, sin importar el
+    // permiso del padre. Un hijo con `perfiles` (ej. Movimientos dentro de
+    // Inventario, C6) solo se muestra a esos perfiles por nombre.
+    const hijoVisible = (hijo: NavHijo) => {
+        if (permisos === '*') return true
+        if (hijo.permiso && permisos[hijo.permiso]?.ver !== true) return false
+        if (hijo.perfiles && !hijo.perfiles.includes(props.auth.user?.perfil ?? '')) return false
+        return true
+    }
 
     const itemsVisibles = useMemo(() => {
         if (permisos === '*') return navItems
@@ -300,7 +336,7 @@ export default function Sidebar({ collapsed, onCollapse, mobileOpen, onMobileClo
 
                                     {!collapsed && isOpen && hasHijos && (
                                         <div className="mt-1 ml-4 space-y-1 border-l border-slate-700/50 pl-3">
-                                            {item.hijos!.map(hijo => (
+                                            {item.hijos!.filter(hijoVisible).map(hijo => (
                                                 <Link
                                                     key={hijo.href}
                                                     href={hijo.href}

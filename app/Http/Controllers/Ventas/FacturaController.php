@@ -3,11 +3,11 @@
 namespace App\Http\Controllers\Ventas;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Ventas\Concerns\ResuelveBodegasFijas;
 use App\Mail\FacturaMail;
 use App\Services\FacturaXmlService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\Mail;
-use App\Models\Bodega;
 use App\Models\Cliente;
 use App\Models\CuentaCobrar;
 use App\Models\Empresa;
@@ -31,6 +31,8 @@ use Inertia\Inertia;
 
 class FacturaController extends Controller
 {
+    use ResuelveBodegasFijas;
+
     public function __construct(
         private AuditoriaService  $auditoria,
         private SecuencialService $secuencial,
@@ -38,31 +40,6 @@ class FacturaController extends Controller
         private InventarioService $inventario,
         private DescuentoService  $descuento,
     ) {}
-
-    /** Id de la Bodega Principal UIO resuelto por nombre y cacheado en el request. */
-    private ?int $bodegaPrincipalId = null;
-
-    /**
-     * Resuelve el id de la "Bodega Principal UIO" por nombre en tiempo de
-     * ejecución (no se hardcodea el id, que puede diferir entre entornos).
-     * El resultado se cachea dentro del mismo request.
-     */
-    private function bodegaPrincipalId(): int
-    {
-        if ($this->bodegaPrincipalId !== null) {
-            return $this->bodegaPrincipalId;
-        }
-
-        $bodega = Bodega::where('nombre', 'Bodega Principal UIO')
-            ->where('estado', true)
-            ->first();
-
-        if (!$bodega) {
-            throw new \RuntimeException('No se encontró la Bodega Principal UIO configurada.');
-        }
-
-        return $this->bodegaPrincipalId = (int) $bodega->id;
-    }
 
     public function index(Request $request)
     {
@@ -76,7 +53,7 @@ class FacturaController extends Controller
             'fecha_hasta' => $request->has('fecha_hasta') ? $request->fecha_hasta : $hoy,
         ]);
 
-        $query = Factura::with(['cliente', 'usuario', 'pagos'])
+        $query = Factura::with(['cliente', 'usuario', 'pagos', 'detalles.producto:id,tipo'])
             ->where('empresa_id', $empresaId)
             ->orderByDesc('fecha_emision')
             ->orderByDesc('id');
@@ -137,11 +114,23 @@ class FacturaController extends Controller
             ->selectRaw('cliente_id, min(id) as primera')
             ->pluck('primera', 'cliente_id');
 
-        $facturas->through(function (Factura $f) use ($primeras) {
+        // A9 (CHECKLIST_ERRORES_COMPLICACIONES.md): aviso, no bloqueo — se
+        // marca la factura activa que vende algún producto físico (no todo
+        // servicio) y no tiene ninguna guía de remisión activa asociada.
+        $facturasConGuia = DB::table('guias_remision')
+            ->whereIn('factura_id', $facturas->pluck('id'))
+            ->where('estado', 'activa')
+            ->pluck('factura_id')
+            ->flip();
+
+        $facturas->through(function (Factura $f) use ($primeras, $facturasConGuia) {
             $bruto = (float) $f->subtotal_0 + (float) $f->subtotal_15 + (float) $f->subtotal_exento + (float) $f->descuento_total;
             $f->setAttribute('cliente_nuevo', (int) ($primeras[$f->cliente_id] ?? 0) === $f->id);
             $f->setAttribute('desc_pct', $bruto > 0 ? round((float) $f->descuento_total / $bruto * 100, 2) : 0);
             $f->setAttribute('vendedor', $f->usuario?->nombre);
+
+            $tieneProductoFisico = $f->detalles->contains(fn ($d) => $d->producto?->tipo !== 'servicio');
+            $f->setAttribute('sin_guia', $f->estado === 'activa' && $tieneProductoFisico && !$facturasConGuia->has($f->id));
 
             return $f;
         });
@@ -172,6 +161,11 @@ class FacturaController extends Controller
         $descuentosMaximos = $this->descuento->mapaMaximosPermitidos($productos->pluck('id')->all(), $empresaId);
         $productos->each(function ($p) use ($descuentosMaximos) {
             $p->descuento_max = $descuentosMaximos[$p->id] ?? 0.0;
+            // El costo real NUNCA llega al navegador del vendedor (CHECKLIST_ERRORES_COMPLICACIONES.md,
+            // ítem A2) — solo una bandera booleana que dice si el precio de
+            // lista quedó por debajo del costo, para disparar la aprobación.
+            $p->bajo_costo = (float) $p->pvp < (float) $p->costo;
+            $p->makeHidden('costo');
         });
 
         $perfilNombre = DB::table('perfiles')
@@ -251,7 +245,11 @@ class FacturaController extends Controller
             'detalles'                => 'required|array|min:1',
             'detalles.*.producto_id'  => 'required|integer',
             'detalles.*.cantidad'     => 'required|numeric|min:0.01',
-            'detalles.*.precio'       => 'required|numeric|min:0.01',
+            // min:0 (no 0.01): una línea marcada es_regalo se factura en $0 —
+            // ver A8 en CHECKLIST_ERRORES_COMPLICACIONES.md. De todas formas
+            // el precio real nunca sale de aquí (ver $preciosProductos abajo).
+            'detalles.*.precio'       => 'required|numeric|min:0',
+            'detalles.*.es_regalo'    => 'nullable|boolean',
             'detalles.*.descuento_pct'=> 'nullable|numeric|min:0',
             'detalles.*.aprobacion_id'=> 'nullable|integer',
             'formas_pago'             => 'required|array|min:1',
@@ -290,6 +288,13 @@ class FacturaController extends Controller
         // payload y saltarse la validación de precio bajo costo.
         $costosProductos = Producto::whereIn('id', $productoIds)->pluck('costo', 'id');
 
+        // Precio real desde la tabla productos (precio de lista, pvp). El
+        // vendedor no puede cambiar el precio, solo dar descuento: el precio
+        // que llega en el payload NUNCA se usa para calcular ni para guardar,
+        // solo sirve de referencia visual en el navegador (ver
+        // CHECKLIST_ERRORES_COMPLICACIONES.md, ítem A1).
+        $preciosProductos = Producto::whereIn('id', $productoIds)->pluck('pvp', 'id');
+
         // Se resuelve una sola vez (la aprobación es global para toda la
         // factura, no por línea) y se reutiliza para cada detalle que la
         // necesite.
@@ -300,13 +305,18 @@ class FacturaController extends Controller
         $aprobacionesPrecioUsadas = [];
 
         foreach ($request->detalles as $detalle) {
-            $precio    = (float)($detalle['precio'] ?? 0);
+            // A8: una línea de regalo va a $0 a propósito — no es un precio
+            // bajo costo por error, así que no pide aprobación especial.
+            $esRegalo  = (bool) ($detalle['es_regalo'] ?? false);
+            $precio    = $esRegalo ? 0.0 : (float) ($preciosProductos[$detalle['producto_id']] ?? 0);
             $costoReal = (float) ($costosProductos[$detalle['producto_id']] ?? 0);
 
-            if ($precio < $costoReal) {
+            if (!$esRegalo && $precio < $costoReal) {
                 if (empty($detalle['aprobacion_id'])) {
+                    // Sin montos en el mensaje (CHECKLIST_ERRORES_COMPLICACIONES.md, A2):
+                    // el costo real es un dato que el vendedor no debe ver.
                     return back()->withErrors([
-                        'aprobacion_especial' => "El precio del producto {$detalle['codigo']} ({$precio}) es menor a su costo ({$costoReal}) y requiere aprobación especial.",
+                        'aprobacion_especial' => "El producto {$detalle['codigo']} requiere aprobación especial de un supervisor antes de facturarse.",
                     ])->withInput();
                 }
 
@@ -337,14 +347,15 @@ class FacturaController extends Controller
                 $aprobacionesPrecioUsadas[] = (int) $aprobacionPrecio->id;
             }
 
-            $descPct = (float)($detalle['descuento_pct'] ?? 0);
+            $descPct = $esRegalo ? 0 : (float)($detalle['descuento_pct'] ?? 0);
             $maximoProducto = $maximosPermitidos[$detalle['producto_id']] ?? 0.0;
 
             // El descuento requiere aprobación especial si supera el límite
             // de perfil del vendedor o el techo del producto/promo — la
             // aprobación válida cubre ambos límites a la vez, igual que en
-            // el frontend (Form.tsx: descuentoEspecialActivo).
-            if ($descPct > $limiteMax || $descPct > $maximoProducto) {
+            // el frontend (Form.tsx: descuentoEspecialActivo). Un regalo ya
+            // va en $0, no aplica.
+            if (!$esRegalo && ($descPct > $limiteMax || $descPct > $maximoProducto)) {
                 if (!$request->filled('aprobacion_especial_id')) {
                     return back()->withErrors(['aprobacion_especial' => 'Se requiere aprobación especial para el descuento aplicado.'])->withInput();
                 }
@@ -427,7 +438,7 @@ class FacturaController extends Controller
             $factura = DB::transaction(function () use (
                 $request, $empresaId, $usuario, $subtotal0, $subtotal15,
                 $descTotal, $totalIva, $total, $tieneDescuentoEspecial, $aprobacionValida,
-                $aprobacionesPrecioUsadas
+                $aprobacionesPrecioUsadas, $preciosProductos
             ) {
                 $empresa = Empresa::findOrFail($empresaId);
                 $numero  = $this->secuencial->siguiente($empresaId, 'FAC');
@@ -469,8 +480,9 @@ class FacturaController extends Controller
                     ->pluck('tipo', 'id');
 
                 foreach ($request->detalles as $det) {
-                    $descPct     = (float)($det['descuento_pct'] ?? 0);
-                    $precio      = (float)$det['precio'];
+                    $esRegalo    = (bool) ($det['es_regalo'] ?? false);
+                    $descPct     = $esRegalo ? 0 : (float)($det['descuento_pct'] ?? 0);
+                    $precio      = $esRegalo ? 0.0 : (float) ($preciosProductos[$det['producto_id']] ?? 0);
                     $cantidad    = (float)$det['cantidad'];
                     $descuento   = round($precio * $cantidad * ($descPct / 100), 2);
                     $subtotalDet = round(($precio * $cantidad) - $descuento, 2);
@@ -482,6 +494,7 @@ class FacturaController extends Controller
                         'producto_id'     => $det['producto_id'],
                         'codigo_producto' => $det['codigo']      ?? null,
                         'descripcion'     => $det['descripcion'] ?? null,
+                        'es_regalo'       => $esRegalo,
                         'cantidad'        => $cantidad,
                         'precio_unitario' => $precio,
                         'descuento_pct'   => $descPct,
@@ -515,21 +528,34 @@ class FacturaController extends Controller
                     }
                 }
 
-                $incluyeCredito = false;
-                $montoCredito   = 0;
+                $incluyeCredito  = false;
+                $montoCredito    = 0;
+                $diasCreditoPago = null;
 
                 foreach ($request->formas_pago as $pago) {
+                    // 'plazo'/'unidad' (CHECKLIST_ERRORES_COMPLICACIONES.md, B1) no son
+                    // columnas de factura_pagos: se guardaban en llaves que
+                    // Eloquent descartaba en silencio. La tabla ya tiene
+                    // 'dias_credito' para justo esto — y 'banco'/'num_cheque'
+                    // ya eran fillable pero nunca se mandaban desde aquí, así
+                    // que el N° de cheque/documento del pago se perdía siempre.
+                    $diasCredito = $pago['forma'] === 'credito'
+                        ? ((int) ($pago['plazo'] ?? 0) ?: null)
+                        : null;
+
                     FacturaPago::create([
-                        'factura_id' => $factura->id,
-                        'forma_pago' => $pago['forma'],
-                        'valor'      => $pago['monto'],
-                        'plazo'      => $pago['plazo'] ?? null,
-                        'unidad'     => $pago['unidad'] ?? null,
+                        'factura_id'   => $factura->id,
+                        'forma_pago'   => $pago['forma'],
+                        'valor'        => $pago['monto'],
+                        'dias_credito' => $diasCredito,
+                        'banco'        => $pago['banco'] ?? null,
+                        'num_cheque'   => $pago['num_cheque'] ?? null,
                     ]);
 
                     if ($pago['forma'] === 'credito') {
-                        $incluyeCredito = true;
+                        $incluyeCredito  = true;
                         $montoCredito   += (float)$pago['monto'];
+                        $diasCreditoPago = $diasCredito;
                     }
                 }
 
@@ -542,7 +568,9 @@ class FacturaController extends Controller
                         'monto'             => $montoCredito,
                         'saldo'             => $montoCredito,
                         'fecha_emision'     => now()->toDateString(),
-                        'fecha_vencimiento' => now()->addDays($cliente->dias_credito ?? 30)->toDateString(),
+                        // El plazo digitado en la factura manda sobre el del
+                        // cliente (antes se ignoraba siempre — ver B1).
+                        'fecha_vencimiento' => now()->addDays($diasCreditoPago ?? $cliente->dias_credito ?? 30)->toDateString(),
                         'forma_cobro'       => 'credito',
                         'estado'            => 'pendiente',
                     ]);
@@ -675,6 +703,14 @@ class FacturaController extends Controller
             return back()->withErrors(['error' => 'La factura ya está anulada.']);
         }
 
+        // Mismo candado que destroy(): si ya se registró algún cobro contra la
+        // CxC de esta factura, anularla dejaría esos cobros huérfanos
+        // (CHECKLIST_ERRORES_COMPLICACIONES.md, A7). Hay que castigar/reversar
+        // esos cobros primero desde Cuentas por Cobrar.
+        if (CuentaCobrar::where('factura_id', $factura->id)->whereHas('cobros')->exists()) {
+            return back()->withErrors(['error' => 'La factura tiene cobros registrados en Cuentas por Cobrar y no se puede anular.']);
+        }
+
         // Mismo esquema de aprobación especial que Proformas/CxC: la
         // aprobación debe existir, estar pedida por este mismo usuario, ser
         // del tipo correcto y no haberse usado todavía.
@@ -747,6 +783,13 @@ class FacturaController extends Controller
                 'estado'     => 'anulada',
                 'estado_sri' => 'anulada',
             ]);
+
+            // La CxC de una factura a crédito no se tocaba al anular (A7): ya
+            // se comprobó arriba que no tiene cobros, así que se puede cerrar
+            // sin más — se marca 'anulada' con saldo 0 (no se borra, igual que
+            // la propia factura no se borra al anular, solo cambia de estado).
+            CuentaCobrar::where('factura_id', $factura->id)
+                ->update(['estado' => 'anulada', 'saldo' => 0]);
 
             // Contabilidad: anular la factura DEBE anular su asiento.
             //
@@ -977,12 +1020,33 @@ class FacturaController extends Controller
     public function clienteGuardar(Request $request)
     {
         $empresaId = session('empresa_activa_id');
+        $usuario   = Auth::user();
 
         $request->validate([
             'identificacion' => 'required|string|max:20',
             'razon_social'   => 'required|string|max:300',
             'tipo_identificacion' => 'required|string',
         ]);
+
+        // No existe un módulo de permiso propio para Clientes (Personas no
+        // está en la tabla modulos) — se gatea por nombre de perfil, igual
+        // que AsistenciaController::es_admin. Cerrado por
+        // CHECKLIST_ERRORES_COMPLICACIONES.md ("clienteGuardar sin permiso"):
+        // cualquier vendedor podía sobrescribir tiene_credito/dias_credito/
+        // cupo_maximo de un cliente ya existente desde este modal. Ahora,
+        // si el cliente YA existe, solo super_admin/admin/contador pueden
+        // tocarlo — un vendedor solo puede seguir creando clientes nuevos.
+        $puedeEditarClientes = in_array($usuario->perfil?->nombre, ['super_admin', 'admin', 'contador'], true);
+
+        $existente = Cliente::where('empresa_id', $empresaId)
+            ->where('identificacion', $request->identificacion)
+            ->first();
+
+        if ($existente && !$puedeEditarClientes) {
+            return response()->json([
+                'message' => "Ya existe un cliente con esta identificación ({$existente->razon_social}). Solo un administrador o contador puede editar los datos de un cliente ya registrado.",
+            ], 403);
+        }
 
         $cliente = Cliente::updateOrCreate(
             [

@@ -44,6 +44,11 @@ export default function LiquidacionShow() {
     const [enviando, setEnviando] = useState(false)
 
     const repuestos = orden.repuestos ?? []
+    // D3 (CHECKLIST_ERRORES_COMPLICACIONES.md): en garantía los repuestos se
+    // facturan a costo, no al precio de venta — el backend ya lo hace así en
+    // LiquidacionController::liquidar(); esta vista solo debe reflejar lo
+    // mismo para que el total mostrado antes de confirmar sea el real.
+    const esGarantia = orden.estado === 'garantia'
 
     const totales = useMemo(() => {
         let subtotalRepuestos = 0
@@ -52,7 +57,8 @@ export default function LiquidacionShow() {
         let totalIva = 0
 
         for (const r of repuestos) {
-            const subtotal = r.precio_venta * r.cantidad
+            const precioLinea = esGarantia ? r.costo_unitario : r.precio_venta
+            const subtotal = precioLinea * r.cantidad
             const pctIva = r.producto?.porcentaje_iva ?? 15
             const iva = subtotal * (pctIva / 100)
             subtotalRepuestos += subtotal
@@ -66,7 +72,7 @@ export default function LiquidacionShow() {
         const total = subtotal0 + subtotal15 + totalIva
 
         return { subtotalRepuestos, manoObra, totalIva, total }
-    }, [repuestos, costoManoObra])
+    }, [repuestos, costoManoObra, esGarantia])
 
     async function confirmarLiquidacion() {
         const result = await Swal.fire({
@@ -159,7 +165,7 @@ export default function LiquidacionShow() {
                             <table className="w-full text-sm">
                                 <thead>
                                     <tr style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
-                                        {['Producto', 'Serie', 'Cantidad', 'Precio Venta', 'Subtotal'].map(h => (
+                                        {['Producto', 'Serie', 'Cantidad', esGarantia ? 'Precio (costo, garantía)' : 'Precio Venta', 'Subtotal'].map(h => (
                                             <th key={h} className="text-left px-4 py-2.5 font-medium text-xs" style={{ color: 'var(--text-muted)' }}>{h}</th>
                                         ))}
                                     </tr>
@@ -177,10 +183,10 @@ export default function LiquidacionShow() {
                                                 {r.cantidad}
                                             </td>
                                             <td className="px-4 py-2.5 text-xs" style={{ color: 'var(--text-main)' }}>
-                                                {formatMoneda(r.precio_venta)}
+                                                {formatMoneda(esGarantia ? r.costo_unitario : r.precio_venta)}
                                             </td>
                                             <td className="px-4 py-2.5 text-xs font-medium" style={{ color: 'var(--text-main)' }}>
-                                                {formatMoneda(r.precio_venta * r.cantidad)}
+                                                {formatMoneda((esGarantia ? r.costo_unitario : r.precio_venta) * r.cantidad)}
                                             </td>
                                         </tr>
                                     ))}

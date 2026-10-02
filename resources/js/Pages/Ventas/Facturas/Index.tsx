@@ -10,7 +10,7 @@ import { Input } from '@/Components/ui/input'
 import { Badge } from '@/Components/ui/badge'
 import { cn, formatMoneda, formatFecha } from '@/lib/utils'
 import {
-    Plus, Search, Eye, Ban, Mail, Trash2, ChevronLeft, ChevronRight, FileText,
+    Plus, Search, Eye, Ban, Mail, Trash2, ChevronLeft, ChevronRight, FileText, AlertTriangle,
 } from 'lucide-react'
 import { usePermiso } from '@/Hooks/usePermiso'
 import { toastError } from '@/lib/toast'
@@ -48,6 +48,9 @@ interface Factura {
     cliente_nuevo?: boolean
     desc_pct?: number
     vendedor?: string | null
+    // A9 (CHECKLIST_ERRORES_COMPLICACIONES.md): aviso, no bloqueo — factura
+    // activa con algún producto físico y sin guía de remisión activa.
+    sin_guia?: boolean
     cliente: FacturaCliente | null
     pagos: FacturaPago[]
 }
@@ -350,15 +353,22 @@ export default function Index() {
 
                                                 {/* Fac. No — subrayado si tiene descuento especial */}
                                                 <td className={`${celda} whitespace-nowrap`}>
-                                                    <span
-                                                        className={cn(
-                                                            'font-mono font-medium',
-                                                            f.tiene_descuento_especial && 'underline decoration-dotted decoration-amber-500'
+                                                    <span className="inline-flex items-center gap-1">
+                                                        <span
+                                                            className={cn(
+                                                                'font-mono font-medium',
+                                                                f.tiene_descuento_especial && 'underline decoration-dotted decoration-amber-500'
+                                                            )}
+                                                            style={{ color: 'var(--text-main)' }}
+                                                            title={f.tiene_descuento_especial ? 'Contiene descuento especial autorizado' : undefined}
+                                                        >
+                                                            {f.numero_completo}
+                                                        </span>
+                                                        {f.sin_guia && (
+                                                            <span title="Sin guía de remisión" className="shrink-0 cursor-help">
+                                                                <AlertTriangle size={12} className="text-orange-500" />
+                                                            </span>
                                                         )}
-                                                        style={{ color: 'var(--text-main)' }}
-                                                        title={f.tiene_descuento_especial ? 'Contiene descuento especial autorizado' : undefined}
-                                                    >
-                                                        {f.numero_completo}
                                                     </span>
                                                 </td>
 

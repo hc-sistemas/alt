@@ -33,13 +33,21 @@ class LiquidacionController extends Controller
         private AsientoService $asiento,
     ) {}
 
+    /**
+     * Estados de OT desde los que se puede liquidar/facturar. 'garantia' se
+     * agregó para D3 (CHECKLIST_ERRORES_COMPLICACIONES.md): antes una orden en
+     * garantía no se podía liquidar nunca. Decisión: la mano de obra se cobra
+     * normal; solo los repuestos van a precio de costo (ver liquidar()).
+     */
+    private const ESTADOS_LIQUIDABLES = ['listo', 'entregado', 'garantia'];
+
     public function show(TallerOrdenTrabajo $orden): Response
     {
         abort_if((int) $orden->empresa_id !== (int) session('empresa_activa_id'), 403);
 
-        if (!in_array($orden->estado, ['listo', 'entregado'], true)) {
+        if (!in_array($orden->estado, self::ESTADOS_LIQUIDABLES, true)) {
             return redirect()->route('taller.ordenes.show', $orden->id)
-                ->with('flash', ['tipo' => 'error', 'mensaje' => 'La orden debe estar en estado "Listo" para liquidarse.']);
+                ->with('flash', ['tipo' => 'error', 'mensaje' => 'La orden debe estar en estado "Listo", "Entregado" o "Garantía" para liquidarse.']);
         }
 
         $orden->load([
@@ -66,8 +74,8 @@ class LiquidacionController extends Controller
             return back()->withErrors(['error' => 'Esta orden ya fue facturada.']);
         }
 
-        if (!in_array($orden->estado, ['listo', 'entregado'], true)) {
-            return back()->withErrors(['error' => 'La orden debe estar en estado "Listo" para liquidarse.']);
+        if (!in_array($orden->estado, self::ESTADOS_LIQUIDABLES, true)) {
+            return back()->withErrors(['error' => 'La orden debe estar en estado "Listo", "Entregado" o "Garantía" para liquidarse.']);
         }
 
         // Solo los repuestos vigentes (reservados); los devueltos por una anulación previa no se cobran.
@@ -95,16 +103,23 @@ class LiquidacionController extends Controller
             $factura = DB::transaction(function () use ($orden, $data, $empresaId, $bodegaId) {
                 // Bloqueo para evitar doble liquidación concurrente de la misma OT.
                 $bloqueada = TallerOrdenTrabajo::lockForUpdate()->find($orden->id);
-                if (!in_array($bloqueada->estado, ['listo', 'entregado'], true)) {
+                if (!in_array($bloqueada->estado, self::ESTADOS_LIQUIDABLES, true)) {
                     throw new \RuntimeException('La orden ya no está disponible para liquidar.');
                 }
+
+                // D3: en garantía, los repuestos van a precio de costo (margen
+                // 0); la mano de obra se cobra normal. `precio_venta` guardado
+                // en el repuesto no se toca — solo se usa costo_unitario para
+                // ESTA factura.
+                $esGarantia = $orden->estado === 'garantia';
 
                 $subtotal0 = 0;
                 $subtotal15 = 0;
                 $totalIva = 0;
 
                 foreach ($orden->repuestos as $rep) {
-                    $subtotal = $rep->precio_venta * $rep->cantidad;
+                    $precioLinea = $esGarantia ? (float) $rep->costo_unitario : (float) $rep->precio_venta;
+                    $subtotal = $precioLinea * $rep->cantidad;
                     $porcentajeIva = $rep->producto?->porcentaje_iva ?? 15;
                     $iva = $subtotal * ($porcentajeIva / 100);
                     if ($porcentajeIva > 0) {
@@ -152,14 +167,15 @@ class LiquidacionController extends Controller
                 ]);
 
                 foreach ($orden->repuestos as $rep) {
-                    $subtotal = $rep->precio_venta * $rep->cantidad;
+                    $precioLinea = $esGarantia ? (float) $rep->costo_unitario : (float) $rep->precio_venta;
+                    $subtotal = $precioLinea * $rep->cantidad;
                     $pctIva = $rep->producto?->porcentaje_iva ?? 15;
                     FacturaDetalle::create([
                         'factura_id'      => $factura->id,
                         'producto_id'     => $rep->producto_id,
-                        'descripcion'     => $rep->producto?->nombre ?? 'Repuesto',
+                        'descripcion'     => ($esGarantia ? '[GARANTÍA] ' : '') . ($rep->producto?->nombre ?? 'Repuesto'),
                         'cantidad'        => $rep->cantidad,
-                        'precio_unitario' => $rep->precio_venta,
+                        'precio_unitario' => $precioLinea,
                         'descuento_pct'   => 0,
                         'descuento_valor' => 0,
                         'subtotal'        => $subtotal,

@@ -92,52 +92,25 @@ class DatafastController extends Controller
         }
 
         try {
-            DB::transaction(function () use ($request, $empresaId) {
-                $lote = DatafastLote::create([
-                    'empresa_id'    => $empresaId,
-                    'banco_caja_id' => $request->banco_caja_id,
-                    'numero_lote'   => $request->numero_lote,
-                    'fecha'         => $request->fecha,
-                    'total_vouchers'=> $request->total_vouchers,
-                    'estado'        => 'pendiente',
-                    'created_by'    => Auth::id(),
-                    'created_at'    => now(),
-                ]);
-
-                try {
-                    $ctaVouchers  = ParametroContable::getCuentaId('cta_vouchers', $empresaId);
-                    $ctaVentas    = ParametroContable::getCuentaId('cta_ventas_locales', $empresaId);
-                    $ctaIvaVentas = ParametroContable::getCuentaId('cta_iva_ventas', $empresaId);
-
-                    if ($ctaVouchers && $ctaVentas && $ctaIvaVentas) {
-                        // El total del voucher incluye IVA (es lo que se cobró en la tarjeta del
-                        // cliente) — se separa en neto (Ventas) + IVA (pasivo por liquidar al SRI),
-                        // igual que en Facturas/Proformas (tarifa 15%).
-                        $totalVouchers = (float) $request->total_vouchers;
-                        $neto = round($totalVouchers / 1.15, 2);
-                        $iva  = round($totalVouchers - $neto, 2);
-
-                        $asiento = $this->asientoService->crear(
-                            empresaId:    $empresaId,
-                            concepto:     "Lote Datafast {$request->numero_lote}",
-                            partidas: [
-                                ['cuenta_id' => $ctaVouchers,  'debe' => $totalVouchers, 'haber' => 0,
-                                 'descripcion' => "Lote {$request->numero_lote}"],
-                                ['cuenta_id' => $ctaVentas,    'debe' => 0, 'haber' => $neto,
-                                 'descripcion' => "Ventas tarjeta lote {$request->numero_lote}"],
-                                ['cuenta_id' => $ctaIvaVentas, 'debe' => 0, 'haber' => $iva,
-                                 'descripcion' => "IVA ventas tarjeta lote {$request->numero_lote}"],
-                            ],
-                            documentoTipo:'BANCO',
-                            documentoId:  $lote->id,
-                            esAutomatico: true,
-                        );
-                        $lote->update(['asiento_id' => $asiento->id]);
-                    }
-                } catch (\Exception $e) {
-                    // No bloquear si período cerrado
-                }
-            });
+            // Sin asiento aquí (CHECKLIST_ERRORES_COMPLICACIONES.md, "doble
+            // conteo Datafast"): cada factura pagada con tarjeta YA registra su
+            // propia venta + IVA al emitirse (AsientoService::facturaAutorizada,
+            // débito cta_vouchers / crédito Ventas+IVA). Este método creaba OTRO
+            // asiento de Ventas+IVA por el total del lote, duplicando el ingreso
+            // y el IVA de las mismas facturas. El lote es solo el registro de
+            // que ese total de vouchers está pendiente de depositarse — la
+            // única reclasificación contable real (vouchers → banco, neto de
+            // comisión/retenciones) ocurre en liquidar(), que ya la hace bien.
+            DatafastLote::create([
+                'empresa_id'    => $empresaId,
+                'banco_caja_id' => $request->banco_caja_id,
+                'numero_lote'   => $request->numero_lote,
+                'fecha'         => $request->fecha,
+                'total_vouchers'=> $request->total_vouchers,
+                'estado'        => 'pendiente',
+                'created_by'    => Auth::id(),
+                'created_at'    => now(),
+            ]);
 
             return back()->with('success', "Lote {$request->numero_lote} registrado correctamente.");
 

@@ -68,6 +68,11 @@ class RetencionController extends Controller
         $factura = Factura::with(['cliente', 'detalles'])
             ->findOrFail($request->factura_id);
 
+        // CHECKLIST_ERRORES_COMPLICACIONES.md, "NC/Retención/Guía sin revalidar estado".
+        if ($factura->estado !== 'activa') {
+            return back()->withErrors(['error' => 'No se puede generar una retención sobre una factura anulada.']);
+        }
+
         // Solo para facturas de clientes con agente_retencion = true
         if (!$factura->cliente?->agente_retencion) {
             return back()->withErrors(['error' => 'El cliente no es agente de retención.']);
@@ -106,7 +111,12 @@ class RetencionController extends Controller
         ]);
 
         $factura = Factura::findOrFail($request->factura_id);
-        $total   = collect($request->detalles)->sum(fn($d) => $d['base'] * $d['porcentaje'] / 100);
+
+        if ($factura->estado !== 'activa') {
+            return back()->withErrors(['error' => 'No se puede generar una retención sobre una factura anulada.']);
+        }
+
+        $total = collect($request->detalles)->sum(fn($d) => $d['base'] * $d['porcentaje'] / 100);
 
         $retencion = DB::transaction(function () use ($request, $empresaId, $factura, $total) {
             $numero = $this->secuencial->siguiente($empresaId, 'RET');

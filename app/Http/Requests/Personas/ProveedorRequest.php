@@ -27,6 +27,9 @@ class ProveedorRequest extends FormRequest
         return [
             'tipo'              => ['required', 'in:nacional,internacional'],
             'tipo_identificacion' => ['required', 'in:04,05,06'],
+            // E1 (CHECKLIST_ERRORES_COMPLICACIONES.md): catálogo pedido por el
+            // equipo, ver Proveedor::TIPOS_CONTRIBUYENTE.
+            'tipo_contribuyente' => ['nullable', Rule::in(array_keys(\App\Models\Proveedor::TIPOS_CONTRIBUYENTE))],
             'identificacion'    => [
                 'required', 'string', 'max:20',
                 Rule::unique('proveedores')

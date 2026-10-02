@@ -67,6 +67,7 @@ class GuiaRemisionController extends Controller
         if ($request->filled('factura_id')) {
             $factura = Factura::with(['cliente', 'detalles.producto'])
                 ->where('empresa_id', $empresaId)
+                ->where('estado', 'activa')
                 ->find($request->factura_id);
         }
 
@@ -81,6 +82,12 @@ class GuiaRemisionController extends Controller
         $empresaId = session('empresa_activa_id');
 
         $request->validate([
+            // Antes sin validar del todo: se guardaba el factura_id tal cual
+            // llegara, sin comprobar que existiera ni que la factura siguiera
+            // activa (CHECKLIST_ERRORES_COMPLICACIONES.md, "NC/Retención/Guía
+            // sin revalidar estado"). La guía puede seguir emitiéndose sin
+            // factura (transporte de mercadería que no es una venta).
+            'factura_id'              => 'nullable|integer|exists:facturas,id',
             'transportista_id'        => 'required|integer|exists:transportistas,id',
             'direccion_partida'       => 'required|string|max:300',
             'direccion_destino'       => 'required|string|max:300',
@@ -91,6 +98,16 @@ class GuiaRemisionController extends Controller
             'detalles.*.cantidad'     => 'required|numeric|min:0.01',
             'detalles.*.unidad'       => 'required|string',
         ]);
+
+        if ($request->filled('factura_id')) {
+            $facturaEstado = Factura::where('id', $request->factura_id)
+                ->where('empresa_id', $empresaId)
+                ->value('estado');
+
+            if ($facturaEstado !== 'activa') {
+                return back()->withErrors(['error' => 'No se puede generar una guía de remisión sobre una factura anulada.'])->withInput();
+            }
+        }
 
         $guia = DB::transaction(function () use ($request, $empresaId) {
             $numero = $this->secuencial->siguiente($empresaId, 'GR');

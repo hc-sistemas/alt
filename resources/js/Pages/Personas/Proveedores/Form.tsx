@@ -30,6 +30,15 @@ const TIPOS_ID_INTERNACIONAL = [
     { value: '06', label: '06 — Pasaporte' },
 ]
 
+// E1 (CHECKLIST_ERRORES_COMPLICACIONES.md) — igual que Proveedor::TIPOS_CONTRIBUYENTE en el backend.
+const TIPOS_CONTRIBUYENTE = [
+    { value: 'no_obligado', label: 'No obligado' },
+    { value: 'obligado_contabilidad', label: 'Obligado a llevar contabilidad' },
+    { value: 'sociedad', label: 'Sociedad' },
+    { value: 'contribuyente_especial', label: 'Contribuyente especial' },
+    { value: 'gran_contribuyente_especial', label: 'Gran contribuyente especial' },
+]
+
 export default function ProveedorForm() {
     const { proveedor } = usePage<Props>().props
     const esEdicion = !!proveedor
@@ -37,6 +46,7 @@ export default function ProveedorForm() {
     const { data, setData, post, put, processing, errors } = useForm({
         tipo:                (proveedor?.tipo ?? 'nacional') as 'nacional' | 'internacional',
         tipo_identificacion: (proveedor?.tipo_identificacion ?? '04') as '04' | '05' | '06',
+        tipo_contribuyente:  proveedor?.tipo_contribuyente ?? 'no_obligado',
         identificacion:      proveedor?.identificacion ?? '',
         razon_social:        proveedor?.razon_social ?? '',
         nombre_comercial:    proveedor?.nombre_comercial ?? '',
@@ -154,6 +164,22 @@ export default function ProveedorForm() {
                                 maxLength={20}
                             />
                             {errors.identificacion && <p className="text-xs text-red-400">{errors.identificacion}</p>}
+                        </div>
+
+                        {/* Tipo de contribuyente — E1 (CHECKLIST_ERRORES_COMPLICACIONES.md) */}
+                        <div className="space-y-1.5">
+                            <Label>Tipo de contribuyente</Label>
+                            <select
+                                value={data.tipo_contribuyente}
+                                onChange={e => setData('tipo_contribuyente', e.target.value)}
+                                className="flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
+                                style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}
+                            >
+                                {TIPOS_CONTRIBUYENTE.map(t => (
+                                    <option key={t.value} value={t.value}>{t.label}</option>
+                                ))}
+                            </select>
+                            {errors.tipo_contribuyente && <p className="text-xs text-red-400">{errors.tipo_contribuyente}</p>}
                         </div>
 
                         {/* Razón social */}

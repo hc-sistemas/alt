@@ -86,6 +86,7 @@ function ProveedorModal({ proveedor, onClose }: ModalProps) {
     const { data, setData, post, put, processing, errors } = useForm({
         tipo:              proveedor?.tipo ?? tab,
         tipo_identificacion: proveedor?.tipo_identificacion ?? 'RUC',
+        tipo_contribuyente: proveedor?.tipo_contribuyente ?? 'no_obligado',
         identificacion:    proveedor?.identificacion ?? '',
         razon_social:      proveedor?.razon_social ?? '',
         nombre_comercial:  proveedor?.nombre_comercial ?? '',
@@ -199,6 +200,21 @@ function ProveedorModal({ proveedor, onClose }: ModalProps) {
                             </div>
                         </div>
                     )}
+
+                    {/* Tipo de contribuyente — E1 (CHECKLIST_ERRORES_COMPLICACIONES.md) */}
+                    <div className="space-y-1.5">
+                        <Label>Tipo de contribuyente</Label>
+                        <select value={data.tipo_contribuyente}
+                            onChange={e => setData('tipo_contribuyente', e.target.value)}
+                            className="input-field select-field">
+                            <option value="no_obligado">No obligado</option>
+                            <option value="obligado_contabilidad">Obligado a llevar contabilidad</option>
+                            <option value="sociedad">Sociedad</option>
+                            <option value="contribuyente_especial">Contribuyente especial</option>
+                            <option value="gran_contribuyente_especial">Gran contribuyente especial</option>
+                        </select>
+                        {errors.tipo_contribuyente && <p className="text-red-400 text-xs">{errors.tipo_contribuyente}</p>}
+                    </div>
 
                     {/* Razón social */}
                     <div className="space-y-1.5">

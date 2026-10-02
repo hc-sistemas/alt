@@ -121,8 +121,10 @@ class ProformaController extends Controller
             ->orderBy('razon_social')
             ->get();
 
+        // Sin 'costo': no se usa en Proforma (no hay chequeo de precio bajo
+        // costo aquí) y no debe llegar al navegador del vendedor (CHECKLIST_ERRORES_COMPLICACIONES.md, A2).
         $productos = Producto::where('estado', true)
-            ->select('id', 'codigo', 'nombre', 'pvp', 'pvd', 'costo', 'porcentaje_iva')
+            ->select('id', 'codigo', 'nombre', 'pvp', 'pvd', 'porcentaje_iva')
             ->orderBy('nombre')
             ->get();
 
@@ -217,6 +219,12 @@ class ProformaController extends Controller
         $productoIds = collect($request->detalles)->pluck('producto_id')->unique()->all();
         $maximosPermitidos = $this->descuento->mapaMaximosPermitidos($productoIds, $empresaId);
 
+        // Precio real desde la tabla productos (precio de lista, pvp). El
+        // vendedor no puede cambiar el precio, solo dar descuento: el precio
+        // que llega en el payload NUNCA se usa (ver
+        // CHECKLIST_ERRORES_COMPLICACIONES.md, ítem A1).
+        $preciosProductos = Producto::whereIn('id', $productoIds)->pluck('pvp', 'id');
+
         $perfilNombre = DB::table('perfiles')
             ->join('usuarios', 'usuarios.perfil_id', '=', 'perfiles.id')
             ->where('usuarios.id', $usuario->id)
@@ -290,7 +298,7 @@ class ProformaController extends Controller
 
         foreach ($request->detalles as $det) {
             $cantidad  = (float)$det['cantidad'];
-            $precio    = (float)$det['precio'];
+            $precio    = (float) ($preciosProductos[$det['producto_id']] ?? 0);
             $descPct   = (float)($det['descuento_pct'] ?? 0);
             $descuento = round($precio * $cantidad * ($descPct / 100), 2);
             $neto      = round(($precio * $cantidad) - $descuento, 2);
@@ -306,7 +314,7 @@ class ProformaController extends Controller
         $totalIva  = round($base15 * 0.15, 2);
         $total     = round($subtotal + $totalIva, 2);
 
-        $proforma = DB::transaction(function () use ($request, $empresaId, $subtotal, $descTotal, $totalIva, $total, $aprobacionesUsadas) {
+        $proforma = DB::transaction(function () use ($request, $empresaId, $subtotal, $descTotal, $totalIva, $total, $aprobacionesUsadas, $preciosProductos) {
             $numero = $this->secuencial->siguiente($empresaId, 'PRF');
 
             $proforma = Proforma::create([
@@ -327,7 +335,7 @@ class ProformaController extends Controller
 
             foreach ($request->detalles as $det) {
                 $cantidad  = (float)$det['cantidad'];
-                $precio    = (float)$det['precio'];
+                $precio    = (float) ($preciosProductos[$det['producto_id']] ?? 0);
                 $descPct   = (float)($det['descuento_pct'] ?? 0);
                 $descuento = round($precio * $cantidad * ($descPct / 100), 2);
                 $neto      = round(($precio * $cantidad) - $descuento, 2);

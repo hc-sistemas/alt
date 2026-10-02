@@ -24,7 +24,9 @@ interface ProductoVenta {
     nombre: string
     pvp: number
     pvd: number
-    costo: number
+    // Sin costo real (CHECKLIST_ERRORES_COMPLICACIONES.md, A2): el servidor
+    // solo manda si el precio de lista quedó por debajo del costo.
+    bajo_costo: boolean
     descuento_max: number
     porcentaje_iva: number
 }
@@ -36,7 +38,9 @@ interface DetalleLinea {
     serie: string
     cantidad: number
     precio_unitario: number
-    costo: number
+    bajo_costo: boolean
+    // A8 (CHECKLIST_ERRORES_COMPLICACIONES.md): línea de regalo, se factura a $0.
+    es_regalo: boolean
     descuento_pct: number
     descuento_valor: number
     subtotal: number
@@ -82,6 +86,10 @@ const MSG_SIN_DESCUENTO_TARJETA = 'Con tarjeta de crédito no hay descuento de n
 const redondear = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100
 
 function calcularLinea(linea: DetalleLinea): DetalleLinea {
+    // A8: un regalo va siempre en $0, sin descuento ni IVA que calcular.
+    if (linea.es_regalo) {
+        return { ...linea, descuento_valor: 0, subtotal: 0, valor_iva: 0, total: 0 }
+    }
     const base = linea.cantidad * linea.precio_unitario
     // Redondeo a 2 decimales por línea (igual que el servidor) para que los valores sean exactos
     const descuento_valor = redondear(base * (linea.descuento_pct / 100))
@@ -93,7 +101,7 @@ function calcularLinea(linea: DetalleLinea): DetalleLinea {
 function lineaVacia(): DetalleLinea {
     return {
         producto_id: null, codigo: '', descripcion: '', serie: '',
-        cantidad: 1, precio_unitario: 0, costo: 0, descuento_pct: 0,
+        cantidad: 1, precio_unitario: 0, bajo_costo: false, es_regalo: false, descuento_pct: 0,
         descuento_valor: 0, subtotal: 0, porcentaje_iva: 15,
         valor_iva: 0, total: 0, descuento_max_producto: 100,
         aprobacion_id_precio: null,
@@ -205,7 +213,7 @@ export default function Form() {
     const [modalProducto, setModalProducto] = useState<{ idx: number; matches: ProductoVenta[] } | null>(null)
 
     // — Modal aprobación precio bajo costo (por línea)
-    const [modalPrecioBajoCosto, setModalPrecioBajoCosto] = useState<{ idx: number; precio: number } | null>(null)
+    const [modalPrecioBajoCosto, setModalPrecioBajoCosto] = useState<{ idx: number } | null>(null)
 
     // — Formas de pago (múltiples líneas)
     const [pagos, setPagos] = useState<FormaPagoLinea[]>(() => [pagoVacio(formas_pago)])
@@ -421,20 +429,21 @@ export default function Form() {
         }
     }
 
-    // Precio bajo costo requiere aprobación especial (tipo precio_bajo_costo),
-    // igual que el descuento excedido — mientras la línea no tenga ya una
-    // aprobación válida, se abre el modal en vez de guardar el valor directo.
-    const handlePrecioChange = (idx: number, valor: number) => {
-        const linea = detalles[idx]
-        const nuevoPrecio = isNaN(valor) ? 0 : Math.round(valor * 100) / 100
-        if (linea.producto_id !== null && nuevoPrecio < linea.costo && !linea.aprobacion_id_precio) {
-            setModalPrecioBajoCosto({ idx, precio: nuevoPrecio })
-            return
+    // A8 (CHECKLIST_ERRORES_COMPLICACIONES.md): tope de 2 regalos por factura
+    // — se avisa al marcar el tercero, pero se deja continuar (decisión del
+    // cliente: no bloquear).
+    const toggleRegalo = (idx: number, marcado: boolean) => {
+        if (marcado) {
+            const yaHayRegalos = detalles.filter((d, i) => i !== idx && d.es_regalo).length
+            if (yaHayRegalos >= 2) {
+                toastError(`Ya hay ${yaHayRegalos} regalos en esta factura.`)
+            }
         }
-        updateDetalle(idx, { precio_unitario: nuevoPrecio, _precio_error: '' })
+        updateDetalle(idx, { es_regalo: marcado, descuento_pct: 0, _precio_error: '' })
     }
 
     const seleccionarProductoLocal = (idx: number, p: ProductoVenta) => {
+        const precioLista = Math.round(p.pvp * 100) / 100
         setDetalles(prev => {
             const next = [...prev]
             next[idx] = calcularLinea({
@@ -442,8 +451,9 @@ export default function Form() {
                 producto_id: p.id,
                 codigo: p.codigo,
                 descripcion: p.nombre,
-                precio_unitario: Math.round(p.pvp * 100) / 100,
-                costo: p.costo,
+                precio_unitario: precioLista,
+                bajo_costo: p.bajo_costo,
+                es_regalo: false,
                 porcentaje_iva: p.porcentaje_iva > 0 ? 15 : 0, // el servidor factura siempre al 15% si el producto grava IVA
                 descuento_max_producto: p.descuento_max,
                 descuento_pct: 0,
@@ -457,6 +467,13 @@ export default function Form() {
         })
         setModalProducto(null)
         actualizarDisponible(idx, p.id)
+        // El precio no lo escribe el vendedor: sale siempre del precio de lista
+        // del producto. Si ese precio de lista quedó por debajo del costo (un
+        // error de configuración en el maestro de productos), se sigue pidiendo
+        // aprobación de un supervisor antes de dejar facturar la línea.
+        if (p.bajo_costo) {
+            setModalPrecioBajoCosto({ idx })
+        }
     }
 
     const handleBuscarProducto = (idx: number, q: string) => {
@@ -596,6 +613,7 @@ export default function Form() {
                 descuento_pct: d.descuento_pct,
                 graba_iva: d.porcentaje_iva > 0,
                 aprobacion_id: d.aprobacion_id_precio,
+                es_regalo: d.es_regalo,
             })),
             formas_pago: pagos.map(p => ({
                 forma: p.forma_pago,
@@ -926,6 +944,7 @@ export default function Form() {
                                         { label: 'Cant', cls: 'w-16 text-right' },
                                         { label: 'Precio', cls: 'w-24 text-right' },
                                         { label: 'Desc%', cls: 'w-20 text-right' },
+                                        { label: 'Regalo', cls: 'w-14 text-center' },
                                         { label: 'Desc$', cls: 'w-20 text-right' },
                                         { label: 'V.Tot', cls: 'w-24 text-right' },
                                         { label: '', cls: 'w-8' },
@@ -1055,16 +1074,16 @@ export default function Form() {
                                             </div>
                                         </td>
 
-                                        {/* Precio */}
+                                        {/* Precio — precio de lista, no editable. Solo cambia el total, vía descuento. */}
                                         <td className="py-1 px-1 align-top">
                                             <input
                                                 type="number"
-                                                min="0"
-                                                step="0.01"
-                                                className={cn(tdInput, 'text-right')}
-                                                style={tdInputStyle}
+                                                readOnly
+                                                tabIndex={-1}
+                                                className={cn(tdInput, 'text-right cursor-not-allowed')}
+                                                style={{ ...tdInputStyle, background: 'var(--bg-card)', color: 'var(--text-muted)' }}
                                                 value={det.precio_unitario}
-                                                onChange={e => handlePrecioChange(idx, Number(e.target.value))}
+                                                title="El precio no se puede editar. Para bajar el valor de la línea, use el descuento."
                                             />
                                             <div
                                                 className={hintSlotCls}
@@ -1084,8 +1103,8 @@ export default function Form() {
                                                 className={cn(tdInput, 'text-right')}
                                                 style={tdInputStyle}
                                                 value={det.descuento_pct}
-                                                disabled={pagaConTarjeta}
-                                                title={pagaConTarjeta ? MSG_SIN_DESCUENTO_TARJETA : undefined}
+                                                disabled={pagaConTarjeta || det.es_regalo}
+                                                title={pagaConTarjeta ? MSG_SIN_DESCUENTO_TARJETA : det.es_regalo ? 'Los regalos van a $0, no llevan descuento.' : undefined}
                                                 onChange={e => handleDescuentoChange(idx, Number(e.target.value))}
                                             />
                                             <div
@@ -1093,9 +1112,21 @@ export default function Form() {
                                                 style={{ color: det._desc_error ? 'var(--color-danger)' : 'var(--color-warning)' }}
                                             >
                                                 {det._desc_error || (det.producto_id !== null
-                                                    ? (pagaConTarjeta ? 'Sin descuento con tarjeta' : descuentoEspecialActivo ? 'Descuento especial activo — sin tope de producto' : `Max. ${det.descuento_max_producto}%`)
+                                                    ? (pagaConTarjeta ? 'Sin descuento con tarjeta' : det.es_regalo ? '' : descuentoEspecialActivo ? 'Descuento especial activo — sin tope de producto' : `Max. ${det.descuento_max_producto}%`)
                                                     : '')}
                                             </div>
+                                        </td>
+
+                                        {/* Regalo — A8 (CHECKLIST_ERRORES_COMPLICACIONES.md) */}
+                                        <td className="py-1 px-1 align-top text-center">
+                                            <input
+                                                type="checkbox"
+                                                checked={det.es_regalo}
+                                                disabled={det.producto_id === null || pagaConTarjeta}
+                                                title={pagaConTarjeta ? MSG_SIN_DESCUENTO_TARJETA : 'Marcar esta línea como regalo (se factura a $0)'}
+                                                onChange={e => toggleRegalo(idx, e.target.checked)}
+                                                className="w-4 h-4 cursor-pointer"
+                                            />
                                         </td>
 
                                         {/* Desc$ */}
@@ -1212,23 +1243,24 @@ export default function Form() {
                 descuentoSolicitado={0}
             />
 
-            {/* Modal aprobación precio bajo costo — por línea */}
+            {/* Modal aprobación precio bajo costo — por línea. Sin montos en
+                pantalla (CHECKLIST_ERRORES_COMPLICACIONES.md, A2): el costo
+                real del producto no debe llegar al navegador del vendedor. */}
             <DescuentoEspecialModal
                 abierto={modalPrecioBajoCosto !== null}
                 onCerrar={() => {
                     if (modalPrecioBajoCosto) {
-                        const linea = detalles[modalPrecioBajoCosto.idx]
-                        updateDetalle(modalPrecioBajoCosto.idx, {
-                            precio_unitario: linea.costo,
-                            _precio_error: `El precio no puede ser menor al costo (${formatMoneda(linea.costo)}) sin aprobación especial.`,
-                        })
+                        // Sin aprobación no se puede vender a este precio: se
+                        // quita el producto de la línea en vez de adivinar un
+                        // precio "seguro" (no se conoce el costo en el navegador).
+                        limpiarProducto(modalPrecioBajoCosto.idx)
+                        toastError('No se puede facturar este producto sin aprobación de un supervisor.')
                     }
                     setModalPrecioBajoCosto(null)
                 }}
                 onAutorizado={aprobacion_id => {
                     if (modalPrecioBajoCosto) {
                         updateDetalle(modalPrecioBajoCosto.idx, {
-                            precio_unitario: modalPrecioBajoCosto.precio,
                             aprobacion_id_precio: aprobacion_id,
                             _precio_error: '',
                         })
@@ -1239,17 +1271,11 @@ export default function Form() {
                 titulo="Aprobación de precio bajo costo"
                 mensaje={modalPrecioBajoCosto && (
                     <>
-                        El precio ingresado (
-                        <strong style={{ color: 'var(--text-main)' }}>{formatMoneda(modalPrecioBajoCosto.precio)}</strong>
-                        ) es menor al costo del producto{' '}
+                        El precio de lista de{' '}
                         <strong style={{ color: 'var(--text-main)' }}>
                             {detalles[modalPrecioBajoCosto.idx]?.descripcion || 'este producto'}
                         </strong>{' '}
-                        (
-                        <strong className="text-amber-500">
-                            {formatMoneda(detalles[modalPrecioBajoCosto.idx]?.costo ?? 0)}
-                        </strong>
-                        ). Se requiere un código de autorización para continuar.
+                        está por debajo de su costo. Se requiere un código de autorización de un supervisor para continuar.
                     </>
                 )}
                 productoNombre={modalPrecioBajoCosto ? (detalles[modalPrecioBajoCosto.idx]?.descripcion ?? '') : ''}

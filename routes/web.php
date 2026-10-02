@@ -81,6 +81,14 @@ Route::middleware('auth')->group(function () {
     Route::get('/', fn() => redirect()->route('dashboard'));
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
+    // F1 (CHECKLIST_ERRORES_COMPLICACIONES.md): resumen de ventas del
+    // dashboard por período (mensual/trimestral/anual) + descarga PDF/Excel.
+    Route::prefix('dashboard')->name('dashboard.')->group(function () {
+        Route::get('ventas-resumen',       [DashboardController::class, 'resumenVentas'])     ->name('ventas-resumen');
+        Route::get('ventas-resumen/pdf',   [DashboardController::class, 'resumenVentasPdf'])  ->name('ventas-resumen.pdf');
+        Route::get('ventas-resumen/excel', [DashboardController::class, 'resumenVentasExcel'])->name('ventas-resumen.excel');
+    });
+
     // Notificaciones in-app
     Route::prefix('notificaciones')->name('notificaciones.')->group(function () {
         Route::get('/',             [\App\Http\Controllers\NotificacionController::class, 'index'])->name('index');
@@ -377,10 +385,17 @@ Route::middleware('auth')->group(function () {
             Route::get('kardex/ajuste', [KardexController::class, 'ajuste'])->name('kardex.ajuste');
             Route::get('kardex', [KardexController::class, 'index'])->name('kardex.index');
 
-            Route::get('traslados', [TrasladoController::class, 'index'])->name('traslados.index');
-            Route::get('traslados/nuevo', [TrasladoController::class, 'create'])->name('traslados.create');
-            Route::get('traslados/productos-en-bodega', [TrasladoController::class, 'productosEnBodega'])->name('traslados.productosEnBodega');
-            Route::get('traslados/{traslado}', [TrasladoController::class, 'show'])->name('traslados.show');
+            // Movimientos (Traslados) — ocultos para Vendedor/Técnico, aunque
+            // vean el resto de Inventario (CHECKLIST_ERRORES_COMPLICACIONES.md,
+            // C6). No hay un módulo de permiso propio para esto; se restringe
+            // por perfil con el mismo criterio ya usado en otros puntos del
+            // proyecto para gates puntuales (ej. clienteGuardar).
+            Route::middleware('solo_perfiles:admin,contador,bodeguero')->group(function () {
+                Route::get('traslados', [TrasladoController::class, 'index'])->name('traslados.index');
+                Route::get('traslados/nuevo', [TrasladoController::class, 'create'])->name('traslados.create');
+                Route::get('traslados/productos-en-bodega', [TrasladoController::class, 'productosEnBodega'])->name('traslados.productosEnBodega');
+                Route::get('traslados/{traslado}', [TrasladoController::class, 'show'])->name('traslados.show');
+            });
 
             Route::get('activos', [ActivoFijoController::class, 'index'])->name('activos.index');
             Route::get('activos/create', [ActivoFijoController::class, 'create'])->name('activos.create');
@@ -399,7 +414,7 @@ Route::middleware('auth')->group(function () {
             Route::middleware('permiso:inventario,crear')->group(function () {
                 Route::post('productos', [ProductoController::class, 'store'])->name('productos.store');
                 Route::post('kardex/ajuste', [KardexController::class, 'storeAjuste'])->name('kardex.storeAjuste');
-                Route::post('traslados', [TrasladoController::class, 'store'])->name('traslados.store');
+                Route::post('traslados', [TrasladoController::class, 'store'])->name('traslados.store')->middleware('solo_perfiles:admin,contador,bodeguero');
                 Route::post('activos', [ActivoFijoController::class, 'store'])->name('activos.store');
                 Route::post('listas/importar', [ListaPrecioController::class, 'importar'])->name('listas.importar');
                 Route::post('recepciones', [RecepcionController::class, 'store'])->name('recepciones.store');
@@ -407,7 +422,7 @@ Route::middleware('auth')->group(function () {
 
             Route::middleware('permiso:inventario,editar')->group(function () {
                 Route::put('productos/{producto}', [ProductoController::class, 'update'])->name('productos.update');
-                Route::post('traslados/{traslado}/confirmar', [TrasladoController::class, 'confirmar'])->name('traslados.confirmar');
+                Route::post('traslados/{traslado}/confirmar', [TrasladoController::class, 'confirmar'])->name('traslados.confirmar')->middleware('solo_perfiles:admin,contador,bodeguero');
                 Route::put('activos/{activoFijo}', [ActivoFijoController::class, 'update'])->name('activos.update');
                 Route::post('activos/{activoFijo}/depreciar', [ActivoFijoController::class, 'depreciar'])->name('activos.depreciar');
                 Route::put('listas/{producto}', [ListaPrecioController::class, 'update'])->name('listas.update');
@@ -423,7 +438,7 @@ Route::middleware('auth')->group(function () {
             });
 
             Route::middleware('permiso:inventario,anular')->group(function () {
-                Route::post('traslados/{traslado}/anular', [TrasladoController::class, 'anular'])->name('traslados.anular');
+                Route::post('traslados/{traslado}/anular', [TrasladoController::class, 'anular'])->name('traslados.anular')->middleware('solo_perfiles:admin,contador,bodeguero');
             });
         });
 
@@ -460,11 +475,33 @@ Route::middleware('auth')->group(function () {
         Route::resource('clientes', ClienteController::class);
         Route::get('clientes/{cliente}/reporte', [ClienteController::class, 'reporteIndividual'])->name('clientes.reporte.individual');
 
-        // Proveedores — rutas estáticas primero
-        Route::get('proveedores/reporte/lista', [PersonasProveedorController::class, 'reporteLista'])->name('proveedores.reporte.lista');
-        Route::resource('proveedores', PersonasProveedorController::class)
-            ->parameters(['proveedores' => 'proveedor']);
-        Route::get('proveedores/{proveedor}/reporte', [PersonasProveedorController::class, 'reporteIndividual'])->name('proveedores.reporte.individual');
+        // Proveedores — mismo criterio que /compras/proveedores: ver el
+        // listado exige permiso de Compras (CHECKLIST_ERRORES_COMPLICACIONES.md,
+        // ítem C1 — hoy este grupo quedaba abierto a cualquier perfil logueado,
+        // incluido Vendedor, aunque /compras/proveedores ya lo bloqueaba).
+        Route::middleware('permiso:compras,ver')->group(function () {
+            Route::get('proveedores/reporte/lista', [PersonasProveedorController::class, 'reporteLista'])->name('proveedores.reporte.lista');
+            Route::resource('proveedores', PersonasProveedorController::class)
+                ->parameters(['proveedores' => 'proveedor'])
+                ->except(['store', 'update', 'destroy']);
+            Route::get('proveedores/{proveedor}/reporte', [PersonasProveedorController::class, 'reporteIndividual'])->name('proveedores.reporte.individual');
+
+            Route::middleware('permiso:compras,crear')->group(function () {
+                Route::resource('proveedores', PersonasProveedorController::class)
+                    ->parameters(['proveedores' => 'proveedor'])
+                    ->only(['store']);
+            });
+            Route::middleware('permiso:compras,editar')->group(function () {
+                Route::resource('proveedores', PersonasProveedorController::class)
+                    ->parameters(['proveedores' => 'proveedor'])
+                    ->only(['update']);
+            });
+            Route::middleware('permiso:compras,eliminar')->group(function () {
+                Route::resource('proveedores', PersonasProveedorController::class)
+                    ->parameters(['proveedores' => 'proveedor'])
+                    ->only(['destroy']);
+            });
+        });
 
         // Transportistas — rutas estáticas primero
         Route::get('transportistas/reporte/lista', [TransportistaController::class, 'reporteLista'])->name('transportistas.reporte.lista');
@@ -614,14 +651,6 @@ Route::middleware('auth')->group(function () {
             });
         });
 
-        Route::prefix('asistencia')->name('asistencia.')->group(function () {
-            Route::get('/',        [AsistenciaController::class, 'index'])           ->name('index');
-            Route::middleware('permiso:rrhh,crear')->group(function () {
-                Route::post('/entrada',[AsistenciaController::class, 'registrarEntrada'])->name('entrada');
-                Route::post('/salida', [AsistenciaController::class, 'registrarSalida']) ->name('salida');
-            });
-        });
-
         Route::prefix('horas-extras')->name('horas-extras.')->group(function () {
             Route::get('/',                            [HorasExtrasController::class, 'index'])   ->name('index');
             Route::middleware('permiso:rrhh,editar')->group(function () {
@@ -682,8 +711,23 @@ Route::middleware('auth')->group(function () {
         });
     });
 
-    // Reportes SRI
-    Route::prefix('reportes/sri')->name('reportes.sri.')->group(function () {
+    // Asistencia — módulo propio, separado de RRHH (CHECKLIST_ERRORES_COMPLICACIONES.md,
+    // ítem C4): antes colgaba de permiso:rrhh,ver, así que solo la veía quien
+    // tuviera TODO RRHH. Vendedor/Bodeguero/Técnico deben poder marcar su
+    // propia asistencia sin acceso a Colaboradores, Nómina, etc. Mismo prefijo
+    // y nombres de ruta de siempre (rrhh.asistencia.*) — solo cambia el permiso.
+    Route::middleware('permiso:asistencia,ver')->prefix('rrhh/asistencia')->name('rrhh.asistencia.')->group(function () {
+        Route::get('/', [AsistenciaController::class, 'index'])->name('index');
+        Route::middleware('permiso:asistencia,crear')->group(function () {
+            Route::post('/entrada', [AsistenciaController::class, 'registrarEntrada'])->name('entrada');
+            Route::post('/salida',  [AsistenciaController::class, 'registrarSalida']) ->name('salida');
+        });
+    });
+
+    // Reportes SRI — antes sin middleware de permiso (CHECKLIST_ERRORES_COMPLICACIONES.md,
+    // ítem C2): cualquier usuario logueado podía traer el ATS/F103/F104/Anexo
+    // ICE por URL directa, aunque el menú ya los ocultara a Vendedor/Bodeguero.
+    Route::middleware('permiso:reportes,ver')->prefix('reportes/sri')->name('reportes.sri.')->group(function () {
         Route::get('/',     [ReporteSriController::class, 'index'])        ->name('index');
         Route::get('/ats',  [ReporteSriController::class, 'ats'])          ->name('ats');
         Route::get('/f103', [ReporteSriController::class, 'formulario103'])->name('f103');

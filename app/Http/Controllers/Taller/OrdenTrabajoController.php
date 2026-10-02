@@ -70,7 +70,9 @@ class OrdenTrabajoController extends Controller
     {
         abort_if((int) $orden->empresa_id !== (int) session('empresa_activa_id'), 403);
 
-        $orden->load(['ingreso.cliente', 'ingreso.equipo.tipo', 'tecnico', 'diagnosticos.tecnico', 'repuestos.producto']);
+        // 'ingreso.componentes' se agregó al fusionar Ingresos+Órdenes en una
+        // sola pantalla (D1, CHECKLIST_ERRORES_COMPLICACIONES.md).
+        $orden->load(['ingreso.cliente', 'ingreso.equipo.tipo', 'ingreso.componentes', 'tecnico', 'diagnosticos.tecnico', 'repuestos.producto']);
 
         return Inertia::render('Taller/OrdenesTrabajo/Show', [
             'orden'     => $orden,
