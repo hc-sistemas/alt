@@ -498,12 +498,12 @@ class ReporteContableController extends Controller
             $request->filled('centro_costo_id') ? (int) $request->centro_costo_id : null,
         );
 
-        $ingresos  = collect(); // 4.1.1 / 4.1.2 — operacionales (netos de devoluciones)
-        $otrosIng  = collect(); // 4.2      — no operacionales
-        $costos    = collect(); // 5.1      — costo de ventas
-        $gastosOp  = collect(); // 5.2      — operativos
-        $gastosFin = collect(); // 5.3      — financieros
-        $otrosGas  = collect(); // 5.4      — otros y no deducibles
+        $ingresos  = collect(); // 4.01 / 4.02 — operacionales (netos de devoluciones)
+        $otrosIng  = collect(); // el plan 2025 no tiene ingresos no operacionales
+        $costos    = collect(); // clase 5 — costo de ventas y servicios
+        $gastosOp  = collect(); // 6.01    — operativos
+        $gastosFin = collect(); // 6.01.10 — financieros y comisiones bancarias
+        $otrosGas  = collect(); // 6.02    — no deducibles
 
         foreach ($this->cuentasPosteables(['ingreso', 'gasto']) as $c) {
             $s = $sumas[$c->id] ?? null;
@@ -522,12 +522,11 @@ class ReporteContableController extends Controller
             $fila = ['codigo' => $c->codigo, 'nombre' => $c->nombre, 'saldo' => $saldo];
 
             match (true) {
-                str_starts_with($c->codigo, '4.2') => $otrosIng->push($fila),
-                $c->tipo === 'ingreso'             => $ingresos->push($fila),
-                str_starts_with($c->codigo, '5.1') => $costos->push($fila),
-                str_starts_with($c->codigo, '5.3') => $gastosFin->push($fila),
-                str_starts_with($c->codigo, '5.4') => $otrosGas->push($fila),
-                default                            => $gastosOp->push($fila),
+                $c->tipo === 'ingreso'                 => $ingresos->push($fila),
+                str_starts_with($c->codigo, '5.')      => $costos->push($fila),
+                str_starts_with($c->codigo, '6.01.10') => $gastosFin->push($fila),
+                str_starts_with($c->codigo, '6.02')    => $otrosGas->push($fila),
+                default                                => $gastosOp->push($fila),
             };
         }
 
@@ -599,16 +598,15 @@ class ReporteContableController extends Controller
     /**
      * Cuentas que representan efectivo y equivalentes.
      *
-     * Antes se tomaba todo 1.1.1.x, lo que incluía "Dinero Electrónico /
-     * Pasarelas de Pago" (vouchers Datafast): eso es un derecho de cobro
-     * contra la procesadora hasta que se liquida, no caja disponible.
+     * Plan 2025: 1.01.01 (cajas) y 1.01.02 (bancos). Los vouchers Datafast ya no
+     * tienen cuenta propia: van a Clientes Locales (1.01.03.01), que no es efectivo.
      */
     private function esEfectivo(string $codigo): bool
     {
         $c = $this->normalizar($codigo);
 
-        // 1.1.1.5 = Dinero Electrónico / Pasarelas de Pago (vouchers).
-        return str_starts_with($c, '1.1.1.') && !str_starts_with($c, '1.1.1.5');
+        // normalizar(): '1.01.01.x' → '1.1.1.x' (cajas) y '1.01.02.x' → '1.1.2.x' (bancos).
+        return str_starts_with($c, '1.1.1.') || str_starts_with($c, '1.1.2.');
     }
 
     /**

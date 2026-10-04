@@ -250,103 +250,77 @@ class AsientoService
     // HELPERS PRIVADOS
     // ══════════════════════════════════════════════════════════
 
-    // Mapa de códigos de parámetro → códigos del plan de cuentas.
-    //
-    // CORREGIDO (2026-09-20) — auditoría del módulo de Contabilidad. El mapa
-    // anterior estaba roto de dos formas distintas y por eso NINGÚN asiento
-    // automático llegaba a generarse (26 de 42 códigos no existían en la BD):
-    //
-    //   1. FORMATO. El plan de cuentas real del cliente NO usa el segmento
-    //      final con cero a la izquierda en las clases 1, 2, 3, 4 y 5.1: la
-    //      cuenta es '1.1.1.1' (Caja General), no '1.1.1.01'. Solo las clases
-    //      5.2, 5.3 y 5.4 usan dos dígitos ('5.2.2.06'). Es inconsistente en
-    //      los datos reales, así que además de corregir los valores de este
-    //      mapa, cuentaId() normaliza los códigos antes de comparar (ver
-    //      normalizarCodigo()): así '1.1.1.01' y '1.1.1.1' resuelven igual y
-    //      el sistema no se vuelve a romper si el cliente renumera.
-    //
-    //   2. SEMÁNTICA. Varios códigos apuntaban a una cuenta que existe pero
-    //      NO es la que dice el nombre del parámetro. Los peores:
-    //        - cta_ganancias_acumuladas → 3.1.3.01 = "Superavit por
-    //          Revaluacion PPE" (la real es 3.1.4.1). El cierre fiscal anual
-    //          arrastraba la utilidad del ejercicio al superávit por
-    //          revaluación.
-    //        - cta_utilidad_periodo → 3.1.4.01 = "Ganancias Acumuladas"
-    //          (la real es 3.1.5.1 "Utilidad del Periodo").
-    //        - cta_aporte_patronal → 5.2.1.03 = "Comisiones y Bonos"
-    //          (la real es 5.2.1.04). Toda la nómina registraba el aporte
-    //          patronal IESS como comisiones — y de ahí en adelante todo el
-    //          bloque de nómina estaba corrido un número.
-    //        - cta_anticipos_clientes → 2.1.6.01 = "Porcion Corriente de
-    //          Obligaciones LP" (la real es 2.1.1.3).
-    //
-    // Verificado cuenta por cuenta contra plan_cuentas de la BD `altamira`.
+    // Mapa de parámetro → código del plan de cuentas "PLAN DE CUENTAS 2025 ALTAMIRA".
+    // Mantener en sincronía con PARAMETROS de la migración reemplazar_plan_cuentas_2025.
+    // El plan nuevo no trae cuentas generales de venta/costo/inventario (solo por línea de
+    // producto): 4.01.06, 5.01.05 y 1.01.04.05 se agregaron como "(General)". Varias cuentas
+    // del plan anterior se fusionaron en la más cercana (p. ej. anticipos → 1.01.03.01).
     private const FALLBACK_PLAN = [
-        // ── Activo ────────────────────────────────────────────────────────
-        'cta_caja_general'              => '1.1.1.1',  // Caja General
-        'cta_cajas_chicas'              => '1.1.1.2',  // Cajas Chicas y Fondos
-        'cta_bancos_locales'            => '1.1.1.3',  // Bancos Locales
-        'cta_bancos_exterior'           => '1.1.1.4',  // Bancos del Exterior
-        'cta_vouchers'                  => '1.1.1.5',  // Dinero Electrónico / Pasarelas
-        'cta_clientes_locales'          => '1.1.3.1',  // Clientes Locales
-        'cta_clientes_exterior'         => '1.1.3.2',  // Clientes del Exterior
-        'cta_anticipos_proveedores'     => '1.1.3.3',  // Anticipos a Proveedores
-        'cta_anticipos_empleados'       => '1.1.3.4',  // Préstamos y Anticipos a Empleados
-        'cta_provision_incobrables'     => '1.1.3.5',  // (-) Provisión Cuentas Incobrables
-        'cta_inventario_mercaderia'     => '1.1.4.1',  // Inventario de Mercadería
-        'cta_inventario_transito'       => '1.1.4.3',  // Inventario en Tránsito
-        'cta_iva_compras'               => '1.1.5.1',  // Crédito Tributario por IVA
-        'cta_retencion_iva_cobrada'     => '1.1.5.2',  // Cred. Trib. Retenciones de IVA
-        'cta_retencion_ir_cobrada'      => '1.1.5.3',  // Cred. Trib. Retenciones de IR
-        // ── Pasivo ────────────────────────────────────────────────────────
-        'cta_proveedores_locales'       => '2.1.1.1',  // Proveedores Locales
-        'cta_proveedores_exterior'      => '2.1.1.2',  // Proveedores del Exterior
-        'cta_anticipos_clientes'        => '2.1.1.3',  // Anticipos de Clientes
-        'cta_retencion_ir'              => '2.1.3.1',  // Retenciones Fuente IR por Pagar
-        'cta_retencion_iva'             => '2.1.3.2',  // Retenciones de IVA por Pagar
-        'cta_impuesto_renta_pagar'      => '2.1.3.3',  // Impuesto a la Renta por Pagar
-        'cta_iva_ventas'                => '2.1.3.4',  // IVA Ventas por Pagar
-        'cta_nomina_por_pagar'          => '2.1.4.1',  // Nómina por Pagar
-        'cta_iess_por_pagar'            => '2.1.4.2',  // Oblig. IESS Aporte Patronal 11.15%
-        'cta_iess_personal_por_pagar'   => '2.1.4.3',  // Oblig. IESS Aporte Personal 9.45%
-        'cta_decimo_tercero_pagar'      => '2.1.4.5',  // Décimo Tercer Sueldo por Pagar
-        'cta_decimo_cuarto_pagar'       => '2.1.4.6',  // Décimo Cuarto Sueldo por Pagar
-        'cta_vacaciones_pagar'          => '2.1.4.7',  // Vacaciones por Pagar
-        'cta_fondos_reserva_pagar'      => '2.1.4.8',  // Fondos de Reserva por Pagar
-        'cta_participacion_trabajadores'=> '2.1.4.9',  // Utilidades a Trabajadores 15%
-        // ── Patrimonio ────────────────────────────────────────────────────
-        'cta_ganancias_acumuladas'      => '3.1.4.1',  // Ganancias Acumuladas
-        'cta_perdidas_acumuladas'       => '3.1.4.2',  // (-) Pérdidas Acumuladas
-        'cta_utilidad_periodo'          => '3.1.5.1',  // Utilidad del Periodo
-        'cta_perdida_periodo'           => '3.1.5.2',  // (-) Pérdida del Periodo
-        // ── Ingresos ──────────────────────────────────────────────────────
-        'cta_ventas_locales'            => '4.1.1.1',  // Venta de Mercancías Locales
-        'cta_ventas_exterior'           => '4.1.1.2',  // Venta de Mercancías al Exterior
-        'cta_ingresos_servicios'        => '4.1.2.1',  // Ingresos por Servicios Técnicos
-        'cta_devoluciones_ventas'       => '4.1.3.1',  // (-) Devoluciones en Ventas
-        'cta_descuentos_ventas'         => '4.1.3.2',  // (-) Descuentos y Rebajas en Ventas
-        // ── Costo de ventas ───────────────────────────────────────────────
-        'cta_costo_ventas'              => '5.1.1.1',  // Costo de Ventas Mercancías Locales
-        'cta_costo_ventas_importadas'   => '5.1.1.2',  // Costo de Ventas Mercancías Importadas
-        'cta_costo_servicios'           => '5.1.1.3',  // Costo de Prestación de Servicios
-        'cta_ajuste_inventario'         => '5.1.1.4',  // Ajustes por Faltantes o Mermas
-        // ── Gastos de personal ────────────────────────────────────────────
-        'cta_sueldos_salarios'          => '5.2.1.01', // Sueldos y Salarios
-        'cta_horas_extras'              => '5.2.1.02', // Horas Extras y Suplementarias
-        'cta_aporte_patronal'           => '5.2.1.04', // Aporte Patronal IESS 11.15%
-        'cta_decimo_tercero'            => '5.2.1.05', // Décimo Tercer Sueldo
-        'cta_decimo_cuarto'             => '5.2.1.06', // Décimo Cuarto Sueldo
-        'cta_vacaciones'                => '5.2.1.07', // Vacaciones
-        'cta_fondos_reserva'            => '5.2.1.08', // Fondos de Reserva
-        // ── Gastos generales / financieros / otros ────────────────────────
-        'cta_gasto_compras_default'     => '5.2.2.06', // Suministros de Oficina
-        'cta_gasto_servicios'           => '5.2.2.01', // Honorarios Profesionales
-        'cta_gasto_arrendamiento'       => '5.2.2.02', // Arrendamientos de Locales
-        'cta_gasto_servicios_basicos'   => '5.2.2.03', // Servicios Básicos
-        'cta_gasto_publicidad'          => '5.2.2.11', // Publicidad y Marketing
-        'cta_comisiones_bancarias'      => '5.3.1.02', // Comisiones Bancarias y Pasarelas
-        'cta_gastos_no_deducibles'      => '5.4.1.01', // Gastos No Deducibles Locales
-        'cta_ajuste_conciliacion'       => '5.4.1.03', // Otros Gastos Extraordinarios
+        // ── Activo ────────────────────────────────────────
+        'cta_caja_general'              => '1.01.01.01',
+        'cta_cajas_chicas'              => '1.01.01.02',
+        'cta_bancos_locales'            => '1.01.02.01',
+        'cta_bancos_exterior'           => '1.01.02.01',
+        'cta_vouchers'                  => '1.01.03.01',
+        'cta_clientes_locales'          => '1.01.03.01',
+        'cta_clientes_exterior'         => '1.01.03.01',
+        'cta_anticipos_proveedores'     => '1.01.03.01',
+        'cta_anticipos_empleados'       => '1.01.03.01',
+        'cta_provision_incobrables'     => '1.01.03.02',
+        'cta_inventario_mercaderia'     => '1.01.04.05',
+        'cta_inventario_transito'       => '1.01.04.04',
+        'cta_iva_compras'               => '1.01.05.01',
+        'cta_retencion_iva_cobrada'     => '1.01.05.03',
+        'cta_retencion_ir_cobrada'      => '1.01.05.02',
+        // ── Pasivo ────────────────────────────────────────
+        'cta_proveedores_locales'       => '2.01.01.01',
+        'cta_proveedores_exterior'      => '2.01.01.02',
+        'cta_anticipos_clientes'        => '2.01.01.01',
+        'cta_retencion_ir'              => '2.01.02.02',
+        'cta_retencion_iva'             => '2.01.02.03',
+        'cta_impuesto_renta_pagar'      => '2.01.02.02',
+        'cta_iva_ventas'                => '2.01.02.01',
+        'cta_nomina_por_pagar'          => '2.01.03.01',
+        'cta_iess_por_pagar'            => '2.01.03.02',
+        'cta_iess_personal_por_pagar'   => '2.01.03.02',
+        'cta_decimo_tercero_pagar'      => '2.01.03.03',
+        'cta_decimo_cuarto_pagar'       => '2.01.03.03',
+        'cta_vacaciones_pagar'          => '2.01.03.03',
+        'cta_fondos_reserva_pagar'      => '2.01.03.04',
+        'cta_participacion_trabajadores' => '2.01.03.03',
+        // ── Patrimonio ────────────────────────────────────────
+        'cta_ganancias_acumuladas'      => '3.01.02.01',
+        'cta_perdidas_acumuladas'       => '3.01.02.02',
+        'cta_utilidad_periodo'          => '3.01.03.01',
+        'cta_perdida_periodo'           => '3.01.03.01',
+        // ── Ingresos ────────────────────────────────────────
+        'cta_ventas_locales'            => '4.01.06',
+        'cta_ventas_exterior'           => '4.01.06',
+        'cta_ingresos_servicios'        => '4.01.05',
+        'cta_devoluciones_ventas'       => '4.02.01',
+        'cta_descuentos_ventas'         => '4.02.02',
+        // ── Costo de ventas ────────────────────────────────────────
+        'cta_costo_ventas'              => '5.01.05',
+        'cta_costo_ventas_importadas'   => '5.01.05',
+        'cta_costo_servicios'           => '5.01.04.01',
+        'cta_ajuste_inventario'         => '5.01.05',
+        // ── Gastos de personal ────────────────────────────────────────
+        'cta_sueldos_salarios'          => '6.01.01',
+        'cta_horas_extras'              => '6.01.01',
+        'cta_aporte_patronal'           => '6.01.02',
+        'cta_decimo_tercero'            => '6.01.01',
+        'cta_decimo_cuarto'             => '6.01.01',
+        'cta_vacaciones'                => '6.01.01',
+        'cta_fondos_reserva'            => '6.01.02',
+        // ── Gastos generales / financieros / otros ────────────────────────────────────────
+        'cta_gasto_compras_default'     => '6.01.12',
+        'cta_gasto_servicios'           => '6.01.11',
+        'cta_gasto_arrendamiento'       => '6.01.03',
+        'cta_gasto_servicios_basicos'   => '6.01.04',
+        'cta_gasto_publicidad'          => '6.01.05',
+        'cta_comisiones_bancarias'      => '6.01.10',
+        'cta_gastos_no_deducibles'      => '6.02.01',
+        'cta_ajuste_conciliacion'       => '6.02.01',
     ];
 
     /** Mapa parámetro → código de cuenta, para el autoconfigurador de la UI. */

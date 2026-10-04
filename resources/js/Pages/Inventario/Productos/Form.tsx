@@ -60,9 +60,9 @@ export default function ProductoForm() {
         stock_minimo: producto ? Math.round(Number(producto.stock_minimo)).toString() : '0',
         stock_maximo: producto?.stock_maximo ? Math.round(Number(producto.stock_maximo)).toString() : '',
         peso: producto?.peso?.toString() ?? '0',
-        cuenta_inventario: producto?.cuenta_inventario ?? '1.1.4.1',
-        cuenta_costo_ventas: producto?.cuenta_costo_ventas ?? '5.1.1.1',
-        cuenta_ventas: producto?.cuenta_ventas ?? '4.1.1.01',
+        cuenta_inventario: producto?.cuenta_inventario ?? '1.01.04.05',
+        cuenta_costo_ventas: producto?.cuenta_costo_ventas ?? '5.01.05',
+        cuenta_ventas: producto?.cuenta_ventas ?? '4.01.06',
         estado: producto?.estado ?? true,
     })
 
