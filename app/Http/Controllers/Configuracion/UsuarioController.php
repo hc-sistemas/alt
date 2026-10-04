@@ -13,6 +13,7 @@ use App\Services\NominaCalculoService;
 use Illuminate\Validation\Rule;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules\Password;
@@ -35,7 +36,8 @@ class UsuarioController extends Controller
                   ->orWhere('username', 'ilike', "%{$request->search}%");
             }))
             ->when($request->perfil_id, fn($q) => $q->where('perfil_id', $request->perfil_id))
-            ->when($request->estado !== null, fn($q) => $q->where('estado', $request->estado === 'activo'));
+            ->when($request->estado !== null, fn($q) => $q->where('estado', $request->estado === 'activo'))
+            ->orderBy('nombre');
 
         return Inertia::render('Configuracion/Usuarios/Index', [
             'usuarios'      => $query->paginate(15)->withQueryString(),
@@ -51,11 +53,34 @@ class UsuarioController extends Controller
     public function create(): Response
     {
         return Inertia::render('Configuracion/Usuarios/Form', [
-            'perfiles' => Perfil::orderBy('nombre')->get(['id', 'nombre']),
+            'perfiles' => $this->perfilesAsignables(),
             'empresas' => Empresa::where('estado', true)->orderBy('nombre_comercial')->get(['id', 'nombre_comercial', 'ruc']),
             'centros_costo' => CentroCosto::where('estado', true)->with('empresa')->orderBy('nombre')->get(['id', 'nombre', 'empresa_id']),
             'colaboradores_disponibles' => $this->colaboradoresDisponibles(),
         ]);
+    }
+
+    /** Perfiles que el usuario actual puede asignar (super_admin solo lo ven los super_admin). */
+    private function perfilesAsignables()
+    {
+        return Perfil::orderBy('nombre')
+            ->when(Auth::user()?->perfil?->nombre !== 'super_admin', fn($q) => $q->where('nombre', '!=', 'super_admin'))
+            ->get(['id', 'nombre']);
+    }
+
+    /** Solo un super_admin puede crear/asignar/modificar a un super_admin. */
+    private function soloSuperAdminPuede(?int $perfilId = null, ?Usuario $objetivo = null): bool
+    {
+        $soy = Auth::user()?->perfil?->nombre === 'super_admin';
+        if ($soy) {
+            return true;
+        }
+
+        $perfilNuevoEsSuper = $perfilId !== null
+            && Perfil::where('id', $perfilId)->where('nombre', 'super_admin')->exists();
+        $objetivoEsSuper = $objetivo !== null && $objetivo->perfil?->nombre === 'super_admin';
+
+        return !$perfilNuevoEsSuper && !$objetivoEsSuper;
     }
 
     // Colaboradores activos que todavía no tienen usuario (para vincular al crear uno).
@@ -105,6 +130,10 @@ class UsuarioController extends Controller
             'empresas.*' => ['exists:empresas,id'],
             'estado' => ['boolean'],
         ]);
+
+        if (!$this->soloSuperAdminPuede((int) $data['perfil_id'])) {
+            return back()->withErrors(['perfil_id' => 'Solo un superadministrador puede asignar el perfil superadministrador.'])->withInput();
+        }
 
         $usuario = DB::transaction(function () use ($data, $request) {
             $usuario = Usuario::create([
@@ -157,7 +186,7 @@ class UsuarioController extends Controller
     {
         return Inertia::render('Configuracion/Usuarios/Form', [
             'usuario' => $usuario->load(['perfil', 'empresas', 'centroCosto']),
-            'perfiles' => Perfil::orderBy('nombre')->get(['id', 'nombre']),
+            'perfiles' => $this->perfilesAsignables(),
             'empresas' => Empresa::where('estado', true)->orderBy('nombre_comercial')->get(['id', 'nombre_comercial', 'ruc']),
             'centros_costo' => CentroCosto::where('estado', true)->with('empresa')->orderBy('nombre')->get(['id', 'nombre', 'empresa_id']),
         ]);
@@ -179,6 +208,10 @@ class UsuarioController extends Controller
             'empresas.*' => ['exists:empresas,id'],
             'estado' => ['boolean'],
         ]);
+
+        if (!$this->soloSuperAdminPuede((int) $data['perfil_id'], $usuario)) {
+            return back()->withErrors(['perfil_id' => 'Solo un superadministrador puede modificar o asignar el perfil superadministrador.'])->withInput();
+        }
 
         if (!empty($data['password'])) {
             $data['password'] = Hash::make($data['password']);
@@ -210,6 +243,10 @@ class UsuarioController extends Controller
 
     public function toggleEstado(Usuario $usuario): RedirectResponse
     {
+        if (!$this->soloSuperAdminPuede(null, $usuario)) {
+            return back()->withErrors(['error' => 'Solo un superadministrador puede activar o desactivar a otro superadministrador.']);
+        }
+
         $usuario->update(['estado' => !$usuario->estado]);
         $this->sincronizarEstadoColaborador($usuario);
 

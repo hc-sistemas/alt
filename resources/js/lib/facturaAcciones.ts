@@ -1,4 +1,5 @@
 import Swal from 'sweetalert2'
+import { router } from '@inertiajs/react'
 import { isAxiosError } from 'axios'
 import axios from '@/lib/axios'
 import { toastError, toastExito, toastInfo } from '@/lib/toast'
@@ -30,14 +31,42 @@ export function accionesFactura(f: { estado: string; estado_sri: string }) {
     }
 }
 
-/** Envío al SRI: el ciclo real (XML + firma + webservice) aún no está implementado en el servidor. */
+/** Firma y envía la factura al SRI (recepción + autorización) y refresca la pantalla con el resultado. */
 export async function enviarFacturaSri(facturaId: number): Promise<void> {
+    interface RespuestaSri { message?: string; estado?: string; errores?: string[] }
+    toastInfo('Consultando y enviando al SRI…')
     try {
-        const { data } = await axios.post<{ message?: string }>(route('ventas.facturas.enviar-sri', facturaId))
-        toastInfo(data.message ?? 'Funcionalidad SRI pendiente')
-    } catch {
-        toastError('No se pudo contactar al servidor.')
+        const { data } = await axios.post<RespuestaSri>(
+            route('ventas.facturas.enviar-sri', facturaId),
+            {},
+            { timeout: 120000 },
+        )
+        toastExito(data.message ?? 'Factura autorizada.')
+    } catch (error) {
+        const resp = isAxiosError<RespuestaSri>(error) ? error.response : undefined
+        if (!resp) {
+            toastError('No se pudo contactar al servidor. Revise su conexión e intente de nuevo.')
+        } else {
+            await mostrarErroresSri(resp.data?.message ?? 'No se pudo completar el envío al SRI.', resp.data?.errores ?? [], resp.status >= 500)
+        }
     }
+    router.reload()
+}
+
+/** Muestra el motivo y la lista de puntos a corregir (validación previa, firma, conexión o rechazo del SRI). */
+async function mostrarErroresSri(titulo: string, errores: string[], inesperado: boolean): Promise<void> {
+    const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    const lista = errores.length
+        ? `<ul style="text-align:left;margin-top:8px;padding-left:18px;list-style:disc;font-size:13px;max-height:320px;overflow:auto">${errores.map(e => `<li style="margin-bottom:4px">${esc(e)}</li>`).join('')}</ul>`
+        : ''
+    await Swal.fire({
+        icon: inesperado ? 'error' : 'warning',
+        title: 'Factura no enviada',
+        html: `<div style="font-size:14px">${esc(titulo)}</div>${lista}`,
+        confirmButtonText: 'Entendido',
+        confirmButtonColor: '#F59E0B',
+        width: 640,
+    })
 }
 
 /** Pide/confirma el correo y envía la factura en PDF al cliente. */

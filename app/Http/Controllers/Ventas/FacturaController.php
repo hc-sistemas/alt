@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Ventas;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Ventas\Concerns\ResuelveBodegasFijas;
 use App\Mail\FacturaMail;
+use App\Services\FacturaSriService;
 use App\Services\FacturaXmlService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\Mail;
@@ -267,6 +268,7 @@ class FacturaController extends Controller
         // Calcular totales
         $subtotal0   = 0;
         $subtotal15  = 0;
+        $ivaLineas   = 0;
         $descTotal   = 0;
         $tieneDescuentoEspecial = false;
 
@@ -395,6 +397,7 @@ class FacturaController extends Controller
             $grabaIva = (bool)($detalle['graba_iva'] ?? true);
             if ($grabaIva) {
                 $subtotal15 += $subtotalItem;
+                $ivaLineas  += round($subtotalItem * 0.15, 2);
             } else {
                 $subtotal0 += $subtotalItem;
             }
@@ -403,7 +406,9 @@ class FacturaController extends Controller
         $subtotal0  = round($subtotal0, 2);
         $subtotal15 = round($subtotal15, 2);
         $descTotal  = round($descTotal, 2);
-        $totalIva   = round($subtotal15 * 0.15, 2);
+        // El IVA total es la suma del IVA de cada línea (redondeado a centavos por línea), igual que
+        // el XML del SRI: así subtotales + IVA = total sin diferencias de redondeo.
+        $totalIva   = round($ivaLineas, 2);
         $total      = round($subtotal0 + $subtotal15 + $totalIva, 2);
 
         // Validar que suma de formas_pago == total
@@ -411,6 +416,48 @@ class FacturaController extends Controller
         $sumaFormasPago = round(collect($request->formas_pago)->sum('monto'), 2);
         if (abs($sumaFormasPago - $total) >= 0.005) {
             return back()->withErrors(['formas_pago' => "La suma de formas de pago ({$sumaFormasPago}) no coincide con el total ({$total})."]);
+        }
+
+        // Crédito (decisión 2026-10): solo si el cliente tiene crédito habilitado,
+        // cupo, y el saldo pendiente + este crédito no lo supera. Si no, hace
+        // falta autorización de un contador o administrador (código de aprobación).
+        $montoCreditoReq = (float) collect($request->formas_pago)
+            ->where('forma', 'credito')->sum('monto');
+        $aprobacionCreditoId = null;
+
+        if ($montoCreditoReq > 0) {
+            $clienteCredito = Cliente::findOrFail($request->cliente_id);
+            $saldoPendienteCliente = (float) CuentaCobrar::where('cliente_id', $clienteCredito->id)
+                ->whereIn('estado', ['pendiente', 'parcial', 'vencida'])
+                ->sum('saldo');
+            $cupo = (float) $clienteCredito->cupo_maximo;
+
+            $dentroDeCupo = (bool) $clienteCredito->tiene_credito
+                && $cupo > 0
+                && ($saldoPendienteCliente + $montoCreditoReq) <= $cupo + 0.005;
+
+            if (!$dentroDeCupo) {
+                $aprobacionCreditoId = (int) $request->input('aprobacion_credito_id');
+
+                $valida = $aprobacionCreditoId > 0 && DB::table('aprobaciones_especiales')
+                    ->join('tipos_aprobacion', 'tipos_aprobacion.id', '=', 'aprobaciones_especiales.tipo_aprobacion_id')
+                    ->join('usuarios', 'usuarios.id', '=', 'aprobaciones_especiales.aprobado_por')
+                    ->join('perfiles', 'perfiles.id', '=', 'usuarios.perfil_id')
+                    ->where('aprobaciones_especiales.id', $aprobacionCreditoId)
+                    ->where('aprobaciones_especiales.solicitado_por', $usuario->id)
+                    ->where('tipos_aprobacion.clave', 'credito_excedido')
+                    ->whereIn('perfiles.nombre', ['super_admin', 'admin', 'contador'])
+                    ->whereNull('aprobaciones_especiales.registro_id')
+                    ->exists();
+
+                if (!$valida) {
+                    return back()->withErrors([
+                        'aprobacion_credito' => $clienteCredito->tiene_credito
+                            ? 'Este cliente superó su cupo de crédito. Requiere autorización de un contador o administrador.'
+                            : 'Este cliente no tiene crédito habilitado. Requiere autorización de un contador o administrador.',
+                    ])->withInput();
+                }
+            }
         }
 
         // "Contabilidad lista antes de operar" (CLAUDE.md, 2026-09-20): se
@@ -438,7 +485,7 @@ class FacturaController extends Controller
             $factura = DB::transaction(function () use (
                 $request, $empresaId, $usuario, $subtotal0, $subtotal15,
                 $descTotal, $totalIva, $total, $tieneDescuentoEspecial, $aprobacionValida,
-                $aprobacionesPrecioUsadas, $preciosProductos
+                $aprobacionesPrecioUsadas, $preciosProductos, $aprobacionCreditoId
             ) {
                 $empresa = Empresa::findOrFail($empresaId);
                 $numero  = $this->secuencial->siguiente($empresaId, 'FAC');
@@ -475,6 +522,16 @@ class FacturaController extends Controller
                     'estado'                  => 'activa',
                     'email_enviado'           => false,
                 ]);
+
+                if ($aprobacionCreditoId) {
+                    DB::table('aprobaciones_especiales')
+                        ->where('id', $aprobacionCreditoId)
+                        ->update([
+                            'tabla_referencia' => 'facturas',
+                            'registro_id'      => $factura->id,
+                            'updated_at'       => now(),
+                        ]);
+                }
 
                 $productoTipos = Producto::whereIn('id', collect($request->detalles)->pluck('producto_id'))
                     ->pluck('tipo', 'id');
@@ -922,11 +979,37 @@ class FacturaController extends Controller
             ->with('flash', ['tipo' => 'exito', 'mensaje' => "Factura {$factura->numero_completo} eliminada."]);
     }
 
-    public function enviarSri(Factura $factura)
+    /** Firma el XML y lo envía al SRI (recepción + autorización). Reintentable. */
+    public function enviarSri(Factura $factura, FacturaSriService $sri): JsonResponse
     {
-        // TODO: implementar ciclo SRI (XML + firma + webservice)
-        // Pendiente — commit separado
-        return response()->json(['message' => 'Funcionalidad SRI pendiente']);
+        abort_unless($factura->empresa_id === (int) session('empresa_activa_id'), 404);
+
+        if ($factura->estado !== 'activa') {
+            return response()->json(['message' => 'No se puede enviar al SRI una factura anulada.', 'estado' => $factura->estado_sri, 'errores' => []], 422);
+        }
+
+        set_time_limit(120);
+
+        try {
+            $r = $sri->enviar($factura);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => 'Ocurrió un error inesperado al procesar la factura.',
+                'estado'  => $factura->estado_sri,
+                'errores' => [$e->getMessage()],
+            ], 500);
+        }
+
+        $this->auditoria->documento('enviar_sri', 'ventas', 'facturas', $factura->id,
+            "Factura {$factura->numero_completo} enviada al SRI: {$r['estado']}" . ($r['errores'] ? ' — ' . implode(' | ', $r['errores']) : ''));
+
+        // 200 si quedó autorizada; 422 si hay algo que corregir o reintentar.
+        return response()->json(
+            ['message' => $r['mensaje'], 'estado' => $r['estado'], 'errores' => $r['errores']],
+            $r['ok'] ? 200 : 422,
+        );
     }
 
     /** Descarga el XML de la factura (autorizado si existe; si no, el generado sin firmar). */

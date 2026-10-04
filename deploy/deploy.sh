@@ -67,6 +67,16 @@ chown -R "$APP_USER:$APP_USER" "$NEW_RELEASE/public/build"
 echo "=== [5/8] Corriendo migraciones (idempotentes) ==="
 su -s /bin/bash - "$APP_USER" -c "cd '$NEW_RELEASE' && $PHP_BIN artisan migrate --force"
 
+# Facturación electrónica: el firmador del SRI (resources/tools/sri_firma_xml.jar, ya versionado)
+# necesita Java 8. No bloquea el deploy, solo avisa si falta. Si Java no está en el PATH de
+# "altamira", definir SRI_JAVA_PATH en shared/.env con la ruta completa a java.
+JAVA_CMD=$(grep -E '^SRI_JAVA_PATH=' "$SHARED_DIR/.env" 2>/dev/null | cut -d= -f2- | tr -d '"' || true)
+JAVA_CMD=${JAVA_CMD:-java}
+if ! su -s /bin/bash - "$APP_USER" -c "'$JAVA_CMD' -version" > /dev/null 2>&1; then
+    echo "!!! AVISO: no se encontró Java ('$JAVA_CMD') para el usuario $APP_USER."
+    echo "!!!        Sin Java 8 no se pueden firmar facturas electrónicas. Instalarlo y/o fijar SRI_JAVA_PATH en $SHARED_DIR/.env"
+fi
+
 echo "=== [6/8] Reconstruyendo caché ==="
 su -s /bin/bash - "$APP_USER" -c "cd '$NEW_RELEASE' && $PHP_BIN artisan config:cache && $PHP_BIN artisan route:cache && $PHP_BIN artisan view:cache"
 su -s /bin/bash - "$APP_USER" -c "cd '$NEW_RELEASE' && [ -L public/storage ] || $PHP_BIN artisan storage:link"

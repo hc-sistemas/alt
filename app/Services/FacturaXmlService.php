@@ -8,9 +8,8 @@ use XMLWriter;
 /**
  * XML de factura electrónica del SRI (esquema 1.1.0) y clave de acceso.
  *
- * El XML que genera es SIN FIRMAR: sirve para revisarlo/descargarlo. La firma
- * XAdES-BES y el envío al webservice pertenecen al ciclo SRI (pendiente). Si la
- * factura ya tiene `xml_doc` (comprobante autorizado guardado), se devuelve ese.
+ * `xmlSinFirmar()` genera el XML que se firma y envía (ver FacturaSriService). Si la
+ * factura ya tiene `xml_doc` (comprobante autorizado guardado), `xml()` devuelve ese.
  */
 class FacturaXmlService
 {
@@ -72,10 +71,12 @@ class FacturaXmlService
 
     public function xml(Factura $factura): string
     {
-        if ($factura->xml_doc) {
-            return $factura->xml_doc;
-        }
+        return $factura->xml_doc ?: $this->xmlSinFirmar($factura);
+    }
 
+    /** XML del comprobante sin firmar, con los datos actuales de la factura (lo que se firma y envía al SRI). */
+    public function xmlSinFirmar(Factura $factura): string
+    {
         $factura->loadMissing(['empresa', 'detalles', 'pagos']);
         $empresa = $factura->empresa;
         $clave   = $this->claveAcceso($factura);
@@ -150,8 +151,8 @@ class FacturaXmlService
             $w->startElement('pago');
             $w->writeElement('formaPago', self::FORMAS_PAGO[$pago->forma_pago] ?? '01');
             $w->writeElement('total', $this->n($pago->valor));
-            if ($pago->forma_pago === 'credito' && (int) $pago->plazo > 0) {
-                $w->writeElement('plazo', (string) (int) $pago->plazo);
+            if ($pago->forma_pago === 'credito' && (int) $pago->dias_credito > 0) {
+                $w->writeElement('plazo', (string) (int) $pago->dias_credito);
                 $w->writeElement('unidadTiempo', 'dias');
             }
             $w->endElement();

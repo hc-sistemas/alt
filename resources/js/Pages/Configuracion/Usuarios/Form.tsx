@@ -131,7 +131,7 @@ export default function UsuarioForm() {
                         style={{ color: 'var(--text-main)', borderColor: 'var(--border)' }}>
                         Acceso al sistema
                     </h2>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div className="space-y-1.5">
                             <Label>Username *</Label>
                             <Input value={data.username} onChange={e => setData('username', e.target.value)}
@@ -167,21 +167,6 @@ export default function UsuarioForm() {
                                 ))}
                             </select>
                         </div>
-                        <div className="space-y-1.5">
-                            <Label>Centro de costo</Label>
-                            <select
-                                value={data.centro_costo_id}
-                                onChange={e => setData('centro_costo_id', e.target.value)}
-                                className="flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
-                                style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}
-                            >
-                                <option value="">Sin centro de costo</option>
-                                {centros_costo.map(cc => (
-                                    <option key={cc.id} value={cc.id}>{cc.nombre}</option>
-                                ))}
-                            </select>
-                        </div>
-
                         <div className="space-y-1.5">
                             <Label>Contraseña {esEdicion ? '' : '*'}</Label>
                             <Input type="password" value={data.password}

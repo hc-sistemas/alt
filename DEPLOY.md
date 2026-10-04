@@ -262,3 +262,11 @@ tail -n 40 /home/altamira/shared/storage/logs/laravel.log                       
 - **No se confirmó qué PHP-FPM sirve realmente las peticiones web** del dominio (el 8.3 del `PHP_BIN` es solo para CLI/build). Pendiente de verificar contra la configuración de CWP para ese dominio específico.
 - **Repo público en GitHub.** Considerar pasarlo a privado.
 - **Contraseña de prueba en producción real:** `admin@altamira.com` quedó con la contraseña de prueba que se usó en desarrollo local (`Altamira2026*`), porque se restauró tal cual la tabla `usuarios`. Cambiarla antes de que el sistema tenga usuarios reales.
+
+---
+
+## Facturación electrónica (SRI)
+
+- El firmador `resources/tools/sri_firma_xml.jar` va **versionado en el repo**: viaja con cada deploy. Requiere **Java 8** en el servidor (`java -version`); `deploy.sh` avisa si falta. Si `java` no está en el PATH del usuario `altamira`, agregar a `/home/altamira/shared/.env`: `SRI_JAVA_PATH=/ruta/completa/a/java`.
+- Los certificados `.p12` **no** van en el repo: cada empresa carga el suyo en *Configuración → Empresa → Firma electrónica*. Se guardan en `storage/app/private/firmas/empresa_{id}.p12` (`storage/` es compartido entre releases, así que persisten). La clave se cifra con `APP_KEY`: **no cambiar `APP_KEY`** en producción sin volver a cargar las firmas.
+- El establecimiento, punto de emisión y próximo N° de factura de cada empresa se configuran en la misma pantalla (para continuar la numeración del sistema anterior).

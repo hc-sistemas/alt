@@ -194,6 +194,7 @@ Route::middleware('auth')->group(function () {
             Route::get('/', [EmpresaController::class, 'index'])->name('index');
             Route::middleware('permiso:configuracion,editar')->group(function () {
                 Route::put('/', [EmpresaController::class, 'update'])->name('update');
+                Route::post('/firma', [EmpresaController::class, 'subirFirma'])->name('firma');
                 Route::patch('/secuencial/{secuencial}', [EmpresaController::class, 'actualizarSecuencial'])->name('secuencial');
             });
         });

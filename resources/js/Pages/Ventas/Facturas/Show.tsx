@@ -44,6 +44,7 @@ interface Factura {
     numero_completo: string | null
     fecha_emision: string
     estado_sri: string
+    observacion_sri: string | null
     email_enviado?: boolean
     estado: string
     tipo_identificacion: string | null
@@ -128,11 +129,6 @@ export default function Show() {
                     { label: 'Facturas', href: route('ventas.facturas.index') },
                     { label: numero },
                 ]}
-                actions={
-                    factura.estado === 'activa'
-                        ? <Badge variant="warning">Modo prueba — sin SRI</Badge>
-                        : undefined
-                }
             />
 
             <div className="p-4 space-y-4 max-w-7xl">
@@ -156,6 +152,12 @@ export default function Show() {
                             {factura.email_enviado && <Badge variant="info">Correo enviado</Badge>}
                             {factura.estado === 'anulada' && <Badge variant="danger">Anulada</Badge>}
                         </div>
+
+                        {factura.observacion_sri && factura.estado_sri !== 'autorizada' && (
+                            <div className="rounded-xl px-4 py-2.5 border text-xs" style={{ ...CARD, borderColor: '#F59E0B', color: 'var(--text-main)' }}>
+                                <span className="font-semibold">Último intento con el SRI: </span>{factura.observacion_sri}
+                            </div>
+                        )}
 
                         <div className="rounded-xl p-3 border" style={CARD}>
                             <p className={`${TITULO} mb-2`}>Formas de Pago</p>

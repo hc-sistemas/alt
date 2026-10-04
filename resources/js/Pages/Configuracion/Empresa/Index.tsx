@@ -1,12 +1,12 @@
 import { Head, useForm, usePage } from '@inertiajs/react'
-import { FormEvent } from 'react'
+import { FormEvent, useRef } from 'react'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
 import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { Badge } from '@/Components/ui/badge'
-import { Save, AlertTriangle, Building2, FileText, List } from 'lucide-react'
+import { Save, AlertTriangle, Building2, FileText, List, KeyRound } from 'lucide-react'
 import { usePermiso } from '@/Hooks/usePermiso'
 import type { Empresa, CentroCosto, PageProps } from '@/types'
 
@@ -19,13 +19,14 @@ interface Secuencial {
 }
 
 interface Props extends PageProps {
-    empresa: Empresa & { centrosCosto?: CentroCosto[]; secuenciales?: Secuencial[] }
+    empresa: Empresa & { centrosCosto?: CentroCosto[]; secuenciales?: Secuencial[]; siguiente_factura?: number | null }
     centros_costo: CentroCosto[]
     secuenciales: Secuencial[]
+    firma: { cargada: boolean }
 }
 
 export default function EmpresaIndex() {
-    const { empresa, centros_costo, secuenciales } = usePage<Props>().props
+    const { empresa, centros_costo, secuenciales, firma } = usePage<Props>().props
     const { puede } = usePermiso('configuracion')
 
     const { data, setData, put, processing, errors } = useForm({
@@ -41,7 +42,21 @@ export default function EmpresaIndex() {
         obligado_contabilidad: empresa.obligado_contabilidad ?? false,
         contribuyente_especial: empresa.contribuyente_especial ?? false,
         numero_resolucion_agente_retencion: empresa.numero_resolucion_agente_retencion ?? '',
+        siguiente_factura: empresa.siguiente_factura ?? '',
     })
+
+    const firmaForm = useForm<{ archivo: File | null; clave: string }>({ archivo: null, clave: '' })
+    const archivoRef = useRef<HTMLInputElement>(null)
+
+    function subirFirma() {
+        firmaForm.post(route('configuracion.empresa.firma'), {
+            forceFormData: true,
+            onSuccess: () => {
+                firmaForm.reset()
+                if (archivoRef.current) archivoRef.current.value = ''
+            },
+        })
+    }
 
     function submit(e: FormEvent) {
         e.preventDefault()
@@ -155,6 +170,19 @@ export default function EmpresaIndex() {
                         </div>
                     </div>
 
+                    <div className="mt-4 space-y-1.5 max-w-xs">
+                        <Label>Próximo N° de factura ({data.codigo_establecimiento}-{data.codigo_punto_emision}-…)</Label>
+                        <Input type="number" min={1} value={data.siguiente_factura}
+                            onChange={e => setData('siguiente_factura', e.target.value)}
+                            placeholder="Ej. 1520 para continuar del sistema anterior" />
+                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                            Número con el que saldrá la próxima factura. Debe ser mayor a la última emitida con este establecimiento y punto de emisión.
+                        </p>
+                        {(errors as Record<string, string>).siguiente_factura && (
+                            <p className="text-xs text-red-500">{(errors as Record<string, string>).siguiente_factura}</p>
+                        )}
+                    </div>
+
                     <div className="mt-4 flex flex-wrap gap-4">
                         <label className="flex items-center gap-2 cursor-pointer">
                             <input type="checkbox" checked={data.obligado_contabilidad}
@@ -170,6 +198,37 @@ export default function EmpresaIndex() {
                         </label>
                     </div>
                 </section>
+
+                {/* Firma electrónica */}
+                {puede('editar') && (
+                    <section>
+                        <div className="flex items-center gap-2 mb-4 pb-2 border-b" style={{ borderColor: 'var(--border)' }}>
+                            <KeyRound className="w-5 h-5" style={{ color: '#F59E0B' }} />
+                            <h2 className="text-base font-semibold" style={{ color: 'var(--text-main)' }}>Firma electrónica (SRI)</h2>
+                            <Badge variant={firma.cargada ? 'success' : 'warning'}>{firma.cargada ? 'Cargada' : 'Sin cargar'}</Badge>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="space-y-1.5">
+                                <Label>Certificado (.p12 / .pfx)</Label>
+                                <input ref={archivoRef} type="file" accept=".p12,.pfx"
+                                    onChange={e => firmaForm.setData('archivo', e.target.files?.[0] ?? null)}
+                                    className="block w-full text-sm" style={{ color: 'var(--text-main)' }} />
+                                {firmaForm.errors.archivo && <p className="text-xs text-red-500">{firmaForm.errors.archivo}</p>}
+                            </div>
+                            <div className="space-y-1.5">
+                                <Label>Clave del certificado</Label>
+                                <Input type="password" autoComplete="new-password" value={firmaForm.data.clave}
+                                    onChange={e => firmaForm.setData('clave', e.target.value)} />
+                                {firmaForm.errors.clave && <p className="text-xs text-red-500">{firmaForm.errors.clave}</p>}
+                            </div>
+                        </div>
+                        <Button type="button" className="mt-3" loading={firmaForm.processing}
+                            disabled={!firmaForm.data.archivo || !firmaForm.data.clave} onClick={subirFirma}>
+                            <KeyRound className="w-4 h-4" />
+                            {firma.cargada ? 'Reemplazar firma' : 'Guardar firma'}
+                        </Button>
+                    </section>
+                )}
 
                 {/* Centros de costo */}
                 <section>

@@ -135,6 +135,8 @@ export default function UsuariosIndex() {
                     <table className="w-full text-sm">
                         <thead>
                             <tr style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
+                                <th className="text-center px-3 py-3 font-medium text-xs uppercase tracking-wider w-12"
+                                    style={{ color: 'var(--text-muted)' }}>N°</th>
                                 <th className="text-left px-4 py-3 font-medium text-xs uppercase tracking-wider"
                                     style={{ color: 'var(--text-muted)' }}>Usuario</th>
                                 <th className="text-left px-4 py-3 font-medium text-xs uppercase tracking-wider hidden sm:table-cell"
@@ -153,7 +155,7 @@ export default function UsuariosIndex() {
                         <tbody>
                             {usuarios.data.length === 0 ? (
                                 <tr>
-                                    <td colSpan={7} className="text-center py-12" style={{ color: 'var(--text-muted)' }}>
+                                    <td colSpan={8} className="text-center py-12" style={{ color: 'var(--text-muted)' }}>
                                         <p className="text-sm">No hay usuarios registrados.</p>
                                         {puede('crear') && (
                                             <Link href={route('configuracion.usuarios.create')}
@@ -163,12 +165,15 @@ export default function UsuariosIndex() {
                                         )}
                                     </td>
                                 </tr>
-                            ) : usuarios.data.map(usuario => {
+                            ) : usuarios.data.map((usuario, idx) => {
                                 const colabVinculado = colaboradores.find(c => c.usuario_id === usuario.id)
                                 return (
                                     <tr key={usuario.id}
                                         className="border-t hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
                                         style={{ borderColor: 'var(--border)' }}>
+                                        <td className="px-3 py-3 text-center text-xs font-mono" style={{ color: 'var(--text-muted)' }}>
+                                            {usuarios.from + idx}
+                                        </td>
                                         <td className="px-4 py-3">
                                             <div className="flex items-center gap-3">
                                                 <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-black shrink-0"

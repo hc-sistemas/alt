@@ -82,6 +82,11 @@ export default function Topbar({ onMobileMenu, pageTitle }: Props) {
         router.post(route('logout'))
     }
 
+    // Altamira Import (RUC 1755265848001): azul marino oscuro tomado del logo.
+    const esImport = empresa_activa?.ruc === '1755265848001'
+    // Altamira Matriz (RUC 1711293454001): azul acero tomado de la referencia del equipo.
+    const esMatriz = empresa_activa?.ruc === '1711293454001'
+
     function colorEmpresa(ruc?: string | null) {
         // Matriz (fondo dorado tenue) vs Import (fondo blanco, letras doradas) — para distinguirlas de un vistazo
         if (ruc === '1755265848001') {
@@ -109,7 +114,11 @@ export default function Topbar({ onMobileMenu, pageTitle }: Props) {
 
     return (
         <header className="h-14 flex items-center gap-3 px-4 border-b shrink-0"
-            style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+            style={esImport
+                ? { background: '#0A1128', borderColor: '#1B2A55', color: '#FFFFFF' }
+                : esMatriz
+                    ? { background: '#1F6F9F', borderColor: '#17557A', color: '#FFFFFF' }
+                    : { background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
 
             {/* Hamburger - móvil */}
             <button onClick={onMobileMenu}

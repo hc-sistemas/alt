@@ -266,7 +266,8 @@ export default function Sidebar({ collapsed, onCollapse, mobileOpen, onMobileClo
             style={{ background: 'var(--sidebar-bg)', color: 'var(--sidebar-text)' }}>
 
             {/* Logo */}
-            <div className="flex items-center h-16 px-4 shrink-0 border-b border-slate-700/50">
+            <div className="flex items-center h-14 px-4 shrink-0 border-b border-slate-700/50"
+                style={{ background: props.empresa_activa?.ruc === '1755265848001' ? '#0A1128' : props.empresa_activa?.ruc === '1711293454001' ? '#1F6F9F' : undefined }}>
                 {collapsed ? (
                     <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
                         style={{ background: 'rgba(245,158,11,0.2)', border: '1px solid rgba(245,158,11,0.3)' }}>

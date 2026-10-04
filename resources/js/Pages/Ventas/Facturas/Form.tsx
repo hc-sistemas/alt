@@ -11,7 +11,7 @@ import { Input } from '@/Components/ui/input'
 import BuscadorClienteModal from '@/Components/shared/BuscadorClienteModal'
 import DescuentoEspecialModal from '@/Components/Ventas/DescuentoEspecialModal'
 import { cn, formatMoneda } from '@/lib/utils'
-import { toastError } from '@/lib/toast'
+import { toastError, toastExito } from '@/lib/toast'
 import { Save, X, Search } from 'lucide-react'
 import { usePermiso } from '@/Hooks/usePermiso'
 import type { PageProps, Empresa, Usuario, Cliente } from '@/types'
@@ -200,6 +200,9 @@ export default function Form() {
     const [descuentoEspecialActivo, setDescuentoEspecialActivo] = useState(false)
     const [aprobacionGlobalId, setAprobacionGlobalId] = useState<number | null>(null)
     const [modalDescuentoGlobal, setModalDescuentoGlobal] = useState(false)
+    // Crédito: autorización de contador/admin cuando el cliente no tiene cupo
+    const [modalCredito, setModalCredito] = useState(false)
+    const [aprobacionCreditoId, setAprobacionCreditoId] = useState<number | null>(null)
 
     // — Vendedor
     const [vendedorId, setVendedorId] = useState<number>(
@@ -232,15 +235,15 @@ export default function Form() {
     // ── Computed ──────────────────────────────────────────────────────────────
 
     const totales = useMemo(() => {
-        let subtotal0 = 0, subtotal15 = 0, descTotal = 0
+        let subtotal0 = 0, subtotal15 = 0, descTotal = 0, ivaLineas = 0
         for (const d of detalles) {
             if (d.porcentaje_iva === 0) subtotal0 += d.subtotal
-            else subtotal15 += d.subtotal
+            else { subtotal15 += d.subtotal; ivaLineas += d.valor_iva }
             descTotal += d.descuento_valor
         }
-        // El IVA se calcula sobre la base imponible total (como el servidor / SRI)
+        // El IVA total es la suma del IVA de cada línea (como el servidor y el XML del SRI)
         subtotal0 = redondear(subtotal0); subtotal15 = redondear(subtotal15); descTotal = redondear(descTotal)
-        const iva = redondear(subtotal15 * 0.15)
+        const iva = redondear(ivaLineas)
         return { subtotal0, subtotal15, descTotal, iva, total: redondear(subtotal0 + subtotal15 + iva) }
     }, [detalles])
 
@@ -603,6 +606,7 @@ export default function Form() {
             observaciones,
             tiene_descuento_especial: descuentoEspecialActivo,
             aprobacion_especial_id: aprobacionGlobalId,
+            aprobacion_credito_id: aprobacionCreditoId,
             detalles: detalles.map(d => ({
                 producto_id: d.producto_id,
                 codigo: d.codigo,
@@ -624,7 +628,11 @@ export default function Form() {
             })),
         }, {
             onError: errors => {
-                Object.values(errors).forEach(msg => { if (msg) toastError(msg) })
+                if (errors.aprobacion_credito) {
+                    setModalCredito(true)
+                } else {
+                    Object.values(errors).forEach(msg => { if (msg) toastError(msg) })
+                }
                 setGuardando(false)
             },
             onFinish: () => setGuardando(false),
@@ -1279,6 +1287,23 @@ export default function Form() {
                     </>
                 )}
                 productoNombre={modalPrecioBajoCosto ? (detalles[modalPrecioBajoCosto.idx]?.descripcion ?? '') : ''}
+                descuentoMaximo={0}
+                descuentoSolicitado={0}
+            />
+
+            {/* Modal autorización de crédito — contador o administrador */}
+            <DescuentoEspecialModal
+                abierto={modalCredito}
+                onCerrar={() => setModalCredito(false)}
+                onAutorizado={aprobacion_id => {
+                    setAprobacionCreditoId(aprobacion_id)
+                    setModalCredito(false)
+                    toastExito('Crédito autorizado. Presione Guardar nuevamente.')
+                }}
+                tipo="credito_excedido"
+                titulo="Autorización de crédito"
+                mensaje="Este cliente no tiene crédito disponible. Un contador o administrador debe ingresar su código para autorizar la venta a crédito."
+                productoNombre={clienteSeleccionado?.razon_social ?? ''}
                 descuentoMaximo={0}
                 descuentoSolicitado={0}
             />

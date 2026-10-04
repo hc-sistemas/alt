@@ -43,6 +43,7 @@ class AprobacionController extends Controller
         // entre "código incorrecto" y "sin permisos suficientes".
         $candidatos = DB::table('usuarios')
             ->leftJoin('limites_descuento', 'limites_descuento.perfil_id', '=', 'usuarios.perfil_id')
+            ->leftJoin('perfiles', 'perfiles.id', '=', 'usuarios.perfil_id')
             ->where('usuarios.empresa_id', $empresaId)
             ->where('usuarios.estado', true)
             ->whereNotNull('usuarios.codigo_aprobacion')
@@ -50,7 +51,8 @@ class AprobacionController extends Controller
                 'usuarios.id',
                 'usuarios.codigo_aprobacion',
                 'limites_descuento.puede_aprobar',
-                'limites_descuento.porcentaje_aprobacion_max'
+                'limites_descuento.porcentaje_aprobacion_max',
+                'perfiles.nombre as perfil_nombre'
             )
             ->get();
 
@@ -69,7 +71,16 @@ class AprobacionController extends Controller
             ], 422);
         }
 
-        if (!$aprobador->puede_aprobar) {
+        // Crédito: solo contador o administrador (CHECKLIST / decisión del 2026-10).
+        // No depende de limites_descuento: se decide por perfil.
+        if ($tipo === 'credito_excedido') {
+            if (!in_array($aprobador->perfil_nombre, ['super_admin', 'admin', 'contador'], true)) {
+                return response()->json([
+                    'valido'  => false,
+                    'mensaje' => 'Solo un contador o administrador puede autorizar crédito.',
+                ], 422);
+            }
+        } elseif (!$aprobador->puede_aprobar) {
             return response()->json([
                 'valido'  => false,
                 'mensaje' => 'Este usuario no tiene permisos para aprobar excepciones.',
