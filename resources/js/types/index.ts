@@ -251,7 +251,6 @@ export interface Producto {
     costo: number
     pvp: number
     pvd: number
-    descuento_maximo: number
     porcentaje_iva: number
     tiene_ice: boolean
     porcentaje_ice: number

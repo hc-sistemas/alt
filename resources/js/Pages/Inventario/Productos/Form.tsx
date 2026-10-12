@@ -29,7 +29,7 @@ const TABS: { key: Tab; label: string }[] = [
 
 const TAB_FIELDS: Record<Tab, string[]> = {
     general: ['codigo', 'nombre', 'tipo', 'unidad', 'descripcion', 'marca_fabricante'],
-    precios: ['pvp', 'pvd', 'costo', 'descuento_maximo', 'porcentaje_iva', 'porcentaje_ice'],
+    precios: ['pvp', 'pvd', 'costo', 'porcentaje_iva', 'porcentaje_ice'],
     inventario: ['stock_minimo', 'stock_maximo', 'peso'],
     contabilidad: ['cuenta_inventario', 'cuenta_costo_ventas', 'cuenta_ventas'],
 }
@@ -54,7 +54,6 @@ export default function ProductoForm() {
         pvp: producto?.pvp?.toString() ?? '0',
         pvd: producto?.pvd?.toString() ?? '0',
         costo: producto?.costo?.toString() ?? '0',
-        descuento_maximo: producto?.descuento_maximo?.toString() ?? '0',
         porcentaje_iva: producto?.porcentaje_iva?.toString() ?? '15',
         porcentaje_ice: producto?.porcentaje_ice?.toString() ?? '0',
         stock_minimo: producto ? Math.round(Number(producto.stock_minimo)).toString() : '0',
@@ -312,14 +311,6 @@ export default function ProductoForm() {
                                         onChange={e => setData('costo', e.target.value)}
                                         placeholder="Ej: 0.0000" />
                                     {errors.costo && <p className="text-xs text-red-400">{errors.costo}</p>}
-                                </div>
-                                <div className="space-y-1.5">
-                                    <Label>Descuento máximo (%)</Label>
-                                    <Input type="number" min={0} max={100} step="0.01"
-                                        value={data.descuento_maximo}
-                                        onChange={e => setData('descuento_maximo', e.target.value)}
-                                        placeholder="Ej: 0.00" />
-                                    {errors.descuento_maximo && <p className="text-xs text-red-400">{errors.descuento_maximo}</p>}
                                 </div>
                                 <div className="space-y-1.5">
                                     <Label>IVA (%)</Label>

@@ -3,22 +3,24 @@
 namespace App\Services;
 
 use App\Models\ListaPrecio;
-use App\Models\Producto;
 
 class DescuentoService
 {
     /**
      * Único lugar que resuelve el % de descuento máximo permitido por
-     * producto. Prioridad:
-     *   1. listas_precio.descuento_max_promo (tipo PVP), solo si hoy está
+     * producto. La fuente es SOLO la lista de precios de la empresa activa
+     * (`listas_precio`); `productos.descuento_maximo` ya no se consulta.
+     * Prioridad:
+     *   1. listas_precio.descuento_max_promo (solo tipo PVP), si hoy está
      *      entre vigencia_desde y vigencia_hasta (inclusive) y no es null.
-     *   2. listas_precio.descuento_max (tipo PVP, empresa activa).
-     *   3. productos.descuento_maximo (fallback si no hay fila en listas_precio).
+     *   2. listas_precio.descuento_max del $tipo pedido (PVP o PVD).
+     *   3. 0 si el producto no tiene fila en la lista de precios.
      *
      * @param array<int> $productoIds
+     * @param string $tipo 'PVP' (por defecto) o 'PVD'
      * @return array<int, float> descuento_max indexado por producto_id
      */
-    public function mapaMaximosPermitidos(array $productoIds, int $empresaId): array
+    public function mapaMaximosPermitidos(array $productoIds, int $empresaId, string $tipo = 'PVP'): array
     {
         if (empty($productoIds)) {
             return [];
@@ -28,18 +30,16 @@ class DescuentoService
 
         $desdeListaPrecio = ListaPrecio::whereIn('producto_id', $productoIds)
             ->where('empresa_id', $empresaId)
-            ->where('tipo', 'PVP')
+            ->where('tipo', $tipo)
             ->get(['producto_id', 'descuento_max', 'descuento_max_promo', 'vigencia_desde', 'vigencia_hasta'])
             ->keyBy('producto_id');
-
-        $desdeProducto = Producto::whereIn('id', $productoIds)
-            ->pluck('descuento_maximo', 'id');
 
         $resultado = [];
         foreach ($productoIds as $productoId) {
             $lista = $desdeListaPrecio->get($productoId);
 
             if ($lista !== null
+                && $tipo === 'PVP'
                 && $lista->descuento_max_promo !== null
                 && $lista->vigencia_desde !== null
                 && $lista->vigencia_hasta !== null
@@ -50,16 +50,14 @@ class DescuentoService
                 continue;
             }
 
-            $resultado[$productoId] = $lista !== null
-                ? (float) $lista->descuento_max
-                : (float) ($desdeProducto[$productoId] ?? 0);
+            $resultado[$productoId] = $lista !== null ? (float) $lista->descuento_max : 0.0;
         }
 
         return $resultado;
     }
 
-    public function maximoPermitido(int $productoId, int $empresaId): float
+    public function maximoPermitido(int $productoId, int $empresaId, string $tipo = 'PVP'): float
     {
-        return $this->mapaMaximosPermitidos([$productoId], $empresaId)[$productoId] ?? 0.0;
+        return $this->mapaMaximosPermitidos([$productoId], $empresaId, $tipo)[$productoId] ?? 0.0;
     }
 }
