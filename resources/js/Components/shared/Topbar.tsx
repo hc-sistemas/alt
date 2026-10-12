@@ -4,6 +4,7 @@ import { Bell, Menu, ChevronDown, Sun, Moon, LogOut, User, Building2, Check, Che
 import { useThemeStore } from '@/Stores/themeStore'
 import { cn } from '@/lib/utils'
 import { estiloHeaderEmpresa } from '@/lib/empresaHeader'
+import BuscadorModulos from '@/Components/shared/BuscadorModulos'
 import type { PageProps, Notificacion } from '@/types'
 
 interface Props {
@@ -142,6 +143,8 @@ export default function Topbar({ onMobileMenu, pageTitle }: Props) {
             )}
 
             <div className="flex-1" />
+
+            <BuscadorModulos conColor={conColor} />
 
             {/* Empresa activa — badge fijo cuando el usuario solo tiene una empresa */}
             {empresas_usuario.length <= 1 && empresa_activa && estilo && (

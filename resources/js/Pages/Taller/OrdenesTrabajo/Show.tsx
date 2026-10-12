@@ -37,6 +37,7 @@ interface Props extends PageProps {
 const ESTADO_CONFIG: Record<string, { label: string; variant: 'info' | 'warning' | 'default' | 'success' | 'secondary' }> = {
     pendiente:  { label: 'Pendiente',  variant: 'warning' },
     en_proceso: { label: 'En proceso', variant: 'info' },
+    esperando_repuesto: { label: 'Esperando repuesto', variant: 'warning' },
     listo:      { label: 'Listo',      variant: 'success' },
     entregado:  { label: 'Entregado',  variant: 'secondary' },
     facturado:  { label: 'Facturado',  variant: 'success' },
@@ -119,7 +120,7 @@ export default function OrdenTrabajoShow() {
     }
 
     // ── Diagnósticos ─────────────────────────────────────────────────────────
-    const puedeDiagnosticar = orden.estado === 'pendiente' || orden.estado === 'en_proceso'
+    const puedeDiagnosticar = ['pendiente', 'en_proceso', 'esperando_repuesto'].includes(orden.estado)
 
     async function quitarRepuesto(repuestoId: number, nombre: string) {
         if (await confirmarEliminar(nombre)) {
@@ -421,6 +422,7 @@ export default function OrdenTrabajoShow() {
                             >
                                 <option value="pendiente">Pendiente</option>
                                 <option value="en_proceso">En proceso</option>
+                                <option value="esperando_repuesto">Esperando repuesto</option>
                                 <option value="listo">Listo</option>
                                 <option value="entregado">Entregado</option>
                                 <option value="garantia">Garantía</option>

@@ -123,6 +123,12 @@ class PrefacturaController extends Controller
 
     public function create()
     {
+        return Inertia::render('Ventas/Prefacturas/Form', $this->datosFormulario());
+    }
+
+    /** Datos comunes del formulario de prefactura (crear y editar). */
+    private function datosFormulario(): array
+    {
         $empresaId = session('empresa_activa_id');
         $usuario   = Auth::user();
 
@@ -177,7 +183,7 @@ class PrefacturaController extends Controller
         $limite = LimiteDescuento::whereHas('perfil', fn($q) => $q->where('nombre', $perfilNombre))
             ->first();
 
-        return Inertia::render('Ventas/Prefacturas/Form', [
+        return [
             'clientes'         => $clientes,
             'productos'        => $productos,
             'vendedores'       => $vendedores,
@@ -187,7 +193,7 @@ class PrefacturaController extends Controller
                 'descuento_maximo_pct' => $limite?->porcentaje_maximo ?? 0,
                 'puede_aprobar'        => $limite?->puede_aprobar ?? false,
             ],
-        ]);
+        ];
     }
 
     public function store(Request $request)
@@ -202,83 +208,12 @@ class PrefacturaController extends Controller
             'detalles.*.precio'      => 'required|numeric|min:0.01',
         ]);
 
-        $usuario = Auth::user();
-
-        $perfilNombre = DB::table('perfiles')
-            ->join('usuarios', 'usuarios.perfil_id', '=', 'perfiles.id')
-            ->where('usuarios.id', $usuario->id)
-            ->value('perfiles.nombre');
-
-        $limiteDescuento = LimiteDescuento::whereHas('perfil', fn($q) => $q->where('nombre', $perfilNombre))->first();
-        $limiteMax = (float) ($limiteDescuento?->porcentaje_maximo ?? 0);
-
-        $productoIds       = collect($request->detalles)->pluck('producto_id')->unique()->all();
-        $maximosPermitidos = $this->descuento->mapaMaximosPermitidos($productoIds, $empresaId);
-
-        // Precio real desde la tabla productos (precio de lista, pvp). El
-        // vendedor no puede cambiar el precio, solo dar descuento: el precio
-        // que llega en el payload NUNCA se usa (ver
-        // CHECKLIST_ERRORES_COMPLICACIONES.md, ítem A1).
-        $preciosProductos = Producto::whereIn('id', $productoIds)->pluck('pvp', 'id');
-
-        // Misma regla que FacturaController::store(): si el descuento supera el
-        // límite del perfil o el tope del producto (promo vigente si aplica),
-        // se exige una aprobación especial válida que cubra ese porcentaje.
-        $aprobacionValida = null;
-        $tieneDescuentoEspecial = false;
-        // Redondeo a centavos por línea; IVA sobre la base imponible total (igual que la factura).
-        $total = 0;
-        $baseSinIva = 0;
-        $baseIva    = 0;
-        foreach ($request->detalles as $det) {
-            $cantidad  = (float)$det['cantidad'];
-            $precio    = (float) ($preciosProductos[$det['producto_id']] ?? 0);
-            $descPct   = (float)($det['descuento_pct'] ?? 0);
-
-            if ($descPct < 0 || $descPct > 100) {
-                return back()->withErrors(['error' => 'El descuento debe estar entre 0 y 100%.'])->withInput();
-            }
-
-            $maximoProducto = $maximosPermitidos[$det['producto_id']] ?? 0.0;
-            if ($descPct > $limiteMax || $descPct > $maximoProducto) {
-                if (!$request->filled('aprobacion_especial_id')) {
-                    return back()->withErrors(['error' => 'Se requiere aprobación especial para el descuento aplicado.'])->withInput();
-                }
-
-                if ($aprobacionValida === null) {
-                    $aprobacionValida = DB::table('aprobaciones_especiales')
-                        ->join('tipos_aprobacion', 'tipos_aprobacion.id', '=', 'aprobaciones_especiales.tipo_aprobacion_id')
-                        ->where('aprobaciones_especiales.id', $request->input('aprobacion_especial_id'))
-                        ->where('aprobaciones_especiales.solicitado_por', $usuario->id)
-                        ->where('tipos_aprobacion.clave', 'descuento_excedido')
-                        ->whereNull('aprobaciones_especiales.registro_id')
-                        ->select('aprobaciones_especiales.id', 'aprobaciones_especiales.valor_aprobado')
-                        ->first();
-
-                    if (!$aprobacionValida) {
-                        return back()->withErrors(['error' => 'La aprobación especial no es válida o ya fue utilizada.'])->withInput();
-                    }
-                }
-
-                if ($descPct > (float) $aprobacionValida->valor_aprobado) {
-                    return back()->withErrors([
-                        'error' => "La aprobación otorgada cubre hasta {$aprobacionValida->valor_aprobado}%, pero se solicita {$descPct}%.",
-                    ])->withInput();
-                }
-
-                $tieneDescuentoEspecial = true;
-            }
-
-            $descuento = round($precio * $cantidad * ($descPct / 100), 2);
-            $neto      = round(($precio * $cantidad) - $descuento, 2);
-            $grabaIva  = (bool)($det['graba_iva'] ?? true);
-            if ($grabaIva) {
-                $baseIva += $neto;
-            } else {
-                $baseSinIva += $neto;
-            }
+        try {
+            ['total' => $total, 'tieneDescuentoEspecial' => $tieneDescuentoEspecial, 'aprobacionValida' => $aprobacionValida, 'precios' => $preciosProductos]
+                = $this->calcularDetalles($request, $empresaId);
+        } catch (\DomainException $e) {
+            return back()->withErrors(['error' => $e->getMessage()])->withInput();
         }
-        $total = round($baseSinIva + $baseIva + round($baseIva * 0.15, 2), 2);
 
         try {
             $bodegaPrincipalId = $this->bodegaPrincipalId();
@@ -305,46 +240,7 @@ class PrefacturaController extends Controller
                     'estado'          => 'pendiente',
                 ]);
 
-                foreach ($request->detalles as $det) {
-                    $cantidad  = (float)$det['cantidad'];
-                    $precio    = (float) ($preciosProductos[$det['producto_id']] ?? 0);
-                    $descPct   = (float)($det['descuento_pct'] ?? 0);
-                    $descuento = round($precio * $cantidad * ($descPct / 100), 2);
-                    $neto      = round(($precio * $cantidad) - $descuento, 2);
-                    $grabaIva  = (bool)($det['graba_iva'] ?? true);
-                    $iva       = $grabaIva ? round($neto * 0.15, 2) : 0;
-
-                    $detalle = PrefacturaDetalle::create([
-                        'prefactura_id'  => $prefactura->id,
-                        'producto_id'    => $det['producto_id'],
-                        'descripcion'    => $det['descripcion'] ?? null,
-                        'cantidad'       => $cantidad,
-                        'precio_unitario'=> $precio,
-                        'descuento_pct'  => $descPct,
-                        'total'          => $neto + $iva,
-                    ]);
-
-                    // Traslado atómico Bodega Principal UIO -> Bodega Reservas.
-                    // egresarStock() no valida stock por sí solo (solo hace
-                    // floor en 0), así que el pre-check con getSaldoDisponible()
-                    // es lo que realmente evita reservar más de lo que hay.
-                    $disponible = $this->inventario->getSaldoDisponible((int) $det['producto_id'], $bodegaPrincipalId);
-                    if ($cantidad > $disponible) {
-                        $ref = $det['codigo'] ?? $det['descripcion'] ?? "producto #{$det['producto_id']}";
-                        throw new \RuntimeException(
-                            "Stock insuficiente para {$ref} en Bodega Principal UIO: disponible {$disponible}, solicitado {$cantidad}."
-                        );
-                    }
-
-                    $costoUnitario = (float) (DB::table('inventario_saldos')
-                        ->where('producto_id', $det['producto_id'])
-                        ->where('bodega_id', $bodegaPrincipalId)
-                        ->value('costo_promedio') ?? 0);
-
-                    $this->inventario->egresarStock((int) $det['producto_id'], $bodegaPrincipalId, $cantidad, 'prefactura_detalle', $detalle->id);
-                    $this->inventario->ingresarStock((int) $det['producto_id'], $bodegaReservasId, $cantidad, $costoUnitario, 'prefactura_detalle', $detalle->id);
-                    $this->inventario->reservarStock((int) $det['producto_id'], $bodegaReservasId, $cantidad, 'prefactura_detalle', $detalle->id);
-                }
+                $this->crearDetallesReservados($prefactura, $request->detalles, $preciosProductos, $bodegaPrincipalId, $bodegaReservasId);
 
                 if ($tieneDescuentoEspecial && $aprobacionValida) {
                     // Aprobación consumida: no se puede reutilizar en otro documento.
@@ -367,6 +263,112 @@ class PrefacturaController extends Controller
 
         return redirect()->route('ventas.prefacturas.show', $prefactura->id)
             ->with('flash', ['tipo' => 'exito', 'mensaje' => "Prefactura {$prefactura->numero} creada correctamente."]);
+    }
+
+    /** Motivo por el que no se puede editar, o null si se puede (solo Pendiente y sin abonos). */
+    private function motivoNoEditable(Prefactura $prefactura): ?string
+    {
+        if ($prefactura->factura_id || $prefactura->estado === 'liquidada') {
+            return 'La prefactura ya fue liquidada o convertida en factura.';
+        }
+        if ($prefactura->estado !== 'pendiente') {
+            return 'Solo se pueden editar prefacturas en estado Pendiente.';
+        }
+        if ((float) $prefactura->total_abonado > 0 || $prefactura->abonos()->exists()) {
+            return 'La prefactura ya tiene abonos registrados y no se puede editar.';
+        }
+        return null;
+    }
+
+    public function edit(Prefactura $prefactura)
+    {
+        abort_if((int) $prefactura->empresa_id !== (int) session('empresa_activa_id'), 403);
+
+        if ($motivo = $this->motivoNoEditable($prefactura)) {
+            return redirect()->route('ventas.prefacturas.show', $prefactura->id)
+                ->with('flash', ['tipo' => 'error', 'mensaje' => $motivo]);
+        }
+
+        $prefactura->load(['detalles.producto:id,codigo,nombre,porcentaje_iva']);
+
+        return Inertia::render('Ventas/Prefacturas/Form', array_merge($this->datosFormulario(), [
+            'prefactura'       => $prefactura,
+            'siguiente_numero' => $prefactura->numero,
+        ]));
+    }
+
+    /**
+     * Edita una prefactura pendiente sin abonos: devuelve a Bodega Principal lo
+     * reservado, reemplaza las líneas y vuelve a reservar, recalculando el total.
+     * Todo en una transacción: si falta stock, la prefactura queda como estaba.
+     */
+    public function update(Request $request, Prefactura $prefactura)
+    {
+        $empresaId = (int) session('empresa_activa_id');
+        abort_if((int) $prefactura->empresa_id !== $empresaId, 403);
+
+        $request->validate([
+            'cliente_id'             => 'required|integer|exists:clientes,id',
+            'detalles'               => 'required|array|min:1',
+            'detalles.*.producto_id' => 'required|integer',
+            'detalles.*.cantidad'    => 'required|numeric|min:0.01',
+            'detalles.*.precio'      => 'required|numeric|min:0.01',
+        ]);
+
+        try {
+            $bodegaPrincipalId = $this->bodegaPrincipalId();
+            $bodegaReservasId  = $this->bodegaReservasId();
+        } catch (\RuntimeException $e) {
+            return back()->withErrors(['error' => $e->getMessage()])->withInput();
+        }
+
+        $totalAnterior = (float) $prefactura->total;
+
+        try {
+            $total = DB::transaction(function () use ($request, $prefactura, $empresaId, $bodegaPrincipalId, $bodegaReservasId) {
+                // Bloqueo de fila: un abono simultáneo no puede colarse mientras se edita.
+                $actual = Prefactura::whereKey($prefactura->id)->lockForUpdate()->firstOrFail();
+                if ($motivo = $this->motivoNoEditable($actual)) {
+                    throw new \DomainException($motivo);
+                }
+
+                $calculo = $this->calcularDetalles($request, $empresaId, $actual);
+
+                $actual->load('detalles');
+                $this->devolverStockReservado($actual, 'prefactura_editada');
+                PrefacturaDetalle::where('prefactura_id', $actual->id)->delete();
+                $this->crearDetallesReservados($actual, $request->detalles, $calculo['precios'], $bodegaPrincipalId, $bodegaReservasId);
+
+                // Sin abonos (validado arriba): el saldo es el total completo.
+                $actual->update([
+                    'cliente_id'      => $request->cliente_id,
+                    'observaciones'   => $request->observaciones,
+                    'total'           => $calculo['total'],
+                    'total_abonado'   => 0,
+                    'saldo_pendiente' => $calculo['total'],
+                ]);
+
+                if ($calculo['tieneDescuentoEspecial'] && $calculo['aprobacionValida']) {
+                    DB::table('aprobaciones_especiales')
+                        ->where('id', $calculo['aprobacionValida']->id)
+                        ->update([
+                            'tabla_referencia' => 'prefacturas',
+                            'registro_id'      => $actual->id,
+                            'updated_at'       => now(),
+                        ]);
+                }
+
+                return $calculo['total'];
+            });
+        } catch (\Throwable $e) {
+            return back()->withErrors(['error' => $e->getMessage()])->withInput();
+        }
+
+        $this->auditoria->documento('editar', 'ventas', 'prefacturas', $prefactura->id,
+            "Prefactura {$prefactura->numero} editada (total {$totalAnterior} → {$total})");
+
+        return redirect()->route('ventas.prefacturas.show', $prefactura->id)
+            ->with('flash', ['tipo' => 'exito', 'mensaje' => "Prefactura {$prefactura->numero} actualizada."]);
     }
 
     public function show(Prefactura $prefactura)
@@ -598,7 +600,7 @@ class PrefacturaController extends Controller
      * Devuelve a la Bodega Principal lo que la prefactura había apartado en la
      * Bodega Reservas (proceso inverso al de store()).
      */
-    private function devolverStockReservado(Prefactura $prefactura): void
+    private function devolverStockReservado(Prefactura $prefactura, string $docTipo = 'prefactura_anulada'): void
     {
         $bodegaPrincipalId = $this->bodegaPrincipalId();
         $bodegaReservasId  = $this->bodegaReservasId();
@@ -615,8 +617,8 @@ class PrefacturaController extends Controller
                 ->value('costo_unitario') ?? 0);
 
             $this->inventario->liberarReserva((int) $det->producto_id, $bodegaReservasId, $cantidad);
-            $this->inventario->egresarStock((int) $det->producto_id, $bodegaReservasId, $cantidad, 'prefactura_anulada', $prefactura->id);
-            $this->inventario->ingresarStock((int) $det->producto_id, $bodegaPrincipalId, $cantidad, $costo, 'prefactura_anulada', $prefactura->id);
+            $this->inventario->egresarStock((int) $det->producto_id, $bodegaReservasId, $cantidad, $docTipo, $prefactura->id);
+            $this->inventario->ingresarStock((int) $det->producto_id, $bodegaPrincipalId, $cantidad, $costo, $docTipo, $prefactura->id);
         }
     }
 
@@ -720,5 +722,155 @@ class PrefacturaController extends Controller
         );
 
         return response()->json(['disponible' => $disponible]);
+    }
+
+    /**
+     * Valida descuentos (límite del perfil, tope del producto, aprobación
+     * especial) y calcula el total de la prefactura. Lanza \DomainException con
+     * el mensaje para el usuario. Compartido por store() y update().
+     *
+     * Al editar ($existente), un descuento que supera el límite pero que la
+     * prefactura ya tenía aprobado para ese mismo producto se respeta sin pedir
+     * otra aprobación; subirlo por encima de lo que había sí la exige.
+     *
+     * @return array{total: float, tieneDescuentoEspecial: bool, aprobacionValida: ?object, precios: \Illuminate\Support\Collection}
+     */
+    private function calcularDetalles(Request $request, int $empresaId, ?Prefactura $existente = null): array
+    {
+        $usuario = Auth::user();
+
+        $perfilNombre = DB::table('perfiles')
+            ->join('usuarios', 'usuarios.perfil_id', '=', 'perfiles.id')
+            ->where('usuarios.id', $usuario->id)
+            ->value('perfiles.nombre');
+
+        $limiteDescuento = LimiteDescuento::whereHas('perfil', fn($q) => $q->where('nombre', $perfilNombre))->first();
+        $limiteMax = (float) ($limiteDescuento?->porcentaje_maximo ?? 0);
+
+        $productoIds       = collect($request->detalles)->pluck('producto_id')->unique()->all();
+        $maximosPermitidos = $this->descuento->mapaMaximosPermitidos($productoIds, $empresaId);
+
+        // Precio real desde la tabla productos (precio de lista, pvp). El
+        // vendedor no puede cambiar el precio, solo dar descuento: el precio
+        // que llega en el payload NUNCA se usa (ver
+        // CHECKLIST_ERRORES_COMPLICACIONES.md, ítem A1).
+        $preciosProductos = Producto::whereIn('id', $productoIds)->pluck('pvp', 'id');
+
+        // Descuento ya aprobado por producto en la prefactura que se edita.
+        $descuentoPrevio = $existente
+            ? $existente->detalles()->pluck('descuento_pct', 'producto_id')->map(fn ($v) => (float) $v)
+            : collect();
+
+        // Misma regla que FacturaController::store(): si el descuento supera el
+        // límite del perfil o el tope del producto (promo vigente si aplica),
+        // se exige una aprobación especial válida que cubra ese porcentaje.
+        $aprobacionValida = null;
+        $tieneDescuentoEspecial = false;
+        // Redondeo a centavos por línea; IVA sobre la base imponible total (igual que la factura).
+        $baseSinIva = 0;
+        $baseIva    = 0;
+        foreach ($request->detalles as $det) {
+            $cantidad  = (float)$det['cantidad'];
+            $precio    = (float) ($preciosProductos[$det['producto_id']] ?? 0);
+            $descPct   = (float)($det['descuento_pct'] ?? 0);
+
+            if ($descPct < 0 || $descPct > 100) {
+                throw new \DomainException('El descuento debe estar entre 0 y 100%.');
+            }
+
+            $maximoProducto = $maximosPermitidos[$det['producto_id']] ?? 0.0;
+            $yaAprobado     = $descPct <= (float) ($descuentoPrevio[$det['producto_id']] ?? 0);
+            if (($descPct > $limiteMax || $descPct > $maximoProducto) && !$yaAprobado) {
+                if (!$request->filled('aprobacion_especial_id')) {
+                    throw new \DomainException('Se requiere aprobación especial para el descuento aplicado.');
+                }
+
+                if ($aprobacionValida === null) {
+                    $aprobacionValida = DB::table('aprobaciones_especiales')
+                        ->join('tipos_aprobacion', 'tipos_aprobacion.id', '=', 'aprobaciones_especiales.tipo_aprobacion_id')
+                        ->where('aprobaciones_especiales.id', $request->input('aprobacion_especial_id'))
+                        ->where('aprobaciones_especiales.solicitado_por', $usuario->id)
+                        ->where('tipos_aprobacion.clave', 'descuento_excedido')
+                        ->whereNull('aprobaciones_especiales.registro_id')
+                        ->select('aprobaciones_especiales.id', 'aprobaciones_especiales.valor_aprobado')
+                        ->first();
+
+                    if (!$aprobacionValida) {
+                        throw new \DomainException('La aprobación especial no es válida o ya fue utilizada.');
+                    }
+                }
+
+                if ($descPct > (float) $aprobacionValida->valor_aprobado) {
+                    throw new \DomainException("La aprobación otorgada cubre hasta {$aprobacionValida->valor_aprobado}%, pero se solicita {$descPct}%.");
+                }
+
+                $tieneDescuentoEspecial = true;
+            }
+
+            $descuento = round($precio * $cantidad * ($descPct / 100), 2);
+            $neto      = round(($precio * $cantidad) - $descuento, 2);
+            $grabaIva  = (bool)($det['graba_iva'] ?? true);
+            if ($grabaIva) {
+                $baseIva += $neto;
+            } else {
+                $baseSinIva += $neto;
+            }
+        }
+
+        return [
+            'total'                  => round($baseSinIva + $baseIva + round($baseIva * 0.15, 2), 2),
+            'tieneDescuentoEspecial' => $tieneDescuentoEspecial,
+            'aprobacionValida'       => $aprobacionValida,
+            'precios'                => $preciosProductos,
+        ];
+    }
+
+    /**
+     * Crea los detalles de la prefactura y traslada cada cantidad de la Bodega
+     * Principal a la de Reservas (atómico dentro de la transacción del caller).
+     * Lanza \RuntimeException si no hay stock suficiente.
+     */
+    private function crearDetallesReservados(Prefactura $prefactura, array $detalles, $preciosProductos, int $bodegaPrincipalId, int $bodegaReservasId): void
+    {
+        foreach ($detalles as $det) {
+            $cantidad  = (float)$det['cantidad'];
+            $precio    = (float) ($preciosProductos[$det['producto_id']] ?? 0);
+            $descPct   = (float)($det['descuento_pct'] ?? 0);
+            $descuento = round($precio * $cantidad * ($descPct / 100), 2);
+            $neto      = round(($precio * $cantidad) - $descuento, 2);
+            $grabaIva  = (bool)($det['graba_iva'] ?? true);
+            $iva       = $grabaIva ? round($neto * 0.15, 2) : 0;
+
+            $detalle = PrefacturaDetalle::create([
+                'prefactura_id'  => $prefactura->id,
+                'producto_id'    => $det['producto_id'],
+                'descripcion'    => $det['descripcion'] ?? null,
+                'cantidad'       => $cantidad,
+                'precio_unitario'=> $precio,
+                'descuento_pct'  => $descPct,
+                'total'          => $neto + $iva,
+            ]);
+
+            // Traslado atómico Bodega Principal UIO -> Bodega Reservas.
+            // egresarStock() no valida stock por sí solo (solo hace
+            // floor en 0), así que el pre-check con getSaldoDisponible()
+            // es lo que realmente evita reservar más de lo que hay.
+            $disponible = $this->inventario->getSaldoDisponible((int) $det['producto_id'], $bodegaPrincipalId);
+            if ($cantidad > $disponible) {
+                $ref = $det['codigo'] ?? $det['descripcion'] ?? "producto #{$det['producto_id']}";
+                throw new \RuntimeException(
+                    "Stock insuficiente para {$ref} en Bodega Principal UIO: disponible {$disponible}, solicitado {$cantidad}."
+                );
+            }
+
+            $costoUnitario = (float) (DB::table('inventario_saldos')
+                ->where('producto_id', $det['producto_id'])
+                ->where('bodega_id', $bodegaPrincipalId)
+                ->value('costo_promedio') ?? 0);
+
+            $this->inventario->egresarStock((int) $det['producto_id'], $bodegaPrincipalId, $cantidad, 'prefactura_detalle', $detalle->id);
+            $this->inventario->ingresarStock((int) $det['producto_id'], $bodegaReservasId, $cantidad, $costoUnitario, 'prefactura_detalle', $detalle->id);
+            $this->inventario->reservarStock((int) $det['producto_id'], $bodegaReservasId, $cantidad, 'prefactura_detalle', $detalle->id);
+        }
     }
 }

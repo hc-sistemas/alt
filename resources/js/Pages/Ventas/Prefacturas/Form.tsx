@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { Head, usePage, router, Link } from '@inertiajs/react'
 import Swal from 'sweetalert2'
@@ -47,12 +47,30 @@ interface DetalleLinea {
     _disponibleError: string
 }
 
+// Prefactura que se está editando (solo llega en /prefacturas/{id}/editar).
+interface PrefacturaEditable {
+    id: number
+    numero: string
+    fecha_emision: string
+    cliente_id: number
+    observaciones: string | null
+    detalles: {
+        producto_id: number
+        descripcion: string | null
+        cantidad: number
+        precio_unitario: number
+        descuento_pct: number
+        producto?: { codigo: string; nombre: string; porcentaje_iva: number } | null
+    }[]
+}
+
 interface Props extends PageProps {
     clientes: Cliente[]
     productos: ProductoVenta[]
     vendedores: Pick<Usuario, 'id' | 'nombre' | 'email'>[]
     empresa_activa: Empresa
     siguiente_numero: string
+    prefactura?: PrefacturaEditable
     limites_descuento: { descuento_maximo_pct: number; puede_aprobar: boolean } | null
 }
 
@@ -122,12 +140,14 @@ function ClienteField({ label, value, onChange, type = 'text', onKeyDown }: {
 }
 
 export default function Form() {
-    const { clientes, productos, vendedores, siguiente_numero, limites_descuento, errors } = usePage<Props>().props
+    const { clientes, productos, vendedores, siguiente_numero, limites_descuento, prefactura, errors } = usePage<Props>().props
+    const editando = !!prefactura
     const { puede } = usePermiso('ventas')
 
     // — Cliente
-    const [clienteSeleccionado, setClienteSeleccionado] = useState<Cliente | null>(null)
-    const [clienteEditado, setClienteEditado] = useState<Partial<Cliente>>({
+    const clienteInicial = prefactura ? clientes.find(c => c.id === prefactura.cliente_id) ?? null : null
+    const [clienteSeleccionado, setClienteSeleccionado] = useState<Cliente | null>(clienteInicial)
+    const [clienteEditado, setClienteEditado] = useState<Partial<Cliente>>(clienteInicial ? { ...clienteInicial } : {
         tipo_identificacion: '04',
         identificacion: '',
         razon_social: '',
@@ -142,19 +162,51 @@ export default function Form() {
     const [mensajeCliente, setMensajeCliente] = useState('')
 
     // — Descuento especial global (misma mecánica que Factura)
-    const [descuentoEspecialActivo, setDescuentoEspecialActivo] = useState(false)
     const [aprobacionGlobalId, setAprobacionGlobalId] = useState<number | null>(null)
     const [modalDescuentoGlobal, setModalDescuentoGlobal] = useState(false)
 
     // — Vendedor
     const [vendedorId, setVendedorId] = useState<number>(vendedores[0]?.id ?? 0)
 
+    // Al editar: líneas iniciales desde la prefactura. El precio es el guardado
+    // (el backend igual lo recalcula desde el producto) y el descuento se respeta.
+    const lineasIniciales = useMemo<DetalleLinea[]>(() => {
+        if (!prefactura) return [lineaVacia()]
+        return prefactura.detalles.map(d => {
+            const prod = productos.find(p => p.id === d.producto_id)
+            const iva = prod?.porcentaje_iva ?? d.producto?.porcentaje_iva ?? 15
+            return calcularLinea({
+                ...lineaVacia(),
+                producto_id: d.producto_id,
+                codigo: prod?.codigo ?? d.producto?.codigo ?? '',
+                descripcion: d.descripcion ?? prod?.nombre ?? d.producto?.nombre ?? '',
+                cantidad: Number(d.cantidad),
+                precio_unitario: Number(d.precio_unitario),
+                descuento_pct: Number(d.descuento_pct),
+                descuento_max_producto: prod?.descuento_max ?? 100,
+                porcentaje_iva: iva > 0 ? 15 : 0,
+            })
+        })
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
+
+    // Lo que esta prefactura ya tiene apartado en Reservas: al editar vuelve a Bodega
+    // Principal, así que cuenta como disponible para sus propias líneas.
+    const reservadoOriginal = useMemo(() => {
+        const m = new Map<number, number>()
+        prefactura?.detalles.forEach(d => m.set(d.producto_id, (m.get(d.producto_id) ?? 0) + Number(d.cantidad)))
+        return m
+    }, [prefactura])
+
+    // Si la prefactura ya traía descuentos sobre el tope, arranca en modo especial para no recortarlos.
+    const [descuentoEspecialActivo, setDescuentoEspecialActivo] = useState(() =>
+        !!prefactura && lineasIniciales.some(d => d.descuento_pct > d.descuento_max_producto && d.descuento_max_producto < 100))
     // — Líneas
-    const [detalles, setDetalles] = useState<DetalleLinea[]>([lineaVacia()])
+    const [detalles, setDetalles] = useState<DetalleLinea[]>(lineasIniciales)
     const [modalProducto, setModalProducto] = useState<{ idx: number; matches: ProductoVenta[] } | null>(null)
 
     // — Misc
-    const [observaciones, setObservaciones] = useState('')
+    const [observaciones, setObservaciones] = useState(prefactura?.observaciones ?? '')
     const [guardando, setGuardando] = useState(false)
     const [errores, setErrores] = useState<string[]>([])
 
@@ -323,7 +375,7 @@ export default function Form() {
                     const next = [...prev]
                     const linea = next[idx]
                     if (linea && linea.producto_id === productoId) {
-                        next[idx] = { ...linea, _disponible: disponible, _disponibleCargando: false, _disponibleError: '' }
+                        next[idx] = { ...linea, _disponible: disponible + (reservadoOriginal.get(productoId) ?? 0), _disponibleCargando: false, _disponibleError: '' }
                     }
                     return next
                 })
@@ -344,6 +396,12 @@ export default function Form() {
                 })
             })
     }
+
+    // Al editar, consulta el stock disponible de cada línea inicial.
+    useEffect(() => {
+        if (prefactura) detalles.forEach((d, i) => actualizarDisponible(i, d.producto_id))
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
 
     const seleccionarProductoLocal = (idx: number, p: ProductoVenta) => {
         setDetalles(prev => {
@@ -432,7 +490,7 @@ export default function Form() {
         if (errs.length > 0) { setErrores(errs); return }
         setErrores([])
         setGuardando(true)
-        router.post(route('ventas.prefacturas.store'), {
+        const payload = {
             cliente_id: clienteSeleccionado!.id,
             vendedor_id: vendedorId,
             observaciones,
@@ -445,10 +503,13 @@ export default function Form() {
                 descuento_pct: d.descuento_pct,
                 graba_iva:    d.porcentaje_iva > 0,
             })),
-        }, {
+        }
+        const opciones = {
             onError: () => setGuardando(false),
             onFinish: () => setGuardando(false),
-        })
+        }
+        if (prefactura) router.put(route('ventas.prefacturas.update', prefactura.id), payload, opciones)
+        else router.post(route('ventas.prefacturas.store'), payload, opciones)
     }
 
     const vendedorActual = vendedores.find(v => v.id === vendedorId)
@@ -461,13 +522,13 @@ export default function Form() {
 
     return (
         <AppLayout>
-            <Head title="Nueva Prefactura" />
+            <Head title={editando ? `Editar Prefactura ${prefactura?.numero}` : "Nueva Prefactura"} />
             <PageHeader
-                title="Nueva Prefactura"
+                title={editando ? `Editar Prefactura ${prefactura?.numero}` : "Nueva Prefactura"}
                 breadcrumbs={[
                     { label: 'Ventas', href: route('ventas.prefacturas.index') },
                     { label: 'Proformas', href: route('ventas.prefacturas.index') },
-                    { label: 'Nueva' },
+                    { label: editando ? 'Editar' : 'Nueva' },
                 ]}
             />
 
@@ -520,7 +581,7 @@ export default function Form() {
                                 <span className="font-mono font-semibold" style={{ color: 'var(--text-main)' }}>{siguiente_numero}</span>
                             </span>
                             <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                                Fecha: <span className="font-medium" style={{ color: 'var(--text-main)' }}>{hoy.split('-').reverse().join('/')}</span>
+                                Fecha: <span className="font-medium" style={{ color: 'var(--text-main)' }}>{(prefactura?.fecha_emision?.slice(0, 10) ?? hoy).split('-').reverse().join('/')}</span>
                             </span>
                             <span className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-muted)' }}>
                                 Vendedor:
@@ -893,10 +954,10 @@ export default function Form() {
                             Cancelar
                         </Button>
                     </Link>
-                    {puede('crear') && (
+                    {puede(editando ? 'editar' : 'crear') && (
                         <Button type="submit" loading={guardando}>
                             <Save className="w-4 h-4" />
-                            Guardar Prefactura
+                            {editando ? 'Guardar Cambios' : 'Guardar Prefactura'}
                         </Button>
                     )}
                 </div>

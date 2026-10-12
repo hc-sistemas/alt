@@ -18,11 +18,13 @@ interface Props extends PageProps {
     ordenes: PaginatedData<TallerOrdenTrabajo>
     filtros: { search?: string; estado?: string; tecnico_id?: string; desde?: string; hasta?: string }
     tecnicos: Tecnico[]
+    cola: { pendientes: number; en_proceso: number; esperando_repuesto: number; siguiente_id: number | null }
 }
 
 const ESTADO_CONFIG: Record<string, { label: string; variant: 'info' | 'warning' | 'default' | 'success' | 'secondary' }> = {
     pendiente:  { label: 'Pendiente',  variant: 'warning' },
     en_proceso: { label: 'En proceso', variant: 'info' },
+    esperando_repuesto: { label: 'Esperando repuesto', variant: 'warning' },
     listo:      { label: 'Listo',      variant: 'success' },
     entregado:  { label: 'Entregado',  variant: 'secondary' },
     facturado:  { label: 'Facturado',  variant: 'success' },
@@ -30,7 +32,7 @@ const ESTADO_CONFIG: Record<string, { label: string; variant: 'info' | 'warning'
 }
 
 export default function OrdenesTrabajoIndex() {
-    const { ordenes, filtros, tecnicos } = usePage<Props>().props
+    const { ordenes, filtros, tecnicos, cola } = usePage<Props>().props
     const [search, setSearch] = useState(filtros.search ?? '')
     const [estado, setEstado] = useState(filtros.estado ?? '')
     const [tecnicoId, setTecnicoId] = useState(filtros.tecnico_id ?? '')
@@ -56,6 +58,22 @@ export default function OrdenesTrabajoIndex() {
             />
 
             <div className="p-6">
+                {/* Cola de trabajo FIFO (común a todos los técnicos) */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+                    {[
+                        { label: 'En cola (pendientes)', valor: cola.pendientes, color: '#D97706', nota: 'Se atienden por orden de llegada' },
+                        { label: 'En proceso', valor: cola.en_proceso, color: '#2563EB', nota: 'Trabajándose ahora' },
+                        { label: 'Esperando repuesto', valor: cola.esperando_repuesto, color: '#7C3AED', nota: 'Pausadas, no bloquean la fila' },
+                    ].map(c => (
+                        <div key={c.label} className="rounded-xl border px-4 py-3"
+                            style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+                            <p className="text-xs uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>{c.label}</p>
+                            <p className="text-2xl font-bold" style={{ color: c.color }}>{c.valor}</p>
+                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{c.nota}</p>
+                        </div>
+                    ))}
+                </div>
+
                 {/* Barra de filtros */}
                 <div className="flex items-center gap-3 mb-4 flex-nowrap overflow-x-auto">
                     <select value={estado} onChange={e => setEstado(e.target.value)}
@@ -64,6 +82,7 @@ export default function OrdenesTrabajoIndex() {
                         <option value="">Todos los estados</option>
                         <option value="pendiente">Pendiente</option>
                         <option value="en_proceso">En proceso</option>
+                        <option value="esperando_repuesto">Esperando repuesto</option>
                         <option value="listo">Listo</option>
                         <option value="entregado">Entregado</option>
                         <option value="facturado">Facturado</option>
@@ -109,7 +128,7 @@ export default function OrdenesTrabajoIndex() {
                     <table className="w-full text-sm">
                         <thead>
                             <tr style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
-                                {['N° OT', 'Fecha inicio', 'Cliente', 'Equipo', 'Técnico', 'Estado', ''].map(h => (
+                                {['Turno', 'N° OT', 'Fecha inicio', 'Cliente', 'Equipo', 'Técnico', 'Estado', ''].map(h => (
                                     <th key={h} className="text-left px-4 py-3 font-medium text-xs uppercase tracking-wider"
                                         style={{ color: 'var(--text-muted)' }}>{h}</th>
                                 ))}
@@ -118,7 +137,7 @@ export default function OrdenesTrabajoIndex() {
                         <tbody>
                             {ordenes.data.length === 0 ? (
                                 <tr>
-                                    <td colSpan={7} className="text-center py-16" style={{ color: 'var(--text-muted)' }}>
+                                    <td colSpan={8} className="text-center py-16" style={{ color: 'var(--text-muted)' }}>
                                         <div className="flex flex-col items-center gap-2">
                                             <Wrench className="w-10 h-10 opacity-20" />
                                             <p className="font-medium text-sm" style={{ color: 'var(--text-main)' }}>
@@ -135,6 +154,13 @@ export default function OrdenesTrabajoIndex() {
                                     <tr key={orden.id}
                                         className="border-t hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
                                         style={{ borderColor: 'var(--border)' }}>
+                                        <td className="px-4 py-3 text-xs whitespace-nowrap">
+                                            {orden.turno ? (
+                                                <span className="font-semibold" style={{ color: orden.id === cola.siguiente_id ? '#D97706' : 'var(--text-muted)' }}>
+                                                    #{orden.turno}{orden.id === cola.siguiente_id && ' · Siguiente'}
+                                                </span>
+                                            ) : <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                                        </td>
                                         <td className="px-4 py-3 font-mono text-xs font-medium" style={{ color: 'var(--text-main)' }}>
                                             {orden.numero ?? `#${orden.id}`}
                                         </td>

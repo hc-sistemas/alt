@@ -16,7 +16,7 @@ use Inertia\Response;
 class DiagnosticoController extends Controller
 {
     /** Estados de OT en los que todavía tiene sentido registrar o resolver un diagnóstico. */
-    private const ESTADOS_ABIERTOS = ['pendiente', 'en_proceso'];
+    private const ESTADOS_ABIERTOS = ['pendiente', 'en_proceso', 'esperando_repuesto'];
 
     public function __construct(
         private AuditoriaService $auditoria,

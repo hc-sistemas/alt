@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { router, usePage, Head } from '@inertiajs/react'
 import { toast, ToastContainer } from 'react-toastify'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
 import { cn } from '@/lib/utils'
-import { LogIn, LogOut, Clock, Calendar, AlertCircle, CheckCircle2, Users } from 'lucide-react'
+import { LogIn, LogOut, Clock, Calendar, AlertCircle, CheckCircle2, Users, Utensils } from 'lucide-react'
 import { usePermiso } from '@/Hooks/usePermiso'
 import type { Colaborador, Asistencia, PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
@@ -23,6 +23,9 @@ interface ResumenItem {
     hora_entrada: string | null
     hora_salida: string | null
     minutos_atraso: number
+    almuerzo_inicio: string | null
+    almuerzo_fin: string | null
+    almuerzo_minutos: number
     horas_extra: number | null
     tipo_extra: 'suplementaria' | 'extraordinaria' | null
     horas_extras?: HorasExtrasEstado | null
@@ -34,6 +37,7 @@ interface Props extends PageProps {
     historial: Asistencia[]
     resumenDia: ResumenItem[] | null
     server_time: string
+    almuerzo_limite: number
     es_admin: boolean
     flash: { success?: string; error?: string }
 }
@@ -161,10 +165,105 @@ function EstadoAsistencia({ a }: { a: Asistencia | null }) {
     return null
 }
 
+// ─── Almuerzo / Break ─────────────────────────────────────────────────────────
+//
+// Informativo: no descuenta horas ni bloquea. Mientras el break está abierto se
+// muestra el tiempo restante del límite y, al pasarse, el exceso en rojo.
+
+function useSegundosDesde(inicioIso: string | null, serverTime: string): number {
+    const offset = useRef(Date.now() - new Date(serverTime).getTime()).current
+    const calc = () => inicioIso ? Math.max(0, Math.floor((Date.now() - offset - new Date(inicioIso).getTime()) / 1000)) : 0
+    const [seg, setSeg] = useState(calc)
+    useEffect(() => {
+        setSeg(calc())
+        if (!inicioIso) return
+        const id = setInterval(() => setSeg(calc()), 1000)
+        return () => clearInterval(id)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [inicioIso])
+    return seg
+}
+
+function mmss(totalSeg: number): string {
+    const m = Math.floor(totalSeg / 60)
+    const s = totalSeg % 60
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
+
+function PanelAlmuerzo({ a, limite, serverTime, procesando, onIniciar, onFinalizar }: {
+    a: Asistencia
+    limite: number
+    serverTime: string
+    procesando: boolean
+    onIniciar: () => void
+    onFinalizar: () => void
+}) {
+    const enAlmuerzo = !!a.almuerzo_inicio && !a.almuerzo_fin
+    const terminado  = !!a.almuerzo_inicio && !!a.almuerzo_fin
+    const seg        = useSegundosDesde(enAlmuerzo ? (a.almuerzo_inicio as string) : null, serverTime)
+    const limiteSeg  = limite * 60
+    const excedido   = seg > limiteSeg
+
+    if (terminado) {
+        const exceso = a.almuerzo_minutos - limite
+        return (
+            <p className={cn('text-sm font-medium', exceso > 0 ? 'text-red-500' : 'text-emerald-600 dark:text-emerald-400')}>
+                Almuerzo: {formatHora(a.almuerzo_inicio)} → {formatHora(a.almuerzo_fin)} ({a.almuerzo_minutos} min)
+                {exceso > 0 && ` — te pasaste ${exceso} min`}
+            </p>
+        )
+    }
+
+    if (enAlmuerzo) {
+        return (
+            <div className="space-y-3">
+                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                    En almuerzo desde las {formatHora(a.almuerzo_inicio)}
+                </p>
+                <p className={cn('text-4xl font-mono font-bold tabular-nums', excedido ? 'text-red-500' : 'text-amber-500')}>
+                    {excedido ? `+${mmss(seg - limiteSeg)}` : mmss(limiteSeg - seg)}
+                </p>
+                <p className={cn('text-xs font-medium', excedido ? 'text-red-500' : '')} style={excedido ? undefined : { color: 'var(--text-muted)' }}>
+                    {excedido ? `¡Te pasaste del límite de ${limite} minutos!` : `Tiempo restante de ${limite} min`}
+                </p>
+                <button onClick={onFinalizar} disabled={procesando}
+                    className={cn('inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-bold shadow-md transition-all',
+                        procesando ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105 active:scale-95')}
+                    style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)', color: '#fff' }}>
+                    <Utensils className="w-5 h-5" />
+                    Finalizar Almuerzo / Break
+                </button>
+            </div>
+        )
+    }
+
+    return (
+        <button onClick={onIniciar} disabled={procesando}
+            className={cn('inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-bold border transition-all',
+                procesando ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105 active:scale-95')}
+            style={{ borderColor: 'var(--primary)', color: 'var(--primary)', background: 'transparent' }}>
+            <Utensils className="w-5 h-5" />
+            Iniciar Almuerzo / Break
+        </button>
+    )
+}
+
+// Resumen "12:00 → 12:55 (55 min)" para las tablas; el exceso va en rojo.
+function CeldaAlmuerzo({ a, limite }: { a: Pick<Asistencia, 'almuerzo_inicio' | 'almuerzo_fin' | 'almuerzo_minutos'>; limite: number }) {
+    if (!a.almuerzo_inicio) return <span style={{ color: 'var(--text-muted)' }}>—</span>
+    if (!a.almuerzo_fin) return <span className="text-amber-600 dark:text-amber-400 font-medium">En almuerzo</span>
+    const exceso = a.almuerzo_minutos - limite
+    return (
+        <span className={cn('font-medium', exceso > 0 ? 'text-red-500' : '')} style={exceso > 0 ? undefined : { color: 'var(--text-main)' }}>
+            {a.almuerzo_minutos} min{exceso > 0 && ` (+${exceso})`}
+        </span>
+    )
+}
+
 // ─── Página ───────────────────────────────────────────────────────────────────
 
 export default function AsistenciaIndex() {
-    const { colaborador, asistenciaHoy, historial, resumenDia, server_time, es_admin, flash } =
+    const { colaborador, asistenciaHoy, historial, resumenDia, server_time, almuerzo_limite, es_admin, flash } =
         usePage<Props>().props
     const { puede } = usePermiso('rrhh')
 
@@ -197,6 +296,14 @@ export default function AsistenciaIndex() {
                 onError: (e) => notify.error(Object.values(e)[0] ?? 'Error al registrar.'),
             }
         )
+    }
+
+    function almuerzo(accion: 'iniciar' | 'finalizar') {
+        setProcesando(true)
+        router.post(route(`rrhh.asistencia.almuerzo.${accion}`), {}, {
+            preserveScroll: true,
+            onFinish: () => setProcesando(false),
+        })
     }
 
     return (
@@ -234,6 +341,16 @@ export default function AsistenciaIndex() {
                             <div className="flex justify-center">
                                 <EstadoAsistencia a={asistenciaHoy} />
                             </div>
+
+                            {/* Almuerzo / Break: solo con la jornada abierta */}
+                            {asistenciaHoy && tieneEntrada && !tieneSalida && puede('crear') && (
+                                <div className="flex justify-center">
+                                    <PanelAlmuerzo a={asistenciaHoy} limite={almuerzo_limite} serverTime={server_time}
+                                        procesando={procesando}
+                                        onIniciar={() => almuerzo('iniciar')}
+                                        onFinalizar={() => almuerzo('finalizar')} />
+                                </div>
+                            )}
 
                             {/* Botón timbre */}
                             {!tieneSalida && (
@@ -308,7 +425,7 @@ export default function AsistenciaIndex() {
                         <table className="w-full text-xs">
                             <thead>
                                 <tr style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
-                                    {['Fecha', 'Entrada', 'Salida', 'Atraso', 'H. Extra'].map(h => (
+                                    {['Fecha', 'Entrada', 'Salida', 'Almuerzo', 'Atraso', 'H. Extra'].map(h => (
                                         <th key={h} className="text-left px-3 py-3 font-medium uppercase tracking-wider"
                                             style={{ color: 'var(--text-muted)' }}>{h}</th>
                                     ))}
@@ -326,6 +443,9 @@ export default function AsistenciaIndex() {
                                         </td>
                                         <td className="px-3 py-2.5 font-mono" style={{ color: 'var(--text-muted)' }}>
                                             {formatHora(a.hora_salida as unknown as string)}
+                                        </td>
+                                        <td className="px-3 py-2.5">
+                                            <CeldaAlmuerzo a={a} limite={almuerzo_limite} />
                                         </td>
                                         <td className="px-3 py-2.5">
                                             {(a.minutos_atraso ?? 0) > 0 ? (
@@ -359,7 +479,7 @@ export default function AsistenciaIndex() {
                         <table className="w-full text-xs">
                             <thead>
                                 <tr style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
-                                    {['Colaborador', 'Entrada', 'Salida', 'Atraso', 'H. Extra'].map(h => (
+                                    {['Colaborador', 'Entrada', 'Salida', 'Almuerzo', 'Atraso', 'H. Extra'].map(h => (
                                         <th key={h} className="text-left px-3 py-3 font-medium uppercase tracking-wider"
                                             style={{ color: 'var(--text-muted)' }}>{h}</th>
                                     ))}
@@ -377,6 +497,9 @@ export default function AsistenciaIndex() {
                                         </td>
                                         <td className="px-3 py-2.5 font-mono" style={{ color: 'var(--text-muted)' }}>
                                             {formatHora(a.hora_salida)}
+                                        </td>
+                                        <td className="px-3 py-2.5">
+                                            <CeldaAlmuerzo a={a} limite={almuerzo_limite} />
                                         </td>
                                         <td className="px-3 py-2.5">
                                             {(a.minutos_atraso ?? 0) > 0 ? (

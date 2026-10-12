@@ -70,6 +70,7 @@ class AsistenciaController extends Controller
             'historial'      => $historial,
             'resumenDia'     => $resumenDia,
             'server_time'    => $ahora->toIso8601String(),
+            'almuerzo_limite' => Asistencia::ALMUERZO_MINUTOS,
             'es_admin'       => in_array(Auth::user()?->perfil?->nombre, ['super_admin', 'admin'], true) ?? false,
         ]);
     }
@@ -146,6 +147,10 @@ class AsistenciaController extends Controller
             ->whereNull('hora_salida')
             ->firstOrFail();
 
+        if ($asistencia->almuerzo_inicio && !$asistencia->almuerzo_fin) {
+            return back()->with('error', 'Estás en almuerzo: finalízalo antes de registrar tu salida.');
+        }
+
         // Calcular horas extra
         $horasExtra = 0;
         $tipoExtra  = null;
@@ -209,5 +214,64 @@ class AsistenciaController extends Controller
         }
 
         return back()->with('success', $msg);
+    }
+
+    /**
+     * Control de almuerzo (break): un solo almuerzo por día. Es informativo —
+     * no descuenta horas ni bloquea nada—; si pasa de ALMUERZO_MINUTOS el
+     * sistema avisa y queda registrado el exceso.
+     */
+    public function iniciarAlmuerzo(): RedirectResponse
+    {
+        $asistencia = $this->asistenciaAbiertaDeHoy();
+
+        if ($asistencia->almuerzo_inicio) {
+            return back()->with('error', $asistencia->almuerzo_fin
+                ? 'Ya registraste tu almuerzo de hoy.'
+                : 'Ya estás en almuerzo; finalízalo al regresar.');
+        }
+
+        $ahora = now();
+        $asistencia->update(['almuerzo_inicio' => $ahora]);
+
+        return back()->with('success', 'Almuerzo iniciado a las ' . $ahora->format('H:i:s')
+            . '. Tienes ' . Asistencia::ALMUERZO_MINUTOS . ' minutos.');
+    }
+
+    public function finalizarAlmuerzo(): RedirectResponse
+    {
+        $asistencia = $this->asistenciaAbiertaDeHoy();
+
+        if (!$asistencia->almuerzo_inicio || $asistencia->almuerzo_fin) {
+            return back()->with('error', 'No tienes un almuerzo en curso.');
+        }
+
+        $ahora   = now();
+        $minutos = (int) round($asistencia->almuerzo_inicio->diffInSeconds($ahora, true) / 60);
+
+        $asistencia->update(['almuerzo_fin' => $ahora, 'almuerzo_minutos' => $minutos]);
+
+        $exceso = $minutos - Asistencia::ALMUERZO_MINUTOS;
+        if ($exceso > 0) {
+            return back()->with('error', "Almuerzo finalizado a las {$ahora->format('H:i:s')}: duró {$minutos} min, "
+                . "te pasaste {$exceso} min del límite de " . Asistencia::ALMUERZO_MINUTOS . ' min.');
+        }
+
+        return back()->with('success', "Almuerzo finalizado a las {$ahora->format('H:i:s')} ({$minutos} min).");
+    }
+
+    /** Asistencia de hoy del colaborador logueado: con entrada y sin salida. */
+    private function asistenciaAbiertaDeHoy(): Asistencia
+    {
+        $colaborador = Colaborador::where('empresa_id', session('empresa_activa_id'))
+            ->where('usuario_id', Auth::id())
+            ->where('estado', true)
+            ->firstOrFail();
+
+        return Asistencia::where('colaborador_id', $colaborador->id)
+            ->where('fecha', now()->toDateString())
+            ->whereNotNull('hora_entrada')
+            ->whereNull('hora_salida')
+            ->firstOrFail();
     }
 }

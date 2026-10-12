@@ -865,6 +865,9 @@ export interface Asistencia {
     ip_entrada: string | null
     ip_salida: string | null
     observacion: string | null
+    almuerzo_inicio: string | null
+    almuerzo_fin: string | null
+    almuerzo_minutos: number
     colaborador?: Colaborador
     horas_extras?: Pick<HorasExtrasAprobacion, 'id' | 'asistencia_id' | 'estado' | 'horas_aprobadas'> | null
 }
@@ -1084,6 +1087,7 @@ export interface TallerOrdenTrabajo {
     es_garantia: boolean
     factura_id: number | null
     estado: string
+    turno?: number | null
     observaciones: string | null
     ingreso?: TallerIngreso
     tecnico?: { id: number; nombre: string } | null

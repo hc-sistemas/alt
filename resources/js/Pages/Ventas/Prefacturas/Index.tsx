@@ -7,7 +7,7 @@ import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Badge } from '@/Components/ui/badge'
 import { cn, formatMoneda, formatFecha } from '@/lib/utils'
-import { Plus, Search, Eye, FileText, ChevronLeft, ChevronRight, ArrowRightLeft, Ban, Trash2, HandCoins } from 'lucide-react'
+import { Plus, Search, Eye, Pencil, FileText, ChevronLeft, ChevronRight, ArrowRightLeft, Ban, Trash2, HandCoins } from 'lucide-react'
 import AccionIcono, { COLOR_ACCION } from '@/Components/shared/AccionIcono'
 import PdfIcon from '@/Components/shared/PdfIcon'
 import PdfPreviewModal from '@/Components/shared/PdfPreviewModal'
@@ -288,6 +288,11 @@ export default function Index() {
                                                         <AccionIcono titulo="Ver PDF" color={COLOR_ACCION.pdf} onClick={() => setPdf({ id: pf.id, numero: pf.numero })}>
                                                             <PdfIcon className="w-5 h-5" />
                                                         </AccionIcono>
+                                                        {pf.estado === 'pendiente' && Number(pf.total_abonado) === 0 && puede('editar') && (
+                                                            <AccionIcono titulo="Editar prefactura" color={COLOR_ACCION.ver} href={route('ventas.prefacturas.edit', pf.id)}>
+                                                                <Pencil className="w-4 h-4" />
+                                                            </AccionIcono>
+                                                        )}
                                                         {abierta && puede('editar') && (
                                                             <AccionIcono
                                                                 titulo="Registrar abono"

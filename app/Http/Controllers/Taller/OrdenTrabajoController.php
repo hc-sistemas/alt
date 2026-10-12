@@ -20,6 +20,9 @@ class OrdenTrabajoController extends Controller
     use ResuelveBodegaTaller;
     use ListaTecnicosTaller;
 
+    /** Estados que forman parte de la cola de trabajo del taller. */
+    private const ESTADOS_COLA = ['pendiente', 'en_proceso', 'esperando_repuesto'];
+
     public function __construct(
         private AuditoriaService $auditoria,
     ) {}
@@ -29,9 +32,15 @@ class OrdenTrabajoController extends Controller
         $empresaId = session('empresa_activa_id');
 
         $query = TallerOrdenTrabajo::with(['ingreso.cliente', 'ingreso.equipo', 'tecnico'])
-            ->where('empresa_id', $empresaId)
-            ->orderByDesc('fecha_inicio')
-            ->orderByDesc('id');
+            ->where('empresa_id', $empresaId);
+
+        // Cola FIFO común: las órdenes abiertas (pendiente / en proceso / esperando
+        // repuesto) van primero en estricto orden de llegada (id ascendente); el
+        // resto del historial queda debajo, de la más reciente a la más antigua.
+        $abiertas = "'" . implode("','", self::ESTADOS_COLA) . "'";
+        $query->orderByRaw("CASE WHEN estado IN ({$abiertas}) THEN 0 ELSE 1 END")
+            ->orderByRaw("CASE WHEN estado IN ({$abiertas}) THEN id END ASC")
+            ->orderByRaw("CASE WHEN estado NOT IN ({$abiertas}) THEN id END DESC");
 
         if ($request->filled('search')) {
             $term = "%{$request->search}%";
@@ -59,8 +68,36 @@ class OrdenTrabajoController extends Controller
             $query->whereDate('fecha_inicio', '<=', $request->hasta);
         }
 
+        // Turno en la cola: solo las órdenes "pendiente" esperan turno. Una orden
+        // en "esperando_repuesto" no ocupa lugar, así que el técnico sigue con la
+        // siguiente en la fila.
+        $colaIds = TallerOrdenTrabajo::where('empresa_id', $empresaId)
+            ->where('estado', 'pendiente')
+            ->orderBy('id')
+            ->pluck('id')
+            ->values();
+        $turnos = $colaIds->flip()->map(fn ($i) => $i + 1);
+
+        $ordenes = $query->paginate(15)->withQueryString();
+        $ordenes->through(function (TallerOrdenTrabajo $o) use ($turnos) {
+            $o->setAttribute('turno', $turnos->get($o->id));
+            return $o;
+        });
+
+        $conteos = TallerOrdenTrabajo::where('empresa_id', $empresaId)
+            ->whereIn('estado', self::ESTADOS_COLA)
+            ->selectRaw('estado, COUNT(*) as total')
+            ->groupBy('estado')
+            ->pluck('total', 'estado');
+
         return Inertia::render('Taller/OrdenesTrabajo/Index', [
-            'ordenes'  => $query->paginate(15)->withQueryString(),
+            'ordenes'  => $ordenes,
+            'cola'     => [
+                'pendientes'         => (int) ($conteos['pendiente'] ?? 0),
+                'en_proceso'         => (int) ($conteos['en_proceso'] ?? 0),
+                'esperando_repuesto' => (int) ($conteos['esperando_repuesto'] ?? 0),
+                'siguiente_id'       => $colaIds->first(),
+            ],
             'filtros'  => $request->only(['search', 'estado', 'tecnico_id', 'desde', 'hasta']),
             'tecnicos' => $this->listaTecnicos(),
         ]);
@@ -116,7 +153,7 @@ class OrdenTrabajoController extends Controller
 
         $data = $request->validate([
             // "facturado" solo lo fija la liquidación (genera la factura y descuenta el stock).
-            'estado'     => 'required|string|in:pendiente,en_proceso,listo,entregado,garantia',
+            'estado'     => 'required|string|in:pendiente,en_proceso,esperando_repuesto,listo,entregado,garantia',
             'tecnico_id' => 'nullable|integer|exists:usuarios,id',
         ]);
 
@@ -132,7 +169,7 @@ class OrdenTrabajoController extends Controller
 
         $estadoIngreso = match ($data['estado']) {
             'pendiente' => 0,
-            'en_proceso', 'garantia' => 2,
+            'en_proceso', 'esperando_repuesto', 'garantia' => 2,
             'listo' => 3,
             'entregado' => 4,
         };

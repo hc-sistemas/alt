@@ -9,7 +9,7 @@ import { Badge } from '@/Components/ui/badge'
 import PdfIcon from '@/Components/shared/PdfIcon'
 import PdfPreviewModal from '@/Components/shared/PdfPreviewModal'
 import { formatMoneda, formatFecha } from '@/lib/utils'
-import { Plus, X, DollarSign, FileText } from 'lucide-react'
+import { Plus, X, DollarSign, FileText, Pencil } from 'lucide-react'
 import { usePermiso } from '@/Hooks/usePermiso'
 import { toastError } from '@/lib/toast'
 import type { PageProps } from '@/types'
@@ -102,6 +102,8 @@ export default function Show() {
     const { puede } = usePermiso('ventas')
     const cfg = ESTADO_CONFIG[prefactura.estado] ?? ESTADO_CONFIG.pendiente
     const puedeAbonar = prefactura.estado !== 'liquidada' && prefactura.estado !== 'anulada' && puede('editar')
+    // Editable solo mientras esté pendiente y sin abonos (el backend lo vuelve a validar).
+    const puedeEditar = prefactura.estado === 'pendiente' && Number(prefactura.total_abonado) === 0 && (prefactura.abonos?.length ?? 0) === 0 && puede('editar')
     const puedeConvertir = Number(prefactura.saldo_pendiente) === 0 && prefactura.estado !== 'anulada' && puede('editar')
     const cliente = prefactura.cliente
 
@@ -353,6 +355,14 @@ export default function Show() {
                             <PdfIcon className="w-4 h-4 text-red-500" />
                             PDF
                         </Button>
+                        {puedeEditar && (
+                            <Link href={route('ventas.prefacturas.edit', prefactura.id)}>
+                                <Button variant="outline">
+                                    <Pencil className="w-4 h-4" />
+                                    Editar
+                                </Button>
+                            </Link>
+                        )}
                         {puedeAbonar && (
                             <Button onClick={abrirModal}>
                                 <Plus className="w-4 h-4" />

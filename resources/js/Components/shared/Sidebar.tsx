@@ -15,7 +15,7 @@ import type { PageProps } from '@/types'
 // no existe un módulo 'personas' en la tabla modulos — Proveedores ya se
 // protege aparte con el permiso de Compras (ver C1), tanto en el menú
 // (hijosVisibles más abajo) como en las rutas.
-const MODULOS_SIN_PERMISO = new Set(['personas', 'manuales'])
+export const MODULOS_SIN_PERMISO = new Set(['personas', 'manuales'])
 
 // `permiso` es opcional: solo lo llevan los hijos que necesitan un módulo
 // distinto al de su padre para mostrarse (ej. "Proveedores" dentro de
@@ -26,7 +26,7 @@ const MODULOS_SIN_PERMISO = new Set(['personas', 'manuales'])
 // en vez de por módulo (ej. "Movimientos" dentro de Inventario, ítem C6:
 // mismo módulo 'inventario' que Vendedor/Técnico ya ven por otras pantallas,
 // pero solo Bodeguero/Admin/Contador deben ver este hijo).
-interface NavHijo {
+export interface NavHijo {
     nombre: string
     href: string
     permiso?: string
@@ -34,14 +34,14 @@ interface NavHijo {
     soloRuc?: string
 }
 
-interface NavSubgrupo {
+export interface NavSubgrupo {
     nombre: string
     icon: React.ElementType
     clave: string
     hijos: NavHijo[]
 }
 
-interface NavItem {
+export interface NavItem {
     nombre: string
     clave: string
     icon: React.ElementType
@@ -50,7 +50,7 @@ interface NavItem {
     subgrupos?: NavSubgrupo[]
 }
 
-const navItems: NavItem[] = [
+export const navItems: NavItem[] = [
     { nombre: 'Dashboard', clave: 'dashboard', icon: LayoutDashboard, href: '/dashboard' },
     {
         nombre: 'Configuración', clave: 'configuracion', icon: Settings,
@@ -71,6 +71,7 @@ const navItems: NavItem[] = [
             { nombre: 'Activos Fijos', href: '/inventario/activos' },
             { nombre: 'Lista de Precios', href: '/inventario/listas' },
             { nombre: 'Recepciones', href: '/inventario/recepciones' },
+            { nombre: 'Equipos Listos (Taller)', href: '/inventario/equipos-taller', perfiles: ['admin', 'contador', 'bodeguero'] },
         ],
         subgrupos: [
             {

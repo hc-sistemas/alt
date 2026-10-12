@@ -27,6 +27,7 @@ use App\Http\Controllers\Inventario\TrasladoController;
 use App\Http\Controllers\Inventario\ActivoFijoController;
 use App\Http\Controllers\Inventario\ListaPrecioController;
 use App\Http\Controllers\Inventario\RecepcionController;
+use App\Http\Controllers\Inventario\EquiposTallerController;
 use App\Http\Controllers\Personas\ClienteController;
 use App\Http\Controllers\Personas\ProveedorController as PersonasProveedorController;
 use App\Http\Controllers\Personas\TransportistaController;
@@ -400,6 +401,7 @@ Route::middleware('auth')->group(function () {
             // proyecto para gates puntuales (ej. clienteGuardar).
             Route::middleware('solo_perfiles:admin,contador,bodeguero')->group(function () {
                 Route::get('traslados', [TrasladoController::class, 'index'])->name('traslados.index');
+                Route::get('equipos-taller', [EquiposTallerController::class, 'index'])->name('equipos-taller.index');
                 Route::get('traslados/nuevo', [TrasladoController::class, 'create'])->name('traslados.create');
                 Route::get('traslados/productos-en-bodega', [TrasladoController::class, 'productosEnBodega'])->name('traslados.productosEnBodega');
                 Route::get('traslados/{traslado}', [TrasladoController::class, 'show'])->name('traslados.show');
@@ -729,6 +731,8 @@ Route::middleware('auth')->group(function () {
         Route::middleware('permiso:asistencia,crear')->group(function () {
             Route::post('/entrada', [AsistenciaController::class, 'registrarEntrada'])->name('entrada');
             Route::post('/salida',  [AsistenciaController::class, 'registrarSalida']) ->name('salida');
+            Route::post('/almuerzo/iniciar',   [AsistenciaController::class, 'iniciarAlmuerzo'])   ->name('almuerzo.iniciar');
+            Route::post('/almuerzo/finalizar', [AsistenciaController::class, 'finalizarAlmuerzo']) ->name('almuerzo.finalizar');
         });
     });
 
@@ -778,6 +782,8 @@ Route::middleware('auth')->group(function () {
                 Route::post('/',                                 [PrefacturaController::class, 'store'])              ->name('store');
             });
             Route::middleware('permiso:ventas,editar')->group(function () {
+                Route::get('/{prefactura}/editar',          [PrefacturaController::class, 'edit'])               ->name('edit');
+                Route::put('/{prefactura}',                     [PrefacturaController::class, 'update'])             ->name('update');
                 Route::post('/{prefactura}/abonar',              [PrefacturaController::class, 'abonar'])             ->name('abonar');
                 Route::post('/{prefactura}/convertir-a-factura', [PrefacturaController::class, 'convertirAFactura']) ->name('convertir');
             });
