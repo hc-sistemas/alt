@@ -22,6 +22,7 @@ use App\Http\Controllers\Inventario\CategoriaProductoController;
 use App\Http\Controllers\Inventario\BodegaController;
 use App\Http\Controllers\Inventario\ProductoController;
 use App\Http\Controllers\Inventario\KardexController;
+use App\Http\Controllers\Inventario\ConsolidadoController;
 use App\Http\Controllers\Inventario\TrasladoController;
 use App\Http\Controllers\Inventario\ActivoFijoController;
 use App\Http\Controllers\Inventario\ListaPrecioController;
@@ -383,6 +384,12 @@ Route::middleware('auth')->group(function () {
             Route::get('kardex/saldo', [KardexController::class, 'getSaldo'])->name('kardex.getSaldo');
             Route::get('kardex/saldos', [KardexController::class, 'saldos'])->name('kardex.saldos');
             Route::get('kardex/saldos/reporte', [KardexController::class, 'reporteSaldos'])->name('kardex.reporte.saldos');
+            Route::get('kardex/saldos/excel', [KardexController::class, 'excelSaldos'])->name('kardex.excel.saldos');
+            // Solo Super Admin / Admin, y solo con Altamira Matriz activa (se valida en el controller).
+            Route::middleware('solo_perfiles:admin')->group(function () {
+                Route::get('consolidado', [ConsolidadoController::class, 'index'])->name('consolidado.index');
+                Route::get('consolidado/excel', [ConsolidadoController::class, 'excel'])->name('consolidado.excel');
+            });
             Route::get('kardex/ajuste', [KardexController::class, 'ajuste'])->name('kardex.ajuste');
             Route::get('kardex', [KardexController::class, 'index'])->name('kardex.index');
 

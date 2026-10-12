@@ -41,27 +41,17 @@ export default function KardexSaldos() {
         }, { preserveState: false })
     }
 
-    async function exportarExcel() {
-        if (!saldos) return
-        const XLSX = await import('xlsx')
-        const filas = saldos.data.map(s => {
-            const nombre     = s.producto_nombre ?? s.producto?.nombre ?? '—'
-            const codigo     = s.producto_codigo ?? s.producto?.codigo ?? '—'
-            const bodega     = s.bodega?.nombre ?? `Bodega #${s.bodega_id}`
-            const valorTotal = Number(s.stock_actual) * Number(s.costo_promedio)
-            return {
-                'Código Producto': codigo,
-                'Producto':        nombre,
-                'Bodega':          bodega,
-                'Cantidad':        Number(s.stock_actual),
-                'Costo Promedio':  Number(s.costo_promedio),
-                'Valor Total':     Number(valorTotal.toFixed(2)),
-            }
-        })
-        const ws = XLSX.utils.json_to_sheet(filas)
-        const wb = XLSX.utils.book_new()
-        XLSX.utils.book_append_sheet(wb, ws, 'Kárdex Saldos')
-        XLSX.writeFile(wb, 'kardex_saldos.xlsx')
+    function filtrosActivos() {
+        return {
+            search: search || undefined,
+            bodega_id: bodegaId || undefined,
+            solo_criticos: soloCriticos ? '1' : undefined,
+        }
+    }
+
+    // El servidor arma el Excel con todos los registros del filtro (no solo la página visible).
+    function exportarExcel() {
+        window.location.href = route('inventario.kardex.excel.saldos', filtrosActivos())
     }
 
     return (
@@ -71,14 +61,21 @@ export default function KardexSaldos() {
                 title="Inventario General"
                 breadcrumbs={[{ label: 'Inventario' }, { label: 'Kárdex' }, { label: 'Inventario General' }]}
                 actions={
-                    puede('crear') ? (
-                        <Link href={route('inventario.kardex.ajuste')}>
-                            <Button>
-                                <Plus className="w-4 h-4" />
-                                Registrar Ajuste
-                            </Button>
-                        </Link>
-                    ) : undefined
+                    <div className="flex items-center gap-3">
+                        {saldos && (
+                            <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                                {saldos.total} producto{saldos.total === 1 ? '' : 's'}
+                            </span>
+                        )}
+                        {puede('crear') && (
+                            <Link href={route('inventario.kardex.ajuste')}>
+                                <Button>
+                                    <Plus className="w-4 h-4" />
+                                    Registrar Ajuste
+                                </Button>
+                            </Link>
+                        )}
+                    </div>
                 }
             />
 
@@ -150,7 +147,7 @@ export default function KardexSaldos() {
                     <table className="w-full text-xs">
                         <thead>
                             <tr style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
-                                {['Código', 'Producto', 'Bodega', 'Cantidad', 'Costo Prom.', 'Valor Total', ''].map(h => (
+                                {['#', 'Código', 'Producto', 'Bodega', 'Cantidad', 'Costo Prom.', 'Valor Total', ''].map(h => (
                                     <th key={h} className="text-left px-3 py-3 font-medium text-xs uppercase tracking-wider whitespace-nowrap"
                                         style={{ color: 'var(--text-muted)' }}>{h}</th>
                                 ))}
@@ -159,13 +156,13 @@ export default function KardexSaldos() {
                         <tbody>
                             {saldos.data.length === 0 ? (
                                 <tr>
-                                    <td colSpan={7} className="text-center py-16 text-sm" style={{ color: 'var(--text-muted)' }}>
+                                    <td colSpan={8} className="text-center py-16 text-sm" style={{ color: 'var(--text-muted)' }}>
                                         {soloCriticos
                                             ? 'No hay productos con stock crítico.'
                                             : 'No hay saldos registrados aún.'}
                                     </td>
                                 </tr>
-                            ) : saldos.data.map(saldo => {
+                            ) : saldos.data.map((saldo, idx) => {
                                 const valorTotal = Number(saldo.stock_actual) * Number(saldo.costo_promedio)
                                 const esCritico = saldo.producto_stock_minimo !== undefined &&
                                     Number(saldo.stock_actual) <= Number(saldo.producto_stock_minimo)
@@ -180,6 +177,9 @@ export default function KardexSaldos() {
                                             borderColor: 'var(--border)',
                                             background: esCritico ? 'rgba(245, 158, 11, 0.05)' : undefined,
                                         }}>
+                                        <td className="px-3 py-2.5 text-center" style={{ color: 'var(--text-muted)' }}>
+                                            {(saldos.from ?? 1) + idx}
+                                        </td>
                                         <td className="px-3 py-2.5 font-mono" style={{ color: 'var(--text-muted)' }}>
                                             {codigo}
                                         </td>
@@ -255,7 +255,7 @@ export default function KardexSaldos() {
             <PdfPreviewModal
                 abierto={pdfModal}
                 onCerrar={() => setPdfModal(false)}
-                url={pdfModal ? route('inventario.kardex.reporte.saldos') : ''}
+                url={pdfModal ? route('inventario.kardex.reporte.saldos', filtrosActivos()) : ''}
                 titulo="Inventario General"
                 nombreDescarga="kardex_saldos.pdf"
             />

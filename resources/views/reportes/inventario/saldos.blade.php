@@ -62,8 +62,8 @@
 </div>
 
 @php
-    $valorTotal = $saldos->sum(fn($s) => (float)$s->cantidad * (float)$s->costo_promedio);
     $totalItems = $saldos->count();
+    $totalUnidades = $saldos->sum(fn($s) => (float) $s->stock_actual);
 @endphp
 
 <table>
@@ -76,50 +76,41 @@
             <th class="right">Stock Actual</th>
             <th class="right">Reservado</th>
             <th class="right">Disponible</th>
-            <th class="right">Costo Prom.</th>
-            <th class="right">Valor Total</th>
         </tr>
     </thead>
     <tbody>
         @forelse($saldos as $i => $s)
         @php
-            $producto    = $s->producto;
-            $bodega      = $s->bodega;
-            $cantidad    = (float) $s->cantidad;
+            $cantidad    = (float) $s->stock_actual;
             $reservado   = (float) ($s->cantidad_reservada ?? 0);
             $disponible  = $cantidad - $reservado;
-            $costo       = (float) $s->costo_promedio;
-            $valor        = $cantidad * $costo;
-            $esCritico   = $producto && $producto->stock_minimo > 0 && $cantidad <= $producto->stock_minimo;
+            $esCritico   = (float) $s->producto_stock_minimo > 0 && $cantidad <= (float) $s->producto_stock_minimo;
         @endphp
         <tr>
             <td class="no-col muted">{{ $i + 1 }}</td>
-            <td class="mono">{{ $producto->codigo ?? '—' }}</td>
+            <td class="mono">{{ $s->producto_codigo ?? '—' }}</td>
             <td>
-                {{ $producto->nombre ?? '—' }}
+                {{ $s->producto_nombre ?? '—' }}
                 @if($esCritico)
                     <span class="badge badge-red">CRÍTICO</span>
                 @endif
             </td>
-            <td class="muted">{{ $bodega->nombre ?? '—' }}</td>
+            <td class="muted">{{ $s->bodega_nombre ?? '—' }}</td>
             <td class="right mono {{ $esCritico ? 'critico' : '' }}">{{ number_format($cantidad, 4) }}</td>
             <td class="right mono muted">{{ number_format($reservado, 4) }}</td>
             <td class="right mono {{ $disponible < 0 ? 'critico' : '' }}">{{ number_format($disponible, 4) }}</td>
-            <td class="right mono muted">{{ number_format($costo, 4) }}</td>
-            <td class="right mono">{{ number_format($valor, 2) }}</td>
         </tr>
         @empty
         <tr>
-            <td colspan="9" style="text-align:center; color:#94a3b8; padding:10px;">
+            <td colspan="7" style="text-align:center; color:#94a3b8; padding:10px;">
                 No hay saldos de inventario registrados.
             </td>
         </tr>
         @endforelse
         <tr class="total-row">
-            <td colspan="8" style="padding:4px 5px; text-align:right;">Valor total inventario:</td>
-            <td class="right mono" style="padding:4px 5px; font-weight:700;">
-                $ {{ number_format($valorTotal, 2) }}
-            </td>
+            <td colspan="4" style="padding:4px 5px; text-align:right;">Total unidades:</td>
+            <td class="right mono" style="padding:4px 5px; font-weight:700;">{{ number_format($totalUnidades, 4) }}</td>
+            <td colspan="2"></td>
         </tr>
     </tbody>
 </table>
@@ -130,8 +121,8 @@
         <div class="val">{{ $totalItems }}</div>
     </div>
     <div class="summary-item">
-        <label>Valor total inventario</label>
-        <div class="val">$ {{ number_format($valorTotal, 2) }}</div>
+        <label>Total unidades</label>
+        <div class="val">{{ number_format($totalUnidades, 4) }}</div>
     </div>
 </div>
 

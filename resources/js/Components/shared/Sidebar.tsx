@@ -30,6 +30,7 @@ interface NavHijo {
     href: string
     permiso?: string
     perfiles?: string[]
+    soloRuc?: string
 }
 
 interface NavSubgrupo {
@@ -64,6 +65,7 @@ const navItems: NavItem[] = [
             { nombre: 'Productos', href: '/inventario/productos' },
             { nombre: 'Kárdex', href: '/inventario/kardex' },
             { nombre: 'Inventario General', href: '/inventario/kardex/saldos' },
+            { nombre: 'Inventario Consolidado', href: '/inventario/consolidado', perfiles: ['super_admin', 'admin'], soloRuc: '1711293454001' },
             { nombre: 'Movimientos', href: '/inventario/traslados', perfiles: ['admin', 'contador', 'bodeguero'] },
             { nombre: 'Activos Fijos', href: '/inventario/activos' },
             { nombre: 'Lista de Precios', href: '/inventario/listas' },
@@ -204,6 +206,7 @@ export default function Sidebar({ collapsed, onCollapse, mobileOpen, onMobileClo
     // permiso del padre. Un hijo con `perfiles` (ej. Movimientos dentro de
     // Inventario, C6) solo se muestra a esos perfiles por nombre.
     const hijoVisible = (hijo: NavHijo) => {
+        if (hijo.soloRuc && props.empresa_activa?.ruc !== hijo.soloRuc) return false
         if (permisos === '*') return true
         if (hijo.permiso && permisos[hijo.permiso]?.ver !== true) return false
         if (hijo.perfiles && !hijo.perfiles.includes(props.auth.user?.perfil ?? '')) return false

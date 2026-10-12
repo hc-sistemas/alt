@@ -222,18 +222,38 @@ class KardexController extends Controller
         ]);
     }
 
+    /** Consulta de saldos con los filtros de la pantalla (compartida por pantalla, PDF y Excel). */
+    private function saldosFiltrados(Request $request, $empresaId)
+    {
+        return InventarioSaldo::query()
+            ->join('productos', 'inventario_saldos.producto_id', '=', 'productos.id')
+            ->join('bodegas', 'inventario_saldos.bodega_id', '=', 'bodegas.id')
+            ->where('bodegas.empresa_id', $empresaId)
+            ->when($request->bodega_id, fn($q) => $q->where('inventario_saldos.bodega_id', $request->bodega_id))
+            ->when($request->search, fn($q) => $q->where(function ($q) use ($request) {
+                $q->where('productos.codigo', 'ilike', "%{$request->search}%")
+                  ->orWhere('productos.nombre', 'ilike', "%{$request->search}%");
+            }))
+            ->when($request->boolean('solo_criticos'), fn($q) =>
+                $q->whereColumn('inventario_saldos.stock_actual', '<=', 'productos.stock_minimo')
+            )
+            ->select([
+                'inventario_saldos.*',
+                'productos.codigo as producto_codigo',
+                'productos.nombre as producto_nombre',
+                'productos.stock_minimo as producto_stock_minimo',
+                'bodegas.nombre as bodega_nombre',
+            ])
+            ->orderBy('productos.nombre')
+            ->orderBy('bodegas.nombre');
+    }
+
     public function reporteSaldos(Request $request): HttpResponse
     {
         $empresaId = session('empresa_activa_id');
         $empresa   = Empresa::findOrFail($empresaId);
 
-        $saldos = InventarioSaldo::with(['producto', 'bodega'])
-            ->join('productos', 'inventario_saldos.producto_id', '=', 'productos.id')
-            ->join('bodegas', 'inventario_saldos.bodega_id', '=', 'bodegas.id')
-            ->where('bodegas.empresa_id', $empresaId)
-            ->select('inventario_saldos.*')
-            ->orderBy('productos.nombre')
-            ->get();
+        $saldos = $this->saldosFiltrados($request, $empresaId)->get();
 
         $pdf = Pdf::loadView('reportes.inventario.saldos', [
             'saldos'  => $saldos,
@@ -244,6 +264,42 @@ class KardexController extends Controller
         return $request->boolean('download')
             ? $pdf->download('kardex_saldos.pdf')
             : $pdf->stream('kardex_saldos.pdf');
+    }
+
+    /** Excel de saldos: todos los registros que cumplen los filtros (no solo la página en pantalla). Solo cantidades. */
+    public function excelSaldos(Request $request): \Symfony\Component\HttpFoundation\StreamedResponse
+    {
+        $empresaId = session('empresa_activa_id');
+        $saldos    = $this->saldosFiltrados($request, $empresaId)->get();
+
+        $hoja = ($libro = new \PhpOffice\PhpSpreadsheet\Spreadsheet())->getActiveSheet();
+        $hoja->setTitle('Inventario General');
+        $hoja->fromArray(['N°', 'Código', 'Producto', 'Bodega', 'Stock', 'Reservado', 'Disponible'], null, 'A1');
+
+        $fila = 2;
+        foreach ($saldos as $i => $s) {
+            $hoja->fromArray([
+                $i + 1,
+                $s->producto_codigo,
+                $s->producto_nombre,
+                $s->bodega_nombre,
+                (float) $s->stock_actual,
+                (float) $s->cantidad_reservada,
+                (float) $s->stock_actual - (float) $s->cantidad_reservada,
+            ], null, "A{$fila}");
+            $fila++;
+        }
+        $hoja->getStyle('A1:G1')->getFont()->setBold(true);
+        foreach (['A' => 6, 'B' => 16, 'C' => 50, 'D' => 22, 'E' => 12, 'F' => 12, 'G' => 12] as $c => $w) {
+            $hoja->getColumnDimension($c)->setWidth($w);
+        }
+        $hoja->freezePane('A2');
+
+        return response()->streamDownload(function () use ($libro) {
+            (new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($libro))->save('php://output');
+        }, 'kardex_saldos.xlsx', [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ]);
     }
 
     public function ajuste(Request $request): Response
