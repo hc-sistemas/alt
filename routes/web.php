@@ -728,12 +728,13 @@ Route::middleware('auth')->group(function () {
     // y nombres de ruta de siempre (rrhh.asistencia.*) — solo cambia el permiso.
     Route::middleware('permiso:asistencia,ver')->prefix('rrhh/asistencia')->name('rrhh.asistencia.')->group(function () {
         Route::get('/', [AsistenciaController::class, 'index'])->name('index');
-        Route::middleware('permiso:asistencia,crear')->group(function () {
-            Route::post('/entrada', [AsistenciaController::class, 'registrarEntrada'])->name('entrada');
-            Route::post('/salida',  [AsistenciaController::class, 'registrarSalida']) ->name('salida');
-            Route::post('/almuerzo/iniciar',   [AsistenciaController::class, 'iniciarAlmuerzo'])   ->name('almuerzo.iniciar');
-            Route::post('/almuerzo/finalizar', [AsistenciaController::class, 'finalizarAlmuerzo']) ->name('almuerzo.finalizar');
-        });
+        // Marcar es autoservicio: el controller solo opera sobre el colaborador
+        // vinculado al usuario logueado, así que no se exige 'crear' (todos los
+        // empleados deben poder marcar entrada/salida/almuerzo).
+        Route::post('/entrada', [AsistenciaController::class, 'registrarEntrada'])->name('entrada');
+        Route::post('/salida',  [AsistenciaController::class, 'registrarSalida']) ->name('salida');
+        Route::post('/almuerzo/iniciar',   [AsistenciaController::class, 'iniciarAlmuerzo'])   ->name('almuerzo.iniciar');
+        Route::post('/almuerzo/finalizar', [AsistenciaController::class, 'finalizarAlmuerzo']) ->name('almuerzo.finalizar');
     });
 
     // Reportes SRI — antes sin middleware de permiso (CHECKLIST_ERRORES_COMPLICACIONES.md,

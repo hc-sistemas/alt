@@ -5,7 +5,6 @@ import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
 import { cn } from '@/lib/utils'
 import { LogIn, LogOut, Clock, Calendar, AlertCircle, CheckCircle2, Users, Utensils } from 'lucide-react'
-import { usePermiso } from '@/Hooks/usePermiso'
 import type { Colaborador, Asistencia, PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
 
@@ -265,7 +264,6 @@ function CeldaAlmuerzo({ a, limite }: { a: Pick<Asistencia, 'almuerzo_inicio' | 
 export default function AsistenciaIndex() {
     const { colaborador, asistenciaHoy, historial, resumenDia, server_time, almuerzo_limite, es_admin, flash } =
         usePage<Props>().props
-    const { puede } = usePermiso('rrhh')
 
     const [procesando, setProcesando] = useState(false)
 
@@ -281,8 +279,8 @@ export default function AsistenciaIndex() {
 
     const tieneEntrada   = !!(asistenciaHoy?.hora_entrada)
     const tieneSalida    = !!(asistenciaHoy?.hora_salida)
-    const puedeEntrada   = !!colaborador && !tieneEntrada && puede('crear')
-    const puedeSalida    = !!colaborador && tieneEntrada && !tieneSalida && puede('crear')
+    const puedeEntrada   = !!colaborador && !tieneEntrada
+    const puedeSalida    = !!colaborador && tieneEntrada && !tieneSalida
 
     function registrar(tipo: 'entrada' | 'salida') {
         setProcesando(true)
@@ -343,7 +341,7 @@ export default function AsistenciaIndex() {
                             </div>
 
                             {/* Almuerzo / Break: solo con la jornada abierta */}
-                            {asistenciaHoy && tieneEntrada && !tieneSalida && puede('crear') && (
+                            {asistenciaHoy && tieneEntrada && !tieneSalida && (
                                 <div className="flex justify-center">
                                     <PanelAlmuerzo a={asistenciaHoy} limite={almuerzo_limite} serverTime={server_time}
                                         procesando={procesando}
