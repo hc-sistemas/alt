@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Inventario;
 
 use App\Http\Controllers\Controller;
 use App\Models\Empresa;
-use App\Models\Marca;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -50,9 +49,10 @@ class ConsolidadoController extends Controller
                 DB::raw("COALESCE(m.nombre, '') as marca_nombre")])
             ->when($request->search, fn ($q) => $q->where(function ($q) use ($request) {
                 $q->where('p.codigo', 'ilike', "%{$request->search}%")
-                  ->orWhere('p.nombre', 'ilike', "%{$request->search}%");
+                  ->orWhere('p.nombre', 'ilike', "%{$request->search}%")
+                  ->orWhere('p.descripcion', 'ilike', "%{$request->search}%")
+                  ->orWhere('m.nombre', 'ilike', "%{$request->search}%");
             }))
-            ->when($request->marca_id, fn ($q) => $q->where('p.marca_id', $request->marca_id))
             ->orderBy('p.nombre');
     }
 
@@ -97,8 +97,7 @@ class ConsolidadoController extends Controller
             'empresas'  => $bodegas->groupBy('empresa_id')->map(fn ($g, $id) => [
                 'id' => (int) $id, 'nombre' => $g->first()->empresa_nombre ?: $g->first()->razon_social,
             ])->values(),
-            'marcas'    => Marca::where('estado', true)->orderBy('nombre')->get(['id', 'nombre']),
-            'filters'   => $request->only(['search', 'marca_id']),
+            'filters'   => $request->only(['search']),
         ]);
     }
 

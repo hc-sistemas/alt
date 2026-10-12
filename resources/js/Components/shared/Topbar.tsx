@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Bell, Menu, ChevronDown, Sun, Moon, LogOut, User, Building2, Check, CheckCheck } from 'lucide-react'
 import { useThemeStore } from '@/Stores/themeStore'
 import { cn } from '@/lib/utils'
+import { estiloHeaderEmpresa } from '@/lib/empresaHeader'
 import type { PageProps, Notificacion } from '@/types'
 
 interface Props {
@@ -112,24 +113,30 @@ export default function Topbar({ onMobileMenu, pageTitle }: Props) {
         return d.toLocaleDateString('es-EC', { day: '2-digit', month: 'short' })
     }
 
+    // Con barra de color de empresa (Matriz/Import) el texto es siempre blanco, en claro y oscuro.
+    const conColor   = esImport || esMatriz
+    const txtMain    = conColor ? '#FFFFFF' : 'var(--text-main)'
+    const txtMuted   = conColor ? 'rgba(255,255,255,0.8)' : 'var(--text-muted)'
+    const hoverBoton = conColor ? 'hover:bg-white/10' : 'hover:bg-slate-100 dark:hover:bg-slate-800'
+
+    const estilo = estiloHeaderEmpresa(empresa_activa?.ruc)
+
     return (
-        <header className="h-14 flex items-center gap-3 px-4 border-b shrink-0"
-            style={esImport
-                ? { background: '#0A1128', borderColor: '#1B2A55', color: '#FFFFFF' }
-                : esMatriz
-                    ? { background: '#1F6F9F', borderColor: '#17557A', color: '#FFFFFF' }
-                    : { background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+        <header className={cn('flex items-center gap-3 px-4 shrink-0', estilo ? 'min-h-[68px]' : 'h-14 border-b')}
+            style={estilo
+                ? { background: estilo.fondo, borderBottom: `3px solid ${estilo.linea}`, color: '#FFFFFF' }
+                : { background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
 
             {/* Hamburger - móvil */}
             <button onClick={onMobileMenu}
-                className="md:hidden p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                style={{ color: 'var(--text-muted)' }}>
+                className={`md:hidden p-1.5 rounded-lg ${hoverBoton} transition-colors`}
+                style={{ color: txtMuted }}>
                 <Menu className="w-5 h-5" />
             </button>
 
             {/* Título */}
             {pageTitle && (
-                <h1 className="text-base font-semibold" style={{ color: 'var(--text-main)' }}>
+                <h1 className={conColor ? 'text-lg font-bold' : 'text-base font-semibold'} style={{ color: txtMain }}>
                     {pageTitle}
                 </h1>
             )}
@@ -137,7 +144,10 @@ export default function Topbar({ onMobileMenu, pageTitle }: Props) {
             <div className="flex-1" />
 
             {/* Empresa activa — badge fijo cuando el usuario solo tiene una empresa */}
-            {empresas_usuario.length <= 1 && empresa_activa && (
+            {empresas_usuario.length <= 1 && empresa_activa && estilo && (
+                <PillEmpresa nombre={empresa_activa.nombre_comercial ?? ''} estilo={estilo} />
+            )}
+            {empresas_usuario.length <= 1 && empresa_activa && !estilo && (
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm"
                     style={{
                         borderColor: colorEmpresa(empresa_activa.ruc).border,
@@ -152,6 +162,9 @@ export default function Topbar({ onMobileMenu, pageTitle }: Props) {
             {/* Selector empresa */}
             {empresas_usuario.length > 1 && (
                 <div className="relative">
+                    {estilo ? (
+                        <PillEmpresa nombre={empresa_activa?.nombre_comercial ?? 'Empresa'} estilo={estilo} onClick={() => setEmpresaMenuOpen(!empresaMenuOpen)} />
+                    ) : (
                     <button
                         onClick={() => setEmpresaMenuOpen(!empresaMenuOpen)}
                         className="flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm transition-colors hover:opacity-80"
@@ -165,6 +178,7 @@ export default function Topbar({ onMobileMenu, pageTitle }: Props) {
                         <span className="max-w-32 truncate font-medium">{empresa_activa?.nombre_comercial ?? 'Empresa'}</span>
                         <ChevronDown className="w-3 h-3" />
                     </button>
+                    )}
 
                     {empresaMenuOpen && (
                         <>
@@ -199,8 +213,8 @@ export default function Topbar({ onMobileMenu, pageTitle }: Props) {
             <div className="relative">
                 <button
                     onClick={toggleNotif}
-                    className="relative p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                    style={{ color: 'var(--text-muted)' }}
+                    className={`relative ${conColor ? 'w-11 h-11 rounded-xl flex items-center justify-center' : 'p-2 rounded-lg'} ${hoverBoton} transition-colors`}
+                    style={{ color: txtMuted }}
                 >
                     <Bell className="w-5 h-5" />
                     {noLeidas > 0 && (
@@ -332,8 +346,8 @@ export default function Topbar({ onMobileMenu, pageTitle }: Props) {
             {/* Toggle tema */}
             <button
                 onClick={toggleTheme}
-                className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                style={{ color: 'var(--text-muted)' }}
+                className={`${conColor ? 'w-11 h-11 rounded-xl flex items-center justify-center' : 'p-2 rounded-lg'} ${hoverBoton} transition-colors`}
+                style={{ color: txtMuted }}
                 title={theme === 'light' ? 'Modo oscuro' : 'Modo claro'}
             >
                 {theme === 'light'
@@ -346,21 +360,21 @@ export default function Topbar({ onMobileMenu, pageTitle }: Props) {
             <div className="relative">
                 <button
                     onClick={() => setUserMenuOpen(!userMenuOpen)}
-                    className="flex items-center gap-2 p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                    className={`flex items-center gap-2 p-1 rounded-lg ${hoverBoton} transition-colors`}
                 >
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold text-black"
-                        style={{ background: '#F59E0B' }}>
+                    <div className={cn('rounded-full flex items-center justify-center text-sm text-black', conColor ? 'w-[38px] h-[38px] font-extrabold' : 'w-8 h-8 font-semibold')}
+                        style={{ background: conColor ? '#F5A30F' : '#F59E0B', color: conColor ? '#1A1204' : undefined }}>
                         {user?.nombre?.charAt(0).toUpperCase() ?? 'U'}
                     </div>
                     <div className="hidden sm:block text-left max-w-28">
-                        <p className="text-xs font-medium leading-none truncate" style={{ color: 'var(--text-main)' }}>
+                        <p className={cn('leading-none truncate', conColor ? 'text-[13px] font-bold' : 'text-xs font-medium')} style={{ color: txtMain }}>
                             {user?.nombre}
                         </p>
-                        <p className="text-xs leading-none mt-0.5 capitalize" style={{ color: 'var(--text-muted)' }}>
+                        <p className={cn('leading-none mt-1 text-xs', !conColor && 'capitalize')} style={{ color: estilo ? estilo.etiqueta : txtMuted }}>
                             {user?.perfil}
                         </p>
                     </div>
-                    <ChevronDown className="w-3 h-3 hidden sm:block" style={{ color: 'var(--text-muted)' }} />
+                    <ChevronDown className="w-3 h-3 hidden sm:block" style={{ color: txtMuted }} />
                 </button>
 
                 {userMenuOpen && (
@@ -391,5 +405,29 @@ export default function Topbar({ onMobileMenu, pageTitle }: Props) {
                 )}
             </div>
         </header>
+    )
+}
+
+function PillEmpresa({ nombre, estilo, onClick }: {
+    nombre: string
+    estilo: NonNullable<ReturnType<typeof estiloHeaderEmpresa>>
+    onClick?: () => void
+}) {
+    const interactivo = !!onClick
+    return (
+        <button type="button" onClick={onClick} disabled={!interactivo}
+            aria-label={`Empresa activa: ${nombre}`}
+            className="flex items-center gap-2.5 h-11 pl-3 pr-3.5 rounded-xl border text-white disabled:cursor-default"
+            style={{ borderColor: 'rgba(255,255,255,0.22)', background: 'rgba(255,255,255,0.08)' }}>
+            <span className="w-2.5 h-2.5 rounded-full shrink-0"
+                style={{ background: estilo.punto, boxShadow: `0 0 0 4px ${estilo.punto}47` }} />
+            <span className="flex flex-col items-start leading-[1.15]">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: estilo.etiqueta }}>
+                    Empresa activa
+                </span>
+                <span className="text-sm font-bold max-w-40 truncate">{nombre}</span>
+            </span>
+            {interactivo && <ChevronDown className="w-4 h-4" style={{ color: estilo.etiqueta }} />}
+        </button>
     )
 }

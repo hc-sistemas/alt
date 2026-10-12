@@ -22,19 +22,17 @@ interface Props extends PageProps {
     productos: PaginatedData<FilaConsolidado> | null
     bodegas: BodegaCol[]
     empresas: { id: number; nombre: string }[]
-    marcas: { id: number; nombre: string }[]
-    filters: { search?: string; marca_id?: string }
+    filters: { search?: string }
 }
 
 const fmt = (n: number) => Number(n).toLocaleString('es-EC', { maximumFractionDigits: 2 })
 
 export default function ConsolidadoIndex() {
-    const { productos, bodegas, empresas, marcas, filters } = usePage<Props>().props
+    const { productos, bodegas, empresas, filters } = usePage<Props>().props
 
     const [search, setSearch]   = useState(filters.search ?? '')
-    const [marcaId, setMarcaId] = useState(filters.marca_id ?? '')
 
-    const filtros = () => ({ search: search || undefined, marca_id: marcaId || undefined })
+    const filtros = () => ({ search: search || undefined })
 
     function buscar() {
         router.get(route('inventario.consolidado.index'), { ...filtros(), buscado: '1' }, { preserveState: false })
@@ -60,19 +58,12 @@ export default function ConsolidadoIndex() {
 
             <div className="p-6">
                 <div className="flex items-center gap-3 mb-4 flex-wrap">
-                    <select value={marcaId} onChange={e => setMarcaId(e.target.value)}
-                        className="input-field shrink-0"
-                        style={{ ...border, color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
-                        <option value="">Todas las marcas</option>
-                        {marcas.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}
-                    </select>
-
                     <div className="flex shrink-0 ml-auto" role="group">
                         <div className="relative">
                             <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
                             <Input value={search} onChange={e => setSearch(e.target.value)}
                                 onKeyDown={e => e.key === 'Enter' && buscar()}
-                                placeholder="Código o nombre..." className="pl-9 w-52 rounded-r-none border-r-0" />
+                                placeholder="Código, descripción o marca..." className="pl-9 w-72 rounded-r-none border-r-0" />
                         </div>
                         <button className="flex items-center justify-center w-9 h-9 rounded-r-md border text-sm font-medium shrink-0"
                             style={{ background: 'var(--primary)', color: 'black', borderColor: 'var(--primary)' }}

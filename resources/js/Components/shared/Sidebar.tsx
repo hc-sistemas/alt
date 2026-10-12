@@ -1,3 +1,4 @@
+import { estiloHeaderEmpresa } from '@/lib/empresaHeader'
 import { Link, usePage } from '@inertiajs/react'
 import { useState, useEffect, useMemo } from 'react'
 import {
@@ -264,20 +265,22 @@ export default function Sidebar({ collapsed, onCollapse, mobileOpen, onMobileClo
 
     const isActive = (href: string) => href === hrefActivo
 
+    const estiloLogo = estiloHeaderEmpresa(props.empresa_activa?.ruc)
+
     const content = (
         <div className="flex flex-col h-full"
             style={{ background: 'var(--sidebar-bg)', color: 'var(--sidebar-text)' }}>
 
             {/* Logo */}
-            <div className="flex items-center h-14 px-4 shrink-0 border-b border-slate-700/50"
-                style={{ background: props.empresa_activa?.ruc === '1755265848001' ? '#0A1128' : props.empresa_activa?.ruc === '1711293454001' ? '#1F6F9F' : undefined }}>
+            <div className={cn('flex items-center px-4 shrink-0', estiloLogo ? 'min-h-[68px]' : 'h-14 border-b border-slate-700/50')}
+                style={estiloLogo ? { background: estiloLogo.fondo, borderBottom: `3px solid ${estiloLogo.linea}` } : undefined}>
                 {collapsed ? (
                     <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
                         style={{ background: 'rgba(245,158,11,0.2)', border: '1px solid rgba(245,158,11,0.3)' }}>
                         <span className="text-base font-bold" style={{ color: '#F59E0B' }}>A</span>
                     </div>
                 ) : (
-                    <img src="/images/logo-altamira.png" alt="Altamira Light & Sound" className="h-9 w-auto" />
+                    <img src="/images/logo-altamira.png" alt="Altamira Light & Sound" className={estiloLogo ? "h-[46px] w-auto max-w-[192px] object-contain" : "h-9 w-auto"} />
                 )}
             </div>
 
