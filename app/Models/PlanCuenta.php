@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\DB;
 
 class PlanCuenta extends Model
 {
@@ -72,9 +73,29 @@ class PlanCuenta extends Model
             $total = $this->hijos()->count();
             return "No se puede eliminar \"{$this->nombre}\": tiene {$total} cuenta(s) hija(s). Elimina primero las cuentas hijas.";
         }
-        if ($this->total_asientos > 0) {
-            return "No se puede eliminar \"{$this->nombre}\": tiene {$this->total_asientos} asiento(s) registrado(s).";
+        if ($this->total_asientos > 0 || DB::table('asiento_detalles')->where('cuenta_id', $this->id)->exists()) {
+            return "No se puede eliminar \"{$this->nombre}\": tiene asientos contables registrados.";
         }
+
+        // Referencias que la base rechazaría con un error 500 (o que dejarían datos huérfanos).
+        $parametros = DB::table('parametros_contables')->where('cuenta_id', $this->id)->pluck('codigo');
+        if ($parametros->isNotEmpty()) {
+            return "No se puede eliminar \"{$this->nombre}\": está asignada en Parámetros Contables ({$parametros->implode(', ')}). "
+                . 'Asigna otra cuenta a esos parámetros y vuelve a intentarlo.';
+        }
+
+        $usos = [
+            ['bancos_cajas', 'cuenta_id', 'bancos y cajas'],
+            ['compra_detalles', 'cuenta_id', 'detalles de compras'],
+            ['movimientos_bancarios', 'cuenta_contrapartida_id', 'movimientos bancarios'],
+            ['activos_fijos', 'cuenta_id', 'activos fijos'],
+        ];
+        foreach ($usos as [$tabla, $columna, $etiqueta]) {
+            if (DB::table($tabla)->where($columna, $this->id)->exists()) {
+                return "No se puede eliminar \"{$this->nombre}\": está en uso en {$etiqueta}.";
+            }
+        }
+
         return null;
     }
 }
