@@ -10,7 +10,9 @@ use App\Models\Nomina;
 use App\Models\NominaDetalle;
 use App\Models\PuestoTrabajo;
 use App\Models\Usuario;
+use App\Services\AuditoriaService;
 use App\Services\NominaCalculoService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -261,5 +263,113 @@ class ColaboradorController extends Controller
         }
 
         return back()->with('success', $mensaje);
+    }
+
+    // ─── Eliminación ─────────────────────────────────────────────────────────
+
+    /**
+     * Revisa qué tiene asociado el colaborador.
+     *  - bloqueos: impiden eliminar (afectarían contabilidad o hay dinero pendiente).
+     *  - datos:    se borrarían junto con el colaborador (requieren confirmación).
+     */
+    private function dependencias(Colaborador $colaborador): array
+    {
+        $id = $colaborador->id;
+        $bloqueos = [];
+        $datos = [];
+
+        $nominasCerradas = NominaDetalle::where('colaborador_id', $id)
+            ->join('nominas', 'nominas.id', '=', 'nomina_detalles.nomina_id')
+            ->where('nominas.estado', '!=', 'borrador')
+            ->count();
+        if ($nominasCerradas > 0) {
+            $bloqueos[] = "Participa en {$nominasCerradas} nómina(s) procesada(s) o pagada(s) con asiento contable.";
+        }
+
+        $liqCerradas = DB::table('liquidaciones')->where('colaborador_id', $id)
+            ->where(fn ($q) => $q->where('estado', '!=', 'borrador')->orWhereNotNull('asiento_id'))
+            ->count();
+        if ($liqCerradas > 0) {
+            $bloqueos[] = "Tiene {$liqCerradas} liquidación(es) confirmada(s) o con asiento contable.";
+        }
+
+        $prestamosPend = DB::table('prestamos_empleados')->where('colaborador_id', $id)
+            ->where('saldo', '>', 0)->count();
+        if ($prestamosPend > 0) {
+            $bloqueos[] = "Tiene {$prestamosPend} préstamo(s)/anticipo(s) con saldo pendiente.";
+        }
+
+        $conteos = [
+            'asistencia(s)'                      => DB::table('asistencias')->where('colaborador_id', $id)->count(),
+            'aprobación(es) de horas extra'      => DB::table('horas_extras_aprobacion')->where('colaborador_id', $id)->count(),
+            'préstamo(s)/anticipo(s)'            => DB::table('prestamos_empleados')->where('colaborador_id', $id)->count(),
+            'línea(s) de nómina en borrador'     => NominaDetalle::where('colaborador_id', $id)->count() - $nominasCerradas,
+            'liquidación(es) en borrador'        => DB::table('liquidaciones')->where('colaborador_id', $id)->count() - $liqCerradas,
+        ];
+        foreach ($conteos as $etiqueta => $n) {
+            if ($n > 0) {
+                $datos[] = "{$n} {$etiqueta}";
+            }
+        }
+
+        return ['bloqueos' => $bloqueos, 'datos' => $datos];
+    }
+
+    private function asegurarEmpresaActiva(Colaborador $colaborador): void
+    {
+        abort_unless((int) $colaborador->empresa_id === (int) session('empresa_activa_id'), 404);
+    }
+
+    public function dependenciasJson(Colaborador $colaborador): JsonResponse
+    {
+        $this->asegurarEmpresaActiva($colaborador);
+
+        return response()->json($this->dependencias($colaborador));
+    }
+
+    public function destroy(Request $request, Colaborador $colaborador, AuditoriaService $auditoria): RedirectResponse
+    {
+        $this->asegurarEmpresaActiva($colaborador);
+
+        $dep = $this->dependencias($colaborador);
+
+        if ($dep['bloqueos']) {
+            return back()->with('error',
+                'No se puede eliminar: ' . implode(' ', $dep['bloqueos']) . ' Desactívalo en su lugar.');
+        }
+
+        if ($dep['datos'] && !$request->boolean('confirmar')) {
+            return back()->with('error',
+                'Este colaborador tiene datos asociados. Debes confirmar la eliminación.');
+        }
+
+        $nombre = "{$colaborador->apellidos} {$colaborador->nombres} ({$colaborador->cedula_ruc})";
+        $resumen = $dep['datos'] ? ' Datos eliminados: ' . implode(', ', $dep['datos']) . '.' : '';
+
+        DB::transaction(function () use ($colaborador) {
+            $id = $colaborador->id;
+
+            // Las nóminas en borrador pierden una línea: se recalculan sus totales.
+            $nominaIds = NominaDetalle::where('colaborador_id', $id)->pluck('nomina_id')->unique();
+            NominaDetalle::where('colaborador_id', $id)->delete();
+            foreach ($nominaIds as $nominaId) {
+                $t = NominaDetalle::where('nomina_id', $nominaId)
+                    ->selectRaw('COALESCE(SUM(total_ingresos),0) i, COALESCE(SUM(total_egresos),0) e, COALESCE(SUM(neto_pagar),0) n')
+                    ->first();
+                Nomina::where('id', $nominaId)->update([
+                    'total_ingresos' => $t->i, 'total_egresos' => $t->e, 'total_neto' => $t->n,
+                ]);
+            }
+
+            DB::table('liquidaciones')->where('colaborador_id', $id)->delete();
+
+            // Asistencias, horas extra y préstamos se eliminan en cascada (FK).
+            // usuarios.colaborador_id pasa a NULL (FK SET NULL); el usuario se conserva.
+            $colaborador->delete();
+        });
+
+        $auditoria->documento('eliminar', 'rrhh', 'colaboradores', $colaborador->id, "Colaborador {$nombre} eliminado.{$resumen}");
+
+        return back()->with('success', "Colaborador {$colaborador->apellidos} {$colaborador->nombres} eliminado.");
     }
 }

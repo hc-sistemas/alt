@@ -9,7 +9,7 @@ import { Input } from '@/Components/ui/input'
 import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
 import {
-    Plus, Pencil, ToggleLeft, ToggleRight, X, Search,
+    Plus, Pencil, Trash2, ToggleLeft, ToggleRight, X, Search,
     User, Briefcase, DollarSign, CreditCard, Phone, Lock, Clock,
 } from 'lucide-react'
 import { usePermiso } from '@/Hooks/usePermiso'
@@ -646,6 +646,55 @@ export default function ColaboradoresIndex() {
         })
     }
 
+    async function eliminar(c: Colaborador) {
+        const nombre = `${c.apellidos} ${c.nombres}`
+        let dep: { bloqueos: string[]; datos: string[] }
+        try {
+            const res = await fetch(route('rrhh.colaboradores.dependencias', c.id), {
+                headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                credentials: 'same-origin',
+            })
+            if (!res.ok) throw new Error()
+            dep = await res.json()
+        } catch {
+            notify.error('No se pudo verificar los datos del colaborador.')
+            return
+        }
+
+        const lista = (items: string[]) =>
+            `<ul style="text-align:left;margin:8px 0 0 18px;list-style:disc">${items.map(i => `<li>${i}</li>`).join('')}</ul>`
+
+        if (dep.bloqueos.length) {
+            Swal.fire({
+                title: 'No se puede eliminar',
+                html: `<b>${nombre}</b>${lista(dep.bloqueos)}<p style="margin-top:12px">Puedes <b>desactivarlo</b> para conservar el historial.</p>`,
+                icon: 'error',
+                confirmButtonText: 'Entendido',
+            })
+            return
+        }
+
+        const conDatos = dep.datos.length > 0
+        const res = await Swal.fire({
+            title: conDatos ? '¿Eliminar colaborador y sus datos?' : '¿Eliminar colaborador?',
+            html: conDatos
+                ? `<b>${nombre}</b><p style="margin-top:8px">Tiene datos asociados que se eliminarán:</p>${lista(dep.datos)}<p style="margin-top:12px;color:#dc2626"><b>Esta acción no se puede deshacer y los datos no se podrán recuperar.</b></p>`
+                : `<b>${nombre}</b><p style="margin-top:8px">No tiene datos asociados. Esta acción no se puede deshacer.</p>`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#dc2626',
+            confirmButtonText: conDatos ? 'Sí, eliminar todo' : 'Sí, eliminar',
+            cancelButtonText: 'Cancelar',
+        })
+        if (!res.isConfirmed) return
+
+        router.delete(route('rrhh.colaboradores.destroy', c.id), {
+            data: { confirmar: conDatos ? 1 : 0 },
+            preserveScroll: true,
+            onSuccess: () => notify.ok('Colaborador eliminado.'),
+        })
+    }
+
     const valorHora = (sueldo: number) => (sueldo / 240).toFixed(4)
 
     return (
@@ -784,6 +833,15 @@ export default function ColaboradoresIndex() {
                                                         ? <ToggleRight className="w-4 h-4 text-emerald-500" />
                                                         : <ToggleLeft  className="w-4 h-4 text-gray-400" />
                                                     }
+                                                </button>
+                                            )}
+                                            {puede('eliminar') && (
+                                                <button
+                                                    onClick={() => eliminar(c)}
+                                                    className="p-1.5 rounded-lg transition-colors hover:bg-red-100 dark:hover:bg-red-900/30"
+                                                    title="Eliminar"
+                                                >
+                                                    <Trash2 className="w-3.5 h-3.5 text-red-500" />
                                                 </button>
                                             )}
                                         </div>

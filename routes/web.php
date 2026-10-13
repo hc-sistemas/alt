@@ -639,6 +639,10 @@ Route::middleware('auth')->group(function () {
                 Route::put('/{colaborador}',             [ColaboradorController::class, 'update']) ->name('update');
                 Route::patch('/{colaborador}/toggle',    [ColaboradorController::class, 'toggle']) ->name('toggle');
             });
+            Route::middleware('permiso:rrhh,eliminar')->group(function () {
+                Route::get('/{colaborador}/dependencias', [ColaboradorController::class, 'dependenciasJson'])->name('dependencias');
+                Route::delete('/{colaborador}',           [ColaboradorController::class, 'destroy'])         ->name('destroy');
+            });
         });
 
         Route::prefix('departamentos')->name('departamentos.')->group(function () {
