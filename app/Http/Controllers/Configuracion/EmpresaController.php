@@ -38,8 +38,37 @@ class EmpresaController extends Controller
             'secuenciales' => $empresa->secuenciales,
             'firma' => [
                 'cargada' => (bool) ($empresa->firma_electronica_path && $empresa->firma_electronica_pass),
+                'vence' => $this->vencimientoFirma($empresa),
             ],
         ]);
+    }
+
+    /** Fecha (Y-m-d) de caducidad del certificado; si no está guardada, la lee del .p12 ya cargado. */
+    private function vencimientoFirma(Empresa $empresa): ?string
+    {
+        if ($empresa->firma_electronica_vence) {
+            return $empresa->firma_electronica_vence instanceof \DateTimeInterface
+                ? $empresa->firma_electronica_vence->format('Y-m-d')
+                : substr((string) $empresa->firma_electronica_vence, 0, 10);
+        }
+        if (!$empresa->firma_electronica_path || !$empresa->firma_electronica_pass) {
+            return null;
+        }
+        try {
+            $disk = \Illuminate\Support\Facades\Storage::disk('local');
+            if (!$disk->exists($empresa->firma_electronica_path)) {
+                return null;
+            }
+            $clave = Crypt::decryptString($empresa->firma_electronica_pass);
+            if (@openssl_pkcs12_read($disk->get($empresa->firma_electronica_path), $certs, $clave)) {
+                $info = openssl_x509_parse($certs['cert']);
+                $vence = date('Y-m-d', $info['validTo_time_t']);
+                $empresa->forceFill(['firma_electronica_vence' => $vence])->saveQuietly();
+                return $vence;
+            }
+        } catch (\Throwable) {
+        }
+        return null;
     }
 
     public function update(Request $request): RedirectResponse
@@ -156,6 +185,7 @@ class EmpresaController extends Controller
         $empresa->update([
             'firma_electronica_path' => $ruta,
             'firma_electronica_pass' => Crypt::encryptString($request->clave),
+            'firma_electronica_vence' => $vence,
         ]);
 
         $this->auditoria->documento('editar', 'configuracion', 'empresas', $empresa->id,

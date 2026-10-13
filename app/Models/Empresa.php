@@ -23,7 +23,7 @@ class Empresa extends Model
         'ambiente_sri', 'cod_establecimiento', 'cod_punto_emision',
         'obligado_contabilidad', 'contribuyente_especial',
         'agente_retencion', 'firma_electronica_path', 'firma_electronica_pass',
-        'estado',
+        'firma_electronica_vence', 'estado',
     ];
 
     protected $hidden = ['firma_electronica_path', 'firma_electronica_pass'];

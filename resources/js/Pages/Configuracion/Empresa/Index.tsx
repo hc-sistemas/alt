@@ -22,7 +22,16 @@ interface Props extends PageProps {
     empresa: Empresa & { centrosCosto?: CentroCosto[]; secuenciales?: Secuencial[]; siguiente_factura?: number | null }
     centros_costo: CentroCosto[]
     secuenciales: Secuencial[]
-    firma: { cargada: boolean }
+    firma: { cargada: boolean; vence: string | null }
+}
+
+function estadoVencimiento(vence: string) {
+    const [y, m, d] = vence.split('-').map(Number)
+    const dias = Math.ceil((new Date(y, m - 1, d, 23, 59, 59).getTime() - Date.now()) / 86400000)
+    const fecha = `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${y}`
+    if (dias < 0) return { fecha, dias, variant: 'danger' as const, texto: `Vencida hace ${-dias} día(s)` }
+    if (dias <= 30) return { fecha, dias, variant: 'warning' as const, texto: `Vence en ${dias} día(s) — renovar pronto` }
+    return { fecha, dias, variant: 'success' as const, texto: `Vigente · faltan ${dias} días` }
 }
 
 export default function EmpresaIndex() {
@@ -206,6 +215,10 @@ export default function EmpresaIndex() {
                             <KeyRound className="w-5 h-5" style={{ color: '#F59E0B' }} />
                             <h2 className="text-base font-semibold" style={{ color: 'var(--text-main)' }}>Firma electrónica (SRI)</h2>
                             <Badge variant={firma.cargada ? 'success' : 'warning'}>{firma.cargada ? 'Cargada' : 'Sin cargar'}</Badge>
+                            {firma.cargada && firma.vence && (() => {
+                                const v = estadoVencimiento(firma.vence)
+                                return <Badge variant={v.variant}>Caduca: {v.fecha} · {v.texto}</Badge>
+                            })()}
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div className="space-y-1.5">
