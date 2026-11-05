@@ -193,7 +193,7 @@ export default function UsuariosIndex() {
                                         </td>
                                         <td className="px-4 py-3 text-xs hidden md:table-cell"
                                             style={{ color: 'var(--text-muted)' }}>
-                                            {usuario.empresa?.nombre_comercial ?? '—'}
+                                            {usuario.empresa?.nombre_selector ?? usuario.empresa?.nombre_comercial ?? '—'}
                                         </td>
                                         <td className="px-4 py-3 hidden lg:table-cell">
                                             {colabVinculado ? (

@@ -5,7 +5,7 @@ namespace App\Http\Controllers\Bancos;
 use App\Http\Controllers\Controller;
 use App\Models\BancoCaja;
 use App\Models\CentroCosto;
-use App\Models\PlanCuenta;
+use App\Models\ParametroContable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -15,18 +15,22 @@ use Inertia\Response;
 class BancoCajaController extends Controller
 {
     /**
-     * Fuente única de verdad para la cuenta contable automática por tipo.
-     * Códigos con cero a la izquierda — deben coincidir EXACTAMENTE con el
-     * formato real de plan_cuentas.codigo (verificado contra la BD, no
-     * asumido: '1.1.1.3' nunca coincide con '1.1.1.03').
-     * Se expone tal cual al frontend (ver index()) para que no exista una
-     * segunda copia hardcodeada que pueda desincronizarse otra vez.
+     * La cuenta contable se asigna sola y no se edita (02-06 §2.1, PC-BAN-01).
+     * Los códigos viven en parametros_contables; aquí solo se dice qué parámetro
+     * corresponde a cada tipo de caja y a cada banco con su tipo de cuenta.
      */
-    private const CUENTAS_AUTO = [
-        'banco'      => '1.1.1.03',
-        'caja'       => '1.1.1.01',
-        'caja_chica' => '1.1.1.02',
-        'tarjeta'    => '1.1.1.05',
+    private const PARAM_POR_TIPO = [
+        'caja'       => 'cta_caja_general',
+        'caja_chica' => 'cta_cajas_chicas',
+        'tarjeta'    => 'cta_vouchers',
+    ];
+
+    /** Bancos admitidos: parte del nombre, tipo de cuenta que les corresponde y parámetro. */
+    private const REGLAS_BANCO = [
+        ['patron' => 'pichincha',  'tipo_cuenta' => 'corriente', 'param' => 'cta_banco_pichincha',  'etiqueta' => 'Banco Pichincha (corriente)'],
+        ['patron' => 'produbanco', 'tipo_cuenta' => 'ahorros',   'param' => 'cta_banco_produbanco', 'etiqueta' => 'ProduBanco (ahorros)'],
+        ['patron' => 'guayaquil',  'tipo_cuenta' => 'ahorros',   'param' => 'cta_banco_guayaquil',  'etiqueta' => 'Banco de Guayaquil (ahorros)'],
+        ['patron' => 'exterior',   'tipo_cuenta' => null,        'param' => 'cta_bancos_exterior',  'etiqueta' => 'Bancos del exterior'],
     ];
 
     /** Tipos de bancos_cajas que requieren centro de costo obligatorio (petición del cliente: "al crear una Caja"). */
@@ -59,11 +63,6 @@ class BancoCajaController extends Controller
                 'estado'          => $b->estado,
             ]);
 
-        $cuentas = PlanCuenta::where('permite_asientos', true)
-            ->where('estado', true)
-            ->orderBy('codigo')
-            ->get(['id', 'codigo', 'nombre']);
-
         $centrosCosto = CentroCosto::where('empresa_id', $empresaId)
             ->where('estado', true)
             ->orderBy('nombre')
@@ -71,9 +70,9 @@ class BancoCajaController extends Controller
 
         return Inertia::render('Bancos/BancosCajas/Index', [
             'bancos'        => $bancos,
-            'cuentas'       => $cuentas,
             'centrosCosto'  => $centrosCosto,
-            'cuentasAutoMap' => self::CUENTAS_AUTO,
+            'reglasBanco'   => $this->reglasParaPantalla((int) $empresaId),
+            'cuentasFijas'  => $this->cuentasFijasParaPantalla((int) $empresaId),
             'tiposRequierenCentroCosto' => self::TIPOS_REQUIEREN_CENTRO_COSTO,
             'stats'   => [
                 'total_bancos'  => $bancos->where('tipo', 'banco')->count(),
@@ -92,16 +91,18 @@ class BancoCajaController extends Controller
             'nombre'          => 'required|string|max:150',
             'num_cuenta'      => 'nullable|string|max:30',
             'tipo_cuenta'     => 'nullable|in:ahorros,corriente',
-            'cuenta_id'       => 'nullable|exists:plan_cuentas,id',
             'centro_costo_id' => [
                 Rule::requiredIf(in_array($request->tipo, self::TIPOS_REQUIEREN_CENTRO_COSTO)),
-                'nullable', 'exists:centros_costo,id',
+                'nullable', 'exists_empresa:centros_costo',
             ],
             'saldo_inicial'   => 'numeric|min:0',
         ]);
 
-        $cuentaId = $request->cuenta_id
-            ?: ($this->getCuentaContableAutomatica($request->tipo, $empresaId)?->id);
+        [$cuenta, $error] = $this->resolverCuenta($request->tipo, $request->nombre, $request->tipo_cuenta, (int) $empresaId);
+        if ($error) {
+            return back()->withErrors(['nombre' => $error])->withInput();
+        }
+        $cuentaId = $cuenta->id;
 
         $banco = BancoCaja::create([
             ...$request->only(['tipo', 'nombre', 'num_cuenta', 'tipo_cuenta', 'saldo_inicial', 'centro_costo_id']),
@@ -120,15 +121,17 @@ class BancoCajaController extends Controller
             'nombre'          => 'required|string|max:150',
             'num_cuenta'      => 'nullable|string|max:30',
             'tipo_cuenta'     => 'nullable|in:ahorros,corriente',
-            'cuenta_id'       => 'nullable|exists:plan_cuentas,id',
             'centro_costo_id' => [
                 Rule::requiredIf(in_array($banco->tipo, self::TIPOS_REQUIEREN_CENTRO_COSTO)),
-                'nullable', 'exists:centros_costo,id',
+                'nullable', 'exists_empresa:centros_costo',
             ],
         ]);
 
-        $cuentaId = $request->cuenta_id
-            ?: ($this->getCuentaContableAutomatica($banco->tipo, session('empresa_activa_id'))?->id);
+        [$cuenta, $error] = $this->resolverCuenta($banco->tipo, $request->nombre, $request->tipo_cuenta, (int) session('empresa_activa_id'));
+        if ($error) {
+            return back()->withErrors(['nombre' => $error])->withInput();
+        }
+        $cuentaId = $cuenta->id;
 
         $banco->update([
             ...$request->only(['nombre', 'num_cuenta', 'tipo_cuenta', 'centro_costo_id']),
@@ -138,17 +141,61 @@ class BancoCajaController extends Controller
         return back()->with('success', "{$banco->nombre} actualizado correctamente.");
     }
 
-    private function getCuentaContableAutomatica(string $tipo, int $empresaId): ?PlanCuenta
+    /**
+     * Cuenta contable que corresponde a un banco o caja. Devuelve [cuenta, error].
+     * Si el banco no tiene cuenta para su tipo, no se guarda (02-06 §2.1).
+     */
+    private function resolverCuenta(string $tipo, ?string $nombre, ?string $tipoCuenta, int $empresaId): array
     {
-        $codigo = self::CUENTAS_AUTO[$tipo] ?? null;
-        if (!$codigo) return null;
+        if ($tipo !== 'banco') {
+            $param  = self::PARAM_POR_TIPO[$tipo] ?? null;
+            $cuenta = $param ? ParametroContable::getCuenta($param, $empresaId) : null;
+            return $cuenta
+                ? [$cuenta, null]
+                : [null, "No hay cuenta contable configurada para el tipo {$tipo}. Configúrela en Contabilidad → Parámetros Contables."];
+        }
 
-        return PlanCuenta::where('codigo', $codigo)
-            ->where(function ($q) use ($empresaId) {
-                $q->whereNull('empresa_id')->orWhere('empresa_id', $empresaId);
-            })
-            ->where('estado', true)
-            ->first();
+        $nombreNorm = mb_strtolower((string) $nombre);
+        foreach (self::REGLAS_BANCO as $regla) {
+            if (!str_contains($nombreNorm, $regla['patron'])) {
+                continue;
+            }
+            if ($regla['tipo_cuenta'] && $regla['tipo_cuenta'] !== $tipoCuenta) {
+                return [null, "{$regla['etiqueta']}: este banco solo tiene cuenta contable de tipo {$regla['tipo_cuenta']}. Seleccione el tipo correcto."];
+            }
+            $cuenta = ParametroContable::getCuenta($regla['param'], $empresaId);
+            return $cuenta
+                ? [$cuenta, null]
+                : [null, "El parámetro {$regla['param']} no está configurado. Configúrelo en Contabilidad → Parámetros Contables."];
+        }
+
+        $admitidos = implode(', ', array_column(self::REGLAS_BANCO, 'etiqueta'));
+        return [null, "Este banco no tiene cuenta contable definida, por eso no se puede guardar. Bancos admitidos: {$admitidos}."];
+    }
+
+    /** Reglas de bancos con su cuenta, para mostrar la cuenta en el formulario. */
+    private function reglasParaPantalla(int $empresaId): array
+    {
+        return array_map(function ($r) use ($empresaId) {
+            $c = ParametroContable::getCuenta($r['param'], $empresaId);
+            return [
+                'patron'      => $r['patron'],
+                'tipo_cuenta' => $r['tipo_cuenta'],
+                'etiqueta'    => $r['etiqueta'],
+                'cuenta'      => $c ? "{$c->codigo} — {$c->nombre}" : null,
+            ];
+        }, self::REGLAS_BANCO);
+    }
+
+    /** Cuenta fija de caja, caja chica y tarjeta, para mostrarla en el formulario. */
+    private function cuentasFijasParaPantalla(int $empresaId): array
+    {
+        $out = [];
+        foreach (self::PARAM_POR_TIPO as $tipo => $param) {
+            $c = ParametroContable::getCuenta($param, $empresaId);
+            $out[$tipo] = $c ? "{$c->codigo} — {$c->nombre}" : null;
+        }
+        return $out;
     }
 
     public function toggleEstado(BancoCaja $banco): RedirectResponse

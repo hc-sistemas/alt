@@ -114,9 +114,13 @@ class ColaboradorController extends Controller
             'estado_civil'        => 'nullable|string|max:20',
             'fecha_ingreso'       => 'required|date',
             'fecha_salida'        => 'nullable|date|after_or_equal:fecha_ingreso',
-            'tipo_contrato'       => 'nullable|in:indefinido,plazo_fijo,honorarios',
-            'cargo'               => 'nullable|string|max:100',
-            'departamento_id'     => 'nullable|integer|exists:departamentos,id',
+            // Campos obligatorios para generar nómina (02-09 §2.2): al crear la ficha se exigen cargo,
+            // departamento, tipo de contrato y, en relación de dependencia, el número de afiliación al IESS.
+            'tipo_relacion'       => 'nullable|in:dependencia,servicios',
+            'numero_iess'         => [$colaboradorId ? 'nullable' : 'required_unless:tipo_relacion,servicios', 'nullable', 'string', 'max:20'],
+            'tipo_contrato'       => [$colaboradorId ? 'nullable' : 'required', 'in:indefinido,plazo_fijo,honorarios'],
+            'cargo'               => [$colaboradorId ? 'nullable' : 'required', 'string', 'max:100'],
+            'departamento_id'     => [$colaboradorId ? 'nullable' : 'required', 'integer', 'exists_empresa:departamentos'],
             'comision_porcentaje' => 'numeric|min:0|max:100',
             'sueldo_base'         => 'required|numeric|min:0',
             'decimo_tercero'      => 'in:acumula,mensualiza',
@@ -135,7 +139,13 @@ class ColaboradorController extends Controller
     {
         $empresaId = session('empresa_activa_id');
 
-        $data = $request->validate($this->reglasBase());
+        $data = $request->validate($this->reglasBase(), [
+            'cargo.required'           => 'El cargo es obligatorio.',
+            'departamento_id.required' => 'El departamento es obligatorio.',
+            'tipo_contrato.required'   => 'El tipo de contrato es obligatorio.',
+            'numero_iess.required_unless' => 'El número de afiliación al IESS es obligatorio en relación de dependencia.',
+        ]);
+        $this->validarFormaPago($data);
         $this->resolverDepartamento($data, (int) $empresaId);
 
         $usuario = null;
@@ -166,6 +176,23 @@ class ColaboradorController extends Controller
         }
 
         return back()->with('success', $mensaje);
+    }
+
+    /**
+     * Forma de pago de la ficha (02-09 §2.2): si se paga por transferencia, banco, tipo y número de
+     * cuenta son obligatorios los tres; sin ninguno, el pago es por cheque.
+     */
+    private function validarFormaPago(array $data): void
+    {
+        $banco  = trim((string) ($data['banco'] ?? ''));
+        $cuenta = trim((string) ($data['numero_cuenta'] ?? ''));
+        $tipo   = trim((string) ($data['tipo_cuenta'] ?? ''));
+
+        if (($banco !== '' || $cuenta !== '' || $tipo !== '') && ($banco === '' || $cuenta === '' || $tipo === '')) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'numero_cuenta' => 'Pago por transferencia: banco, tipo de cuenta y número de cuenta son obligatorios. Si se paga con cheque, déjelos vacíos.',
+            ]);
+        }
     }
 
     // Resuelve el departamento del catálogo (debe ser de la misma empresa) y guarda

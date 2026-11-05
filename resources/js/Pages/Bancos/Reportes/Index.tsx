@@ -85,6 +85,21 @@ function ModalPdf({ url, titulo, cargando, error, onClose }: {
     )
 }
 
+// ─── Reportes adicionales (02-06 §2.8) ────────────────────────────────────────
+
+const REPORTES_ADICIONALES = [
+    { clave: 'conciliacion',             nombre: 'Conciliación bancaria',          ayuda: 'Cálculo y partidas pendientes de la última conciliación (o del banco elegido)' },
+    { clave: 'cheques-pendientes',       nombre: 'Cheques pendientes de cobro',    ayuda: 'Cheques emitidos que aún no se cobran' },
+    { clave: 'cheques-postfechados',     nombre: 'Cheques post fechados recibidos', ayuda: 'Cheques de clientes con fecha futura, hasta su depósito' },
+    { clave: 'tarjetas-por-liquidar',    nombre: 'Tarjetas por liquidar',          ayuda: 'Lotes de tarjeta pendientes de liquidación' },
+    { clave: 'liquidaciones-tarjetas',   nombre: 'Liquidaciones de tarjetas',      ayuda: 'Bruto, comisión, retenciones y neto depositado' },
+    { clave: 'comisiones-tarjetas',      nombre: 'Comisiones de tarjetas',         ayuda: 'Comisión e IVA de la comisión por período y procesador' },
+    { clave: 'retenciones-tarjetas',     nombre: 'Retenciones de tarjetas',        ayuda: 'Retenciones de IVA e IR por período (F104 y ATS)' },
+    { clave: 'saldos-consolidados',      nombre: 'Saldos consolidados',            ayuda: 'Saldo de cada banco y caja de todas las empresas' },
+    { clave: 'libro-vs-mayor',           nombre: 'Libro frente a mayor',           ayuda: 'Saldo de Bancos frente al mayor contable de su cuenta' },
+    { clave: 'diferencias-conciliacion', nombre: 'Diferencias de conciliación',    ayuda: 'Conciliaciones cerradas con diferencia ajustada' },
+]
+
 // ─── Página ───────────────────────────────────────────────────────────────────
 
 export default function BancosReportesIndex() {
@@ -98,6 +113,7 @@ export default function BancosReportesIndex() {
     // Movimientos
     const [movBanco, setMovBanco] = useState('')
     const [movTipo,  setMovTipo]  = useState('')
+    const [movOrigen, setMovOrigen] = useState('')
     const [movDesde, setMovDesde] = useState('')
     const [movHasta, setMovHasta] = useState('')
 
@@ -150,6 +166,7 @@ export default function BancosReportesIndex() {
         const p = new URLSearchParams()
         if (movBanco) p.set('banco_caja_id', movBanco)
         if (movTipo)  p.set('tipo', movTipo)
+        if (movOrigen) p.set('documento_tipo', movOrigen)
         if (movDesde) p.set('fecha_desde', movDesde)
         if (movHasta) p.set('fecha_hasta', movHasta)
         abrirPdf(route('bancos.reportes.movimientos') + '?' + p, 'Movimientos Bancarios')
@@ -164,6 +181,23 @@ export default function BancosReportesIndex() {
     }
 
     const allBancosYCajas = [...bancos, ...cajas]
+
+    // ── Otros reportes de Bancos (8) ───────────────────────────────────────────
+    const [adReporte, setAdReporte] = useState('conciliacion')
+    const [adBanco,   setAdBanco]   = useState('')
+    const [adDesde,   setAdDesde]   = useState('')
+    const [adHasta,   setAdHasta]   = useState('')
+
+    const urlAdicional = (formato: 'pdf' | 'excel') => {
+        const p = new URLSearchParams({ formato })
+        if (adBanco)  p.set('banco_caja_id', adBanco)
+        if (adDesde)  p.set('fecha_desde', adDesde)
+        if (adHasta)  p.set('fecha_hasta', adHasta)
+        return route('bancos.reportes.adicional', adReporte) + '?' + p
+    }
+    const generarAdicionalPdf = () =>
+        abrirPdf(urlAdicional('pdf'), REPORTES_ADICIONALES.find(r => r.clave === adReporte)?.nombre ?? 'Reporte')
+    const generarAdicionalExcel = () => { window.location.href = urlAdicional('excel') }
 
     return (
         <AppLayout title="Reportes de Bancos" suppressFlash>
@@ -263,6 +297,20 @@ export default function BancosReportesIndex() {
                                     <option value="egreso">Egresos</option>
                                 </select>
                             </Campo>
+                            <Campo label="Documento de origen">
+                                <select value={movOrigen} onChange={e => setMovOrigen(e.target.value)}
+                                    className="input-field select-field mt-1">
+                                    <option value="">— Todos —</option>
+                                    <option value="FACTURA_VENTA">Factura de venta</option>
+                                    <option value="COBRO_CXC">Cobro de cuenta por cobrar</option>
+                                    <option value="CXP">Pago a proveedor</option>
+                                    <option value="NOMINA">Nómina</option>
+                                    <option value="DATAFAST">Tarjetas</option>
+                                    <option value="TRANSFERENCIA">Transferencia entre cuentas</option>
+                                    <option value="CONCILIACION">Conciliación</option>
+                                    <option value="MANUAL">Manual (sin documento)</option>
+                                </select>
+                            </Campo>
                             <div className="grid grid-cols-2 gap-2">
                                 <Campo label="Desde">
                                     <input type="date" value={movDesde}
@@ -330,6 +378,54 @@ export default function BancosReportesIndex() {
                         </div>
                     </div>
 
+                </div>
+
+                {/* ── OTROS REPORTES ── */}
+                <div className="rounded-2xl border overflow-hidden"
+                     style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+                    <div className="px-5 py-4 border-b flex items-center gap-3"
+                         style={{ borderColor: 'var(--border)', borderLeft: '4px solid #b45309' }}>
+                        <FileText size={18} style={{ color: '#b45309' }} />
+                        <div>
+                            <h2 className="font-bold text-sm" style={{ color: 'var(--text-main)' }}>Otros reportes de Bancos</h2>
+                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                {REPORTES_ADICIONALES.find(r => r.clave === adReporte)?.ayuda}
+                            </p>
+                        </div>
+                    </div>
+                    <div className="p-5 grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
+                        <Campo label="Reporte">
+                            <select value={adReporte} onChange={e => setAdReporte(e.target.value)}
+                                className="input-field select-field mt-1">
+                                {REPORTES_ADICIONALES.map(r => <option key={r.clave} value={r.clave}>{r.nombre}</option>)}
+                            </select>
+                        </Campo>
+                        <Campo label="Banco / Caja">
+                            <select value={adBanco} onChange={e => setAdBanco(e.target.value)}
+                                className="input-field select-field mt-1">
+                                <option value="">— Todos —</option>
+                                {allBancosYCajas.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
+                            </select>
+                        </Campo>
+                        <Campo label="Desde">
+                            <input type="date" value={adDesde} onChange={e => setAdDesde(e.target.value)} className="input-field mt-1" />
+                        </Campo>
+                        <Campo label="Hasta">
+                            <input type="date" value={adHasta} onChange={e => setAdHasta(e.target.value)} className="input-field mt-1" />
+                        </Campo>
+                        <div className="btn-group flex">
+                            <button onClick={generarAdicionalPdf}
+                                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-l-xl text-sm font-semibold text-white hover:opacity-90"
+                                style={{ background: '#b45309' }}>
+                                <FileText size={14} /> PDF
+                            </button>
+                            <button onClick={generarAdicionalExcel}
+                                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-r-xl text-sm font-semibold text-white hover:opacity-90 border-l"
+                                style={{ background: '#15803d', borderColor: 'rgba(255,255,255,0.3)' }}>
+                                Excel
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
 

@@ -323,7 +323,7 @@ class KardexController extends Controller
     public function storeAjuste(Request $request): RedirectResponse
     {
         $data = $request->validate([
-            'bodega_id'                  => ['required', 'integer', 'exists:bodegas,id'],
+            'bodega_id'                  => ['required', 'integer', 'exists_empresa:bodegas'],
             'motivo'                     => ['required', 'string', 'max:255'],
             'detalles'                   => ['required', 'array', 'min:1'],
             'detalles.*.producto_id'     => ['required', 'integer', 'exists:productos,id'],
@@ -346,8 +346,24 @@ class KardexController extends Controller
             }
         }
 
+        // Faltantes y mermas (ajuste negativo) van a su cuenta propia 5.01.09, no a costo de venta
+        // (PC-INV-01). La contabilidad debe estar lista antes de mover inventario (período abierto y parámetro).
+        $empresaId  = (int) session('empresa_activa_id');
+        $hayFaltante = collect($data['detalles'])->contains(fn ($d) => $d['tipo_ajuste'] === 'negativo');
+        if ($hayFaltante) {
+            try {
+                app(\App\Services\AsientoService::class)->validarConfiguracion($empresaId, ['cta_ajuste_inventario'], now()->toDateString());
+            } catch (\DomainException $e) {
+                return back()->withErrors(['error' => $e->getMessage()])->withInput();
+            }
+        }
+
         try {
-            DB::transaction(function () use ($data, $productos) {
+            DB::transaction(function () use ($data, $productos, $empresaId) {
+                $partidasFaltante = [];
+                $cuentas = app(\App\Services\CuentasProductoService::class);
+                $asientos = app(\App\Services\AsientoService::class);
+
                 foreach ($data['detalles'] as $det) {
                     $producto = $productos->get($det['producto_id']);
 
@@ -362,6 +378,10 @@ class KardexController extends Controller
                                 0
                             );
                         } else {
+                            // Costo de lo que se da de baja: cantidad × costo promedio vigente
+                            $costoProm = (float) DB::table('inventario_saldos')
+                                ->where('producto_id', $det['producto_id'])->where('bodega_id', $data['bodega_id'])
+                                ->value('costo_promedio');
                             $this->inventario->egresarStock(
                                 (int) $det['producto_id'],
                                 (int) $data['bodega_id'],
@@ -369,6 +389,13 @@ class KardexController extends Controller
                                 'ajuste',
                                 0
                             );
+                            $valor = round((float) $det['cantidad'] * $costoProm, 2);
+                            if ($valor > 0) {
+                                // Cuenta de inventario de la subcategoría del producto (estricto: sin subcategoría no se contabiliza)
+                                $ctaInv = $asientos->cuentasProductos([(int) $det['producto_id']], (int) $empresaId)[(int) $det['producto_id']]['inventario']
+                                    ?? throw new \DomainException("El producto {$producto->codigo} es un servicio: no mueve inventario.");
+                                $partidasFaltante[] = ['cuenta_id' => $ctaInv, 'valor' => $valor, 'producto' => $producto->codigo];
+                            }
                         }
                     } catch (\RuntimeException $e) {
                         throw new \RuntimeException("{$producto->codigo}: {$e->getMessage()}");
@@ -381,6 +408,26 @@ class KardexController extends Controller
                         'inventario_movimientos',
                         0,
                         "Ajuste {$tipoTexto} de {$det['cantidad']} unidades — {$producto->codigo}: {$data['motivo']}"
+                    );
+                }
+
+                // Un solo asiento por el total de faltantes: Debe 5.01.09 / Haber inventario de cada producto
+                if ($partidasFaltante) {
+                    $total = round(array_sum(array_column($partidasFaltante, 'valor')), 2);
+                    $cc = \App\Models\CentroCosto::where('empresa_id', $empresaId)->where('tipo', 'empresa')->value('id');
+                    $partidas = [['cuenta_id' => $asientos->cuentaId('cta_ajuste_inventario', $empresaId), 'debe' => $total, 'haber' => 0,
+                        'centro_costo_id' => $cc, 'descripcion' => "Faltantes y mermas: {$data['motivo']}"]];
+                    foreach ($partidasFaltante as $pf) {
+                        $partidas[] = ['cuenta_id' => $pf['cuenta_id'], 'debe' => 0, 'haber' => $pf['valor'], 'descripcion' => "Baja de {$pf['producto']}"];
+                    }
+                    $asientos->crear(
+                        empresaId: $empresaId,
+                        concepto: "Faltantes y mermas de inventario: {$data['motivo']}",
+                        partidas: $partidas,
+                        documentoTipo: 'AJUSTE_INV',
+                        documentoId: null,
+                        documentoRef: 'AJ-INV-' . now()->format('YmdHis'),
+                        esAutomatico: true,
                     );
                 }
             });

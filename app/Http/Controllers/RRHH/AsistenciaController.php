@@ -56,7 +56,7 @@ class AsistenciaController extends Controller
 
         // Si es admin/super_admin → ver todas las asistencias del día
         $resumenDia = null;
-        if (in_array(Auth::user()?->perfil?->nombre, ['super_admin', 'admin'], true)) {
+        if (Auth::user()?->puede('asistencia_resumen_dia', 'ver')) {
             $resumenDia = Asistencia::with(['colaborador', 'horasExtras:id,asistencia_id,estado,horas_aprobadas'])
                 ->whereHas('colaborador', fn($q) => $q->where('empresa_id', $empresaId))
                 ->where('fecha', $hoy)
@@ -71,7 +71,7 @@ class AsistenciaController extends Controller
             'resumenDia'     => $resumenDia,
             'server_time'    => $ahora->toIso8601String(),
             'almuerzo_limite' => Asistencia::ALMUERZO_MINUTOS,
-            'es_admin'       => in_array(Auth::user()?->perfil?->nombre, ['super_admin', 'admin'], true) ?? false,
+            'es_admin'       => (bool) Auth::user()?->puede('asistencia_resumen_dia', 'ver'),
         ]);
     }
 

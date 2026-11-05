@@ -10,19 +10,21 @@ import { Badge } from '@/Components/ui/badge'
 import { formatMoneda } from '@/lib/utils'
 import { AlertTriangle, FileText, X } from 'lucide-react'
 import { usePermiso } from '@/Hooks/usePermiso'
+import { estadoOrden } from '@/lib/tallerEstados'
 import type { PageProps, TallerOrdenTrabajo } from '@/types'
+
+interface BancoOpcion {
+    id: number
+    nombre: string
+    tipo: string
+}
 
 interface Props extends PageProps {
     orden: TallerOrdenTrabajo
-}
-
-const ESTADO_CONFIG: Record<string, { label: string; variant: 'info' | 'warning' | 'default' | 'success' | 'secondary' }> = {
-    pendiente:  { label: 'Pendiente',  variant: 'warning' },
-    en_proceso: { label: 'En proceso', variant: 'info' },
-    listo:      { label: 'Listo',      variant: 'success' },
-    entregado:  { label: 'Entregado',  variant: 'secondary' },
-    facturado:  { label: 'Facturado',  variant: 'success' },
-    garantia:   { label: 'Garantía',   variant: 'secondary' },
+    iva_servicio: number
+    centro_costo: string | null
+    empresa_factura: { razon_social: string; ruc: string } | null
+    bancos: BancoOpcion[]
 }
 
 const FORMAS_PAGO = [
@@ -34,21 +36,24 @@ const FORMAS_PAGO = [
 ]
 
 export default function LiquidacionShow() {
-    const { orden, errors } = usePage<Props>().props
+    const { orden, errors, iva_servicio, centro_costo, empresa_factura, bancos } = usePage<Props>().props
     const { puede } = usePermiso('taller')
-    const cfg = ESTADO_CONFIG[orden.estado] ?? { label: orden.estado, variant: 'secondary' as const }
+    const cfg = estadoOrden(orden.estado)
 
     const [costoManoObra, setCostoManoObra] = useState(String(orden.costo_mano_obra ?? 0))
     const [formaPago, setFormaPago] = useState('efectivo')
+    const [bancoCajaId, setBancoCajaId] = useState('')
+    const requiereBanco = formaPago === 'transferencia'   // el cheque queda en cartera: no elige banco
+    const [referencia, setReferencia] = useState('')
+    const [numCheque, setNumCheque] = useState('')
+    const [fechaCheque, setFechaCheque] = useState('')
     const [observaciones, setObservaciones] = useState('')
     const [enviando, setEnviando] = useState(false)
 
     const repuestos = orden.repuestos ?? []
-    // D3 (CHECKLIST_ERRORES_COMPLICACIONES.md): en garantía los repuestos se
-    // facturan a costo, no al precio de venta — el backend ya lo hace así en
-    // LiquidacionController::liquidar(); esta vista solo debe reflejar lo
-    // mismo para que el total mostrado antes de confirmar sea el real.
+    // Una orden en garantía no se factura al cliente (02-10 §2.8): aquí solo se cierra y se registra el costo.
     const esGarantia = orden.estado === 'garantia'
+    const costoGarantia = repuestos.reduce((t, r) => t + r.costo_unitario * r.cantidad, 0)
 
     const totales = useMemo(() => {
         let subtotalRepuestos = 0
@@ -57,8 +62,7 @@ export default function LiquidacionShow() {
         let totalIva = 0
 
         for (const r of repuestos) {
-            const precioLinea = esGarantia ? r.costo_unitario : r.precio_venta
-            const subtotal = precioLinea * r.cantidad
+            const subtotal = r.precio_venta * r.cantidad
             const pctIva = r.producto?.porcentaje_iva ?? 15
             const iva = subtotal * (pctIva / 100)
             subtotalRepuestos += subtotal
@@ -68,11 +72,30 @@ export default function LiquidacionShow() {
         }
 
         const manoObra = Number(costoManoObra) || 0
-        subtotal0 += manoObra
-        const total = subtotal0 + subtotal15 + totalIva
+        const ivaServicio = manoObra * (iva_servicio / 100)
+        totalIva += ivaServicio
+        const total = subtotal0 + subtotal15 + manoObra + totalIva
 
         return { subtotalRepuestos, manoObra, totalIva, total }
-    }, [repuestos, costoManoObra, esGarantia])
+    }, [repuestos, costoManoObra, iva_servicio])
+
+    async function cerrarGarantia() {
+        const result = await Swal.fire({
+            title: 'Cerrar garantía',
+            text: `La orden ${orden.numero ?? `#${orden.id}`} no se factura al cliente. Los repuestos salen del inventario y su costo (${formatMoneda(costoGarantia)}) queda registrado. ¿Continuar?`,
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: 'Sí, cerrar garantía',
+            cancelButtonText: 'Cancelar',
+            confirmButtonColor: '#F59E0B',
+        })
+        if (!result.isConfirmed) return
+        setEnviando(true)
+        router.post(route('taller.liquidacion.garantia', orden.id), {}, {
+            onError: () => setEnviando(false),
+            onFinish: () => setEnviando(false),
+        })
+    }
 
     async function confirmarLiquidacion() {
         const result = await Swal.fire({
@@ -90,6 +113,10 @@ export default function LiquidacionShow() {
         router.post(route('taller.liquidacion.liquidar', orden.id), {
             costo_mano_obra: Number(costoManoObra) || 0,
             forma_pago: formaPago,
+            banco_caja_id: requiereBanco && bancoCajaId ? Number(bancoCajaId) : null,
+            referencia: formaPago === 'transferencia' ? referencia : null,
+            num_cheque: formaPago === 'cheque' ? numCheque : null,
+            fecha_cheque: formaPago === 'cheque' && fechaCheque ? fechaCheque : null,
             observaciones: observaciones || null,
         }, {
             onError: () => setEnviando(false),
@@ -165,7 +192,7 @@ export default function LiquidacionShow() {
                             <table className="w-full text-sm">
                                 <thead>
                                     <tr style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
-                                        {['Producto', 'Serie', 'Cantidad', esGarantia ? 'Precio (costo, garantía)' : 'Precio Venta', 'Subtotal'].map(h => (
+                                        {['Producto', 'Serie', 'Cantidad', esGarantia ? 'Costo unitario' : 'Precio Venta', 'Subtotal'].map(h => (
                                             <th key={h} className="text-left px-4 py-2.5 font-medium text-xs" style={{ color: 'var(--text-muted)' }}>{h}</th>
                                         ))}
                                     </tr>
@@ -206,9 +233,39 @@ export default function LiquidacionShow() {
                     )}
                 </div>
 
-                {/* Formulario de liquidación */}
+                {esGarantia ? (
                 <div className="rounded-xl border p-5 space-y-4" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
-                    <h3 className="text-sm font-semibold" style={{ color: 'var(--text-main)' }}>Liquidación</h3>
+                    <h3 className="text-sm font-semibold" style={{ color: 'var(--text-main)' }}>Cierre de garantía</h3>
+                    <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                        Una orden en garantía no se factura al cliente. Al cerrarla, los repuestos salen del inventario y el costo
+                        queda registrado en la orden. La cuenta contable de la garantía y la recuperación con el proveedor
+                        están pendientes de definir (DEC-047), por eso este cierre no genera asiento.
+                    </p>
+                    <div className="flex justify-between text-sm">
+                        <span style={{ color: 'var(--text-muted)' }}>Costo referencial de repuestos (el costo real sale del kárdex al cerrar)</span>
+                        <span className="font-semibold" style={{ color: 'var(--text-main)' }}>{formatMoneda(costoGarantia)}</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        {puede('editar') && !orden.garantia_cerrada_at && (
+                            <Button onClick={cerrarGarantia} loading={enviando}>
+                                <FileText className="w-4 h-4" />
+                                Cerrar garantía (sin factura)
+                            </Button>
+                        )}
+                        <Button variant="ghost" onClick={() => router.visit(route('taller.ordenes.show', orden.id))}>
+                            <X className="w-4 h-4" />
+                            Cancelar
+                        </Button>
+                    </div>
+                </div>
+                ) : (
+                /* Formulario de facturación */
+                <div className="rounded-xl border p-5 space-y-4" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
+                    <h3 className="text-sm font-semibold" style={{ color: 'var(--text-main)' }}>Facturación</h3>
+                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                        Se emite con el RUC {empresa_factura?.ruc ?? '—'} ({empresa_factura?.razon_social ?? '—'}) y el centro de costo{' '}
+                        {centro_costo ?? 'Altamira FIX'}. Líneas: servicio técnico y repuestos.
+                    </p>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="space-y-1.5">
@@ -234,6 +291,46 @@ export default function LiquidacionShow() {
                                 ))}
                             </select>
                         </div>
+                        {formaPago === 'transferencia' && (
+                            <div className="space-y-1.5">
+                                <Label style={{ color: 'var(--text-main)' }}>Referencia (N° de comprobante) *</Label>
+                                <input value={referencia} onChange={e => setReferencia(e.target.value)} placeholder="N° de transferencia"
+                                    className="w-full h-9 rounded-md border px-3 text-sm"
+                                    style={{ background: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-main)' }} />
+                            </div>
+                        )}
+                        {formaPago === 'cheque' && (
+                            <>
+                                <div className="space-y-1.5">
+                                    <Label style={{ color: 'var(--text-main)' }}>N° de cheque *</Label>
+                                    <input value={numCheque} onChange={e => setNumCheque(e.target.value)} placeholder="Número del cheque"
+                                        className="w-full h-9 rounded-md border px-3 text-sm"
+                                        style={{ background: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-main)' }} />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <Label style={{ color: 'var(--text-main)' }}>Fecha del cheque (post fechado si es posterior)</Label>
+                                    <input type="date" value={fechaCheque} onChange={e => setFechaCheque(e.target.value)}
+                                        className="w-full h-9 rounded-md border px-3 text-sm"
+                                        style={{ background: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-main)' }} />
+                                </div>
+                            </>
+                        )}
+                        {requiereBanco && (
+                            <div className="space-y-1.5">
+                                <Label style={{ color: 'var(--text-main)' }}>Banco donde se recibe *</Label>
+                                <select
+                                    value={bancoCajaId}
+                                    onChange={e => setBancoCajaId(e.target.value)}
+                                    className="w-full h-9 rounded-md border px-3 text-sm"
+                                    style={{ background: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
+                                >
+                                    <option value="">Seleccione…</option>
+                                    {bancos.map(b => (
+                                        <option key={b.id} value={b.id}>{b.nombre}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
                     </div>
 
                     <div className="space-y-1.5">
@@ -259,7 +356,7 @@ export default function LiquidacionShow() {
                             <span style={{ color: 'var(--text-main)' }}>{formatMoneda(totales.manoObra)}</span>
                         </div>
                         <div className="flex justify-between">
-                            <span style={{ color: 'var(--text-muted)' }}>IVA</span>
+                            <span style={{ color: 'var(--text-muted)' }}>IVA (servicio {iva_servicio}%)</span>
                             <span style={{ color: 'var(--text-main)' }}>{formatMoneda(totales.totalIva)}</span>
                         </div>
                         <div className="flex justify-between pt-1.5 mt-1.5 border-t" style={{ borderColor: 'var(--border)' }}>
@@ -281,6 +378,7 @@ export default function LiquidacionShow() {
                         </Button>
                     </div>
                 </div>
+                )}
 
                 <div className="flex justify-between pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
                     <Button variant="outline" onClick={() => router.visit(route('taller.ordenes.show', orden.id))}>

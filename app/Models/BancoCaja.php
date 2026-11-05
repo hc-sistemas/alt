@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Builder;
 
 class BancoCaja extends Model
 {
+    use \App\Models\Concerns\PerteneceAEmpresaActiva;
     protected $table    = 'bancos_cajas';
     protected $fillable = [
         'empresa_id', 'cuenta_id', 'centro_costo_id', 'tipo', 'nombre',

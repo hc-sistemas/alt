@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class AsientoContable extends Model
 {
+    use \App\Models\Concerns\PerteneceAEmpresaActiva;
     public $timestamps = false;
     protected $table   = 'asientos_contables';
 
@@ -48,6 +49,26 @@ class AsientoContable extends Model
     public function detalles(): HasMany
     {
         return $this->hasMany(AsientoDetalle::class, 'asiento_id');
+    }
+
+    /**
+     * Diarios (02-08 §2.2): el diario general muestra todo; los demás agrupan por el documento de origen.
+     * Los asientos sin documento propio (manuales, cierres, nómina…) solo salen en el diario general.
+     */
+    public const DIARIOS = [
+        'general'       => null,
+        'caja'          => ['CIERRE_CAJA'],
+        'bancos'        => ['BANCO', 'CONCILIACION', 'COBRO_CXC', 'DATAFAST', 'TRANSFERENCIA', 'NOMPAG', 'ANULACION_MOV', 'ANULACION_CHEQUE', 'AJUSTE_CRUCE'],
+        'ventas'        => ['FAC', 'FACTURA_VENTA', 'CXC', 'NC', 'PREFACTURA_ABONO', 'ANTICIPO', 'ANULACION_FACTURA'],
+        'compras'       => ['COMPRA', 'DEVOLUCION_COMPRA', 'ANTICIPO_PROV', 'ANULACION_PAGO'],
+        'importaciones' => ['LIQ', 'IMPORTACION'],
+    ];
+
+    public function scopeDiario($query, ?string $diario)
+    {
+        $tipos = self::DIARIOS[$diario ?? 'general'] ?? null;
+
+        return $tipos ? $query->whereIn('documento_tipo', $tipos) : $query;
     }
 
     public function scopeActivos(Builder $q): Builder

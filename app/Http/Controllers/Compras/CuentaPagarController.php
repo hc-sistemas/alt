@@ -115,11 +115,11 @@ class CuentaPagarController extends Controller
     public function pagar(Request $request, CuentaPagar $cuentaPagar): RedirectResponse
     {
         $request->validate([
-            'monto_pago'    => "required|numeric|min:0.01|max:{$cuentaPagar->saldo}",
-            'banco_caja_id' => 'required|exists:bancos_cajas,id',
+            'monto_pago'    => "required|numeric|decimal:0,2|min:0.01|max:{$cuentaPagar->saldo}",
+            'banco_caja_id' => 'required|exists_empresa:bancos_cajas',
             'fecha_pago'    => 'required|date',
-            'referencia'    => 'nullable|string|max:100',
-        ]);
+            'referencia'    => 'required|string|max:100',
+        ], ['referencia.required' => 'Ingrese la referencia (N° de transferencia o cheque).']);
 
         if ($cuentaPagar->estado === 'pagada') {
             return back()->with('error', 'Esta cuenta ya está pagada.');
@@ -130,19 +130,16 @@ class CuentaPagarController extends Controller
         try {
             app(AsientoService::class)->validarConfiguracion(
                 (int) $cuentaPagar->empresa_id,
-                ['cta_proveedores_locales', 'cta_bancos_locales'],
+                ['cta_proveedores_locales'],
                 $request->fecha_pago,
             );
+            app(AsientoService::class)->cuentaBancoElegida($banco->cuenta_id ? (int) $banco->cuenta_id : null, "pagar desde «{$banco->nombre}» (sin cuenta contable asignada)");
         } catch (\DomainException $e) {
             return back()->with('error', $e->getMessage());
         }
 
-        if ((float) $banco->saldo_actual < (float) $request->monto_pago) {
-            return back()->with('error',
-                "Saldo insuficiente en {$banco->nombre}. " .
-                'Disponible: $' . number_format((float) $banco->saldo_actual, 2) . '. ' .
-                'Requerido: $' . number_format((float) $request->monto_pago, 2) . '.'
-            );
+        if ($advertencia = \App\Support\SaldoBancario::advertir($banco, (float) $request->monto_pago, $request)) {
+            return $advertencia;
         }
 
         // Si el asiento falla (período cerrado/no abierto, parámetro contable faltante) la
@@ -187,6 +184,7 @@ class CuentaPagarController extends Controller
                 $monto,
                 $cuentaPagar->compra?->centro_costo_id,
                 $request->fecha_pago,
+                (int) $banco->cuenta_id,
             );
         });
         } catch (\Throwable $e) {

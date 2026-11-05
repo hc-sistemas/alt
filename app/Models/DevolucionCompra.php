@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class DevolucionCompra extends Model
 {
+    use \App\Models\Concerns\PerteneceAEmpresaActiva;
     protected $table = 'devoluciones_compra';
 
     protected $fillable = [

@@ -1,5 +1,6 @@
+import { advertenciaSaldo, confirmarSaldoNegativo } from '@/lib/saldoNegativo'
 import { useState, useEffect } from 'react'
-import { router, usePage, Head } from '@inertiajs/react'
+import { router, usePage, Head, Link } from '@inertiajs/react'
 import { toast, ToastContainer } from 'react-toastify'
 import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout'
@@ -131,15 +132,23 @@ function ModalPago({ cxp, bancos, onClose }: {
 
     const bancoBanco = bancos.find(b => b.id.toString() === form.banco_caja_id)
 
-    function submit(e: React.FormEvent) {
-        e.preventDefault()
+    function enviar(confirmado: boolean) {
         setProcessing(true)
-        router.post(route('compras.cxp.pagar', cxp.id), form as unknown as Record<string, string>, {
+        router.post(route('compras.cxp.pagar', cxp.id), { ...form, confirmar_saldo_negativo: confirmado } as unknown as Record<string, string>, {
             // El toast de éxito lo dispara el efecto de `flash` de la página; notificar aquí también lo duplicaba
-            onSuccess: () => onClose(),
+            onSuccess: async (page) => {
+                const adv = advertenciaSaldo(page)
+                if (adv) { if (await confirmarSaldoNegativo(adv)) enviar(true); return }
+                onClose()
+            },
             onError:   (errs) => { notify.error('Error: ' + Object.values(errs).join(', ')); setProcessing(false) },
             onFinish:  () => setProcessing(false),
         })
+    }
+
+    function submit(e: React.FormEvent) {
+        e.preventDefault()
+        enviar(false)
     }
 
     return (
@@ -215,7 +224,7 @@ function ModalPago({ cxp, bancos, onClose }: {
                     </div>
 
                     <div className="space-y-1.5">
-                        <Label>Referencia / N° transferencia</Label>
+                        <Label>Referencia / N° transferencia <span className="text-red-400">*</span></Label>
                         <Input value={form.referencia} placeholder="TRF-001, CHQ-001..."
                             onChange={e => setForm(f => ({ ...f, referencia: e.target.value }))} />
                     </div>
@@ -440,6 +449,12 @@ export default function CuentasPagarIndex() {
             <PageHeader
                 title="Cuentas por Pagar"
                 breadcrumbs={[{ label: 'Compras' }, { label: 'Cuentas por Pagar' }]}
+                actions={
+                    <Link href="/compras/anticipos"
+                        className="btn-secondary flex items-center gap-2 whitespace-nowrap shrink-0">
+                        Anticipos a proveedores
+                    </Link>
+                }
             />
 
             <div className="px-6 pt-6 mb-2">
@@ -634,10 +649,12 @@ export default function CuentasPagarIndex() {
                             </div>
                             {/* Acciones: Pagar + Anular (ocultas si la compra ya fue anulada) */}
                             <div className="col-span-1 flex justify-center items-center gap-1">
-                                {!c.compra_anulada && c.estado !== 'pagada' && bancos.length > 0 && puede('editar') && (
+                                {!c.compra_anulada && c.estado !== 'pagada' && puede('editar') && (
                                     <button
-                                        onClick={() => setModalPago(c)}
-                                        title="Registrar pago"
+                                        onClick={() => bancos.length > 0
+                                            ? setModalPago(c)
+                                            : toast.info('Registre primero un banco o caja en Bancos → Cuentas para poder pagar.')}
+                                        title={bancos.length > 0 ? 'Registrar pago o abono' : 'Sin bancos ni cajas: registre uno primero'}
                                         className="p-1.5 rounded-lg hover:bg-green-500/20 text-green-600 dark:text-green-400 transition-colors">
                                         <CreditCard className="w-4 h-4" />
                                     </button>

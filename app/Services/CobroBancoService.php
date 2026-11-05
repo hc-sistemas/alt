@@ -16,8 +16,8 @@ use Illuminate\Support\Facades\DB;
  * si una forma de pago no tiene cuenta configurada, esa parte simplemente no se registra en Bancos
  * (la factura funciona igual que antes).
  *
- *  - Efectivo:      caja cuyo centro de costo coincide con el de la factura; si no hay, la caja
- *                   por defecto configurada.
+ *  - Efectivo:      caja cuyo centro de costo coincide con el de la factura; si no hay, no se
+ *                   registra en Bancos (no existe caja por defecto).
  *  - Transferencia / cheque: banco configurado para esa forma de pago.
  *  - Tarjeta:       banco configurado, o ninguno si el modo es "datafast" (entra por lote/liquidación).
  *  - Crédito:       nunca (genera cuenta por cobrar, no dinero).
@@ -25,10 +25,9 @@ use Illuminate\Support\Facades\DB;
 class CobroBancoService
 {
     public const CLAVES = [
-        'cobro_banco_transferencia',
+        // 'cobro_banco_transferencia' ya no existe: el banco de cada transferencia se elige en la factura (01 §5)
         'cobro_banco_tarjeta',
         'cobro_banco_cheque',
-        'cobro_caja_efectivo',
         'cobro_tarjeta_modo', // 'banco' | 'datafast'
     ];
 
@@ -52,8 +51,16 @@ class CobroBancoService
     }
 
     /** Cuenta (banco o caja) donde entra una forma de pago, o null si no está definida. */
-    public function cuentaPara(int $empresaId, string $forma, ?int $centroCostoId): ?BancoCaja
+    public function cuentaPara(int $empresaId, string $forma, ?int $centroCostoId, ?int $bancoElegidoId = null): ?BancoCaja
     {
+        // Si al cobrar se eligió la cuenta bancaria (transferencia, cheque, tarjeta a banco), manda esa
+        if ($bancoElegidoId && $forma !== 'efectivo') {
+            $elegido = $this->buscarActiva($empresaId, $bancoElegidoId);
+            if ($elegido) {
+                return $elegido;
+            }
+        }
+
         $cfg = $this->config($empresaId);
 
         if ($forma === 'efectivo') {
@@ -65,7 +72,8 @@ class CobroBancoService
                     return $caja;
                 }
             }
-            return $this->buscarActiva($empresaId, $cfg['cobro_caja_efectivo']);
+            // Sin caja en el centro de costo no hay caja por defecto: el efectivo no se registra en Bancos (02-06 §2.6)
+            return null;
         }
 
         if ($forma === 'tarjeta' && ($cfg['cobro_tarjeta_modo'] ?? null) === 'datafast') {
@@ -73,7 +81,6 @@ class CobroBancoService
         }
 
         $clave = match ($forma) {
-            'transferencia' => 'cobro_banco_transferencia',
             'tarjeta'       => 'cobro_banco_tarjeta',
             'cheque'        => 'cobro_banco_cheque',
             default         => null,
@@ -104,11 +111,12 @@ class CobroBancoService
 
         DB::transaction(function () use ($factura, $asientoId, &$creados) {
             foreach ($factura->pagos as $pago) {
-                if ($pago->forma_pago === 'credito' || (float) $pago->valor <= 0) {
+                // Crédito no es dinero; el cheque recibido queda en cartera y solo entra a Bancos al depositarlo (02-04 §2.7)
+                if (in_array($pago->forma_pago, ['credito', 'cheque'], true) || (float) $pago->valor <= 0) {
                     continue;
                 }
 
-                $cuenta = $this->cuentaPara((int) $factura->empresa_id, $pago->forma_pago, $factura->centro_costo_id);
+                $cuenta = $this->cuentaPara((int) $factura->empresa_id, $pago->forma_pago, $factura->centro_costo_id, $pago->banco_caja_id ? (int) $pago->banco_caja_id : null);
                 if (!$cuenta) {
                     continue;
                 }
@@ -145,6 +153,9 @@ class CobroBancoService
     /** Revierte (movimiento de signo contrario, sin borrar nada) los ingresos de una factura. */
     public function revertirFactura(Factura $factura, string $motivo): void
     {
+        // Los cheques recibidos de la factura que siguen en cartera se anulan (no hay movimiento bancario que revertir)
+        \App\Models\ChequeRecibido::where('factura_id', $factura->id)->where('estado', 'en_cartera')->update(['estado' => 'anulado']);
+
         $movs = MovimientoBancario::where('documento_tipo', 'FACTURA_VENTA')
             ->where('documento_id', $factura->id)
             ->where('anulado', false)

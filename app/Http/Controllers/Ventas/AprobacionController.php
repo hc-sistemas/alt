@@ -74,13 +74,15 @@ class AprobacionController extends Controller
         // Crédito: solo contador o administrador (CHECKLIST / decisión del 2026-10).
         // No depende de limites_descuento: se decide por perfil.
         if ($tipo === 'credito_excedido') {
-            if (!in_array($aprobador->perfil_nombre, ['super_admin', 'admin', 'contador'], true)) {
+            // Quién puede autorizar crédito lo decide la matriz (submódulo «Autorizar crédito excedido»)
+            $usuarioAprobador = \App\Models\Usuario::with('perfil')->find($aprobador->id);
+            if (!$usuarioAprobador || !$usuarioAprobador->puede('ventas_aprobar_credito', 'editar')) {
                 return response()->json([
                     'valido'  => false,
-                    'mensaje' => 'Solo un contador o administrador puede autorizar crédito.',
+                    'mensaje' => 'Este usuario no tiene permiso para autorizar crédito.',
                 ], 422);
             }
-        } elseif (!$aprobador->puede_aprobar) {
+        } elseif (!$aprobador->puede_aprobar && !in_array($aprobador->perfil_nombre, ['super_admin', 'admin'], true)) {
             return response()->json([
                 'valido'  => false,
                 'mensaje' => 'Este usuario no tiene permisos para aprobar excepciones.',
@@ -88,6 +90,12 @@ class AprobacionController extends Controller
         }
 
         $maxAprobador = (float) $aprobador->porcentaje_aprobacion_max;
+
+        // Super Admin y Admin son los dueños del sistema: pueden aprobar cualquier descuento (hasta 100 %) aunque
+        // su perfil no tenga fila en los límites de descuento.
+        if (in_array($aprobador->perfil_nombre, ['super_admin', 'admin'], true)) {
+            $maxAprobador = 100.0;
+        }
 
         if ($porcentaje !== null && $maxAprobador < $porcentaje) {
             return response()->json([

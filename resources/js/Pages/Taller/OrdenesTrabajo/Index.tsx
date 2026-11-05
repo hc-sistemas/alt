@@ -7,6 +7,7 @@ import { Input } from '@/Components/ui/input'
 import { Badge } from '@/Components/ui/badge'
 import { formatFecha } from '@/lib/utils'
 import { Search, Eye, Wrench } from 'lucide-react'
+import { estadoOrden, ESTADOS_ORDEN } from '@/lib/tallerEstados'
 import type { PageProps, PaginatedData, TallerOrdenTrabajo } from '@/types'
 
 interface Tecnico {
@@ -19,16 +20,6 @@ interface Props extends PageProps {
     filtros: { search?: string; estado?: string; tecnico_id?: string; desde?: string; hasta?: string }
     tecnicos: Tecnico[]
     cola: { pendientes: number; en_proceso: number; esperando_repuesto: number; siguiente_id: number | null }
-}
-
-const ESTADO_CONFIG: Record<string, { label: string; variant: 'info' | 'warning' | 'default' | 'success' | 'secondary' }> = {
-    pendiente:  { label: 'Pendiente',  variant: 'warning' },
-    en_proceso: { label: 'En proceso', variant: 'info' },
-    esperando_repuesto: { label: 'Esperando repuesto', variant: 'warning' },
-    listo:      { label: 'Listo',      variant: 'success' },
-    entregado:  { label: 'Entregado',  variant: 'secondary' },
-    facturado:  { label: 'Facturado',  variant: 'success' },
-    garantia:   { label: 'Garantía',   variant: 'secondary' },
 }
 
 export default function OrdenesTrabajoIndex() {
@@ -80,13 +71,9 @@ export default function OrdenesTrabajoIndex() {
                         className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm"
                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
                         <option value="">Todos los estados</option>
-                        <option value="pendiente">Pendiente</option>
-                        <option value="en_proceso">En proceso</option>
-                        <option value="esperando_repuesto">Esperando repuesto</option>
-                        <option value="listo">Listo</option>
-                        <option value="entregado">Entregado</option>
-                        <option value="facturado">Facturado</option>
-                        <option value="garantia">Garantía</option>
+                        {Object.entries(ESTADOS_ORDEN).map(([valor, c]) => (
+                            <option key={valor} value={valor}>{c.label}</option>
+                        ))}
                     </select>
 
                     <select value={tecnicoId} onChange={e => setTecnicoId(e.target.value)}
@@ -147,7 +134,7 @@ export default function OrdenesTrabajoIndex() {
                                     </td>
                                 </tr>
                             ) : ordenes.data.map(orden => {
-                                const cfg = ESTADO_CONFIG[orden.estado] ?? { label: orden.estado, variant: 'secondary' as const }
+                                const cfg = estadoOrden(orden.estado)
                                 const cliente = orden.ingreso?.cliente
                                 const equipo = orden.ingreso?.equipo
                                 return (

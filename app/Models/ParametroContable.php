@@ -24,18 +24,28 @@ class ParametroContable extends Model
         return $this->belongsTo(PlanCuenta::class, 'cuenta_id');
     }
 
+    /**
+     * Configuración compartida: la fila general (empresa_id NULL) vale para
+     * todas las empresas y una fila con empresa_id es una excepción solo de
+     * esa empresa. La excepción tiene prioridad sobre la general.
+     */
     public static function getCuenta(string $codigo, int $empresaId): ?PlanCuenta
     {
-        $param = static::where('empresa_id', $empresaId)
-                       ->where('codigo', $codigo)
-                       ->first();
-        return $param?->cuenta;
+        return static::resolver($codigo, $empresaId)?->cuenta;
     }
 
     public static function getCuentaId(string $codigo, int $empresaId): ?int
     {
-        return static::where('empresa_id', $empresaId)
-                     ->where('codigo', $codigo)
-                     ->value('cuenta_id');
+        return static::resolver($codigo, $empresaId)?->cuenta_id;
+    }
+
+    private static function resolver(string $codigo, int $empresaId): ?self
+    {
+        return static::where('codigo', $codigo)
+            ->where(function ($q) use ($empresaId) {
+                $q->where('empresa_id', $empresaId)->orWhereNull('empresa_id');
+            })
+            ->orderByRaw('empresa_id IS NULL')
+            ->first();
     }
 }

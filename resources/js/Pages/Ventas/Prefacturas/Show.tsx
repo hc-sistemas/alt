@@ -60,6 +60,7 @@ interface PrefacturaFull {
 }
 
 interface Props extends PageProps {
+    bancos: { id: number; nombre: string }[]
     prefactura: PrefacturaFull
 }
 
@@ -98,7 +99,7 @@ function CampoLectura({ label, value }: { label: string; value: React.ReactNode 
 }
 
 export default function Show() {
-    const { prefactura } = usePage<Props>().props
+    const { prefactura, bancos } = usePage<Props>().props
     const { puede } = usePermiso('ventas')
     const cfg = ESTADO_CONFIG[prefactura.estado] ?? ESTADO_CONFIG.pendiente
     const puedeAbonar = prefactura.estado !== 'liquidada' && prefactura.estado !== 'anulada' && puede('editar')
@@ -159,7 +160,7 @@ export default function Show() {
             {
                 valor,
                 forma_pago: abonoFormaPago,
-                banco: abonoBanco || null,
+                banco_caja_id: abonoBanco ? Number(abonoBanco) : null,
                 num_comprobante: abonoComprobante || null,
             },
             {
@@ -435,8 +436,18 @@ export default function Show() {
                             </div>
                             {requiereBanco && (
                                 <div>
-                                    <label className="text-xs mb-1 block" style={{ color: 'var(--text-muted)' }}>Banco</label>
-                                    <Input placeholder="Nombre del banco..." value={abonoBanco} onChange={e => setAbonoBanco(e.target.value)} />
+                                    <label className="text-xs mb-1 block" style={{ color: 'var(--text-muted)' }}>
+                                        Banco {abonoFormaPago === 'transferencia' && <span className="text-red-400">*</span>}
+                                    </label>
+                                    <select
+                                        className="w-full h-9 rounded-md border px-2 text-sm"
+                                        style={{ background: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
+                                        value={abonoBanco}
+                                        onChange={e => setAbonoBanco(e.target.value)}
+                                    >
+                                        <option value="">— Seleccione banco —</option>
+                                        {bancos.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
+                                    </select>
                                 </div>
                             )}
                             <div>

@@ -207,11 +207,15 @@ class FacturaController extends Controller
             'productos'        => $productos,
             'vendedores'       => $vendedores,
             'formas_pago'      => ['efectivo', 'transferencia', 'tarjeta', 'cheque', 'credito'],
+            // Cuentas bancarias del módulo Bancos (Pichincha, ProduBanco, Guayaquil…) para elegir en transferencias
+            'bancos'           => \App\Models\BancoCaja::where('empresa_id', $empresaId)->activos()->bancos()->orderBy('nombre')->get(['id', 'nombre']),
+            'procesadores'     => \Illuminate\Support\Facades\DB::table('tarjeta_procesadores')->where('empresa_id', $empresaId)->where('estado', true)->orderBy('nombre')->get(['id', 'nombre']),
             'empresa_activa'   => $empresa,
             'siguiente_numero' => $siguienteNumero,
             'limites_descuento' => [
                 'descuento_maximo_pct' => $limite?->porcentaje_maximo ?? 0,
                 'puede_aprobar'        => $limite?->puede_aprobar ?? false,
+                'solo_cero_o_maximo'   => LimiteDescuento::esPerfilDescuentoFijo($perfilNombre),
             ],
         ]);
     }
@@ -242,7 +246,7 @@ class FacturaController extends Controller
         $usuario   = Auth::user();
 
         $request->validate([
-            'cliente_id'              => 'required|integer|exists:clientes,id',
+            'cliente_id'              => 'required|integer|exists_empresa:clientes',
             'detalles'                => 'required|array|min:1',
             'detalles.*.producto_id'  => 'required|integer',
             'detalles.*.cantidad'     => 'required|numeric|min:0.01',
@@ -256,7 +260,43 @@ class FacturaController extends Controller
             'formas_pago'             => 'required|array|min:1',
             'formas_pago.*.forma'     => 'required|string',
             'formas_pago.*.monto'     => 'required|numeric|min:0.01',
+            'formas_pago.*.banco_caja_id' => ['nullable', 'integer', \Illuminate\Validation\Rule::exists('bancos_cajas', 'id')->where('empresa_id', $empresaId)],
+            'formas_pago.*.referencia'    => 'nullable|string|max:60',
+            'formas_pago.*.fecha_cheque'  => 'nullable|date',
+            'es_evento'                   => 'nullable|boolean',
+            'formas_pago.*.lote'          => 'nullable|string|max:40',
+            'formas_pago.*.autorizacion'  => 'nullable|string|max:40',
+            'formas_pago.*.tipo_tarjeta'  => 'nullable|in:credito,debito,diferido',
         ]);
+
+        // Regalos: máximo dos por factura. Más de dos requiere aprobación de Gerencia (DEC-033, aún sin definir): mientras
+        // tanto se bloquea con un mensaje claro en lugar de inventar el flujo de aprobación.
+        $regalos = (int) collect((array) $request->detalles)->filter(fn ($d) => !empty($d['es_regalo']))->sum(fn ($d) => max(1, (int) ceil((float) ($d['cantidad'] ?? 1))));
+        if ($regalos > 2) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'detalles' => "Una factura admite como máximo 2 regalos y esta lleva {$regalos}. Más de dos requiere aprobación de Gerencia (decisión DEC-033 pendiente).",
+            ]);
+        }
+
+        // Datos obligatorios por forma de pago, con mensajes claros (02-04 §2.2): nunca el error técnico
+        foreach ((array) $request->formas_pago as $i => $pago) {
+            $forma = (string) ($pago['forma'] ?? '');
+            if ($forma === 'transferencia' && empty($pago['banco_caja_id'])) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    "formas_pago.{$i}.banco_caja_id" => 'Seleccione el banco de la transferencia.',
+                ]);
+            }
+            if ($forma === 'transferencia' && trim((string) ($pago['referencia'] ?? '')) === '') {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    "formas_pago.{$i}.referencia" => 'Ingrese la referencia (N° de comprobante) de la transferencia.',
+                ]);
+            }
+            if ($forma === 'cheque' && trim((string) ($pago['num_cheque'] ?? '')) === '') {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    "formas_pago.{$i}.num_cheque" => 'Ingrese el número del cheque.',
+                ]);
+            }
+        }
 
         // Con tarjeta de crédito no hay descuento de ningún tipo.
         if (ReglasPago::algunaTarjeta(collect($request->formas_pago)->pluck('forma'))
@@ -357,7 +397,7 @@ class FacturaController extends Controller
             // aprobación válida cubre ambos límites a la vez, igual que en
             // el frontend (Form.tsx: descuentoEspecialActivo). Un regalo ya
             // va en $0, no aplica.
-            if (!$esRegalo && ($descPct > $limiteMax || $descPct > $maximoProducto)) {
+            if (!$esRegalo && (LimiteDescuento::exigeAprobacion($descPct, $limiteMax, $perfilNombre, (float) $maximoProducto) || $descPct > $maximoProducto)) {
                 if (!$request->filled('aprobacion_especial_id')) {
                     return back()->withErrors(['aprobacion_especial' => 'Se requiere aprobación especial para el descuento aplicado.'])->withInput();
                 }
@@ -481,6 +521,13 @@ class FacturaController extends Controller
             return back()->withErrors(['contabilidad' => $e->getMessage()])->withInput();
         }
 
+        // Cada producto debe tener subcategoría con cuentas (PC-CAT, DEC-030): antes de emitir, no después
+        try {
+            $this->asiento->cuentasProductos(collect($request->detalles)->pluck('producto_id')->all(), (int) $empresaId);
+        } catch (\DomainException $e) {
+            return back()->withErrors(['contabilidad' => $e->getMessage()])->withInput();
+        }
+
         try {
             $factura = DB::transaction(function () use (
                 $request, $empresaId, $usuario, $subtotal0, $subtotal15,
@@ -506,6 +553,7 @@ class FacturaController extends Controller
                     'fecha_emision'           => now()->toDateString(),
                     'hora_emision'            => now()->toTimeString(),
                     'estado_sri'              => 'pendiente',
+                    'es_evento'               => $request->boolean('es_evento'),
                     'tipo_identificacion'     => $cliente->tipo_identificacion,
                     'identificacion'          => $cliente->identificacion,
                     'razon_social'            => $cliente->razon_social,
@@ -596,18 +644,49 @@ class FacturaController extends Controller
                     // 'dias_credito' para justo esto — y 'banco'/'num_cheque'
                     // ya eran fillable pero nunca se mandaban desde aquí, así
                     // que el N° de cheque/documento del pago se perdía siempre.
+                    // dias_credito solo aplica en crédito; en las demás formas se guarda 0 (nunca nulo)
                     $diasCredito = $pago['forma'] === 'credito'
                         ? ((int) ($pago['plazo'] ?? 0) ?: null)
+                        : 0;
+
+                    $bancoElegido = !empty($pago['banco_caja_id'])
+                        ? \App\Models\BancoCaja::where('empresa_id', $empresaId)->find($pago['banco_caja_id'])
                         : null;
 
-                    FacturaPago::create([
-                        'factura_id'   => $factura->id,
-                        'forma_pago'   => $pago['forma'],
-                        'valor'        => $pago['monto'],
-                        'dias_credito' => $diasCredito,
-                        'banco'        => $pago['banco'] ?? null,
-                        'num_cheque'   => $pago['num_cheque'] ?? null,
+                    $facturaPago = FacturaPago::create([
+                        'factura_id'    => $factura->id,
+                        'forma_pago'    => $pago['forma'],
+                        'valor'         => $pago['monto'],
+                        'dias_credito'  => $diasCredito ?? 0,
+                        'banco_caja_id' => $bancoElegido?->id,
+                        'banco'         => $bancoElegido?->nombre ?? ($pago['banco'] ?? null),
+                        // num_cheque solo para cheques; el comprobante de una transferencia va en `referencia`
+                        'num_cheque'    => $pago['forma'] === 'cheque' ? ($pago['num_cheque'] ?? null) : null,
+                        'fecha_cheque'  => $pago['forma'] === 'cheque' ? ($pago['fecha_cheque'] ?? now()->toDateString()) : null,
+                        'referencia'    => $pago['forma'] === 'transferencia' ? ($pago['referencia'] ?? null) : null,
+                        // Cobro con tarjeta: procesador, tipo, lote y autorización (02-04 §2.3)
+                        'procesador_id' => $pago['forma'] === 'tarjeta' ? ($pago['procesador_id'] ?? null) : null,
+                        'tipo_tarjeta'  => $pago['forma'] === 'tarjeta' ? ($pago['tipo_tarjeta'] ?? null) : null,
+                        'lote'          => $pago['forma'] === 'tarjeta' ? ($pago['lote'] ?? null) : null,
+                        'autorizacion'  => $pago['forma'] === 'tarjeta' ? ($pago['autorizacion'] ?? null) : null,
                     ]);
+
+                    // Cheque recibido: queda en cartera hasta depositarlo (PC-VEN-13); si su fecha es posterior, es post fechado
+                    if ($pago['forma'] === 'cheque') {
+                        \App\Models\ChequeRecibido::create([
+                            'empresa_id'      => $empresaId,
+                            'cliente_id'      => $request->cliente_id,
+                            'factura_id'      => $factura->id,
+                            'factura_pago_id' => $facturaPago->id,
+                            'numero'          => $pago['num_cheque'],
+                            'banco_emisor'    => $pago['banco'] ?? null,
+                            'monto'           => $pago['monto'],
+                            'fecha_recepcion' => now()->toDateString(),
+                            'fecha_cheque'    => $pago['fecha_cheque'] ?? now()->toDateString(),
+                            'estado'          => 'en_cartera',
+                            'created_by'      => $usuario->id,
+                        ]);
+                    }
 
                     if ($pago['forma'] === 'credito') {
                         $incluyeCredito  = true;
@@ -679,12 +758,19 @@ class FacturaController extends Controller
             $formaPrincipal = collect($request->formas_pago)->sortByDesc('monto')->first()['forma'] ?? 'efectivo';
 
             $formasPago = collect($request->formas_pago)
-                ->map(fn($p) => ['forma' => $p['forma'], 'monto' => (float) $p['monto']])
+                ->map(fn($p) => ['forma' => $p['forma'], 'monto' => (float) $p['monto'], 'banco_caja_id' => $p['banco_caja_id'] ?? null])
                 ->values()->all();
 
             // Costo de la mercadería que salió por esta factura, leído del
             // kárdex para que contabilidad e inventario usen el mismo valor.
             $costoVenta = \App\Services\AsientoService::costoSalidaDocumento('FACTURA', $factura->id);
+
+            // Líneas por producto: la venta y el costo van a las cuentas de su subcategoría
+            $costosPorProducto = \App\Services\AsientoService::costoSalidaPorProducto('FACTURA', $factura->id);
+            $lineasContables = DB::table('factura_detalles')->where('factura_id', $factura->id)->whereNotNull('producto_id')
+                ->get(['producto_id', 'subtotal'])->groupBy('producto_id')
+                ->map(fn ($g, $pid) => ['producto_id' => (int) $pid, 'subtotal' => (float) $g->sum('subtotal'), 'costo' => (float) ($costosPorProducto[$pid] ?? 0)])
+                ->values()->all();
 
             $asientoFactura = $this->asiento->facturaAutorizada(
                 empresaId:      $empresaId,
@@ -697,6 +783,8 @@ class FacturaController extends Controller
                 formasPago:     $formasPago,
                 costoVenta:     $costoVenta,
                 fecha:          $factura->fecha_emision?->toDateString(),
+                lineas:         $lineasContables,
+                esEvento:       (bool) $factura->es_evento,
             );
             $factura->update(['asiento_id' => $asientoFactura->id]);
         } catch (\Throwable $e) {
@@ -735,6 +823,48 @@ class FacturaController extends Controller
         ]);
     }
 
+    /** Datos del rótulo de caja, tomados de la factura como en el sistema anterior; el usuario los puede editar (02-04 §2.9). */
+    public function rotuloDatos(Factura $factura)
+    {
+        $factura->loadMissing('cliente');
+
+        return response()->json([
+            'destinatario'   => $factura->razon_social ?? $factura->cliente?->razon_social,
+            'identificacion' => $factura->identificacion ?? $factura->cliente?->identificacion,
+            'direccion'      => $factura->direccion_cliente ?? $factura->cliente?->direccion,
+            'ciudad'         => $factura->cliente?->ciudad,
+            'telefono'       => $factura->telefono_cliente ?? $factura->cliente?->telefono,
+            'factura'        => $factura->numero_completo,
+            'fecha'          => $factura->fecha_emision?->format('d/m/Y'),
+            'bultos'         => 1,
+            'observaciones'  => '',
+        ]);
+    }
+
+    /** Rótulo en PDF con los datos (editados o no) que llegan en la petición; uno por bulto. */
+    public function rotuloPdf(Request $request, Factura $factura)
+    {
+        $d = $request->validate([
+            'destinatario'   => 'required|string|max:150',
+            'direccion'      => 'required|string|max:250',
+            'ciudad'         => 'nullable|string|max:80',
+            'telefono'       => 'nullable|string|max:40',
+            'identificacion' => 'nullable|string|max:30',
+            'observaciones'  => 'nullable|string|max:200',
+            'bultos'         => 'required|integer|min:1|max:50',
+        ]);
+
+        $empresa = \App\Models\Empresa::find($factura->empresa_id);
+
+        return \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.rotulo-caja', [
+            'remitente'      => $empresa->nombre_comercial ?? $empresa->razon_social ?? 'Altamira',
+            'destinatario'   => $d['destinatario'], 'direccion' => $d['direccion'], 'ciudad' => $d['ciudad'] ?? null,
+            'telefono'       => $d['telefono'] ?? null, 'identificacion' => $d['identificacion'] ?? null,
+            'observaciones'  => $d['observaciones'] ?? null, 'bultos' => (int) $d['bultos'],
+            'factura'        => $factura->numero_completo, 'fecha' => $factura->fecha_emision?->format('d/m/Y'),
+        ])->setPaper('a5', 'landscape')->stream('rotulo-' . $factura->numero_completo . '.pdf');
+    }
+
     public function anular(Request $request, Factura $factura)
     {
         $request->validate([
@@ -747,10 +877,6 @@ class FacturaController extends Controller
             ->join('usuarios', 'usuarios.perfil_id', '=', 'perfiles.id')
             ->where('usuarios.id', $usuario->id)
             ->value('perfiles.nombre');
-
-        if ($perfilNombre !== 'super_admin') {
-            return back()->withErrors(['error' => 'Solo el SuperAdmin puede anular facturas.']);
-        }
 
         if ($factura->fecha_emision->toDateString() !== now()->toDateString()) {
             return back()->withErrors(['error' => 'Solo se pueden anular facturas del día actual.']);
@@ -784,7 +910,36 @@ class FacturaController extends Controller
             return back()->withErrors(['aprobacion_especial' => 'La aprobación especial no es válida o ya fue utilizada.']);
         }
 
+        // Cheque recibido ya depositado: el dinero entró al banco y no se puede anular la factura sin resolver el cheque
+        $chequeDepositado = \App\Models\ChequeRecibido::where('factura_id', $factura->id)->where('estado', 'depositado')->value('numero');
+        if ($chequeDepositado) {
+            return back()->withErrors(['error' => "El cheque N° {$chequeDepositado} de esta factura ya fue depositado: no se puede anular la factura."]);
+        }
+
+        // Venta con tarjeta: si su lote ya se liquidó, el dinero ya entró al banco y se corrige con una nota de crédito
+        $enLoteLiquidado = DB::table('datafast_lote_pagos as lp')
+            ->join('factura_pagos as p', 'p.id', '=', 'lp.factura_pago_id')
+            ->join('datafast_lotes as l', 'l.id', '=', 'lp.lote_id')
+            ->where('p.factura_id', $factura->id)->where('l.estado', 'liquidado')
+            ->value('l.numero_lote');
+        if ($enLoteLiquidado) {
+            return back()->withErrors(['error' => "El cobro con tarjeta de esta factura ya fue liquidado en el lote {$enLoteLiquidado}: emita una nota de crédito."]);
+        }
+
         DB::transaction(function () use ($factura, $aprobacion) {
+            // Venta con tarjeta en un lote pendiente: se saca del lote (queda reversado el valor por liquidar)
+            $enLote = DB::table('datafast_lote_pagos as lp')
+                ->join('factura_pagos as p', 'p.id', '=', 'lp.factura_pago_id')
+                ->where('p.factura_id', $factura->id)
+                ->get(['lp.id', 'lp.lote_id', 'lp.valor']);
+            foreach ($enLote as $enlace) {
+                DB::table('datafast_lotes')->where('id', $enlace->lote_id)->decrement('total_vouchers', (float) $enlace->valor);
+                DB::table('datafast_lote_pagos')->where('id', $enlace->id)->delete();
+                // Un lote pendiente que se queda sin ventas ya no tiene razón de existir
+                DB::table('datafast_lotes')->where('id', $enlace->lote_id)->where('estado', 'pendiente')
+                    ->where('total_vouchers', '<=', 0.01)->delete();
+            }
+
             $movimientosStock = DB::table('inventario_movimientos')
                 ->where('doc_tipo', 'FACTURA')
                 ->where('doc_id', $factura->id)
@@ -900,16 +1055,17 @@ class FacturaController extends Controller
             ->where('usuarios.id', Auth::id())
             ->value('perfiles.nombre');
 
-        if ($perfilNombre !== 'super_admin') {
-            return back()->withErrors(['error' => 'Solo el SuperAdmin puede eliminar facturas.']);
-        }
-
         if (trim($data['confirmacion']) !== $factura->numero_completo) {
             return back()->withErrors(['error' => 'El número escrito no coincide con la factura.']);
         }
 
         if (in_array($factura->estado_sri, ['autorizada', 'recibida'], true)) {
             return back()->withErrors(['error' => 'La factura ya fue enviada al SRI y no se puede eliminar. Use una nota de crédito.']);
+        }
+
+        $chequeDepositado = \App\Models\ChequeRecibido::where('factura_id', $factura->id)->where('estado', 'depositado')->value('numero');
+        if ($chequeDepositado) {
+            return back()->withErrors(['error' => "El cheque N° {$chequeDepositado} de esta factura ya fue depositado: no se puede eliminar."]);
         }
 
         $relacionados = collect([
@@ -1119,7 +1275,7 @@ class FacturaController extends Controller
         // cupo_maximo de un cliente ya existente desde este modal. Ahora,
         // si el cliente YA existe, solo super_admin/admin/contador pueden
         // tocarlo — un vendedor solo puede seguir creando clientes nuevos.
-        $puedeEditarClientes = in_array($usuario->perfil?->nombre, ['super_admin', 'admin', 'contador'], true);
+        $puedeEditarClientes = $usuario->puede('ventas_editar_clientes', 'editar'); // lo decide la matriz
 
         $existente = Cliente::where('empresa_id', $empresaId)
             ->where('identificacion', $request->identificacion)

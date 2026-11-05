@@ -148,7 +148,7 @@ export default function Topbar({ onMobileMenu, pageTitle }: Props) {
 
             {/* Empresa activa — badge fijo cuando el usuario solo tiene una empresa */}
             {empresas_usuario.length <= 1 && empresa_activa && estilo && (
-                <PillEmpresa nombre={empresa_activa.nombre_comercial ?? ''} estilo={estilo} />
+                <PillEmpresa nombre={empresa_activa.nombre_selector ?? empresa_activa.nombre_comercial ?? ''} estilo={estilo} />
             )}
             {empresas_usuario.length <= 1 && empresa_activa && !estilo && (
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm"
@@ -158,7 +158,7 @@ export default function Topbar({ onMobileMenu, pageTitle }: Props) {
                         color: colorEmpresa(empresa_activa.ruc).text,
                     }}>
                     <Building2 className="w-4 h-4" />
-                    <span className="max-w-32 truncate font-medium">{empresa_activa.nombre_comercial}</span>
+                    <span className="max-w-56 truncate font-medium">{empresa_activa.nombre_selector ?? empresa_activa.nombre_comercial}</span>
                 </div>
             )}
 
@@ -166,7 +166,7 @@ export default function Topbar({ onMobileMenu, pageTitle }: Props) {
             {empresas_usuario.length > 1 && (
                 <div className="relative">
                     {estilo ? (
-                        <PillEmpresa nombre={empresa_activa?.nombre_comercial ?? 'Empresa'} estilo={estilo} onClick={() => setEmpresaMenuOpen(!empresaMenuOpen)} />
+                        <PillEmpresa nombre={empresa_activa?.nombre_selector ?? empresa_activa?.nombre_comercial ?? 'Empresa'} estilo={estilo} onClick={() => setEmpresaMenuOpen(!empresaMenuOpen)} />
                     ) : (
                     <button
                         onClick={() => setEmpresaMenuOpen(!empresaMenuOpen)}
@@ -178,7 +178,7 @@ export default function Topbar({ onMobileMenu, pageTitle }: Props) {
                         }}
                     >
                         <Building2 className="w-4 h-4" />
-                        <span className="max-w-32 truncate font-medium">{empresa_activa?.nombre_comercial ?? 'Empresa'}</span>
+                        <span className="max-w-56 truncate font-medium">{empresa_activa?.nombre_selector ?? empresa_activa?.nombre_comercial ?? 'Empresa'}</span>
                         <ChevronDown className="w-3 h-3" />
                     </button>
                     )}
@@ -186,7 +186,7 @@ export default function Topbar({ onMobileMenu, pageTitle }: Props) {
                     {empresaMenuOpen && (
                         <>
                             <div className="fixed inset-0 z-10" onClick={() => setEmpresaMenuOpen(false)} />
-                            <div className="absolute right-0 top-full mt-1 w-56 rounded-lg shadow-lg border z-20"
+                            <div className="absolute right-0 top-full mt-1 w-64 rounded-lg shadow-lg border z-20"
                                 style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
                                 <p className="text-xs font-medium px-3 py-2" style={{ color: 'var(--text-muted)' }}>
                                     Cambiar empresa
@@ -203,7 +203,7 @@ export default function Topbar({ onMobileMenu, pageTitle }: Props) {
                                         {e.id === empresa_activa?.id && (
                                             <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: colorEmpresa(e.ruc).text }} />
                                         )}
-                                        <span className="truncate">{e.nombre_comercial}</span>
+                                        <span className="truncate">{e.nombre_selector ?? e.nombre_comercial}</span>
                                     </button>
                                 ))}
                             </div>
@@ -428,7 +428,7 @@ function PillEmpresa({ nombre, estilo, onClick }: {
                 <span className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: estilo.etiqueta }}>
                     Empresa activa
                 </span>
-                <span className="text-sm font-bold max-w-40 truncate">{nombre}</span>
+                <span className="text-sm font-bold max-w-60 truncate">{nombre}</span>
             </span>
             {interactivo && <ChevronDown className="w-4 h-4" style={{ color: estilo.etiqueta }} />}
         </button>

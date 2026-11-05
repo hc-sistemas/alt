@@ -18,7 +18,10 @@ class VerificarPermiso
             abort(401);
         }
 
-        if (in_array($user->perfil?->nombre, ['super_admin', 'admin'])) {
+        // Super Admin y Admin (los dueños del sistema) pueden todo y no consultan la matriz, igual que el
+        // frontend (HandleInertiaRequests). El resto de perfiles se rige por lo guardado en
+        // Configuración → Permisos (02-01 §2.3).
+        if ($user->esAdministrador()) {
             return $next($request);
         }
 

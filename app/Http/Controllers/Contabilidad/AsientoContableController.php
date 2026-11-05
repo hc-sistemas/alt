@@ -35,12 +35,22 @@ class AsientoContableController extends Controller
                 ->where('empresa_id', $empresaId);
 
             if ($request->filled('buscar')) {
-                $q = $request->buscar;
-                $query->where(fn($qb) =>
-                    $qb->where('numero',         'ilike', "%{$q}%")
-                       ->orWhere('concepto',     'ilike', "%{$q}%")
-                       ->orWhere('documento_ref','ilike', "%{$q}%")
-                );
+                $q = trim($request->buscar);
+                // Número, concepto, documento de respaldo, cuenta (código o nombre) y monto
+                $monto = is_numeric(str_replace(',', '.', $q)) ? (float) str_replace(',', '.', $q) : null;
+                $query->where(function ($qb) use ($q, $monto) {
+                    $qb->where('numero',          'ilike', "%{$q}%")
+                       ->orWhere('concepto',      'ilike', "%{$q}%")
+                       ->orWhere('documento_ref', 'ilike', "%{$q}%")
+                       ->orWhereHas('detalles.cuenta', fn ($c) => $c->where('codigo', 'ilike', "{$q}%")->orWhere('nombre', 'ilike', "%{$q}%"));
+                    if ($monto !== null) {
+                        $qb->orWhere('total_debe', $monto)
+                           ->orWhereHas('detalles', fn ($d) => $d->where('debe', $monto)->orWhere('haber', $monto));
+                    }
+                });
+            }
+            if ($request->filled('diario')) {
+                $query->diario($request->diario);
             }
             if ($request->filled('tipo')) {
                 $query->where('es_automatico', $request->tipo === 'automatico');
@@ -83,7 +93,7 @@ class AsientoContableController extends Controller
                 ? EjercicioContable::periodoActivo((int)$empresaId)
                 : null,
             'filtros'       => $request->only([
-                'buscar','tipo','estado','ejercicio_id','fecha_desde','fecha_hasta'
+                'buscar','tipo','estado','diario','ejercicio_id','fecha_desde','fecha_hasta'
             ]),
         ]);
     }
@@ -100,17 +110,21 @@ class AsientoContableController extends Controller
 
         $request->validate([
             'concepto'               => 'required|string|max:500',
+            // Documento de respaldo: número de factura, comprobante o recibo (02-08 §2.1)
+            'documento_ref'          => 'required|string|max:100',
+            'confirmar_naturaleza'   => 'nullable|boolean',
             // Un asiento no puede tener fecha futura: contabilizaría un hecho
             // económico que todavía no ocurrió y descuadraría cualquier corte.
             'fecha'                  => 'required|date|before_or_equal:today',
             'partidas'               => 'required|array|min:2',
             'partidas.*.cuenta_id'       => 'required|exists:plan_cuentas,id',
-            'partidas.*.centro_costo_id' => 'nullable|integer|exists:centros_costo,id',
+            'partidas.*.centro_costo_id' => 'nullable|integer|exists_empresa:centros_costo',
             'partidas.*.debe'            => 'required|numeric|min:0',
             'partidas.*.haber'           => 'required|numeric|min:0',
             'partidas.*.descripcion'     => 'nullable|string|max:300',
         ], [
             'concepto.required'             => 'El concepto es obligatorio.',
+            'documento_ref.required'        => 'El documento de respaldo es obligatorio (número de factura, comprobante o recibo).',
             'fecha.required'                => 'La fecha es obligatoria.',
             'fecha.before_or_equal'         => 'No se pueden registrar asientos con fecha futura.',
             'partidas.min'                  => 'El asiento requiere mínimo 2 partidas.',
@@ -131,12 +145,38 @@ class AsientoContableController extends Controller
             }
         }
 
+        // Naturaleza invertida (PC-GEN-04): activos y gastos aumentan por el debe; pasivos, patrimonio e ingresos
+        // por el haber. Si una línea va al lado contrario, se advierte y se pide confirmación. Las cuentas
+        // regularizadoras «(-)» van al lado contrario por definición y no se advierten.
+        if (!$request->boolean('confirmar_naturaleza')) {
+            $cuentas = PlanCuenta::whereIn('id', collect($request->partidas)->pluck('cuenta_id'))->get()->keyBy('id');
+            $invertidas = [];
+            foreach ($request->partidas as $idx => $p) {
+                $c = $cuentas->get($p['cuenta_id']);
+                if (!$c || str_starts_with(trim($c->nombre), '(-)')) {
+                    continue;
+                }
+                $debe  = (float) ($p['debe']  ?? 0);
+                $haber = (float) ($p['haber'] ?? 0);
+                $naturalDebe = in_array($c->tipo, ['activo', 'gasto'], true);
+                if (($naturalDebe && $haber > 0) || (!$naturalDebe && $debe > 0)) {
+                    $invertidas[] = "{$c->codigo} {$c->nombre} (" . ($haber > 0 ? 'haber' : 'debe') . ')';
+                }
+            }
+            if ($invertidas) {
+                return back()->withErrors([
+                    'naturaleza_invertida' => 'Estas cuentas van al lado contrario de su naturaleza: ' . implode('; ', $invertidas) . '.',
+                ]);
+            }
+        }
+
         try {
             $this->asientoService->crear(
                 empresaId:    $empresaId,
                 concepto:     $request->concepto,
                 partidas:     $request->partidas,
                 documentoTipo:'MANUAL',
+                documentoRef: $request->documento_ref,
                 esAutomatico: false,
                 fecha:        $request->fecha,
             );
@@ -182,13 +222,6 @@ class AsientoContableController extends Controller
     {
         $this->verificarEmpresa($asiento);
 
-        $perfil = Auth::user()->perfil->nombre ?? '';
-        if ($perfil !== 'super_admin') {
-            return back()->with('error',
-                'Solo el Super Administrador puede anular asientos contables. ' .
-                'Contacta al administrador del sistema.');
-        }
-
         $request->validate([
             'motivo' => 'required|string|min:10|max:300',
         ], [
@@ -205,51 +238,16 @@ class AsientoContableController extends Controller
         }
     }
 
-    // CORRECCIÓN 4: eliminar físico (solo super_admin, máx 24 h)
+    /**
+     * Los asientos no se borran (02-08 §2.1): se anulan con reverso y motivo, y quedan siempre en el libro.
+     * Se conserva la ruta para no romper accesos viejos, pero ya no elimina nada.
+     */
     public function destroy(AsientoContable $asiento): RedirectResponse
     {
         $this->verificarEmpresa($asiento);
 
-        $perfil = Auth::user()->perfil->nombre ?? '';
-        if ($perfil !== 'super_admin') {
-            return back()->with('error',
-                'Solo el Super Administrador puede eliminar asientos. Usa Anular.');
-        }
-
-        if ($asiento->estaAnulado()) {
-            return back()->with('error', 'El asiento ya está anulado. No es necesario eliminarlo.');
-        }
-
-        $asiento->loadMissing('ejercicio');
-        if ($asiento->ejercicio && $asiento->ejercicio->estaCerrado()) {
-            return back()->with('error',
-                "El período {$asiento->ejercicio->periodo_label} está cerrado. No se puede eliminar el asiento.");
-        }
-
-        // Comparación directa (no diffInHours) para no depender del signo: en Carbon 3
-        // diffInHours() es firmado por defecto y now()->diffInHours($pasado) da negativo,
-        // lo que nunca superaba el umbral de 24 y dejaba el candado inoperante.
-        if ($asiento->created_at->lt(now()->subHours(24))) {
-            return back()->with('error',
-                "No se puede eliminar: el asiento tiene más de 24 horas. Usa la opción Anular.");
-        }
-
-        $numero = $asiento->numero;
-
-        // plan_cuentas.total_asientos solo se incrementaba, nunca se
-        // decrementaba: una cuenta cuyo único asiento se eliminaba quedaba
-        // marcada para siempre como "tiene movimientos" y ya no se podía
-        // desactivar ni eliminar. Se descuenta al borrar.
-        $cuentaIds = $asiento->detalles()->pluck('cuenta_id')->unique();
-        PlanCuenta::whereIn('id', $cuentaIds)
-            ->where('total_asientos', '>', 0)
-            ->decrement('total_asientos');
-
-        $asiento->detalles()->delete();
-        $asiento->delete();
-
-        return redirect()->route('contabilidad.asientos.index')
-            ->with('success', "Asiento {$numero} eliminado permanentemente.");
+        return back()->with('error',
+            'Los asientos no se borran: use Anular, que genera el reverso y guarda el motivo.');
     }
 
     public function exportarExcel(Request $request): \Symfony\Component\HttpFoundation\BinaryFileResponse

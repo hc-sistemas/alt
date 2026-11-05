@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Secuencial extends Model
 {
+    use \App\Models\Concerns\PerteneceAEmpresaActiva;
     public $timestamps = false;
     protected $table = 'secuenciales';
 

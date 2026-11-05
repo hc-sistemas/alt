@@ -17,7 +17,7 @@ class PermisoController extends Controller
 {
     public function index(Request $request): Response
     {
-        $empresas = Empresa::orderBy('nombre_comercial')->get(['id', 'nombre_comercial']);
+        $empresas = Empresa::orderBy('id')->get(['id', 'nombre_comercial', 'razon_social', 'etiqueta']);
         $empresaId = $request->integer('empresa_id') ?: $empresas->first()?->id;
 
         $perfiles = Perfil::with([
@@ -25,10 +25,14 @@ class PermisoController extends Controller
             'limiteDescuento',
         ])->get();
 
-        $modulos = Modulo::whereNull('padre_id')
-            ->with('hijos')
-            ->orderBy('orden')
-            ->get();
+        // Módulos y submódulos en una sola lista (cada submódulo justo debajo de su módulo)
+        $modulos = collect();
+        foreach (Modulo::whereNull('padre_id')->with(['hijos' => fn ($q) => $q->orderBy('orden')])->orderBy('orden')->get() as $m) {
+            $modulos->push($m->setAttribute('es_hijo', false));
+            foreach ($m->hijos as $h) {
+                $modulos->push($h->setAttribute('es_hijo', true));
+            }
+        }
 
         return Inertia::render('Configuracion/Permisos/Index', [
             'perfiles' => $perfiles,
@@ -53,6 +57,18 @@ class PermisoController extends Controller
             [$data['accion'] => $data['valor']]
         );
 
+        // Al marcar cualquier acción de un submódulo se marca también «Ver» del módulo padre: sin él la
+        // persona no llegaría a la pantalla.
+        if ($data['valor']) {
+            $padreId = Modulo::where('id', $data['modulo_id'])->value('padre_id');
+            if ($padreId) {
+                Permiso::updateOrCreate(
+                    ['perfil_id' => $data['perfil_id'], 'modulo_id' => $padreId, 'empresa_id' => $data['empresa_id']],
+                    ['ver' => true]
+                );
+            }
+        }
+
         return back();
     }
 
@@ -63,13 +79,22 @@ class PermisoController extends Controller
             'porcentaje_maximo' => ['required', 'numeric', 'min:0', 'max:100'],
             'puede_aprobar' => ['required', 'boolean'],
             'porcentaje_aprobacion_max' => ['required', 'numeric', 'min:0', 'max:100'],
+            'solo_cero_o_maximo' => ['required', 'boolean'],
         ]);
+
+        $perfil = Perfil::findOrFail($data['perfil_id']);
+
+        if ((float) $data['porcentaje_aprobacion_max'] < (float) $data['porcentaje_maximo']) {
+            return back()->withErrors([
+                'porcentaje_aprobacion_max' => 'El % con aprobación no puede ser menor que el % sin aprobación.',
+            ]);
+        }
 
         LimiteDescuento::updateOrCreate(
             ['perfil_id' => $data['perfil_id']],
             $data
         );
 
-        return back();
+        return back()->with('success', 'Límites de descuento guardados.');
     }
 }

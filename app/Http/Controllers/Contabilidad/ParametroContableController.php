@@ -16,18 +16,20 @@ class ParametroContableController extends Controller
     private array $parametrosDefinidos = [
         // ── Ventas ────────────────────────────────────────────────────────────
         ['codigo' => 'cta_caja_general',             'descripcion' => 'Caja General (cobros en efectivo)',               'grupo' => 'Ventas'],
-        ['codigo' => 'cta_bancos_locales',            'descripcion' => 'Bancos Locales (cobros por transferencia)',       'grupo' => 'Ventas'],
         ['codigo' => 'cta_vouchers',                  'descripcion' => 'Dinero Electrónico / Vouchers Datafast',          'grupo' => 'Ventas'],
         ['codigo' => 'cta_clientes_locales',          'descripcion' => 'Clientes Locales (ventas a crédito)',             'grupo' => 'Ventas'],
         ['codigo' => 'cta_clientes_exterior',         'descripcion' => 'Clientes del Exterior',                          'grupo' => 'Ventas'],
-        ['codigo' => 'cta_ventas_locales',            'descripcion' => 'Venta de Mercaderías Locales',                   'grupo' => 'Ventas'],
+        // La cuenta de venta, costo e inventario de cada producto sale de su SUBCATEGORÍA (PC-CAT-01 a 20, Contabilidad →
+        // Parámetros → Subcategorías), no de parámetros genéricos: por eso ya no se listan aquí.
         ['codigo' => 'cta_devoluciones_ventas',       'descripcion' => '(-) Devoluciones en Ventas',                     'grupo' => 'Ventas'],
         ['codigo' => 'cta_iva_ventas',                'descripcion' => 'IVA en Ventas por Pagar',                        'grupo' => 'Ventas'],
         ['codigo' => 'cta_anticipos_clientes',        'descripcion' => 'Anticipos de Clientes (reservas)',                'grupo' => 'Ventas'],
-        ['codigo' => 'cta_costo_ventas',              'descripcion' => 'Costo de Ventas de Mercaderías Locales',          'grupo' => 'Ventas'],
+        ['codigo' => 'cta_cheques_cartera',           'descripcion' => 'Cheques en Cartera (post fechados recibidos)',    'grupo' => 'Ventas'],
+        ['codigo' => 'cta_otros_ingresos',            'descripcion' => 'Otros ingresos (facturas de evento)',             'grupo' => 'Ventas'],
         // ── Compras ───────────────────────────────────────────────────────────
         ['codigo' => 'cta_proveedores_locales',       'descripcion' => 'Proveedores Locales (CxP)',                      'grupo' => 'Compras'],
         ['codigo' => 'cta_proveedores_exterior',      'descripcion' => 'Proveedores del Exterior (importaciones)',        'grupo' => 'Compras'],
+        ['codigo' => 'cta_proveedores_logisticos',    'descripcion' => 'Proveedores de Servicios Logísticos y Agentes Aduaneros', 'grupo' => 'Compras'],
         ['codigo' => 'cta_iva_compras',               'descripcion' => 'Crédito Tributario por IVA en Compras',          'grupo' => 'Compras'],
         ['codigo' => 'cta_retencion_ir',              'descripcion' => 'Retenciones en la Fuente de IR por Pagar',       'grupo' => 'Compras'],
         ['codigo' => 'cta_retencion_iva',             'descripcion' => 'Retenciones de IVA por Pagar',                   'grupo' => 'Compras'],
@@ -36,13 +38,19 @@ class ParametroContableController extends Controller
         // sistema lo lee jamás — el código que realmente usa AsientoService es
         // 'cta_gasto_compras_default' (grupo "Gastos Operativos").
         ['codigo' => 'cta_anticipos_proveedores',     'descripcion' => 'Anticipos a Proveedores (locales/internacionales)', 'grupo' => 'Compras'],
+        // ── Taller (PC-TAL-01 y PC-TAL-02) ────────────────────────────────────
+        ['codigo' => 'cta_ingresos_servicios',        'descripcion' => 'Ingresos por Servicio Técnico (mano de obra de taller)', 'grupo' => 'Taller'],
+        ['codigo' => 'cta_ventas_repuestos_taller',   'descripcion' => 'Venta de Repuestos e Insumos de Taller',         'grupo' => 'Taller'],
+        ['codigo' => 'cta_costo_repuestos_taller',    'descripcion' => 'Costo de Ventas - Repuestos e Insumos de Taller', 'grupo' => 'Taller'],
+        ['codigo' => 'cta_inventario_repuestos_taller', 'descripcion' => 'Inventario de Repuestos e Insumos de Taller',   'grupo' => 'Taller'],
         // ── Inventario ────────────────────────────────────────────────────────
-        ['codigo' => 'cta_inventario_mercaderia',     'descripcion' => 'Inventario de Mercaderías',                      'grupo' => 'Inventario'],
         ['codigo' => 'cta_inventario_transito',       'descripcion' => 'Inventario en Tránsito — Importaciones en Curso','grupo' => 'Inventario'],
-        ['codigo' => 'cta_costo_ventas_importadas',   'descripcion' => 'Costo de Ventas de Mercaderías Importadas',      'grupo' => 'Inventario'],
         ['codigo' => 'cta_ajuste_inventario',         'descripcion' => 'Ajustes por Faltantes o Mermas de Inventario',   'grupo' => 'Inventario'],
         // ── Bancos ────────────────────────────────────────────────────────────
         ['codigo' => 'cta_bancos_exterior',           'descripcion' => 'Bancos del Exterior',                            'grupo' => 'Bancos'],
+        ['codigo' => 'cta_banco_pichincha',           'descripcion' => 'Banco Pichincha (cuenta corriente)',             'grupo' => 'Bancos'],
+        ['codigo' => 'cta_banco_produbanco',          'descripcion' => 'ProduBanco (cuenta de ahorros)',                 'grupo' => 'Bancos'],
+        ['codigo' => 'cta_banco_guayaquil',           'descripcion' => 'Banco de Guayaquil (cuenta de ahorros)',         'grupo' => 'Bancos'],
         // Faltaban en la UI aunque el sistema sí los usa: 'cta_cajas_chicas' lo
         // escribía autoconfigurar() sin que nadie pudiera verlo ni corregirlo, y
         // 'cta_ajuste_conciliacion' lo necesita AsientoService::ajusteConciliacion()
@@ -52,6 +60,8 @@ class ParametroContableController extends Controller
         ['codigo' => 'cta_cajas_chicas',              'descripcion' => 'Cajas Chicas y Fondos Fijos',                    'grupo' => 'Bancos'],
         ['codigo' => 'cta_ajuste_conciliacion',       'descripcion' => 'Ajustes por Diferencias en Conciliación Bancaria','grupo' => 'Bancos'],
         ['codigo' => 'cta_comisiones_bancarias',      'descripcion' => 'Comisiones Bancarias y Pasarelas (Datafast)',    'grupo' => 'Bancos'],
+        ['codigo' => 'cta_iva_comision_tarjeta',      'descripcion' => 'IVA de la comisión de tarjeta (crédito tributario)', 'grupo' => 'Bancos'],
+        ['codigo' => 'cta_cuenta_socio',              'descripcion' => 'Cuenta por pagar al socio (préstamos del dueño)', 'grupo' => 'Bancos'],
         ['codigo' => 'cta_retencion_iva_cobrada',     'descripcion' => 'Crédito Tributario por Retenciones de IVA',     'grupo' => 'Bancos'],
         ['codigo' => 'cta_retencion_ir_cobrada',      'descripcion' => 'Crédito Tributario por Retenciones de IR',      'grupo' => 'Bancos'],
         // ── Nómina ────────────────────────────────────────────────────────────
@@ -68,6 +78,10 @@ class ParametroContableController extends Controller
         ['codigo' => 'cta_decimo_cuarto',             'descripcion' => 'Décimo Cuarto Sueldo',                          'grupo' => 'Nómina'],
         ['codigo' => 'cta_vacaciones',                'descripcion' => 'Vacaciones',                                    'grupo' => 'Nómina'],
         ['codigo' => 'cta_fondos_reserva',            'descripcion' => 'Fondos de Reserva',                             'grupo' => 'Nómina'],
+        ['codigo' => 'cta_decimo_tercero_pagar',      'descripcion' => 'Provisión Décimo Tercer Sueldo por Pagar',      'grupo' => 'Nómina'],
+        ['codigo' => 'cta_decimo_cuarto_pagar',       'descripcion' => 'Provisión Décimo Cuarto Sueldo por Pagar',      'grupo' => 'Nómina'],
+        ['codigo' => 'cta_vacaciones_pagar',          'descripcion' => 'Provisión Vacaciones por Pagar',                'grupo' => 'Nómina'],
+        ['codigo' => 'cta_fondos_reserva_pagar',      'descripcion' => 'Fondos de Reserva por Pagar',                   'grupo' => 'Nómina'],
         // ── SRI ───────────────────────────────────────────────────────────────
         ['codigo' => 'cta_gastos_no_deducibles',      'descripcion' => 'Gastos No Deducibles Locales',                  'grupo' => 'SRI'],
         // ── Contabilidad ──────────────────────────────────────────────────────
@@ -75,8 +89,11 @@ class ParametroContableController extends Controller
         ['codigo' => 'cta_perdidas_acumuladas',       'descripcion' => '(-) Pérdidas Acumuladas (ejercicios anteriores)','grupo' => 'Contabilidad'],
         ['codigo' => 'cta_utilidad_periodo',          'descripcion' => 'Utilidad del Periodo',                          'grupo' => 'Contabilidad'],
         ['codigo' => 'cta_perdida_periodo',           'descripcion' => '(-) Pérdida del Periodo',                       'grupo' => 'Contabilidad'],
+        ['codigo' => 'cta_iva_por_pagar_mes',         'descripcion' => 'IVA por Pagar del mes (neto)',                  'grupo' => 'Contabilidad'],
+        ['codigo' => 'cta_impuesto_renta_pagar',      'descripcion' => 'Impuesto a la Renta por Pagar',                 'grupo' => 'Contabilidad'],
+        ['codigo' => 'cta_capital',                   'descripcion' => 'Capital Neto / Cuenta Capital',                 'grupo' => 'Contabilidad'],
+        ['codigo' => 'cta_retiros_propietario',       'descripcion' => '(-) Retiros Personales del Propietario',        'grupo' => 'Contabilidad'],
         // ── Gastos Operativos ─────────────────────────────────────────────────
-        ['codigo' => 'cta_gasto_compras_default',     'descripcion' => 'Gasto Genérico (Suministros — fallback compras sin cuenta)','grupo' => 'Gastos Operativos'],
         ['codigo' => 'cta_gasto_servicios',           'descripcion' => 'Honorarios y Servicios Profesionales',           'grupo' => 'Gastos Operativos'],
         ['codigo' => 'cta_gasto_arrendamiento',       'descripcion' => 'Arrendamientos de Locales',                     'grupo' => 'Gastos Operativos'],
         ['codigo' => 'cta_gasto_servicios_basicos',   'descripcion' => 'Servicios Básicos (Agua, Luz, Internet)',        'grupo' => 'Gastos Operativos'],
@@ -85,9 +102,16 @@ class ParametroContableController extends Controller
 
     public function index(): Response
     {
-        $empresaId  = session('empresa_activa_id');
-        $parametros = ParametroContable::where('empresa_id', $empresaId)
+        $empresaId = session('empresa_activa_id');
+
+        // Configuración compartida: la fila general (empresa_id NULL) vale para
+        // todas las empresas; una fila de la empresa activa es una excepción
+        // solo para ella y tiene prioridad.
+        $parametros = ParametroContable::where(function ($q) use ($empresaId) {
+                $q->whereNull('empresa_id')->orWhere('empresa_id', $empresaId);
+            })
             ->with('cuenta')
+            ->orderByRaw('empresa_id IS NOT NULL')
             ->get()
             ->keyBy('codigo');
 
@@ -102,6 +126,7 @@ class ParametroContableController extends Controller
                     ? "{$param->cuenta->codigo} — {$param->cuenta->nombre}"
                     : null,
                 'configurado' => $param !== null,
+                'excepcion'   => $param !== null && $param->empresa_id !== null,
             ];
         });
 
@@ -116,6 +141,37 @@ class ParametroContableController extends Controller
         ]);
     }
 
+    /**
+     * Tabla de eventos contables (documento 01 §5), solo lectura: cuenta de debe
+     * y de haber de cada evento. Los que dicen «No documentado» están sin cuenta
+     * definida y se señalan como pendientes.
+     */
+    public function eventos(): Response
+    {
+        $eventos = collect(require database_path('data/eventos_contables.php'))
+            ->map(fn ($e) => [
+                'id'          => $e[0],
+                'seccion'     => $e[1],
+                'evento'      => $e[2],
+                'debe'        => $e[3],
+                'haber'       => $e[4],
+                'estado'      => $e[5],
+                'sin_cuenta'  => $e[3] === 'No documentado' || $e[4] === 'No documentado',
+            ])->values();
+
+        return Inertia::render('Contabilidad/Parametros/Eventos', ['eventos' => $eventos]);
+    }
+
+    /**
+     * Cuenta que hoy resuelve el parámetro para una empresa: su excepción si
+     * existe, si no la general. Es lo que ve la pantalla y lo que usa
+     * AsientoService al generar asientos.
+     */
+    private function cuentaEfectiva(string $codigo, int $empresaId): ?int
+    {
+        return ParametroContable::getCuentaId($codigo, $empresaId);
+    }
+
     public function update(Request $request): RedirectResponse
     {
         $empresaId = session('empresa_activa_id');
@@ -123,31 +179,43 @@ class ParametroContableController extends Controller
             'parametros'             => 'required|array',
             'parametros.*.codigo'    => 'required|string',
             'parametros.*.cuenta_id' => 'nullable|exists:plan_cuentas,id',
+            'solo_esta_empresa'      => 'nullable|boolean',
         ]);
+        // false (por defecto): el cambio vale para todas las empresas.
+        // true: el cambio es una excepción solo de la empresa activa.
+        $soloEstaEmpresa = $request->boolean('solo_esta_empresa');
+        $empresaDestino  = $soloEstaEmpresa ? (int) $empresaId : null;
 
         // Tipo de cuenta que corresponde a cada parámetro. No se validaba nada:
         // se podía asignar una cuenta de ingreso a "Bancos Locales" y el error
         // recién aparecía —como un asiento absurdo— meses después.
         $tipoEsperado = [
             'activo'     => [
-                'cta_caja_general', 'cta_cajas_chicas', 'cta_bancos_locales', 'cta_bancos_exterior',
+                'cta_caja_general', 'cta_cajas_chicas', 'cta_bancos_exterior',
+                'cta_banco_pichincha', 'cta_banco_produbanco', 'cta_banco_guayaquil',
                 'cta_vouchers', 'cta_clientes_locales', 'cta_clientes_exterior',
                 'cta_anticipos_proveedores', 'cta_anticipos_empleados',
-                'cta_inventario_mercaderia', 'cta_inventario_transito',
+                'cta_inventario_mercaderia', 'cta_inventario_transito', 'cta_inventario_repuestos_taller',
                 'cta_iva_compras', 'cta_retencion_iva_cobrada', 'cta_retencion_ir_cobrada',
+                'cta_cheques_cartera', 'cta_iva_comision_tarjeta',
             ],
             'pasivo'     => [
                 'cta_proveedores_locales', 'cta_proveedores_exterior', 'cta_anticipos_clientes',
                 'cta_retencion_ir', 'cta_retencion_iva', 'cta_iva_ventas',
                 'cta_nomina_por_pagar', 'cta_iess_por_pagar', 'cta_iess_personal_por_pagar',
+                'cta_proveedores_logisticos', 'cta_cuenta_socio', 'cta_iva_por_pagar_mes',
+                'cta_impuesto_renta_pagar', 'cta_decimo_tercero_pagar', 'cta_decimo_cuarto_pagar',
+                'cta_vacaciones_pagar', 'cta_fondos_reserva_pagar',
             ],
             'patrimonio' => [
                 'cta_ganancias_acumuladas', 'cta_perdidas_acumuladas',
                 'cta_utilidad_periodo', 'cta_perdida_periodo',
+                'cta_capital', 'cta_retiros_propietario',
             ],
-            'ingreso'    => ['cta_ventas_locales', 'cta_devoluciones_ventas'],
+            'ingreso'    => ['cta_ventas_locales', 'cta_devoluciones_ventas', 'cta_otros_ingresos',
+                             'cta_ingresos_servicios', 'cta_ventas_repuestos_taller'],
             'gasto'      => [
-                'cta_costo_ventas', 'cta_costo_ventas_importadas', 'cta_ajuste_inventario',
+                'cta_costo_ventas', 'cta_costo_ventas_importadas', 'cta_ajuste_inventario', 'cta_costo_repuestos_taller',
                 'cta_sueldos_salarios', 'cta_aporte_patronal', 'cta_decimo_tercero',
                 'cta_decimo_cuarto', 'cta_vacaciones', 'cta_fondos_reserva',
                 'cta_comisiones_bancarias', 'cta_gastos_no_deducibles', 'cta_ajuste_conciliacion',
@@ -167,12 +235,20 @@ class ParametroContableController extends Controller
         $borrados  = 0;
 
         foreach ($request->parametros as $param) {
+            // La pantalla envía todos los parámetros: solo se escribe lo que
+            // realmente cambió respecto de lo que hoy resuelve esta empresa,
+            // para no convertir en general una excepción que no se tocó.
+            $actual = $this->cuentaEfectiva($param['codigo'], (int) $empresaId);
+            if ((int) ($param['cuenta_id'] ?? 0) === (int) ($actual ?? 0)) {
+                continue;
+            }
+
             if (empty($param['cuenta_id'])) {
-                // Dejar el campo vacío BORRA el parámetro. Se mantiene el
-                // comportamiento (es la única forma de desasignar), pero ahora
-                // se informa en el mensaje en vez de perder configuración en
-                // silencio.
-                $borrados += ParametroContable::where('empresa_id', $empresaId)
+                // Dejar el campo vacío BORRA el parámetro (de la empresa si es
+                // una excepción, o el general). Se mantiene el comportamiento
+                // (es la única forma de desasignar), pero se informa en el
+                // mensaje en vez de perder configuración en silencio.
+                $borrados += ParametroContable::where('empresa_id', $empresaDestino)
                     ->where('codigo', $param['codigo'])
                     ->delete();
                 continue;
@@ -195,12 +271,19 @@ class ParametroContableController extends Controller
             $def = collect($this->parametrosDefinidos)->firstWhere('codigo', $param['codigo']);
 
             ParametroContable::updateOrCreate(
-                ['empresa_id' => $empresaId, 'codigo' => $param['codigo']],
+                ['empresa_id' => $empresaDestino, 'codigo' => $param['codigo']],
                 [
                     'cuenta_id'   => $param['cuenta_id'],
                     'descripcion' => $def['descripcion'] ?? $param['codigo'],
                 ]
             );
+            // Un cambio general pisa la excepción de la empresa activa, si la
+            // tenía: de lo contrario el cambio no se vería en esta empresa.
+            if (!$soloEstaEmpresa) {
+                ParametroContable::where('empresa_id', $empresaId)
+                    ->where('codigo', $param['codigo'])
+                    ->delete();
+            }
             $guardados++;
         }
 
@@ -262,8 +345,9 @@ class ParametroContableController extends Controller
 
                 $def = collect($this->parametrosDefinidos)->firstWhere('codigo', $codigo);
 
+                // Configuración general (compartida por las dos empresas).
                 ParametroContable::updateOrCreate(
-                    ['empresa_id' => $empresaId, 'codigo' => $codigo],
+                    ['empresa_id' => null, 'codigo' => $codigo],
                     [
                         'cuenta_id'   => $cuenta->id,
                         'descripcion' => $def['descripcion'] ?? $cuenta->nombre,

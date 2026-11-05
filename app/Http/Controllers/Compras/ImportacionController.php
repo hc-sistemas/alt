@@ -100,7 +100,7 @@ class ImportacionController extends Controller
         $empresaId = session('empresa_activa_id');
         $request->validate([
             'nombre'        => 'required|string|max:200',
-            'proveedor_id'  => 'nullable|exists:proveedores,id',
+            'proveedor_id'  => 'nullable|exists_empresa:proveedores',
             'num_invoice'   => 'nullable|string|max:100',
             'costo_fob'     => 'required|numeric|min:0',
             'pais_embarque' => 'nullable|string|max:100',
@@ -200,7 +200,7 @@ class ImportacionController extends Controller
             ], 422);
         }
 
-        $totalCostosExtra = (float) $comprasGasto->sum('total');
+        $totalCostosExtra = $this->costoBase($comprasGasto);
         $costoFob         = (float) $importacion->costo_fob;
 
         $detalleCostosExtra = $comprasGasto->map(fn($c) => [
@@ -393,7 +393,17 @@ class ImportacionController extends Controller
                 'No hay costos extra registrados. Agrégalos desde el Tab "Costos Extra".');
         }
 
-        $totalCostosExtra = (float) $comprasGasto->sum('total');
+        // El valor FOB debe cuadrar con la suma de los productos: no se continúa hasta que cuadre
+        $sumaProductos = $this->sumaProductos($comprasProducto);
+        if (abs(round((float) $importacion->costo_fob, 2) - $sumaProductos) > 0.01) {
+            return back()->with('error', sprintf(
+                'El valor FOB de la importación ($%s) no cuadra con la suma de los productos ($%s). Diferencia: $%s. Corrija el FOB o los productos antes de liquidar.',
+                number_format((float) $importacion->costo_fob, 2), number_format($sumaProductos, 2),
+                number_format(abs((float) $importacion->costo_fob - $sumaProductos), 2)
+            ));
+        }
+
+        $totalCostosExtra = $this->costoBase($comprasGasto);
         $costoFob         = (float) $importacion->costo_fob;
 
         $metodo = $request->input('metodo_prorrateo');
@@ -822,7 +832,7 @@ class ImportacionController extends Controller
 
         $request->validate([
             'concepto'     => 'required|string|max:200',
-            'proveedor_id' => 'nullable|exists:proveedores,id',
+            'proveedor_id' => 'nullable|exists_empresa:proveedores',
             'monto'        => 'required|numeric|min:0.01',
             'num_factura'  => 'nullable|string|max:30',
         ]);
@@ -834,7 +844,15 @@ class ImportacionController extends Controller
             return response()->json(['message' => 'Selecciona el proveedor que cobró este gasto.'], 422);
         }
 
-        DB::transaction(function () use ($request, $importacion, $empresaId, $monto, $proveedorId) {
+        // El usuario digita el TOTAL; el sistema separa base e IVA según el concepto (02-03 §2.2)
+        $tipo = $this->clasificarCosto($request->concepto);
+        [$base, $iva] = match ($tipo) {
+            'con_iva'         => [round($monto / 1.15, 2), round($monto - round($monto / 1.15, 2), 2)], // BASE = TOTAL ÷ 1,15; IVA = TOTAL − BASE
+            'iva_importacion' => [0.0, $monto],                                                        // crédito tributario, no es costo
+            default           => [$monto, 0.0],                                                        // sin IVA o impuesto (sin cálculo)
+        };
+
+        DB::transaction(function () use ($request, $importacion, $empresaId, $monto, $proveedorId, $tipo, $base, $iva) {
             $compra = Compra::create([
                 'empresa_id'          => $empresaId,
                 'proveedor_id'        => $proveedorId,
@@ -845,12 +863,15 @@ class ImportacionController extends Controller
                 'fecha_registro'      => now()->toDateString(),
                 'fecha_vencimiento'   => now()->toDateString(),
                 'dias_credito'        => 0,
-                'subtotal_0'          => $monto,
-                'subtotal_iva'        => 0,
-                'total_iva'           => 0,
+                'subtotal_0'          => $tipo === 'con_iva' ? 0 : $base,
+                'subtotal_iva'        => $tipo === 'con_iva' ? $base : 0,
+                'total_iva'           => $iva,
                 'total_ice'           => 0,
                 'total'               => $monto,
+                // Se mantiene la marca de «costo de importación» que usa todo este módulo para separarlos
+                // de las facturas de productos; el IVA queda guardado aparte para el crédito tributario.
                 'gasto_no_deducible'  => true,
+                'costo_tipo'          => $tipo,
                 'sustento_tributario' => 2,
                 'concepto'            => $request->concepto,
                 'estado'              => 'activa',
@@ -861,11 +882,11 @@ class ImportacionController extends Controller
                 'compra_id'       => $compra->id,
                 'descripcion'     => $request->concepto,
                 'cantidad'        => 1,
-                'precio_unitario' => $monto,
+                'precio_unitario' => $base,
                 'descuento'       => 0,
-                'subtotal'        => $monto,
-                'porcentaje_iva'  => 0,
-                'valor_iva'       => 0,
+                'subtotal'        => $base,
+                'porcentaje_iva'  => $tipo === 'con_iva' ? 15 : 0,
+                'valor_iva'       => $iva,
                 'total'           => $monto,
                 'es_activo_fijo'  => false,
             ]);
@@ -905,16 +926,27 @@ class ImportacionController extends Controller
             ->map(fn($c) => [
                 'concepto'      => $c->concepto ?: $c->num_documento,
                 'num_documento' => $c->num_documento,
+                'base'          => round((float) $c->subtotal_0 + (float) $c->subtotal_iva, 2),
+                'iva'           => round((float) $c->total_iva, 2),
                 'monto'         => (float) $c->total,
+                'es_costo'      => $c->costo_tipo !== 'iva_importacion',
             ])
             ->values();
 
         $totalGastosFact = $gastos->sum('monto');
+        $sumaProductos = $this->sumaProductos($compras->where('gasto_no_deducible', false));
 
         return response()->json([
             'productos' => $productos,
             'gastos'    => $gastos,
+            'fob_cuadre' => [
+                'suma_productos' => $sumaProductos,
+                'diferencia'     => round((float) $importacion->costo_fob - $sumaProductos, 2),
+                'cuadra'         => abs(round((float) $importacion->costo_fob, 2) - $sumaProductos) <= 0.01,
+            ],
             'totales'   => [
+                'costo_base' => round((float) $gastos->where('es_costo', true)->sum('base'), 2),
+                'iva_credito' => round((float) $gastos->sum('iva'), 2),
                 'fob'    => (float) $importacion->costo_fob,
                 'gastos' => $totalGastosFact > 0
                     ? $totalGastosFact
@@ -1047,5 +1079,39 @@ class ImportacionController extends Controller
             'actualizados' => $actualizados,
             'message'      => "Precios actualizados en {$actualizados} producto(s).",
         ]);
+    }
+
+    /** Costo a prorratear: solo la BASE de cada gasto. El IVA es crédito tributario, no costo. */
+    private function costoBase($comprasGasto): float
+    {
+        return round((float) $comprasGasto->sum(fn ($c) => (float) $c->subtotal_0 + (float) $c->subtotal_iva), 2);
+    }
+
+    /** Suma de las líneas de producto de las facturas de la importación (para cuadrar el FOB). */
+    private function sumaProductos($comprasProducto): float
+    {
+        return round((float) $comprasProducto->flatMap(fn ($c) => $c->detalles)
+            ->filter(fn ($d) => $d->producto_id !== null)->sum('subtotal'), 2);
+    }
+
+    /**
+     * Tipo de costo según el concepto (02-03 §2.2):
+     *  - con_iva: se digita el total con IVA; base = total ÷ 1,15 (gastos destino, honorarios aduaneros, almacenaje, transporte nacional)
+     *  - iva_importacion: IVA que se paga a la aduana (crédito tributario, no es costo)
+     *  - impuesto: advalorem, FODINFA, ICE, ISD (se digitan tal cual, sin cálculo)
+     *  - sin_iva: mercadería, seguro, flete y honorarios del banco
+     */
+    private function clasificarCosto(string $concepto): string
+    {
+        $c = mb_strtolower($concepto);
+        $c = strtr($c, ['á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u']);
+
+        return match (true) {
+            (bool) preg_match('/^iva|iva (de )?importacion/', $c)                                   => 'iva_importacion',
+            (bool) preg_match('/honorarios? banco/', $c)                                            => 'sin_iva',
+            (bool) preg_match('/gastos? destino|honorarios? aduan|almacen|transporte nacional/', $c) => 'con_iva',
+            (bool) preg_match('/advalorem|fodinfa|\bice\b|\bisd\b|salida de divisas|arancel|tributo/', $c) => 'impuesto',
+            default                                                                                 => 'sin_iva',
+        };
     }
 }

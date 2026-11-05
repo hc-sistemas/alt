@@ -117,7 +117,8 @@ function esMismoDia(fecha: string): boolean {
 export default function Index() {
     const { facturas, filtros, auth } = usePage<Props>().props
     const { puede } = usePermiso('ventas')
-    const esSuperAdmin = auth.user?.perfil === 'super_admin'
+    const permisosCriticos = usePermiso('ventas_facturas_criticas') // anular y eliminar: lo decide la matriz
+    const puedeEliminarFactura = permisosCriticos.puede('eliminar')
 
     // Eliminación total (solo SuperAdmin): exige escribir el número de la factura.
     const handleEliminar = async (factura: Factura) => {
@@ -147,6 +148,33 @@ export default function Index() {
     }
 
     const [ride, setRide] = useState<{ id: number; numero: string } | null>(null)
+
+    // Rótulo de caja: se arma con los datos de la factura y se puede editar antes de imprimir (02-04 §2.9)
+    async function abrirRotulo(f: { id: number; numero_completo: string }) {
+        const resp = await fetch(route('ventas.facturas.rotulo-datos', f.id), { headers: { Accept: 'application/json' } })
+        if (!resp.ok) { Swal.fire('No se pudo cargar', 'No se pudieron leer los datos de la factura.', 'error'); return }
+        const d = await resp.json() as Record<string, string | number | null>
+        const esc = (v: string | number | null) => String(v ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')
+        const campo = (id: string, etiqueta: string, v: string | number | null, tipo = 'text') =>
+            `<label style="display:block;text-align:left;font-size:12px;margin:8px 0 2px">${etiqueta}</label>` +
+            `<input id="rot_${id}" type="${tipo}" value="${esc(v)}" class="swal2-input" style="margin:0;width:100%;box-sizing:border-box" />`
+        const res = await Swal.fire({
+            title: `Rótulo de caja — ${f.numero_completo}`,
+            html: campo('destinatario', 'Destinatario', d.destinatario) + campo('direccion', 'Dirección de envío', d.direccion) +
+                  campo('ciudad', 'Ciudad', d.ciudad) + campo('telefono', 'Teléfono', d.telefono) + campo('identificacion', 'CI / RUC', d.identificacion) +
+                  campo('bultos', 'Número de bultos (un rótulo por bulto)', d.bultos, 'number') + campo('observaciones', 'Observaciones', d.observaciones),
+            showCancelButton: true, confirmButtonText: 'Imprimir', cancelButtonText: 'Cancelar', width: 520,
+            preConfirm: () => {
+                const val = (id: string) => (document.getElementById('rot_' + id) as HTMLInputElement).value.trim()
+                if (!val('destinatario') || !val('direccion')) { Swal.showValidationMessage('El destinatario y la dirección son obligatorios.'); return false }
+                return { destinatario: val('destinatario'), direccion: val('direccion'), ciudad: val('ciudad'), telefono: val('telefono'),
+                         identificacion: val('identificacion'), bultos: val('bultos') || '1', observaciones: val('observaciones') }
+            },
+        })
+        if (res.isConfirmed && res.value) {
+            window.open(route('ventas.facturas.rotulo-pdf', f.id) + '?' + new URLSearchParams(res.value as Record<string, string>).toString(), '_blank')
+        }
+    }
 
     const [filtro, setFiltro] = useState<Filtros>({
         fecha_desde: filtros.fecha_desde ?? '',
@@ -452,6 +480,15 @@ export default function Index() {
                                                         </a>
                                                         <button
                                                             type="button"
+                                                            className="flex items-center justify-center p-1.5 rounded transition-colors hover:bg-amber-500/10"
+                                                            style={{ color: 'var(--primary)' }}
+                                                            onClick={() => abrirRotulo(f)}
+                                                            title="Rótulo de caja (editable)" aria-label="Rótulo de caja"
+                                                        >
+                                                            <span className="text-[10px] font-bold leading-4">ROT</span>
+                                                        </button>
+                                                        <button
+                                                            type="button"
                                                             className={`flex items-center justify-center p-1.5 rounded transition-colors ${ACCION_CLS.ride.texto} ${ACCION_CLS.ride.fondo}`}
                                                             onClick={() => setRide({ id: f.id, numero: f.numero_completo })}
                                                             title="Ver RIDE (PDF)" aria-label="Ver RIDE (PDF)"
@@ -468,7 +505,7 @@ export default function Index() {
                                                                 <Ban className="w-4 h-4" />
                                                             </button>
                                                         )}
-                                                        {esSuperAdmin && f.estado_sri !== 'autorizada' && f.estado_sri !== 'recibida' && (
+                                                        {puedeEliminarFactura && f.estado_sri !== 'autorizada' && f.estado_sri !== 'recibida' && (
                                                             <button
                                                                 type="button"
                                                                 className="flex items-center justify-center p-1.5 rounded transition-colors hover:bg-red-600/15 text-red-600"

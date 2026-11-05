@@ -18,6 +18,7 @@ interface Parametro {
     cuenta_id: number | null
     cuenta: string | null
     configurado: boolean
+    excepcion: boolean
 }
 
 interface Props extends PageProps {
@@ -51,6 +52,10 @@ export default function ParametrosIndex({ grupos, cuentas }: Props) {
         })
         return init
     })
+
+    // La configuración es compartida por las dos empresas. Con esta opción el
+    // cambio se guarda como excepción solo de la empresa activa.
+    const [soloEstaEmpresa, setSoloEstaEmpresa] = useState(false)
 
     const [modalAbierto, setModalAbierto] = useState(false)
     const [codigoActivo, setCodigoActivo] = useState<string | null>(null)
@@ -112,7 +117,7 @@ export default function ParametrosIndex({ grupos, cuentas }: Props) {
             codigo:    cod,
             cuenta_id: cta_id,
         }))
-        router.post(route('contabilidad.parametros.update'), { parametros }, {
+        router.post(route('contabilidad.parametros.update'), { parametros, solo_esta_empresa: soloEstaEmpresa }, {
             onSuccess: () => notify.success('Parámetros contables guardados correctamente'),
             onError:   () => notify.error('Error al guardar los parámetros'),
         })
@@ -166,6 +171,19 @@ export default function ParametrosIndex({ grupos, cuentas }: Props) {
                 breadcrumbs={[{ label: 'Contabilidad' }, { label: 'Parámetros Contables' }]}
                 actions={
                     <div className="flex items-center gap-2 flex-wrap">
+                        {puede('editar') && (
+                            <label className="flex items-center gap-2 text-xs cursor-pointer select-none"
+                                   style={{ color: 'var(--text-muted)' }}
+                                   title="Sin marcar, el cambio vale para las dos empresas (configuración compartida).">
+                                <input
+                                    type="checkbox"
+                                    checked={soloEstaEmpresa}
+                                    onChange={e => setSoloEstaEmpresa(e.target.checked)}
+                                    className="rounded w-4 h-4 accent-amber-500"
+                                />
+                                Solo para esta empresa
+                            </label>
+                        )}
                         {puede('editar') && (
                             <button onClick={guardar}
                                 className="flex items-center gap-2 px-4 py-2 rounded-xl
@@ -314,6 +332,16 @@ export default function ParametrosIndex({ grupos, cuentas }: Props) {
                                                style={{ color: 'var(--text-main)' }}>
                                                 {param.descripcion}
                                             </p>
+                                            {param.excepcion && (
+                                                <span className="text-[10px] px-1.5 py-0.5 rounded-full shrink-0"
+                                                      style={{
+                                                          background: 'color-mix(in srgb, var(--primary) 15%, transparent)',
+                                                          color: 'var(--primary)',
+                                                      }}
+                                                      title="Esta empresa usa una cuenta distinta de la configuración general.">
+                                                    Excepción de esta empresa
+                                                </span>
+                                            )}
                                         </div>
                                         <p className="text-xs mt-0.5 ml-5 font-mono"
                                            style={{ color: 'var(--text-muted)' }}>

@@ -58,6 +58,7 @@ class LiquidacionesController extends Controller
                    'fecha_ingreso', 'cargo', 'decimo_tercero', 'decimo_cuarto', 'fondos_reserva']);
 
         return Inertia::render('RRHH/Liquidaciones/Index', [
+            'bancos'        => \App\Models\BancoCaja::where('empresa_id', $empresaId)->activos()->orderBy('nombre')->get(['id', 'nombre', 'tipo']),
             'liquidaciones' => $liquidaciones,
             'colaboradores' => $colaboradores,
             'filtros'       => $request->only(['colaborador_id', 'motivo', 'estado', 'buscar']),
@@ -69,13 +70,13 @@ class LiquidacionesController extends Controller
     public function calcular(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'colaborador_id' => 'required|integer|exists:colaboradores,id',
+            'colaborador_id' => 'required|integer|exists_empresa:colaboradores',
             'motivo'         => 'required|in:renuncia,despido,fin_contrato',
             'fecha_salida'   => 'required|date',
         ]);
 
         try {
-            $col = Colaborador::findOrFail($data['colaborador_id']);
+            $col = Colaborador::where('empresa_id', session('empresa_activa_id'))->findOrFail($data['colaborador_id']);
 
             if (empty($col->fecha_ingreso)) {
                 return response()->json(['error' => 'El colaborador no tiene fecha de ingreso registrada.'], 422);
@@ -153,7 +154,7 @@ class LiquidacionesController extends Controller
         $empresaId = session('empresa_activa_id');
 
         $data = $request->validate([
-            'colaborador_id'     => 'required|integer|exists:colaboradores,id',
+            'colaborador_id'     => 'required|integer|exists_empresa:colaboradores',
             'motivo'             => 'required|in:renuncia,despido,fin_contrato',
             'fecha_salida'       => 'required|date',
             'decimos_acumulados' => 'required|numeric|min:0',
@@ -210,7 +211,7 @@ class LiquidacionesController extends Controller
 
     // ── Aprobar liquidación (solo Super Admin) ───────────────────────────────
 
-    public function aprobar(int $id): RedirectResponse
+    public function aprobar(Request $request, int $id): RedirectResponse
     {
         $empresaId = session('empresa_activa_id');
 
@@ -226,8 +227,15 @@ class LiquidacionesController extends Controller
             return back()->with('error', 'El total de liquidación debe ser mayor a cero.');
         }
 
+        // El finiquito sale de un banco o caja que se elige al aprobar (no hay banco por defecto)
+        $request->validate(
+            ['banco_caja_id' => 'required|integer|exists_empresa:bancos_cajas'],
+            ['banco_caja_id.required' => 'Seleccione el banco o caja desde el que se paga el finiquito.']
+        );
+        $banco = \App\Models\BancoCaja::where('empresa_id', $empresaId)->findOrFail($request->banco_caja_id);
+
         try {
-            DB::transaction(function () use ($liq, $empresaId) {
+            DB::transaction(function () use ($liq, $empresaId, $banco) {
                 // 1. Cambiar estado de la liquidación
                 $liq->update(['estado' => 'aprobada']);
 
@@ -250,7 +258,7 @@ class LiquidacionesController extends Controller
 
                 // 5. Generar asiento contable
                 $liq->load('colaborador');
-                $asiento = $this->asientoService->liquidacionEmpleado($liq, $empresaId);
+                $asiento = $this->asientoService->liquidacionEmpleado($liq, $empresaId, $banco->cuenta_id ? (int) $banco->cuenta_id : null);
                 $liq->update(['asiento_id' => $asiento->id]);
             });
         } catch (\Throwable $e) {

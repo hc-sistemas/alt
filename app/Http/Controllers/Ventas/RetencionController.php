@@ -62,7 +62,7 @@ class RetencionController extends Controller
     public function create(Request $request)
     {
         $request->validate([
-            'factura_id' => 'required|integer|exists:facturas,id',
+            'factura_id' => 'required|integer|exists_empresa:facturas',
         ]);
 
         $factura = Factura::with(['cliente', 'detalles'])
@@ -102,7 +102,7 @@ class RetencionController extends Controller
         $empresaId = session('empresa_activa_id');
 
         $request->validate([
-            'factura_id'             => 'required|integer|exists:facturas,id',
+            'factura_id'             => 'required|integer|exists_empresa:facturas',
             'detalles'               => 'required|array|min:1',
             'detalles.*.codigo'      => 'required|string',
             'detalles.*.descripcion' => 'required|string',

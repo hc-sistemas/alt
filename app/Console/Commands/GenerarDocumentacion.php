@@ -203,7 +203,7 @@ class GenerarDocumentacion extends Command
         <tr><td>cta_proveedores_locales</td><td>Lo que debemos a proveedores (CxP)</td><td>Compras</td></tr>
         <tr><td>cta_iva_compras</td><td>IVA pagado en compras (credito tributario)</td><td>Compras</td></tr>
         <tr><td>cta_inventario_mercaderia</td><td>Valor del inventario en libros</td><td>Compras / Inventario</td></tr>
-        <tr><td>cta_bancos_locales</td><td>Cuentas bancarias de la empresa</td><td>Bancos / Pagos</td></tr>
+        
         <tr><td>cta_retencion_ir_cobrada</td><td>Retenciones en la fuente recibidas de clientes</td><td>Ventas</td></tr>
       </table>
 

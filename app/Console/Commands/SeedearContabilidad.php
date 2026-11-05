@@ -65,7 +65,6 @@ class SeedearContabilidad extends Command
         $this->info('  ⚙️  Parámetros contables...');
         $mapeo = [
             'cta_caja_general'          => '1.1.1.01',
-            'cta_bancos_locales'        => '1.1.1.03',
             'cta_vouchers'              => '1.1.1.05',
             'cta_clientes_locales'      => '1.1.3.01',
             'cta_ventas_locales'        => '4.1.1.01',

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { router, usePage, useForm, Head } from '@inertiajs/react'
 import { toast, ToastContainer } from 'react-toastify'
 import Swal from 'sweetalert2'
@@ -9,19 +9,19 @@ import { Label } from '@/Components/ui/label'
 import { cn } from '@/lib/utils'
 import {
     Plus, Pencil, ToggleLeft, ToggleRight, X, Trash2,
-    Landmark, Wallet, CreditCard, PiggyBank, TrendingUp, Search,
+    Landmark, Wallet, CreditCard, PiggyBank, TrendingUp,
 } from 'lucide-react'
 import { usePermiso } from '@/Hooks/usePermiso'
-import type { BancoCaja, PlanCuenta, CentroCosto, PageProps } from '@/types'
+import type { BancoCaja, CentroCosto, PageProps } from '@/types'
 import 'react-toastify/dist/ReactToastify.css'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Props extends PageProps {
     bancos: (BancoCaja & { cuenta: string | null; centro_costo: string | null })[]
-    cuentas: Pick<PlanCuenta, 'id' | 'codigo' | 'nombre'>[]
     centrosCosto: Pick<CentroCosto, 'id' | 'nombre' | 'codigo'>[]
-    cuentasAutoMap: Record<string, string>
+    reglasBanco: { patron: string; tipo_cuenta: string | null; etiqueta: string; cuenta: string | null }[]
+    cuentasFijas: Record<string, string | null>
     tiposRequierenCentroCosto: string[]
     stats: { total_bancos: number; total_cajas: number; saldo_bancos: number; saldo_cajas: number }
 }
@@ -164,108 +164,27 @@ function BancoCard({ banco, onEdit, onToggle, onDelete, puedeEditar, puedeElimin
     )
 }
 
-// ─── Modal búsqueda cuenta ────────────────────────────────────────────────────
-
-function CuentaSearchModal({ cuentas, onSelect, onClose }: {
-    cuentas: Props['cuentas']
-    onSelect: (c: Props['cuentas'][0] | null) => void
-    onClose: () => void
-}) {
-    const [busq, setBusq] = useState('')
-
-    const filtradas = useMemo(() => {
-        const q = busq.toLowerCase().trim()
-        if (!q) return cuentas.slice(0, 30)
-        return cuentas.filter(c =>
-            c.codigo.toLowerCase().includes(q) || c.nombre.toLowerCase().includes(q)
-        ).slice(0, 25)
-    }, [busq, cuentas])
-
-    return (
-        <div className="modal-overlay" style={{ zIndex: 60 }} onClick={onClose}>
-            <div className="modal-card max-w-lg" onClick={e => e.stopPropagation()}>
-
-                <div className="modal-header">
-                    <h2>Seleccionar cuenta contable</h2>
-                    <button className="modal-close" onClick={onClose}>×</button>
-                </div>
-
-                <div className="px-4 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
-                    <div className="input-with-icon">
-                        <Search size={14} className="input-icon" />
-                        <input autoFocus type="text" value={busq}
-                            onChange={e => setBusq(e.target.value)}
-                            placeholder="Buscar por código o nombre…"
-                            className="input-field" />
-                    </div>
-                </div>
-
-                <div className="overflow-y-auto" style={{ maxHeight: '360px' }}>
-                    <button onClick={() => { onSelect(null); onClose() }}
-                        className="w-full text-left px-4 py-2.5 text-sm border-b transition-colors hover:opacity-80"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
-                        — Sin cuenta contable —
-                    </button>
-
-                    {filtradas.map(c => (
-                        <button key={c.id} onClick={() => { onSelect(c); onClose() }}
-                            className="w-full text-left px-4 py-2.5 text-sm border-b flex items-center gap-3 transition-colors"
-                            style={{ borderColor: 'var(--border)' }}
-                            onMouseEnter={e => (e.currentTarget.style.background = 'rgba(245,158,11,0.08)')}
-                            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                            <span className="font-mono font-bold text-xs shrink-0" style={{ color: 'var(--primary)' }}>
-                                {c.codigo}
-                            </span>
-                            <span style={{ color: 'var(--text-main)' }}>{c.nombre}</span>
-                        </button>
-                    ))}
-
-                    {filtradas.length === 0 && (
-                        <div className="px-4 py-6 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
-                            Sin resultados para "{busq}"
-                        </div>
-                    )}
-                </div>
-
-                <div className="px-4 py-2 border-t text-xs" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)', background: 'color-mix(in srgb, var(--bg-main) 60%, var(--bg-card))' }}>
-                    {filtradas.length} resultado(s)
-                </div>
-            </div>
-        </div>
-    )
-}
-
 // ─── Modal Banco/Caja ─────────────────────────────────────────────────────────
 
 interface ModalProps {
     banco?: BancoCaja & { cuenta: string | null; centro_costo: string | null }
-    cuentas: Props['cuentas']
     centrosCosto: Props['centrosCosto']
-    cuentasAutoMap: Props['cuentasAutoMap']
+    reglasBanco: Props['reglasBanco']
+    cuentasFijas: Props['cuentasFijas']
     tiposRequierenCentroCosto: Props['tiposRequierenCentroCosto']
     onClose: () => void
 }
 
-function BancoModal({ banco, cuentas, centrosCosto, cuentasAutoMap, tiposRequierenCentroCosto, onClose }: ModalProps) {
+function BancoModal({ banco, centrosCosto, reglasBanco, cuentasFijas, tiposRequierenCentroCosto, onClose }: ModalProps) {
     const isEdit = !!banco
-    const [showCuentaModal, setShowCuentaModal] = useState(false)
 
     const initialTipo = banco?.tipo ?? 'banco'
-
-    // Cuenta inicial: si tiene asignada la usa, si es nuevo busca la auto
-    const initialCuenta = (() => {
-        if (banco?.cuenta_id) return cuentas.find(c => c.id === Number(banco.cuenta_id)) ?? null
-        return cuentas.find(c => c.codigo === cuentasAutoMap[initialTipo]) ?? null
-    })()
-
-    const [cuentaSeleccionada, setCuentaSeleccionada] = useState<Props['cuentas'][0] | null>(initialCuenta)
 
     const { data, setData, post, put, processing, errors } = useForm({
         tipo:             initialTipo,
         nombre:           banco?.nombre ?? '',
         num_cuenta:       banco?.num_cuenta ?? '',
         tipo_cuenta:      banco?.tipo_cuenta ?? '',
-        cuenta_id:        (initialCuenta?.id ?? banco?.cuenta_id ?? '') as string | number,
         centro_costo_id:  (banco?.centro_costo_id ?? '') as string | number,
         saldo_inicial:    banco?.saldo_inicial ?? 0,
     })
@@ -274,24 +193,28 @@ function BancoModal({ banco, cuentas, centrosCosto, cuentasAutoMap, tiposRequier
 
     function handleTipoChange(tipo: string) {
         setData('tipo', tipo as typeof data.tipo)
-        // Cambiar cuenta auto solo si la cuenta actual también es una auto (o no hay)
-        const esAutoActual = cuentaSeleccionada
-            ? Object.values(cuentasAutoMap).includes(cuentaSeleccionada.codigo)
-            : true
-        if (esAutoActual) {
-            const auto = cuentas.find(c => c.codigo === cuentasAutoMap[tipo]) ?? null
-            setCuentaSeleccionada(auto)
-            setData('cuenta_id', auto ? (auto.id as any) : '')
-        }
         if (!tiposRequierenCentroCosto.includes(tipo)) {
             setData('centro_costo_id', '')
         }
     }
 
-    function handleCuentaSelect(c: Props['cuentas'][0] | null) {
-        setCuentaSeleccionada(c)
-        setData('cuenta_id', c ? (c.id as any) : '')
-    }
+    // La cuenta contable se asigna sola según el tipo y, en bancos, el nombre y el
+    // tipo de cuenta (02-06 §2.1). No se edita.
+    const cuentaAuto: { cuenta: string | null; error: string | null } = (() => {
+        if (data.tipo !== 'banco') {
+            const c = cuentasFijas[data.tipo] ?? null
+            return { cuenta: c, error: c ? null : 'No hay cuenta contable configurada para este tipo.' }
+        }
+        const nombre = data.nombre.toLowerCase()
+        const regla = reglasBanco.find(r => nombre.includes(r.patron))
+        if (!regla) {
+            return { cuenta: null, error: 'Este banco no tiene cuenta contable definida: no se podrá guardar. Admitidos: ' + reglasBanco.map(r => r.etiqueta).join(', ') + '.' }
+        }
+        if (regla.tipo_cuenta && regla.tipo_cuenta !== data.tipo_cuenta) {
+            return { cuenta: null, error: `${regla.etiqueta}: seleccione el tipo de cuenta ${regla.tipo_cuenta}.` }
+        }
+        return { cuenta: regla.cuenta, error: regla.cuenta ? null : 'El parámetro de este banco no está configurado.' }
+    })()
 
     function submit(e: React.FormEvent) {
         e.preventDefault()
@@ -371,41 +294,26 @@ function BancoModal({ banco, cuentas, centrosCosto, cuentasAutoMap, tiposRequier
                             </div>
                         )}
 
-                        {/* Cuenta contable — búsqueda modal */}
+                        {/* Cuenta contable: automática, no editable */}
                         <div className="space-y-1.5">
                             <div className="flex items-center justify-between">
                                 <Label>Cuenta contable</Label>
-                                {cuentaSeleccionada && cuentasAutoMap[data.tipo] === cuentaSeleccionada.codigo && (
-                                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
-                                        style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)', color: 'var(--primary)' }}>
-                                        Auto
-                                    </span>
-                                )}
+                                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                                    style={{ background: 'color-mix(in srgb, var(--primary) 15%, transparent)', color: 'var(--primary)' }}>
+                                    Automática
+                                </span>
                             </div>
-                            <button type="button" onClick={() => setShowCuentaModal(true)}
-                                className="w-full flex items-center justify-between rounded-lg px-3 py-2 text-sm border transition-colors hover:opacity-80 text-left"
+                            <div className="w-full rounded-lg px-3 py-2 text-sm border"
                                 style={{
                                     borderColor: 'var(--border)',
                                     background: 'var(--bg-main)',
-                                    color: cuentaSeleccionada ? 'var(--text-main)' : 'var(--text-muted)',
+                                    color: cuentaAuto.cuenta ? 'var(--text-main)' : 'var(--text-muted)',
                                 }}>
-                                <span className="truncate">
-                                    {cuentaSeleccionada
-                                        ? `${cuentaSeleccionada.codigo} — ${cuentaSeleccionada.nombre}`
-                                        : '— Seleccionar cuenta —'}
-                                </span>
-                                <Search size={14} className="shrink-0 ml-2" style={{ color: 'var(--text-muted)' }} />
-                            </button>
-                            {cuentaSeleccionada && (
-                                <button type="button" onClick={() => handleCuentaSelect(null)}
-                                    className="text-xs hover:opacity-70 flex items-center gap-1"
-                                    style={{ color: 'var(--text-muted)' }}>
-                                    <X size={11} /> Quitar cuenta
-                                </button>
-                            )}
-                            {!cuentaSeleccionada && (
+                                {cuentaAuto.cuenta ?? '—'}
+                            </div>
+                            {cuentaAuto.error && (
                                 <p className="text-xs px-2.5 py-1.5 rounded-md font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400">
-                                    ⚠ No se encontró una cuenta contable automática — selecciónala manualmente para no dejar este registro sin vínculo contable.
+                                    ⚠ {cuentaAuto.error}
                                 </p>
                             )}
                         </div>
@@ -446,13 +354,6 @@ function BancoModal({ banco, cuentas, centrosCosto, cuentasAutoMap, tiposRequier
                 </div>
             </div>
 
-            {showCuentaModal && (
-                <CuentaSearchModal
-                    cuentas={cuentas}
-                    onSelect={handleCuentaSelect}
-                    onClose={() => setShowCuentaModal(false)}
-                />
-            )}
         </>
     )
 }
@@ -460,7 +361,7 @@ function BancoModal({ banco, cuentas, centrosCosto, cuentasAutoMap, tiposRequier
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function BancosCajasIndex() {
-    const { bancos, cuentas, centrosCosto, cuentasAutoMap, tiposRequierenCentroCosto, stats, flash } = usePage<Props>().props
+    const { bancos, centrosCosto, reglasBanco, cuentasFijas, tiposRequierenCentroCosto, stats, flash } = usePage<Props>().props
     const { puede } = usePermiso('bancos')
     const [modal, setModal] = useState<{ open: boolean; banco?: Props['bancos'][0] }>({ open: false })
 
@@ -606,8 +507,8 @@ export default function BancosCajasIndex() {
             </div>
 
             {modal.open && (
-                <BancoModal banco={modal.banco} cuentas={cuentas} centrosCosto={centrosCosto}
-                    cuentasAutoMap={cuentasAutoMap} tiposRequierenCentroCosto={tiposRequierenCentroCosto}
+                <BancoModal banco={modal.banco} centrosCosto={centrosCosto}
+                    reglasBanco={reglasBanco} cuentasFijas={cuentasFijas} tiposRequierenCentroCosto={tiposRequierenCentroCosto}
                     onClose={() => setModal({ open: false })} />
             )}
 

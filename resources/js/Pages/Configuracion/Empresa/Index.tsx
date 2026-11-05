@@ -41,6 +41,7 @@ export default function EmpresaIndex() {
     const { data, setData, put, processing, errors } = useForm({
         razon_social: empresa.razon_social ?? '',
         nombre_comercial: empresa.nombre_comercial ?? '',
+        etiqueta: empresa.etiqueta ?? '',
         ruc: empresa.ruc ?? '',
         direccion_matriz: empresa.direccion_matriz ?? '',
         email_notificaciones: empresa.email_notificaciones ?? '',
@@ -99,6 +100,11 @@ export default function EmpresaIndex() {
                         <div className="space-y-1.5">
                             <Label>Nombre comercial *</Label>
                             <Input value={data.nombre_comercial} onChange={e => setData('nombre_comercial', e.target.value)} />
+                        </div>
+                        <div className="space-y-1.5">
+                            <Label>Etiqueta (UIO / Import)</Label>
+                            <Input value={data.etiqueta} maxLength={30} onChange={e => setData('etiqueta', e.target.value)} />
+                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Distingue esta empresa en selectores y listas internas. No sale en los documentos.</p>
                         </div>
                         <div className="space-y-1.5">
                             <Label>RUC *</Label>

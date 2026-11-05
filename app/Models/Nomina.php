@@ -15,6 +15,7 @@ class Nomina extends Model
         'empresa_id', 'periodo_tipo', 'anio', 'mes', 'quincena',
         'fecha_emision', 'estado', 'total_ingresos', 'total_egresos', 'total_neto',
         'asiento_id', 'fecha_pago', 'tipo_comprobante', 'num_comprobante', 'asiento_pago_id', 'generado_por', 'procesado_por', 'pagado_por', 'created_at',
+        'snapshot_prestamos', 'motivo_anulacion', 'anulada_por', 'fecha_anulacion',
     ];
 
     protected function casts(): array

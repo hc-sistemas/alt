@@ -65,6 +65,7 @@ export default function AsientosIndex() {
     const [buscar, setBuscar] = useState(filtros.buscar ?? '')
     const [tipo, setTipo] = useState(filtros.tipo ?? '')
     const [estado, setEstado] = useState(filtros.estado ?? '')
+    const [diario, setDiario] = useState(filtros.diario ?? '')
     // Rango por defecto: el período fiscal abierto en vez de "sin fecha =
     // todo el historial" — DomPDF no escala bien con el histórico completo
     // sin filtro (probado real, ver CLAUDE.md); el usuario puede seguir
@@ -113,6 +114,7 @@ export default function AsientosIndex() {
     const [modalAbierto, setModalAbierto] = useState(false)
     const [processing, setProcessing] = useState(false)
     const [concepto, setConcepto] = useState('')
+    const [documentoRef, setDocumentoRef] = useState('')
     const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0])
     const [partidas, setPartidas] = useState<Partida[]>([{ ...PARTIDA_VACIA }, { ...PARTIDA_VACIA }])
     const [buscarCuenta, setBuscarCuenta] = useState<Record<number, string>>({})
@@ -141,7 +143,7 @@ export default function AsientosIndex() {
 
     const aplicarFiltros = () => {
         router.get(route('contabilidad.asientos.index'), {
-            buscar, tipo, estado, ejercicio_id: ejercicioId,
+            buscar, tipo, estado, diario, ejercicio_id: ejercicioId,
             fecha_desde: fechaDesde, fecha_hasta: fechaHasta,
             buscado: '1',
         }, { preserveState: false })
@@ -183,14 +185,16 @@ export default function AsientosIndex() {
     const cerrarModal = () => {
         setModalAbierto(false)
         setConcepto('')
+        setDocumentoRef('')
         setFecha(new Date().toISOString().split('T')[0])
         setPartidas([{ ...PARTIDA_VACIA }, { ...PARTIDA_VACIA }])
         setBuscarCuenta({})
         setDropdownOpen(null)
     }
 
-    const guardarAsiento = () => {
+    const guardarAsiento = (confirmarNaturaleza = false) => {
         if (!concepto.trim()) { notify.error('El concepto es obligatorio'); return }
+        if (!documentoRef.trim()) { notify.error('El documento de respaldo es obligatorio (factura, comprobante o recibo)'); return }
         if (!cuadrado) { notify.error(`No cuadra. Diferencia: ${formatMoney(diferencia)}`); return }
         const limpias = partidas.filter(p => p.cuenta_id)
         if (limpias.length < 2) { notify.error('Selecciona al menos 2 cuentas'); return }
@@ -198,6 +202,8 @@ export default function AsientosIndex() {
         setProcessing(true)
         router.post(route('contabilidad.asientos.store'), {
             concepto,
+            documento_ref: documentoRef,
+            confirmar_naturaleza: confirmarNaturaleza,
             fecha,
             partidas: limpias.map(p => ({
                 cuenta_id:       parseInt(p.cuenta_id),
@@ -208,7 +214,23 @@ export default function AsientosIndex() {
             })),
         }, {
             onSuccess: () => cerrarModal(),
-            onError: (errors) => notify.error(Object.values(errors).flat().join(' | ')),
+            onError: async (errors) => {
+                // Cuenta al lado contrario de su naturaleza: se advierte y se pide confirmación (PC-GEN-04)
+                if (errors.naturaleza_invertida) {
+                    injectSwalStyles()
+                    const r = await Swal.fire({
+                        ...swalBase,
+                        title: 'Naturaleza invertida',
+                        text: String(errors.naturaleza_invertida),
+                        icon: 'warning',
+                        confirmButtonText: 'Sí, es correcto',
+                        cancelButtonText: 'Revisar',
+                    })
+                    if (r.isConfirmed) guardarAsiento(true)
+                    return
+                }
+                notify.error(Object.values(errors).flat().join(' | '))
+            },
             onFinish: () => setProcessing(false),
         })
     }
@@ -317,6 +339,19 @@ export default function AsientosIndex() {
 
             <div className={cn('space-y-5', 'p-6')}>
 
+                {/* Procesos de origen (02-08 §2.3): no crean asientos propios, abren el proceso de su módulo */}
+                <div className="flex flex-wrap items-center gap-2 text-xs" style={{ color: 'var(--text-muted)' }}>
+                    <span className="font-semibold">Ir al proceso de origen:</span>
+                    {[
+                        ['Clientes (CxC)', '/ventas/cxc'], ['Proveedores (CxP)', '/compras/cuentas-pagar'], ['Cierre de caja', '/bancos/cajas'],
+                        ['Depósitos y movimientos', '/bancos/movimientos'], ['Conciliación', '/bancos/conciliaciones'],
+                        ['Distribución de costos (importaciones)', '/compras/importaciones'],
+                    ].map(([nombre, href]) => (
+                        <Link key={href} href={href} className="px-2.5 py-1 rounded-lg border hover:opacity-80"
+                            style={{ borderColor: 'var(--border)', color: 'var(--text-main)' }}>{nombre}</Link>
+                    ))}
+                </div>
+
                 {/*
                     searchWidth="w-[130px]": utilidad Tailwind de valor arbitrario (compila a
                     `width: 130px` literal, no la escala fija w-44/w-48/etc.) — mismo efecto que
@@ -375,6 +410,16 @@ export default function AsientosIndex() {
                         <option value="">Tipo</option>
                         <option value="manual">Manuales</option>
                         <option value="automatico">Automáticos</option>
+                    </select>
+                    <select value={diario} onChange={e => setDiario(e.target.value)}
+                        className="input-field shrink-0 text-xs"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: '150px' }}>
+                        <option value="">Diario general</option>
+                        <option value="caja">Diario de caja</option>
+                        <option value="bancos">Diario de bancos</option>
+                        <option value="ventas">Diario de ventas</option>
+                        <option value="compras">Diario de compras</option>
+                        <option value="importaciones">Diario de importaciones</option>
                     </select>
                     <select value={estado} onChange={e => setEstado(e.target.value)}
                         className="input-field shrink-0 text-xs"
@@ -619,6 +664,16 @@ export default function AsientosIndex() {
                                         maxLength={500}
                                     />
                                 </div>
+                                <div className="md:col-span-2">
+                                    <Label>Documento de respaldo <span className="text-red-500">*</span></Label>
+                                    <Input
+                                        className="mt-1"
+                                        value={documentoRef}
+                                        onChange={e => setDocumentoRef(e.target.value)}
+                                        placeholder="N° de factura, comprobante o recibo"
+                                        maxLength={100}
+                                    />
+                                </div>
                                 <div>
                                     <Label>Fecha <span className="text-red-500">*</span></Label>
                                     <input
@@ -830,7 +885,7 @@ export default function AsientosIndex() {
                                 Cancelar
                             </Button>
                             <Button
-                                onClick={guardarAsiento}
+                                onClick={() => guardarAsiento()}
                                 disabled={!cuadrado || processing}
                                 loading={processing}
                                 className="flex-1"

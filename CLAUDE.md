@@ -527,3 +527,132 @@ Flujo con dos roles: el administrador registra la factura/importación; el **bod
 ### Plan de cuentas 2025 (2026-10-05) — reemplaza el plan NIIF anterior
 
 Migración `2026_10_05_100000_reemplazar_plan_cuentas_2025` carga el "PLAN DE CUENTAS 2025 ALTAMIRA" (`docs/`, formato `1.01.01.01`, clase 5 = Costos, clase 6 = Gastos, persona natural). Actualiza en sitio las cuentas equivalentes (conserva ids), fusiona las que no tienen equivalente directo, reapunta asientos/bancos/parámetros y elimina las sobrantes sin movimientos (con movimientos quedan inactivas, prefijo `OBS-`). Se agregaron 3 cuentas "(General)" (`4.01.06`, `5.01.05`, `1.01.04.05`) porque el Excel solo trae venta/costo/inventario por línea de producto y el sistema contabiliza en una sola cuenta. `AsientoService::FALLBACK_PLAN` y `PARAMETROS` de la migración deben mantenerse en sincronía. Los reportes (`ReporteContableController`) clasifican por prefijo: costos `5.`, financieros `6.01.10`, no deducibles `6.02`. `productos.cuenta_*` no se tocó. Pendiente de decisión contable: anticipos de clientes/proveedores, Datafast e IESS personal/patronal comparten cuenta por no existir una propia en el Excel.
+
+### IVA vigente: 15 % (confirmado por el usuario, 2026-11-03)
+
+- La tarifa general de IVA del sistema es **15 %**. Todo producto, servicio o línea nueva que grave IVA nace al 15 %.
+- **Productos nuevos del Excel de inventario** (`inventario:cargar-excel`) se crean con `porcentaje_iva = 15` (constante `IVA_NUEVOS` del comando). No usar 12 %.
+- **Servicio técnico de Taller:** el IVA de la mano de obra es configurable por empresa en Taller → Configuración (clave `taller_servicio_iva_pct`) y su valor por defecto es 15 %.
+- **Productos migrados del legacy:** 1.644 de los 1.646 originales siguen con 12 % en `productos.porcentaje_iva` (dato heredado, anterior al 15 %). Para llevarlos al IVA vigente existe `php artisan altamira:actualizar-iva-productos` (simula por defecto, `--iva=15` es el valor por omisión, `--aplicar` ejecuta; solo toca productos que ya gravan IVA, los de 0 % no se tocan). **Se ejecuta en producción, no en local** (decisión del usuario, 2026-11-03). Pasos para el despliegue: `php artisan altamira:actualizar-iva-productos` (simula y muestra cuántos cambian), revisar y luego `--aplicar`.
+- No escribir 12 ni 15 a mano en el código nuevo: leer `porcentaje_iva` del producto, o del parámetro/configuración correspondiente.
+
+### Cuentas contables por subcategoría del producto — modo ESTRICTO (2026-11-04)
+
+Decisión del usuario (módulo B, DEC-012 y DEC-030): la **venta, el costo y el inventario** de cada producto salen de su **subcategoría** (`subcategoria_cuentas`, PC-CAT-01 a 20), no de parámetros genéricos.
+
+- `AsientoService::cuentasProductos($ids, $empresaId)` resuelve las cuentas y es **estricto**: un producto sin subcategoría con cuentas **no se factura, no se compra, no se ajusta y no se devuelve** (se bloquea con un mensaje que lista los productos). Solo Computadoras (PC-CAT-19) y PISOS LED (PC-CAT-20) usan «sin clasificar», porque así está en su fila. Los productos tipo `servicio` venden en `cta_ingresos_servicios` y no mueven inventario; los regalos no tienen cuenta de venta.
+- Se validan **antes** de guardar: `FacturaController::store`, `CompraController::store/activar` y `RecepcionController::confirmar`. `facturaAutorizada()`, `compraRegistrada()`, `notaCreditoEmitida()` y la devolución de compra contabilizan **por línea** (varias cuentas en un mismo asiento).
+- **Ya no existe cuenta de gasto por defecto** (DEC-012): una línea de compra sin producto exige elegir su cuenta. Se eliminaron los parámetros `cta_gasto_compras_default`, `cta_ventas_locales`, `cta_costo_ventas`, `cta_costo_ventas_importadas` y `cta_inventario_mercaderia` (migración `2026_11_04_100000`).
+- **Consecuencia operativa:** al 04/11/2026 unos 1.209 de 1.672 productos están en una categoría con subcategorías sin elegir una (el Excel del cliente no trae categorías) y **no se pueden vender ni comprar hasta clasificarlos**. Herramientas: `inventario:sugerir-reclasificacion` genera el CSV; el contador/bodega lo revisan escribiendo SI en «confirmar»; `inventario:aplicar-reclasificacion` lo aplica (simula por defecto; `--aceptar-sugerencias` da por buenas las 428 sugerencias automáticas; unos 786 productos necesitan clasificación manual).
+
+### Sin banco por defecto (2026-11-04)
+
+Documento del cliente (01 §5, 02-04 §2.2): **el banco se elige al cobrar o pagar; no existe banco por defecto.** El parámetro `cta_bancos_locales` (que apuntaba a Banco Pichincha) se eliminó (migración `2026_11_04_110000`).
+
+- La cuenta contable sale siempre del banco elegido (`bancos_cajas.cuenta_id`). `AsientoService::cuentaBancoElegida()` bloquea con `\DomainException` si no se indicó banco; `cuentaCobroPorForma()` bloquea transferencia/depósito sin banco o con un banco sin cuenta contable.
+- **El vendedor elige el banco en la factura** (transferencia: obligatorio, ya validado en `FacturaController`). Cheque en factura: queda en cartera dentro de Clientes hasta depositarse (no toca Bancos). Nota de crédito: devuelve por el mismo banco con que se pagó la factura.
+- Pagos y cobros que antes ignoraban el banco elegido y asentaban en Pichincha: CxC (`cobro`), CxP y Cheques (`pagoProveedor`), ajustes de conciliación. Préstamos/anticipos y liquidaciones de RRHH ahora piden elegir banco o caja.
+- Pendiente del cliente: DEC-040 (banco obligatorio en depósito y tarjeta) y DEC-038 (caja y banco de Altamira Import).
+- Nota: préstamos y liquidaciones asientan contra el banco elegido pero **no** crean movimiento en Bancos (igual que antes); si se quiere que el saldo del banco baje, es un cambio aparte.
+
+### Bancos — libro de movimientos (C.3, 2026-11-04)
+
+El libro (Bancos → Movimientos) muestra fecha, concepto, referencia, debe (ingreso), haber (egreso), saldo corrido, conciliado Sí/No, fecha de conciliación y comentario. El saldo corrido = saldo inicial + movimientos no anulados y **solo se calcula al filtrar un banco o caja**. `fecha_conciliacion` se llena en todos los puntos donde `ConciliacionController` marca `conciliado`. La **referencia es obligatoria** en: movimiento manual por transferencia/cheque/depósito, factura con transferencia, cobro de CxC no efectivo y pago de CxP.
+
+### Bancos — conciliación (C.4, 2026-11-04)
+
+- **Anular conciliación** (`ConciliacionController::anular`, permiso `bancos,anular`): una conciliación cerrada no se modifica sin anularla. Anular la **reabre** (estado `pendiente`), libera los movimientos conciliados, reversa el asiento y el saldo del ajuste por diferencia (6.01.14) y deja el motivo en `observacion`. Solo la conciliación cerrada más reciente de cada banco puede anularse. Las notas del banco (comisión 6.01.10, intereses) son movimientos reales: se conservan, solo vuelven a quedar pendientes.
+- **Plantilla CSV** descargable por banco (`bancos.conciliaciones.plantilla`: Fecha; Descripcion; Debito; Credito; Referencia). Los formatos propios de cada banco (Pichincha, ProduBanco, Guayaquil) no están en los documentos: cuando el cliente envíe un extracto de ejemplo de cada uno se ajusta el importador.
+- **Pendiente de confirmar con el contador:** la fórmula del documento 02-06 §2.4 (`libro + depósitos en tránsito − cheques no cobrados ± notas = saldo según banco`) está invertida respecto de la lógica contable; el sistema calcula `libro − depósitos en tránsito + cheques no cobrados ± notas`, que es la correcta.
+
+### Bancos — cheques emitidos (C.5, 2026-11-04)
+
+- **«Cobrado» solo al conciliar:** ya no se marca a mano. `Cheque::sincronizarConciliacion()` lo pasa a `cobrado` cuando su movimiento se concilia (importación con emparejamiento, cruce manual o cierre) y lo devuelve a `emitido` si se anula esa conciliación. La fecha de cobro prevista se conserva.
+- **Anular / protestar** (motivo obligatorio): reversa asiento y movimiento, devuelve el saldo al banco y restituye la cuenta por pagar; el número queda registrado y no se reutiliza (único por banco). La pantalla tiene el botón «Anular», que antes no existía.
+- **Post fechado:** cuando la fecha de cobro es posterior a la de emisión el movimiento se marca `es_postfechado` y la lista muestra la insignia. Las columnas legadas `cheques.banco` y `cheques.cuenta` (banco emisor / N° cuenta) ya no se piden en el formulario y no se borraron por ser datos legados.
+- «Otro pago» (PC-BAN-18) sigue pendiente de DEC-027; hoy usa la cuenta de contrapartida elegida.
+
+### Bancos — configuración de cobros (C.6, 2026-11-04)
+
+- Se quitó el «banco de transferencias» fijo: el banco de cada transferencia se elige en la factura (01 §5). Quedan cheques (banco donde se depositan, obligatorio), tarjeta (`datafast` = «por liquidar» a 1.01.03.04 `cta_vouchers`, o directo a un banco) y la caja de efectivo por defecto.
+- Un cheque en factura entra al banco de cheques configurado (mismo destino del movimiento en Bancos y del asiento); sin configurar, la factura se bloquea con un mensaje claro.
+- La pantalla muestra la **cuenta contable** de cada banco/caja elegido antes de guardar y una tabla de **facturas ya registradas por destino**. Los cambios solo afectan a facturas nuevas (la configuración se lee al emitir; las anulaciones usan los movimientos guardados).
+- **Caja por defecto eliminada (decisión del usuario, 2026-11-04):** el efectivo entra solo a la caja del centro de costo de la factura; si el centro no tiene caja, ese efectivo no se registra en Bancos (la contabilidad sigue usando la caja general). Migración `2026_11_04_130000` borra las claves `cobro_caja_efectivo` y `cobro_banco_transferencia`.
+- Pendiente: caja y banco de Altamira Import (DEC-038, Edwin).
+
+### Bancos — reportes (C.7, 2026-11-04)
+
+- Los 3 reportes existentes cumplen 02-06 §2.7: estado de cuenta (saldo inicial/final y columna conciliado), movimientos (filtros por tipo y documento de origen) y reporte de caja, que ahora incluye la columna **Depósitos** (efectivo que sale de la caja hacia un banco el día del cierre, `documento_tipo=TRANSFERENCIA`).
+- Los 8 reportes nuevos (conciliación, cheques pendientes, post fechados recibidos, tarjetas por liquidar, liquidaciones de tarjetas, saldos consolidados, libro frente a mayor, diferencias de conciliación) más comisiones y retenciones de tarjetas generan en PDF y Excel.
+- «Cheques post fechados recibidos» lista ingresos con `es_postfechado`; mientras el módulo H no registre los cheques recibidos de clientes, saldrá vacío.
+
+### Bancos — validaciones (C.8, 2026-11-04)
+
+- **Saldo negativo con confirmación (DEC-041 sigue pendiente de Edwin; se implementó la advertencia que pide el documento):** `App\Support\SaldoBancario::advertir()` detiene todo egreso que deja un banco o caja en negativo (movimiento manual, transferencia entre cuentas, cheque, pago de CxP, anticipo a proveedor y pago de nómina) y devuelve la advertencia en el flash `saldo_negativo`. La pantalla (`resources/js/lib/saldoNegativo.ts`) pregunta y reenvía con `confirmar_saldo_negativo=1`; la confirmación queda en `log_cambios_criticos` (campo `saldo_negativo_confirmado`). Antes todos estos flujos bloqueaban con «Saldo insuficiente».
+- **Dos decimales:** regla `decimal:0,2` en los montos de movimientos, transferencias, cheques, pago de CxP, cobro de CxC y anticipos a proveedor.
+- **Débito = crédito:** ya lo exige `AsientoService::crear()`. **Movimiento conciliado:** no se puede anular (`MovimientoBancarioController::anular`) y el cheque conciliado queda cobrado, sin anulación posible.
+
+### Caja (D, 2026-11-04)
+
+- **Solo efectivo:** un movimiento manual de una caja solo admite forma de pago efectivo (backend y pantalla) y no puede apuntar a 4.01.09 ni 5.01.08. En una transferencia entre cuentas el lado de la caja se registra como `efectivo` y el banco que recibe como `deposito`.
+- **Saldo negativo en caja:** se **bloquea siempre** (no hay confirmación, a diferencia de los bancos). Lo hace `SaldoBancario::advertir()` según `bancos_cajas.tipo`. DEC-041 sigue pendiente.
+- **Apertura / cierre** (`CierreCajaController` + `CajaService`): conteo por denominación solo el primer día; desde el segundo, saldo inicial = efectivo contado del cierre anterior; el cierre calcula facturas, facturado y cobrado en efectivo (excluye anuladas y otras formas de pago); diferencia = conteo − esperado, con observación obligatoria y asiento a 6.01.14 (`CIERRE_CAJA`); un día cerrado no se reabre ni modifica.
+- Se quitaron del respaldo del plan (`AsientoService::FALLBACK_PLAN`) las cuentas «sin clasificar» 4.01.09 y 5.01.08 para venta y costo genéricos; una factura sin líneas de producto ya no se contabiliza contra una cuenta genérica.
+- Pendiente: caja de Altamira Import (DEC-038) y contrapartida del conteo inicial (DEC-011).
+
+### Tarjetas (E, 2026-11-04)
+
+- **Lote con ventas seleccionadas:** el lote ya no se crea con un total digitado. El contador elige las ventas con tarjeta (de facturas) que el procesador incluyó (`datafast_lote_pagos`, una venta pertenece a un solo lote), ingresa el **bruto del reporte** y el sistema bloquea si no coincide con la suma. Los cobros con tarjeta hechos desde Cuentas por Cobrar no entran todavía a esta lista (son de Ventas, módulo H).
+- **Liquidación** (`DatafastController::liquidar`, submódulo `bancos_liquidar_tarjetas`): el reporte manda; los porcentajes del procesador (comisión por tipo, retenciones, **IVA de la comisión configurable** `tarjeta_procesadores.iva_comision_pct`, antes escrito a mano en la pantalla) solo pre-llenan. Diferencia → 6.01.14 con observación y marca de revisión. Si el asiento no cuadra, el lote no se guarda.
+- **Tarjeta diferida:** campo «Intereses del diferido» (solo en lotes diferidos) que va a gasto financiero en una línea aparte de la comisión (PC-TAR-04, DEC-024; hoy ambos usan la cuenta 6.01.10).
+- **Anulación de una venta con tarjeta** (`FacturaController::anular`): si su lote está pendiente, la venta sale del lote y baja su total (el lote vacío se elimina); si el lote ya se liquidó, se bloquea y pide nota de crédito.
+- **Pendiente:** contracargo / devolución del procesador (DEC-025, no se implementó la contabilización) y comprobante de retención del emisor (DEC-023).
+
+### Inventario (F, 2026-11-04)
+
+- **Consolidado — error SON.000232:** las unidades de importaciones no liquidadas que bodega aún no recibió se muestran en la bodega de importaciones de su empresa ("en camino"); lo ya recibido sale del saldo y no se cuenta dos veces (`ConsolidadoController::adjuntarStock`, también en el Excel).
+- **Números de serie** (`NumeroSerieController`, Inventario → Números de serie): se registran por unidad (uno por línea, único por producto), con resumen de stock frente a series registradas y listado de inspección (en bodega / vendido / reservado / garantía). Al ingresar una compra con productos que exigen serie se avisa cuántas unidades registrar. **Pendiente en Ventas (H):** elegir la unidad (SN) al facturar para enlazar `factura_venta_id` automáticamente; hoy el estado «vendido» se corrige a mano en la pantalla.
+- **Regalos:** máximo 2 unidades de regalo por factura (validación en `FacturaController`); más de 2 requiere aprobación de Gerencia (DEC-033 pendiente) y por ahora se bloquea con un mensaje. El asiento de entrega ya usa 6.01.15 / 1.01.04.08.xx según la subcategoría.
+- **Pendiente de decisión:** margen de ganancia superior al 100 % (DEC-034): el cálculo actual es margen sobre precio (`costo / (1 − m)`), que no admite 100 %; cambiarlo a recargo sobre costo cambiaría los precios existentes y no se hizo sin esa decisión. Siguen sin subcategoría los productos de la reclasificación (incluida la categoría «ACCESORIOS (por reclasificar)», 261 productos).
+
+### Compras e importaciones (G, 2026-11-04)
+
+- **Factura sin productos (gasto, servicio, internacional EXT sin mercadería):** al registrarla se activa sola y llega a Cuentas por Pagar con su asiento (`CompraController::store`). Antes quedaba «pendiente» para siempre porque no tiene recepción de bodega y ninguna pantalla la activaba. Para las ya pendientes, el botón verde de la lista (`confirmarRecepcion`) ahora llama a `compras.facturas.activar` cuando no hay recepción.
+- **Decisión del usuario (2026-11-04) — la Cuenta por Pagar nace al REGISTRAR la factura, también con productos** (`CompraController::crearCuentaPagar`, idempotente): así se puede pagar la mercadería antes de que llegue. El **stock y el asiento siguen entrando cuando bodega confirma** la recepción (flujo del 20/09/2026; `aplicarEfectosOperativos` / `RecepcionController::confirmar` no duplican la CxP). Anular, editar o eliminar una factura pendiente retira o regenera su CxP; si ya tiene pagos, se bloquea hasta anularlos. Además se corrigió la edición de facturas pendientes, que fallaba por el orden de borrado entre recepción y líneas.
+- **Formulario de compra:** buscador de proveedor por nombre/RUC y descripción de línea expandible (se alarga al enfocarla). El IVA 12 % al buscar un producto viene del dato heredado del producto (`productos.porcentaje_iva`); se corrige en producción con `php artisan altamira:actualizar-iva-productos`.
+- Ya cumplían el documento y se re-probaron: validación del FOB contra la suma de productos (IMP-01), tabla de costos extra con el ejemplo oficial (base 8.172,17 e IVA crédito 777,83), gastos con su proveedor, botón verde de abono siempre visible, Anticipos unido a CxP y número de factura de origen en Devoluciones.
+
+### Ventas y cobranza (H, 2026-11-04)
+
+- **Cheques recibidos de clientes (PC-VEN-13/14, DEC-001):** un cheque en una factura, en un cobro de CxC o en el abono de una prefactura **queda en cartera** (tabla `cheques_recibidos`, cuenta `cta_cheques_cartera` 1.01.03.05) y **no es movimiento bancario** hasta que se deposita desde Ventas → Cheques recibidos (`ChequeRecibidoController`: Debe banco / Haber cartera, crea el movimiento y suma el saldo). Un post fechado no se puede depositar antes de su fecha. Anular/eliminar la factura anula sus cheques en cartera; con un cheque ya depositado se bloquea. **Esto reemplaza lo anotado en C.6**: el cheque ya no entra a ningún banco al facturar; «Cheques — banco donde se depositan» en Configuración de cobros solo pre-selecciona el banco en la pantalla de depósito. El reporte «cheques post fechados recibidos» (C.7) ahora sale de la cartera.
+- **Retenciones recibidas en el cobro (PC-VEN-12):** el cobro de CxC acepta retención de IVA e IR con su N° de comprobante; la retención también cancela deuda (cobrado + retenciones ≤ saldo) y el asiento acredita Clientes por el total, debitando 1.01.05.03 / 1.01.05.02.
+- **Factura de evento (PC-VEN-16, DEC-050):** casilla en la factura; el ingreso de todas sus líneas va a `cta_otros_ingresos` (4.03.02) en lugar de la cuenta del producto (columna `facturas.es_evento`).
+- **Guía de remisión:** pantalla con clave de acceso, autorización, transportista y placa, fechas, factura sustento y detalle, más impresión en PDF (`ventas.guias-remision.pdf`). El código QR del SRI queda pendiente de DEC-039.
+- **Rótulo de caja:** botón «ROT» en la lista de facturas; se arma con los datos de la factura, se puede editar (destinatario, dirección, bultos…) y se imprime un rótulo por bulto.
+- **Prefactura:** no genera movimiento; solo el abono registrado (transferencia → banco elegido; cheque → cartera, ahora con N° de cheque obligatorio).
+- No implementado a propósito: devolución en ventas (PC-VEN-05, DEC-029) y aplicación del anticipo a la factura (DEC-028).
+
+### Contabilidad (I, 2026-11-04)
+
+- **Cierre mensual con controles** (`CierreMensualService`, `EjercicioContableController::cerrar/controles`): la pantalla de cierre muestra la lista antes de confirmar. **Bloquean:** asientos descuadrados, cajas abiertas y bancos sin conciliar al fin de mes. **Se pueden cerrar solo si el contador los justifica** (queda en `log_cambios_criticos`): tarjetas sin liquidar, cheques pendientes, CxC y CxP frente al mayor, inventario frente al kárdex, importaciones sin liquidar, depreciación y nómina del mes. **Se confirman a mano** porque el sistema no los puede comprobar: IVA (PC-TRI-01), cuentas sin clasificar (sin exigir saldo cero, DEC-031) y anticipos. Cerrar antes del último día del mes exige confirmación expresa; abrir un período con el anterior abierto da aviso.
+- **Informes nuevos:** retenciones emitidas y recibidas por período, análisis vertical y análisis horizontal (frente al mismo período del año anterior), por empresa activa (RUC) y centro de costo, en PDF y Excel (`InformesContablesController`). Conciliación y transacciones bancarias viven en Bancos → Reportes. **Pendiente:** talón resumen del anexo (DEC-008).
+- **Procesos de origen:** el listado de asientos tiene accesos directos a CxC, CxP, cierre de caja, movimientos/depósitos, conciliación e importaciones; no crean asientos propios.
+- **Ya estaba hecho y se respeta:** validaciones del asiento (AS-01 a AS-04: cuadre, debe o haber, respaldo, centro de costo en 4/5/6, naturaleza invertida con confirmación), períodos cerrados, diarios, anulación con reverso (el borrado está bloqueado) y el cierre fiscal anual con `CIERRE_ANUAL`.
+- **Pendiente de decisión:** saldos iniciales de bancos y caja como asiento de apertura (contrapartida, DEC-011), renta del cierre anual (DEC-004), retiros del propietario (DEC-010) y catálogo de retenciones SRI (DEC-045, el existente es provisional). **No implementado:** asiento de apertura del año siguiente en el cierre anual (con saldos acumulados duplicaría cifras; hay que definir cómo se quiere) y las comprobaciones previas del cierre anual (inventario físico al 31/12, depreciación, provisiones).
+
+### RRHH, asistencia y nómina (J, 2026-11-04)
+
+- **Nómina procesada: se anula con reverso** (`NominaController::anular`, permiso `rrhh,anular`, columnas `nominas.snapshot_prestamos/motivo_anulacion/anulada_por/fecha_anulacion`): genera el reverso del asiento de proceso, restituye préstamos y anticipos a como estaban (el estado previo se guarda al procesar) y deja motivo, usuario y fecha. Una nómina ya **pagada** no se anula desde aquí (el dinero ya salió); una anulada no se vuelve a procesar ni pagar. Estados: Borrador, Procesada, Pagada (+ Anulada).
+- **Rol de pagos (PDF, una página A4 por colaborador):** ahora incluye logo, empleador, RUC, nombre comercial y dirección de la empresa, ingreso y departamento del colaborador, **base de cálculo** de cada ingreso y egreso, **información para la empresa** (aporte patronal 11,15 % y provisiones, `NominaCalculoService::informacionEmpresa`, mismas fórmulas que el asiento) y el neto **en números y en letras** (`App\Support\NumeroALetras`). Con sueldo 482,00 sale IESS personal 45,55, fondos de reserva 40,17 y aporte patronal **53,74** (11,15 % de 482 = 53,743; el documento dice 53,73, que parece error de redondeo).
+- Ya estaba hecho y se re-probó: ficha del colaborador con campos obligatorios (IESS, contrato, transferencia con banco y cuenta), servicios profesionales fuera de nómina, departamentos nuevos con descripción obligatoria, generación de nómina mensual sin mezclar RUC, validaciones (sin RUC, transferencia sin banco, neto negativo), asiento cuadrado de proceso y asiento de pago con banco o caja obligatorio, horas extras con tope de 4 h/día y 12 h/semana y vínculo usuario-colaborador.
+- **Datos que faltan cargar (no se inventan):** María del Carmen Rondal, Cesar Daniel Rondal y Steeven Arteaga (cédulas, sueldos, etc.); Fabián, Jhonny y Ángel como proveedores por servicio. **Pendientes del contador:** DEC-009, 016, 017 (SBU 460 vs 482 en el décimo cuarto), 018 (divisor 240) y 019.
+- **Pruebas de asistencia propuestas:** entrada y salida del mismo día; segunda entrada rechazada; almuerzo sin entrada rechazado; atraso según horario; horas extras desde la marcación (50 % laborable, 100 % fin de semana o feriado); usuario sin colaborador vinculado ve el aviso; resumen del día solo con el permiso `asistencia_resumen_dia`.
+
+### Taller (K, 2026-11-04)
+
+- **Revisado literal por literal (TAL-01 a TAL-08, todos pasan):** repuestos desde «Repuestos e Insumos de Taller» con stock y bloqueo por cantidad, una sola lista de estados (DEC-051 confirmada), turno por orden de llegada, documento de ingreso en una página A4 con hasta 4 fotos y condiciones configurables, campos obligatorios del ingreso, factura automática con servicio (PC-TAL-01) y repuestos (PC-TAL-02) a nombre del RUC de UIO y centro de costo FIX, y garantía sin factura al cliente con reporte de costo por producto.
+- **La factura de taller sigue las reglas de cobro de Ventas (H):** transferencia exige banco **y referencia**; el **cheque queda en cartera** (`cheques_recibidos`, N° y fecha del cheque, sin banco) y se deposita desde Ventas → Cheques recibidos. Antes pedía banco para el cheque y su asiento ya no coincidía con Bancos.
+- El IVA de la línea de repuestos sale del producto: mientras no se ejecute `altamira:actualizar-iva-productos` en producción, esos repuestos mostrarán 12 %.
+- **Pendiente de decisión (no se inventó la regla):** DEC-047 (cuenta y recuperación de garantías), DEC-049 (quién aprueba un diagnóstico), DEC-052 (valor del servicio), DEC-053 (momento de generar la factura), DEC-032 (componentes comprados afuera: unidades o tipos, y cuenta) y DEC-048 (técnico externo como compra). El texto de las condiciones del servicio es configurable (DEC-054).
+- **Datos de prueba de Taller:** se borran solo con confirmación del usuario y en producción, con `altamira:limpiar-datos-prueba` (ver `docs/DESPLIEGUE_PRODUCCION.md`); la base local ya no tiene órdenes.
+

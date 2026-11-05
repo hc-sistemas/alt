@@ -1,5 +1,5 @@
 import { Head, router, usePage } from '@inertiajs/react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import AppLayout from '@/Layouts/AppLayout'
 import PageHeader from '@/Components/shared/PageHeader'
@@ -13,6 +13,7 @@ import { confirmarEliminar } from '@/lib/swal'
 import { Save, Search, Plus, Check, X, Trash2, FileText, Pencil } from 'lucide-react'
 import { usePermiso } from '@/Hooks/usePermiso'
 import PdfPreviewModal from '@/Components/shared/PdfPreviewModal'
+import { ESTADOS_ORDEN, estadoOrden } from '@/lib/tallerEstados'
 import type { PageProps, TallerOrdenTrabajo } from '@/types'
 
 interface Tecnico {
@@ -26,22 +27,14 @@ interface ProductoOpcion {
     nombre: string
     costo: number
     pvp: number
+    stock: number
 }
 
 interface Props extends PageProps {
     orden: TallerOrdenTrabajo
     tecnicos: Tecnico[]
     productos: ProductoOpcion[]
-}
-
-const ESTADO_CONFIG: Record<string, { label: string; variant: 'info' | 'warning' | 'default' | 'success' | 'secondary' }> = {
-    pendiente:  { label: 'Pendiente',  variant: 'warning' },
-    en_proceso: { label: 'En proceso', variant: 'info' },
-    esperando_repuesto: { label: 'Esperando repuesto', variant: 'warning' },
-    listo:      { label: 'Listo',      variant: 'success' },
-    entregado:  { label: 'Entregado',  variant: 'secondary' },
-    facturado:  { label: 'Facturado',  variant: 'success' },
-    garantia:   { label: 'Garantía',   variant: 'secondary' },
+    imprimir?: boolean
 }
 
 const DIAGNOSTICO_ESTADO_CONFIG: Record<string, { label: string; variant: 'warning' | 'success' | 'danger' }> = {
@@ -81,9 +74,9 @@ async function consultarSaldoDisponible(ordenId: number, productoId: number): Pr
 }
 
 export default function OrdenTrabajoShow() {
-    const { orden, tecnicos, productos } = usePage<Props>().props
+    const { orden, tecnicos, productos, imprimir } = usePage<Props>().props
     const { puede } = usePermiso('taller')
-    const cfg = ESTADO_CONFIG[orden.estado] ?? { label: orden.estado, variant: 'secondary' as const }
+    const cfg = estadoOrden(orden.estado)
 
     // "Facturado" solo lo fija la liquidación; una orden facturada ya no cambia de estado.
     const facturada = orden.estado === 'facturado'
@@ -97,6 +90,15 @@ export default function OrdenTrabajoShow() {
     const ingreso = orden.ingreso
     const componentes = ingreso?.componentes ?? []
     const [pdfIngresoAbierto, setPdfIngresoAbierto] = useState(false)
+
+    // Al guardar un ingreso se abre el documento de ingreso para imprimirlo (02-10 §2.3)
+    useEffect(() => {
+        if (imprimir && ingreso) {
+            setPdfIngresoAbierto(true)
+            window.history.replaceState(null, '', route('taller.ordenes.show', orden.id))
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
     const urlImagenEquipo = ingreso?.imagen
         ? (/^https?:\/\//i.test(ingreso.imagen) ? ingreso.imagen : route('taller.ingresos.imagen', ingreso.id))
         : null
@@ -420,13 +422,11 @@ export default function OrdenTrabajoShow() {
                                 className="w-full h-9 rounded-md border px-3 text-sm"
                                 style={{ background: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
                             >
-                                <option value="pendiente">Pendiente</option>
-                                <option value="en_proceso">En proceso</option>
-                                <option value="esperando_repuesto">Esperando repuesto</option>
-                                <option value="listo">Listo</option>
-                                <option value="entregado">Entregado</option>
-                                <option value="garantia">Garantía</option>
-                                {facturada && <option value="facturado">Facturado</option>}
+                                {Object.entries(ESTADOS_ORDEN)
+                                    .filter(([valor]) => valor !== 'facturado' || facturada)
+                                    .map(([valor, c]) => (
+                                        <option key={valor} value={valor}>{c.label}</option>
+                                    ))}
                             </select>
                         </div>
                         <div className="space-y-1.5">
@@ -719,9 +719,14 @@ export default function OrdenTrabajoShow() {
                     <Button variant="outline" onClick={() => router.visit(route('taller.ordenes.index'))}>
                         Volver al Ingreso
                     </Button>
-                    {orden.estado === 'listo' && (
+                    {['listo', 'entregado'].includes(orden.estado) && (
                         <Button onClick={() => router.visit(route('taller.liquidacion.show', orden.id))}>
-                            Liquidar Orden
+                            Facturar Orden
+                        </Button>
+                    )}
+                    {orden.estado === 'garantia' && !orden.garantia_cerrada_at && puede('editar') && (
+                        <Button onClick={() => router.visit(route('taller.liquidacion.show', orden.id))}>
+                            Cerrar garantía (sin factura)
                         </Button>
                     )}
                 </div>
@@ -765,7 +770,7 @@ export default function OrdenTrabajoShow() {
                                 <table className="w-full text-sm">
                                     <thead className="sticky top-0" style={{ background: 'var(--bg-card)' }}>
                                         <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                                            {['Código', 'Nombre', 'PVP'].map(h => (
+                                            {['Código', 'Nombre', 'Stock', 'PVP'].map(h => (
                                                 <th
                                                     key={h}
                                                     className="text-left px-4 py-2 text-xs font-medium"
@@ -794,6 +799,9 @@ export default function OrdenTrabajoShow() {
                                                 </td>
                                                 <td className="px-4 py-2.5 text-xs" style={{ color: 'var(--text-main)' }}>
                                                     {p.nombre}
+                                                </td>
+                                                <td className="px-4 py-2.5 text-xs font-medium" style={{ color: p.stock > 0 ? 'var(--text-main)' : '#EF4444' }}>
+                                                    {p.stock}
                                                 </td>
                                                 <td className="px-4 py-2.5 text-xs text-right" style={{ color: 'var(--text-muted)' }}>
                                                     {formatMoneda(p.pvp)}

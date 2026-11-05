@@ -18,6 +18,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 use Maatwebsite\Excel\Facades\Excel;
@@ -68,6 +69,39 @@ class MovimientoBancarioController extends Controller
         return $query;
     }
 
+    /**
+     * Libro de la cuenta (02-06 §2.3): agrega a cada fila el debe, el haber y el saldo después del movimiento.
+     * El saldo es saldo inicial + movimientos no anulados, nunca digitado; solo se calcula al ver UN banco o caja.
+     */
+    private function agregarSaldoCorrido($movimientos, Request $request): void
+    {
+        $banco = $request->filled('banco_caja_id')
+            ? BancoCaja::where('empresa_id', session('empresa_activa_id'))->find($request->banco_caja_id)
+            : null;
+
+        $filas = $movimientos->getCollection();
+        if (!$banco || $filas->isEmpty()) {
+            $filas->each(fn ($m) => $m->setAttribute('saldo_libro', null));
+            return;
+        }
+
+        // Saldo tras el movimiento más reciente de la página = inicial + todo lo anterior o igual a él (sin anulados)
+        $primero = $filas->first();
+        $hasta   = MovimientoBancario::where('banco_caja_id', $banco->id)->where('anulado', false)
+            ->where(fn ($q) => $q->where('fecha', '<', $primero->fecha)
+                ->orWhere(fn ($q2) => $q2->where('fecha', $primero->fecha)->where('id', '<=', $primero->id)))
+            ->selectRaw("COALESCE(SUM(CASE WHEN tipo = 'ingreso' THEN monto ELSE -monto END), 0) as neto")
+            ->value('neto');
+
+        $saldo = round((float) $banco->saldo_inicial + (float) $hasta, 2);
+        foreach ($filas as $m) {
+            $m->setAttribute('saldo_libro', $saldo);
+            if (!$m->anulado) {
+                $saldo = round($saldo - ($m->tipo === 'ingreso' ? 1 : -1) * (float) $m->monto, 2);
+            }
+        }
+    }
+
     public function index(Request $request): Response
     {
         $empresaId = session('empresa_activa_id');
@@ -82,6 +116,8 @@ class MovimientoBancarioController extends Controller
                                  ->orderByDesc('id')
                                  ->paginate(25)
                                  ->withQueryString();
+
+            $this->agregarSaldoCorrido($movimientos, $request);
 
             $stats = [
                 'total_ingresos'       => MovimientoBancario::where('empresa_id', $empresaId)
@@ -127,36 +163,53 @@ class MovimientoBancarioController extends Controller
         $empresaId = session('empresa_activa_id');
 
         $request->validate([
-            'banco_caja_id'           => 'required|exists:bancos_cajas,id',
+            'banco_caja_id'           => 'required|exists_empresa:bancos_cajas',
             'tipo'                    => 'required|in:ingreso,egreso',
             'sub_tipo'                => 'required|in:transferencia,cheque,efectivo,deposito',
             'fecha'                   => 'required|date',
-            'monto'                   => 'required|numeric|min:0.01',
+            'monto'                   => 'required|numeric|decimal:0,2|min:0.01',
             'beneficiario'            => 'nullable|string|max:200',
-            'num_documento'           => 'nullable|string|max:50',
+            // Referencia obligatoria en todo pago por transferencia, cheque o depósito (02-06 §2.3)
+            'num_documento'           => [Rule::requiredIf(in_array($request->sub_tipo, ['transferencia', 'cheque', 'deposito'], true)), 'nullable', 'string', 'max:50'],
+            'comentario'              => 'nullable|string|max:500',
             'descripcion'             => 'required|string|max:500',
             'cuenta_contrapartida_id' => 'required|exists:plan_cuentas,id',
         ], [
+            'num_documento.required'              => 'Ingrese la referencia (N° de transferencia, cheque o depósito).',
             'monto.min'                           => 'El monto debe ser mayor a 0.',
             'cuenta_contrapartida_id.required'    => 'Selecciona la cuenta contable de contrapartida.',
             'descripcion.required'                => 'La descripción es obligatoria.',
         ]);
 
+        // La caja es solo efectivo y nunca apunta a las cuentas «sin clasificar» (02-05 §2.1 y §2.6)
+        $cuentaBanco = BancoCaja::where('empresa_id', $empresaId)->findOrFail($request->banco_caja_id);
+        if (in_array($cuentaBanco->tipo, ['caja', 'caja_chica'], true)) {
+            if ($request->sub_tipo !== 'efectivo') {
+                return back()->withErrors(['sub_tipo' => 'Un movimiento de caja solo puede ser en efectivo. Las transferencias, tarjetas y cheques van en Bancos, Ventas y Tarjetas.'])->withInput();
+            }
+            $codigoContra = \App\Models\PlanCuenta::whereKey($request->cuenta_contrapartida_id)->value('codigo');
+            if (in_array($codigoContra, ['4.01.09', '5.01.08'], true)) {
+                return back()->withErrors(['cuenta_contrapartida_id' => "La cuenta {$codigoContra} es «sin clasificar» y no se usa en la caja. Elija la cuenta que corresponde."])->withInput();
+            }
+        }
+
+        // Un egreso que deja el saldo negativo exige confirmación del usuario (DEC-041 pendiente)
+        if ($request->tipo === 'egreso') {
+            $previo = $cuentaBanco;
+            if ($advertencia = \App\Support\SaldoBancario::advertir($previo, (float) $request->monto, $request)) {
+                return $advertencia;
+            }
+        }
+
         try {
             DB::transaction(function () use ($request, $empresaId) {
                 $banco = BancoCaja::findOrFail($request->banco_caja_id);
-
-                if ($request->tipo === 'egreso' && $banco->saldo_actual < $request->monto) {
-                    throw new \Exception(
-                        "Saldo insuficiente. Saldo disponible: \${$banco->saldo_actual}"
-                    );
-                }
 
                 $movimiento = MovimientoBancario::create([
                     ...$request->only([
                         'banco_caja_id', 'tipo', 'sub_tipo', 'fecha', 'monto',
                         'persona_tipo', 'persona_id', 'beneficiario',
-                        'num_documento', 'num_cheque', 'fecha_cheque',
+                        'num_documento', 'num_cheque', 'fecha_cheque', 'comentario',
                         'descripcion', 'documento_tipo', 'documento_id',
                         'cuenta_contrapartida_id', 'es_postfechado',
                     ]),
@@ -217,16 +270,21 @@ class MovimientoBancarioController extends Controller
         $empresaId = session('empresa_activa_id');
 
         $request->validate([
-            'banco_origen_id'  => 'required|exists:bancos_cajas,id',
-            'banco_destino_id' => 'required|exists:bancos_cajas,id|different:banco_origen_id',
+            'banco_origen_id'  => 'required|exists_empresa:bancos_cajas',
+            'banco_destino_id' => 'required|exists_empresa:bancos_cajas|different:banco_origen_id',
             'fecha'            => 'required|date',
-            'monto'            => 'required|numeric|min:0.01',
+            'monto'            => 'required|numeric|decimal:0,2|min:0.01',
             'num_documento'    => 'nullable|string|max:50',
             'descripcion'      => 'required|string|max:500',
         ], [
             'banco_destino_id.different' => 'La cuenta destino debe ser distinta de la de origen.',
             'descripcion.required'       => 'La descripción es obligatoria.',
         ]);
+
+        $previo = BancoCaja::where('empresa_id', $empresaId)->findOrFail($request->banco_origen_id);
+        if ($advertencia = \App\Support\SaldoBancario::advertir($previo, (float) $request->monto, $request)) {
+            return $advertencia;
+        }
 
         try {
             DB::transaction(function () use ($request, $empresaId) {
@@ -237,15 +295,13 @@ class MovimientoBancarioController extends Controller
                 if (!$origen->estado || !$destino->estado) {
                     throw new \Exception('Ambas cuentas deben estar activas.');
                 }
-                if ((float) $origen->saldo_actual < $monto) {
-                    throw new \Exception(
-                        "Saldo insuficiente en {$origen->nombre}. Disponible: \$" . number_format((float) $origen->saldo_actual, 2)
-                    );
-                }
+
+                // La caja solo mueve efectivo: su lado se registra como efectivo y el banco que recibe, como depósito
+                $esCaja = fn ($c) => in_array($c->tipo, ['caja', 'caja_chica'], true);
+                $subTipo = fn ($c, $otra) => $esCaja($c) ? 'efectivo' : ($esCaja($otra) ? 'deposito' : 'transferencia');
 
                 $base = [
                     'empresa_id'     => $empresaId,
-                    'sub_tipo'       => 'transferencia',
                     'fecha'          => $request->fecha,
                     'monto'          => $monto,
                     'num_documento'  => $request->num_documento,
@@ -256,6 +312,7 @@ class MovimientoBancarioController extends Controller
                 ];
 
                 $egreso = MovimientoBancario::create($base + [
+                    'sub_tipo'      => $subTipo($origen, $destino),
                     'banco_caja_id' => $origen->id,
                     'tipo'          => 'egreso',
                     'beneficiario'  => $destino->nombre,
@@ -264,6 +321,7 @@ class MovimientoBancarioController extends Controller
                 $egreso->update(['documento_id' => $egreso->id]);
 
                 $ingreso = MovimientoBancario::create($base + [
+                    'sub_tipo'      => $subTipo($destino, $origen),
                     'banco_caja_id' => $destino->id,
                     'tipo'          => 'ingreso',
                     'beneficiario'  => $origen->nombre,

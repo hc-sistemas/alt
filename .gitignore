@@ -38,3 +38,7 @@ database/altamira_schema.sql
 database/backup_*.sql
 
 !storage/app/public/manuales/
+
+# Datos sensibles de trabajo: el repositorio es público, estos archivos NO se suben (pasarlos al servidor por scp)
+/docs/*.sql
+/docs/INVENTARIO*.xlsx

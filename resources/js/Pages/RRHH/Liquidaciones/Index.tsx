@@ -23,7 +23,7 @@ interface Props extends PageProps {
     liquidaciones: PaginatedData<Liquidacion> | null
     colaboradores: ColabItem[]
     filtros: { estado?: string; colaborador_id?: string; buscar?: string }
-    flash?: { success?: string; error?: string }
+    bancos: { id: number; nombre: string; tipo: string }[]
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -85,7 +85,7 @@ const initWizard = (): WizardState => ({
 
 // ── componente principal ───────────────────────────────────────────────────────
 
-export default function LiquidacionesIndex({ liquidaciones, colaboradores, filtros, flash }: Props) {
+export default function LiquidacionesIndex({ liquidaciones, colaboradores, filtros, bancos, flash }: Props) {
     const { auth } = usePage<Props>().props
     const { puede } = usePermiso('rrhh')
     const canEdit      = puede('editar')
@@ -105,6 +105,7 @@ export default function LiquidacionesIndex({ liquidaciones, colaboradores, filtr
     const [calculando, setCalculando] = useState(false)
     const [guardando, setGuardando]   = useState(false)
     const [aprobando, setAprobando]   = useState(false)
+    const [bancoId, setBancoId]       = useState('')
     const [errCalc, setErrCalc]       = useState<string | null>(null)
 
     // filtros
@@ -229,7 +230,8 @@ export default function LiquidacionesIndex({ liquidaciones, colaboradores, filtr
         if (!wiz.liquidacionId) return
         if (!confirm('¿Aprobar esta liquidación? El colaborador será inactivado y no podrá iniciar sesión.')) return
         setAprobando(true)
-        router.post(route('rrhh.liquidaciones.aprobar', wiz.liquidacionId), {}, {
+        if (!bancoId) { setErrCalc('Seleccione el banco o caja desde el que se paga el finiquito.'); return }
+        router.post(route('rrhh.liquidaciones.aprobar', wiz.liquidacionId), { banco_caja_id: bancoId }, {
             onSuccess: () => { setWiz(w => ({ ...w, aprobada: true })); setAprobando(false) },
             onError: errs => { setErrCalc(Object.values(errs).join(' · ')); setAprobando(false) },
             preserveState: true,
@@ -595,6 +597,14 @@ export default function LiquidacionesIndex({ liquidaciones, colaboradores, filtr
                                                 style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 6, border: '1px solid #4C1D95', background: 'transparent', color: '#4C1D95', cursor: 'pointer', fontWeight: 600, fontSize: 13 }}>
                                                 <Eye size={14} /> Vista previa Finiquito
                                             </button>
+                                        )}
+
+                                        {canAprobar && (
+                                            <select value={bancoId} onChange={e => setBancoId(e.target.value)}
+                                                style={{ padding: '9px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-main)', fontSize: 13 }}>
+                                                <option value="">Banco / caja del pago *</option>
+                                                {bancos.map(b => (<option key={b.id} value={b.id}>{b.nombre}</option>))}
+                                            </select>
                                         )}
 
                                         {canAprobar ? (

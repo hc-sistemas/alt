@@ -163,7 +163,7 @@ export default function UsuarioForm() {
                             >
                                 <option value="">Seleccionar empresa...</option>
                                 {empresas.map(e => (
-                                    <option key={e.id} value={e.id}>{e.nombre_comercial}</option>
+                                    <option key={e.id} value={e.id}>{e.nombre_selector ?? e.nombre_comercial}</option>
                                 ))}
                             </select>
                         </div>
@@ -204,7 +204,7 @@ export default function UsuarioForm() {
                                             color: seleccionada ? '#F59E0B' : 'var(--text-muted)',
                                         }}
                                     >
-                                        {e.nombre_comercial}
+                                        {e.nombre_selector ?? e.nombre_comercial}
                                     </button>
                                 )
                             })}

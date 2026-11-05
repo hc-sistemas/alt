@@ -146,13 +146,13 @@ class CompraController extends Controller
     {
         $empresaId = session('empresa_activa_id');
         $request->validate([
-            'proveedor_id'               => 'required|exists:proveedores,id',
+            'proveedor_id'               => 'required|exists_empresa:proveedores',
             'tipo_documento'             => 'required|in:FAC,LIQ,TIK,CON,EXT',
             'num_documento'              => 'required|string|max:30',
             'fecha_emision'              => 'required|date',
             'dias_credito'               => 'integer|min:0',
-            'bodega_id'                  => 'nullable|exists:bodegas,id',
-            'importacion_id'             => 'nullable|exists:importaciones,id',
+            'bodega_id'                  => 'nullable|exists_empresa:bodegas',
+            'importacion_id'             => 'nullable|exists_empresa:importaciones',
             'gasto_no_deducible'         => 'boolean',
             'concepto'                   => 'nullable|string|max:500',
             'metodo_envio'               => 'nullable|string|max:10',
@@ -204,8 +204,25 @@ class CompraController extends Controller
             return back()->with('error', $e->getMessage())->withInput();
         }
 
+        // Cuenta de cada línea (PC-CAT / DEC-012): el producto usa la cuenta de inventario de su subcategoría; una línea sin
+        // producto necesita que quien registra elija la cuenta del gasto (ya no hay cuenta por defecto).
+        if ($tipoAsiento !== 'no_deducible') {
+            foreach ($request->detalles as $i => $d) {
+                if (empty($d['producto_id']) && empty($d['cuenta_id'])) {
+                    return back()->with('error', 'La línea ' . ($i + 1) . ' no tiene producto ni cuenta contable: elija la cuenta del gasto.')->withInput();
+                }
+            }
+            try {
+                $this->asientoService->cuentasProductos(collect($request->detalles)->pluck('producto_id')->all(), (int) $empresaId);
+            } catch (\DomainException $e) {
+                return back()->with('error', $e->getMessage())->withInput();
+            }
+        }
+
         try {
-            DB::transaction(function () use ($request, $empresaId) {
+            $pasoACxP = false;
+            $conRecepcion = false;
+            DB::transaction(function () use ($request, $empresaId, &$pasoACxP, &$conRecepcion) {
                 $subtotal0   = 0;
                 $subtotalIva = 0;
                 $totalIva    = 0;
@@ -290,10 +307,32 @@ class CompraController extends Controller
 
                 // Bodega ve la recepción pendiente de inmediato (Inventario → Recepciones)
                 $this->crearRecepcionPendiente($compra, (int) $empresaId);
+
+                // Una factura sin productos (gasto, servicio o costo de importación) no pasa por bodega: no hay nada que recibir,
+                // así que se activa al registrarla y llega a Cuentas por Pagar (02-03 §2.7). Con productos sigue pendiente
+                // hasta que bodega confirme el ingreso (flujo vigente del 20/09/2026).
+                if (!RecepcionBodega::where('compra_id', $compra->id)->exists()) {
+                    $compra->update(['estado' => 'activa']);
+                    $this->aplicarEfectosOperativos($compra->fresh(), (int) $empresaId);
+                } else {
+                    $conRecepcion = true;
+                    // Con productos: el stock y el asiento esperan la confirmación de bodega, pero la deuda con el proveedor ya existe
+                    $this->crearCuentaPagar($compra->fresh(), (int) $empresaId);
+                }
+                $pasoACxP = true;
             });
 
-            return back()->with('success',
-                "Compra {$request->num_documento} ingresada. Pendiente de confirmación en bodega.");
+            // Productos que exigen número de serie (02-02 §2.4): se avisa para registrar el SN de cada unidad
+            $conSerie = \App\Models\Producto::whereIn('id', collect((array) $request->detalles)->pluck('producto_id')->filter())
+                ->where('requiere_serie', true)->pluck('id')->all();
+            $unidadesConSerie = (int) round((float) collect((array) $request->detalles)
+                ->filter(fn ($d) => in_array($d['producto_id'] ?? null, $conSerie))->sum(fn ($d) => (float) ($d['cantidad'] ?? 0)));
+            $avisoSerie = $unidadesConSerie > 0
+                ? " Atención: incluye {$unidadesConSerie} unidad(es) que exigen número de serie; regístrelos en Inventario → Números de serie."
+                : '';
+
+            return back()->with('success', "Factura {$request->num_documento} registrada y enviada a Cuentas por Pagar."
+                . ($conRecepcion ? ' El ingreso al inventario queda pendiente de confirmación en bodega.' : '') . $avisoSerie);
         } catch (\Throwable $e) {
             return back()->with('error', $e->getMessage());
         }
@@ -327,6 +366,9 @@ class CompraController extends Controller
                 \App\Services\AsientoService::codigosCompra($tipoAsiento, (float) $compra->retencion_ir > 0, (float) $compra->retencion_iva > 0),
                 $compra->fecha_emision?->toDateString(),
             );
+            if ($tipoAsiento !== 'no_deducible') {
+                $this->asientoService->cuentasProductos($compra->detalles->pluck('producto_id')->all(), (int) $empresaId);
+            }
         } catch (\DomainException $e) {
             return back()->with('error', $e->getMessage());
         }
@@ -343,6 +385,28 @@ class CompraController extends Controller
     // ── Efectos operativos de activar una compra: inventario, recepción, CxP,
     //    retención y asiento contable. Reutilizado por activar() y por update()
     //    cuando una factura ya activa se corrige y hay que regenerar todo. ──────
+    /**
+     * La Cuenta por Pagar nace al REGISTRAR la factura (decisión del usuario, 2026-11-04): así se puede pagar la mercadería antes
+     * de que llegue. Es idempotente: confirmar la recepción en bodega no la duplica. El stock y el asiento siguen entrando al confirmar.
+     */
+    private function crearCuentaPagar(Compra $compra, int $empresaId): void
+    {
+        if (CuentaPagar::where('compra_id', $compra->id)->exists()) {
+            return;
+        }
+
+        CuentaPagar::create([
+            'empresa_id'        => $empresaId,
+            'proveedor_id'      => $compra->proveedor_id,
+            'compra_id'         => $compra->id,
+            'monto'             => $compra->total,
+            'saldo'             => $compra->total,
+            'fecha_emision'     => now()->toDateString(),
+            'fecha_vencimiento' => $compra->fecha_vencimiento ?? $compra->fecha_emision,
+            'estado'            => 'pendiente',
+        ]);
+    }
+
     private function aplicarEfectosOperativos(Compra $compra, int $empresaId): void
     {
         $compra->loadMissing('detalles');
@@ -396,18 +460,11 @@ class CompraController extends Controller
             }
         }
 
-        if ($compra->dias_credito > 0) {
-            CuentaPagar::create([
-                'empresa_id'        => $empresaId,
-                'proveedor_id'      => $compra->proveedor_id,
-                'compra_id'         => $compra->id,
-                'monto'             => $compra->total,
-                'saldo'             => $compra->total,
-                'fecha_emision'     => now()->toDateString(),
-                'fecha_vencimiento' => $compra->fecha_vencimiento,
-                'estado'            => 'pendiente',
-            ]);
-        }
+        // Toda factura (nacional o internacional, con o sin productos, con o sin días de crédito)
+        // llega a Cuentas por Pagar; ahí se registran los pagos totales o parciales (02-03 §2.8).
+        // Antes solo se creaba si dias_credito > 0, así que las facturas de contado, las del exterior
+        // y las que se pagan antes de que llegue la mercadería quedaban fuera.
+        $this->crearCuentaPagar($compra, $empresaId);
 
         // Crear retención si aplica — CxP-03: jamás si es gasto no deducible
         $retIR  = (float) ($compra->retencion_ir  ?? 0);
@@ -496,6 +553,7 @@ class CompraController extends Controller
                 tipo:          $tipoAsiento,
                 centroCostoId: $compra->centro_costo_id,
                 fecha:         $compra->fecha_emision?->toDateString(),
+                lineas:        $compra->detalles->map(fn ($d) => ['producto_id' => $d->producto_id, 'cuenta_id' => $d->cuenta_id, 'subtotal' => (float) $d->subtotal])->all(),
             );
             $compra->update(['asiento_id' => $asiento->id, 'asiento_error' => null]);
         } catch (\Throwable $e) {
@@ -994,7 +1052,7 @@ class CompraController extends Controller
             if ($compra->estaPendiente()) {
                 return response()->json([
                     'escenario' => 'A',
-                    'mensaje'   => 'Esta factura está pendiente de recepción. Se anulará sin reversión de inventario.',
+                    'mensaje'   => 'Esta factura está pendiente de recepción. Se anulará sin reversión de inventario y se retira su Cuenta por Pagar.',
                 ]);
             }
 
@@ -1088,8 +1146,12 @@ class CompraController extends Controller
 
         // ── Pendiente: nunca entró al inventario ni generó CxP/asiento ──────────
         if ($compra->estaPendiente()) {
+            if ($this->tienePagoVinculado($compra)) {
+                return back()->with('error', "La factura {$compra->num_documento} ya tiene pagos registrados: anule primero los pagos en Cuentas por Pagar.");
+            }
             DB::transaction(function () use ($compra, $request, $estadoAnterior) {
                 $this->limpiarRecepcionYEtiquetas($compra);
+                CuentaPagar::where('compra_id', $compra->id)->delete();
                 $compra->update(['estado' => 'anulada']);
                 DB::table('log_cambios_criticos')->insert([
                     'usuario_id'     => Auth::id(),
@@ -1295,13 +1357,13 @@ class CompraController extends Controller
         }
 
         $request->validate([
-            'proveedor_id'               => 'required|exists:proveedores,id',
+            'proveedor_id'               => 'required|exists_empresa:proveedores',
             'tipo_documento'             => 'required|in:FAC,LIQ,TIK,CON,EXT',
             'num_documento'              => 'required|string|max:30',
             'fecha_emision'              => 'required|date',
             'dias_credito'               => 'integer|min:0',
-            'bodega_id'                  => 'nullable|exists:bodegas,id',
-            'importacion_id'             => 'nullable|exists:importaciones,id',
+            'bodega_id'                  => 'nullable|exists_empresa:bodegas',
+            'importacion_id'             => 'nullable|exists_empresa:importaciones',
             'gasto_no_deducible'         => 'boolean',
             'concepto'                   => 'nullable|string|max:500',
             'metodo_envio'               => 'nullable|string|max:10',
@@ -1363,6 +1425,14 @@ class CompraController extends Controller
                     $this->limpiarRecepcionYEtiquetas($compra);
 
                     $compra->update(['asiento_id' => null, 'asiento_error' => null]);
+                } else {
+                    // Pendiente: se retiran la recepción (y sus etiquetas) y la CxP ANTES de reemplazar las líneas,
+                    // porque la recepción referencia a las líneas viejas
+                    if ($this->tienePagoVinculado($compra)) {
+                        throw new \DomainException('La factura ya tiene pagos registrados: anúlelos en Cuentas por Pagar antes de editarla.');
+                    }
+                    $this->limpiarRecepcionYEtiquetas($compra);
+                    CuentaPagar::where('compra_id', $compra->id)->delete();
                 }
 
                 $subtotal0   = 0;
@@ -1448,10 +1518,16 @@ class CompraController extends Controller
                     $compra->load('detalles');
                     $this->aplicarEfectosOperativos($compra, $empresaId);
                 } else {
-                    // Pendiente: las líneas cambiaron, la recepción (y sus etiquetas) se regeneran
-                    $this->limpiarRecepcionYEtiquetas($compra);
+                    // Pendiente: con las líneas nuevas se regeneran la recepción y la Cuenta por Pagar
                     $compra->refresh();
                     $this->crearRecepcionPendiente($compra, (int) $empresaId);
+                    if (!RecepcionBodega::where('compra_id', $compra->id)->exists()) {
+                        // Ya no tiene productos: no pasa por bodega, se activa como cualquier gasto
+                        $compra->update(['estado' => 'activa']);
+                        $this->aplicarEfectosOperativos($compra->fresh(), (int) $empresaId);
+                    } else {
+                        $this->crearCuentaPagar($compra, (int) $empresaId);
+                    }
                 }
             });
         } catch (\Throwable $e) {
@@ -1512,6 +1588,7 @@ class CompraController extends Controller
                     $this->limpiarRecepcionYEtiquetas($compra);
                 } else {
                     $this->limpiarRecepcionYEtiquetas($compra);
+                    CuentaPagar::where('compra_id', $compra->id)->delete();
                 }
 
                 $compra->detalles()->delete();

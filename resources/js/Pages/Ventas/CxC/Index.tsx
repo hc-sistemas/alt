@@ -99,6 +99,11 @@ export default function Index() {
     const [cobroFormaPago, setCobroFormaPago] = useState('efectivo')
     const [cobroBanco, setCobroBanco] = useState('')
     const [cobroObservacion, setCobroObservacion] = useState('')
+    const [cobroReferencia, setCobroReferencia] = useState('')
+    const [cobroRetIva, setCobroRetIva] = useState('')
+    const [cobroRetIr, setCobroRetIr] = useState('')
+    const [cobroNumRet, setCobroNumRet] = useState('')
+    const [cobroFechaCheque, setCobroFechaCheque] = useState('')
     const [cobrandoId, setCobrandoId] = useState<number | null>(null)
 
     const aplicarFiltros = () => {
@@ -116,6 +121,8 @@ export default function Index() {
         setCobroValor(String(cuenta.saldo))
         setCobroFormaPago('efectivo')
         setCobroObservacion('')
+        setCobroReferencia('')
+        setCobroRetIva(''); setCobroRetIr(''); setCobroNumRet(''); setCobroFechaCheque('')
     }
 
     const cerrarModalCobro = () => {
@@ -129,11 +136,16 @@ export default function Index() {
     const handleCobrar = () => {
         if (!modalCobro) return
         const valor = parseFloat(cobroValor)
-        if (!valor || valor <= 0 || valor > modalCobro.saldo || !cobroBanco) return
+        const ret = Number(cobroRetIva || 0) + Number(cobroRetIr || 0)
+        const sinBanco = cobroFormaPago === 'cheque' // el cheque queda en cartera: no elige banco
+        if (!valor || valor <= 0 || valor + ret > modalCobro.saldo + 0.001 || (!cobroBanco && !sinBanco)) return
+        if (ret > 0 && !cobroNumRet.trim()) { Swal.fire('Falta el comprobante', 'Ingrese el número del comprobante de retención.', 'warning'); return }
+        if (cobroFormaPago !== 'efectivo' && !cobroReferencia.trim()) { Swal.fire('Falta la referencia', 'Ingrese el N° de transferencia, cheque o depósito.', 'warning'); return }
         setCobrandoId(modalCobro.id)
         router.post(
             route('ventas.cxc.cobrar', modalCobro.id),
-            { valor, forma_pago: cobroFormaPago, banco_caja_id: cobroBanco, observacion: cobroObservacion },
+            { valor, forma_pago: cobroFormaPago, banco_caja_id: sinBanco ? null : cobroBanco, observacion: cobroObservacion, referencia: cobroReferencia,
+              retencion_iva: cobroRetIva || 0, retencion_ir: cobroRetIr || 0, num_retencion: cobroNumRet, fecha_cheque: cobroFechaCheque || null },
             {
                 onSuccess: () => {
                     cerrarModalCobro()
@@ -205,7 +217,7 @@ export default function Index() {
     }
 
     const hayFiltros = Object.values(filtro).some(v => v !== '')
-    const esSuperAdmin = auth.user?.perfil === 'super_admin'
+    const esSuperAdmin = usePermiso('ventas_castigo_cartera').puede('anular') // lo decide la matriz
 
     return (
         <AppLayout>
@@ -507,6 +519,33 @@ export default function Index() {
                                     </p>
                                 )}
                             </div>
+                            {cobroFormaPago === 'cheque' && (
+                                <div>
+                                    <label className="text-xs mb-1 block" style={{ color: 'var(--text-muted)' }}>Fecha del cheque (post fechado si es posterior a hoy)</label>
+                                    <Input type="date" value={cobroFechaCheque} onChange={e => setCobroFechaCheque(e.target.value)} />
+                                    <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>El cheque queda en cartera y entra al banco cuando se deposite (Ventas → Cheques recibidos).</p>
+                                </div>
+                            )}
+                            <div className="grid grid-cols-3 gap-2">
+                                <div>
+                                    <label className="text-xs mb-1 block" style={{ color: 'var(--text-muted)' }}>Retención IVA</label>
+                                    <Input type="number" step="0.01" min="0" value={cobroRetIva} onChange={e => setCobroRetIva(e.target.value)} placeholder="0.00" />
+                                </div>
+                                <div>
+                                    <label className="text-xs mb-1 block" style={{ color: 'var(--text-muted)' }}>Retención IR</label>
+                                    <Input type="number" step="0.01" min="0" value={cobroRetIr} onChange={e => setCobroRetIr(e.target.value)} placeholder="0.00" />
+                                </div>
+                                <div>
+                                    <label className="text-xs mb-1 block" style={{ color: 'var(--text-muted)' }}>N° comprobante</label>
+                                    <Input value={cobroNumRet} onChange={e => setCobroNumRet(e.target.value)} placeholder="001-001-..." />
+                                </div>
+                            </div>
+                            {cobroFormaPago !== 'efectivo' && (
+                                <div>
+                                    <label className="text-xs mb-1 block" style={{ color: 'var(--text-muted)' }}>Referencia (N° de transferencia / cheque) *</label>
+                                    <Input value={cobroReferencia} onChange={e => setCobroReferencia(e.target.value)} placeholder="TRF-001, CHQ-001..." />
+                                </div>
+                            )}
                             <div>
                                 <label className="text-xs mb-1 block" style={{ color: 'var(--text-muted)' }}>Observación</label>
                                 <Input
@@ -525,7 +564,7 @@ export default function Index() {
                                 type="button"
                                 onClick={handleCobrar}
                                 loading={cobrandoId !== null}
-                                disabled={!cobroValor || parseFloat(cobroValor) <= 0 || !cobroBanco}
+                                disabled={!cobroValor || parseFloat(cobroValor) <= 0 || (!cobroBanco && cobroFormaPago !== 'cheque')}
                             >
                                 <DollarSign className="w-4 h-4" />
                                 Registrar Cobro

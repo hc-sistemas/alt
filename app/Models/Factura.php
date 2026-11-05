@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Factura extends Model
 {
+    use \App\Models\Concerns\PerteneceAEmpresaActiva;
     protected $table = 'facturas';
 
     protected $fillable = [
@@ -25,6 +26,7 @@ class Factura extends Model
         'autorizacion',
         'fecha_hora_aut',
         'estado_sri',
+        'es_evento',
         'observacion_sri',
         'xml_doc',
         'tipo_identificacion',

@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class EjercicioContable extends Model
 {
+    use \App\Models\Concerns\PerteneceAEmpresaActiva;
     public $timestamps = false;
     protected $table   = 'ejercicios_contables';
 

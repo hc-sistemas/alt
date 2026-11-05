@@ -192,6 +192,7 @@ class PrefacturaController extends Controller
             'limites_descuento' => [
                 'descuento_maximo_pct' => $limite?->porcentaje_maximo ?? 0,
                 'puede_aprobar'        => $limite?->puede_aprobar ?? false,
+                'solo_cero_o_maximo'   => LimiteDescuento::esPerfilDescuentoFijo($perfilNombre),
             ],
         ];
     }
@@ -201,7 +202,7 @@ class PrefacturaController extends Controller
         $empresaId = session('empresa_activa_id');
 
         $request->validate([
-            'cliente_id'             => 'required|integer|exists:clientes,id',
+            'cliente_id'             => 'required|integer|exists_empresa:clientes',
             'detalles'               => 'required|array|min:1',
             'detalles.*.producto_id' => 'required|integer',
             'detalles.*.cantidad'    => 'required|numeric|min:0.01',
@@ -308,7 +309,7 @@ class PrefacturaController extends Controller
         abort_if((int) $prefactura->empresa_id !== $empresaId, 403);
 
         $request->validate([
-            'cliente_id'             => 'required|integer|exists:clientes,id',
+            'cliente_id'             => 'required|integer|exists_empresa:clientes',
             'detalles'               => 'required|array|min:1',
             'detalles.*.producto_id' => 'required|integer',
             'detalles.*.cantidad'    => 'required|numeric|min:0.01',
@@ -377,15 +378,30 @@ class PrefacturaController extends Controller
 
         return Inertia::render('Ventas/Prefacturas/Show', [
             'prefactura' => $prefactura,
+            // Cuentas bancarias del módulo Bancos, para elegir en los abonos (ya no se digita el nombre)
+            'bancos'     => \App\Models\BancoCaja::where('empresa_id', session('empresa_activa_id'))->activos()->bancos()->orderBy('nombre')->get(['id', 'nombre']),
         ]);
     }
 
     public function abonar(Request $request, Prefactura $prefactura)
     {
         $request->validate([
-            'valor'      => 'required|numeric|min:0.01',
-            'forma_pago' => 'required|string',
+            'valor'         => 'required|numeric|min:0.01',
+            'forma_pago'    => 'required|string',
+            'banco_caja_id' => ['nullable', 'integer', \Illuminate\Validation\Rule::exists('bancos_cajas', 'id')->where('empresa_id', $prefactura->empresa_id)],
+            'num_comprobante' => 'nullable|string|max:60',
         ]);
+
+        // Transferencia: la cuenta bancaria es obligatoria (mensaje claro, no el error técnico)
+        if ($request->forma_pago === 'transferencia' && !$request->filled('banco_caja_id')) {
+            return back()->withErrors(['banco_caja_id' => 'Seleccione el banco de la transferencia.']);
+        }
+        if ($request->forma_pago === 'cheque' && !$request->filled('num_comprobante')) {
+            return back()->withErrors(['num_comprobante' => 'Ingrese el número del cheque.']);
+        }
+        $bancoElegido = $request->filled('banco_caja_id')
+            ? \App\Models\BancoCaja::where('empresa_id', $prefactura->empresa_id)->find($request->banco_caja_id)
+            : null;
 
         // Con tarjeta de crédito no hay descuento de ningún tipo.
         if (ReglasPago::esTarjeta($request->forma_pago) && $this->tieneDescuento($prefactura)) {
@@ -398,13 +414,15 @@ class PrefacturaController extends Controller
             return response()->json(['error' => 'El abono no puede superar el saldo pendiente.'], 422);
         }
 
-        $abono = DB::transaction(function () use ($request, $prefactura, $valor) {
+        $abono = DB::transaction(function () use ($request, $prefactura, $valor, $bancoElegido) {
             $abono = PrefacturaAbono::create([
-                'prefactura_id' => $prefactura->id,
-                'valor'         => $valor,
-                'forma_pago'    => $request->forma_pago,
-                'fecha'         => now()->toDateString(),
-                'usuario_id'    => Auth::id(),
+                'prefactura_id'   => $prefactura->id,
+                'valor'           => $valor,
+                'forma_pago'      => $request->forma_pago,
+                'banco'           => $bancoElegido?->nombre,
+                'num_comprobante' => $request->num_comprobante,
+                'fecha'           => now()->toDateString(),
+                'usuario_id'      => Auth::id(),
             ]);
 
             $nuevoAbonado  = $prefactura->total_abonado + $valor;
@@ -427,8 +445,41 @@ class PrefacturaController extends Controller
                 referencia:  $prefactura->numero,
                 monto:       $valor,
                 formaPago:   $request->forma_pago,
+                bancoCajaId: $bancoElegido?->id,
             );
             $abono->update(['asiento_id' => $asientoAbono->id]);
+
+            // El abono por transferencia o cheque es un pago registrado: entra al banco elegido (PC-VEN-10).
+            // La prefactura en sí no genera movimiento; solo lo genera el pago.
+            // Un cheque de abono queda en cartera hasta depositarlo (PC-VEN-13), igual que en la factura: no toca Bancos todavía
+            if ($request->forma_pago === 'cheque' && filled($request->num_comprobante)) {
+                \App\Models\ChequeRecibido::create([
+                    'empresa_id' => $prefactura->empresa_id, 'cliente_id' => $prefactura->cliente_id, 'numero' => $request->num_comprobante,
+                    'monto' => $valor, 'fecha_recepcion' => now()->toDateString(), 'fecha_cheque' => now()->toDateString(),
+                    'estado' => 'en_cartera', 'created_by' => Auth::id(),
+                ]);
+            }
+            if ($bancoElegido && $request->forma_pago === 'transferencia') {
+                \App\Models\MovimientoBancario::create([
+                    'empresa_id'     => $prefactura->empresa_id,
+                    'banco_caja_id'  => $bancoElegido->id,
+                    'tipo'           => 'ingreso',
+                    'sub_tipo'       => $request->forma_pago,
+                    'fecha'          => now()->toDateString(),
+                    'monto'          => $valor,
+                    'persona_tipo'   => 'cliente',
+                    'persona_id'     => $prefactura->cliente_id,
+                    'num_documento'  => $prefactura->numero,
+                    'descripcion'    => "Abono prefactura {$prefactura->numero} ({$request->forma_pago})",
+                    'documento_tipo' => 'PREFACTURA_ABONO',
+                    'documento_id'   => $abono->id,
+                    'asiento_id'     => $asientoAbono->id,
+                    'anulado'        => false,
+                    'conciliado'     => false,
+                    'created_by'     => Auth::id(),
+                ]);
+                $bancoElegido->actualizarSaldo($valor, 'ingreso');
+            }
         } catch (\Throwable $e) {
             \Log::warning("Contabilidad: abono prefactura {$prefactura->numero} sin asiento: {$e->getMessage()}");
             $this->asiento->notificarAsientoFallido(
@@ -780,7 +831,7 @@ class PrefacturaController extends Controller
 
             $maximoProducto = $maximosPermitidos[$det['producto_id']] ?? 0.0;
             $yaAprobado     = $descPct <= (float) ($descuentoPrevio[$det['producto_id']] ?? 0);
-            if (($descPct > $limiteMax || $descPct > $maximoProducto) && !$yaAprobado) {
+            if ((LimiteDescuento::exigeAprobacion($descPct, $limiteMax, $perfilNombre, (float) $maximoProducto) || $descPct > $maximoProducto) && !$yaAprobado) {
                 if (!$request->filled('aprobacion_especial_id')) {
                     throw new \DomainException('Se requiere aprobación especial para el descuento aplicado.');
                 }

@@ -11,7 +11,7 @@ class DatafastLiquidacion extends Model
     protected $table    = 'datafast_liquidaciones';
     protected $fillable = [
         'lote_id', 'fecha_deposito', 'valor_bruto', 'comision_datafast',
-        'retencion_iva', 'retencion_ir', 'valor_neto',
+        'retencion_iva', 'retencion_ir', 'intereses_diferido', 'valor_neto', 'iva_comision', 'diferencia', 'observacion', 'requiere_revision',
         'banco_destino_id', 'asiento_id', 'created_by', 'created_at',
     ];
 

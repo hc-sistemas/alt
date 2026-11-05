@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Cliente extends Model
 {
+    use \App\Models\Concerns\PerteneceAEmpresaActiva;
 
     protected $table = 'clientes';
 

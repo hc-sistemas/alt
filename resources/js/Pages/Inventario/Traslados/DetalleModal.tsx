@@ -28,7 +28,7 @@ function csrfToken() {
 
 export default function TrasladoDetalleModal({ trasladoId, onClose, onChanged }: Props) {
     const { auth } = usePage<PageProps>().props
-    const { puede } = usePermiso('inventario')
+    const { puede } = usePermiso('inventario_movimientos')
 
     const [traslado, setTraslado] = useState<TrasladoBodega | null>(null)
     const [cargando, setCargando] = useState(false)
@@ -66,7 +66,7 @@ export default function TrasladoDetalleModal({ trasladoId, onClose, onChanged }:
     if (!trasladoId) return null
 
     const isPendiente = traslado?.estado === 'pendiente'
-    const puedeOperar = ['super_admin', 'admin', 'bodeguero'].includes((auth.user?.perfil ?? '').toLowerCase())
+    const puedeOperar = puede('editar') || puede('anular') // lo decide la matriz (submódulo Movimientos)
 
     const formatFecha = (dt: string | null) => dt
         ? new Date(dt).toLocaleString('es-EC', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })

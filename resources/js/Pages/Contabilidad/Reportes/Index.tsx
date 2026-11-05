@@ -26,9 +26,10 @@ interface CuentaSimple {
 interface Props extends PageProps {
     ejercicios: Ejercicio[]
     cuentas:    CuentaSimple[]
+    centros:    { id: number; codigo: string; nombre: string }[]
 }
 
-export default function ReportesIndex({ ejercicios, cuentas }: Props) {
+export default function ReportesIndex({ ejercicios, cuentas, centros }: Props) {
 
     // Período fiscal abierto (el primero con estado 'abierto' en la lista ya
     // ordenada desc. por año/mes) — se usa como rango por defecto en Libro
@@ -65,6 +66,17 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
     const [erEjercicio,  setErEjercicio]  = useState('')
     const [erFechaDesde, setErFechaDesde] = useState('')
     const [erFechaHasta, setErFechaHasta] = useState('')
+
+    // Informes adicionales: retenciones y análisis vertical / horizontal
+    const [infTipo, setInfTipo] = useState('retenciones')
+    const [infDesde, setInfDesde] = useState(new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10))
+    const [infHasta, setInfHasta] = useState(new Date().toISOString().slice(0, 10))
+    const [infCentro, setInfCentro] = useState('')
+    const urlInforme = (formato: 'pdf' | 'excel') => {
+        const p = new URLSearchParams({ fecha_desde: infDesde, fecha_hasta: infHasta, formato })
+        if (infCentro) p.set('centro_costo_id', infCentro)
+        return route('contabilidad.reportes.informe', infTipo) + '?' + p.toString()
+    }
 
     // Estado filtros Flujo de Caja
     const [fcFechaDesde, setFcFechaDesde] = useState('')
@@ -520,6 +532,58 @@ export default function ReportesIndex({ ejercicios, cuentas }: Props) {
                                 style={{ background: '#059669' }}>
                                 <LineChart size={15} /> Generar Estado de Resultados PDF
                             </button>
+                        </div>
+                    </div>
+
+                    {/* ── INFORMES ADICIONALES (02-08 §2.8) ── */}
+                    <div className="rounded-2xl border overflow-hidden"
+                         style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+                        <div className="px-5 py-4 border-b flex items-center gap-3"
+                             style={{ borderColor: 'var(--border)', borderLeft: '4px solid #7c3aed' }}>
+                            <FileText size={20} style={{ color: '#7c3aed' }} />
+                            <div>
+                                <h2 className="font-bold text-sm" style={{ color: 'var(--text-main)' }}>Retenciones y análisis vertical / horizontal</h2>
+                                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Por RUC (empresa activa) y centro de costo</p>
+                            </div>
+                        </div>
+                        <div className="p-5 space-y-3">
+                            <select value={infTipo} onChange={e => setInfTipo(e.target.value)} className="input-field">
+                                <option value="retenciones">Retenciones emitidas y recibidas por período</option>
+                                <option value="analisis-vertical">Análisis vertical</option>
+                                <option value="analisis-horizontal">Análisis horizontal (frente al año anterior)</option>
+                            </select>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                <div>
+                                    <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>Desde</label>
+                                    <input type="date" value={infDesde} onChange={e => setInfDesde(e.target.value)} className="input-field" />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>Hasta</label>
+                                    <input type="date" value={infHasta} onChange={e => setInfHasta(e.target.value)} className="input-field" />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>Centro de costo</label>
+                                    <select value={infCentro} onChange={e => setInfCentro(e.target.value)} className="input-field">
+                                        <option value="">Todos</option>
+                                        {centros.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+                            <div className="flex gap-3">
+                                <button onClick={() => abrirPdf(urlInforme('pdf'), 'Informe')}
+                                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white hover:opacity-90"
+                                    style={{ background: '#7c3aed' }}>
+                                    <FileText size={15} /> Ver PDF
+                                </button>
+                                <button onClick={() => { window.location.href = urlInforme('excel') }}
+                                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold border hover:opacity-90"
+                                    style={{ borderColor: 'var(--border)', color: 'var(--text-main)' }}>
+                                    Excel
+                                </button>
+                            </div>
+                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                Conciliación bancaria y transacciones bancarias están en Bancos → Reportes. El talón resumen del anexo está pendiente de definición (DEC-008).
+                            </p>
                         </div>
                     </div>
 

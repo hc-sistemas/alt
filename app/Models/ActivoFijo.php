@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class ActivoFijo extends Model
 {
+    use \App\Models\Concerns\PerteneceAEmpresaActiva;
     protected $table = 'activos_fijos';
 
     public const ESTADOS = ['activo', 'dado_de_baja', 'vendido'];

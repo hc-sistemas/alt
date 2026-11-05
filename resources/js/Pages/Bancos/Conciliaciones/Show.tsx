@@ -42,7 +42,19 @@ interface ConciliacionData {
     saldo_sistema: number
     diferencia: number
     descripcion: string | null
-    banco_caja: { nombre: string; saldo_actual: number }
+    observacion: string | null
+    banco_caja: { id: number; nombre: string; saldo_actual: number }
+}
+
+interface Calculo {
+    saldo_libro: number
+    depositos_transito: number
+    cheques_no_cobrados: number
+    notas_credito: number
+    notas_debito: number
+    saldo_esperado: number
+    saldo_banco: number
+    diferencia: number
 }
 
 interface Props extends PageProps {
@@ -57,6 +69,8 @@ interface Props extends PageProps {
     }
     cuentas: CuentaSimple[]
     cuenta_comision_sugerida_id: number | null
+    cuenta_interes_sugerida_id: number | null
+    calculo: Calculo
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -303,7 +317,7 @@ function GenerarAsientoPartidaModal({
 // ─── Página ───────────────────────────────────────────────────────────────────
 
 export default function ConciliacionShow() {
-    const { conciliacion, partidas_sistema, partidas_banco, resumen, flash, cuentas, cuenta_comision_sugerida_id } = usePage<Props>().props
+    const { conciliacion, partidas_sistema, partidas_banco, resumen, flash, cuentas, cuenta_comision_sugerida_id, calculo } = usePage<Props>().props
     const { puede } = usePermiso('bancos')
     const tieneDif   = Math.abs(Number(conciliacion.diferencia)) > 0.01
     const isCerrada  = conciliacion.estado === 'conciliada'
@@ -382,9 +396,43 @@ export default function ConciliacionShow() {
         })
     }
 
+    // ── Anular una conciliación cerrada (queda abierta para corregirla) ────────
+    async function anularConciliacion() {
+        const res = await Swal.fire({
+            title: 'Anular conciliación',
+            html: 'Se liberan los movimientos conciliados y se reversa el ajuste por diferencia, si lo hubo. Quedará abierta para corregirla.',
+            input: 'textarea',
+            inputPlaceholder: 'Motivo de la anulación…',
+            inputValidator: v => (!v || v.trim().length < 5 ? 'El motivo es obligatorio (mínimo 5 caracteres).' : undefined),
+            showCancelButton: true,
+            confirmButtonText: 'Anular conciliación',
+            cancelButtonText: 'Cancelar',
+            icon: 'warning',
+        })
+        if (!res.isConfirmed) return
+        router.patch(route('bancos.conciliaciones.anular', conciliacion.id), { motivo: res.value })
+    }
+
     // ── Cerrar conciliación ────────────────────────────────────────────────────
-    function cerrarConciliacion() {
-        if (!confirm('¿Cerrar esta conciliación? No se podrá reabrir.')) return
+    async function cerrarConciliacion() {
+        if (tieneDif) {
+            // Con diferencia se exige observación; la diferencia se registra como ajuste (PC-BAN-15 / PC-BAN-16).
+            const res = await Swal.fire({
+                title: `Diferencia de ${fmt(Math.abs(Number(calculo.diferencia)))}`,
+                html: 'Escriba la observación para cerrar. La diferencia se registrará como ajuste contable.',
+                input: 'textarea',
+                inputPlaceholder: 'Motivo de la diferencia…',
+                inputValidator: v => (!v || v.trim().length < 5 ? 'La observación es obligatoria (mínimo 5 caracteres).' : undefined),
+                showCancelButton: true,
+                confirmButtonText: 'Cerrar con ajuste',
+                cancelButtonText: 'Cancelar',
+                icon: 'warning',
+            })
+            if (!res.isConfirmed) return
+            router.patch(route('bancos.conciliaciones.cerrar', conciliacion.id), { observacion: res.value })
+            return
+        }
+        if (!confirm('¿Cerrar esta conciliación? No se podrá modificar sin anularla.')) return
         router.patch(route('bancos.conciliaciones.cerrar', conciliacion.id))
     }
 
@@ -406,8 +454,23 @@ export default function ConciliacionShow() {
                             <ChevronLeft className="w-4 h-4" /> Volver
                         </Link>
 
+                        {isCerrada && puede('anular') && (
+                            <button onClick={anularConciliacion}
+                                title="Una conciliación cerrada no se modifica sin anularla"
+                                className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-white"
+                                style={{ background: '#dc2626' }}>
+                                <Lock className="w-3.5 h-3.5" /> Anular conciliación
+                            </button>
+                        )}
+
                         {!isCerrada && (
                             <>
+                                <a href={route('bancos.conciliaciones.plantilla', { banco_caja_id: conciliacion.banco_caja?.id })}
+                                    className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium"
+                                    style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-main)' }}>
+                                    <Upload className="w-3.5 h-3.5" /> Plantilla del banco
+                                </a>
+
                                 {/* Upload CSV */}
                                 {puede('crear') && (
                                     <label className={cn(
@@ -415,8 +478,8 @@ export default function ConciliacionShow() {
                                         uploading && 'opacity-50 cursor-not-allowed'
                                     )} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-main)' }}>
                                         <Upload className="w-3.5 h-3.5" />
-                                        {uploading ? 'Cargando…' : 'Cargar CSV banco'}
-                                        <input ref={fileRef} type="file" accept=".csv,.txt" className="hidden"
+                                        {uploading ? 'Cargando…' : 'Importar estado de cuenta'}
+                                        <input ref={fileRef} type="file" accept=".csv,.txt,.xlsx,.xls" className="hidden"
                                             onChange={handleUpload} disabled={uploading} />
                                     </label>
                                 )}
@@ -433,8 +496,7 @@ export default function ConciliacionShow() {
                                 {/* Cerrar */}
                                 {puede('anular') && (
                                     <button onClick={cerrarConciliacion}
-                                        disabled={resumen.pendientes > 0}
-                                        title={resumen.pendientes > 0 ? 'Hay partidas pendientes sin conciliar' : ''}
+                                        title={tieneDif ? 'Hay una diferencia: se pedirá la observación' : 'Cerrar la conciliación'}
                                         className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-white disabled:opacity-40"
                                         style={{ background: '#1d4ed8' }}>
                                         <Lock className="w-3.5 h-3.5" /> Cerrar conciliación
@@ -517,6 +579,46 @@ export default function ConciliacionShow() {
                         {resumen.conciliadas} cruzadas · {resumen.pendientes} pendientes
                     </p>
                 </div>
+            </div>
+
+            {/* ── Cálculo de la conciliación ─────────────────────────────── */}
+            <div className="mx-6 mb-5 rounded-xl border p-4" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+                <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-main)' }}>Cálculo de la conciliación</h3>
+                <table className="w-full text-xs">
+                    <tbody style={{ color: 'var(--text-main)' }}>
+                        {[
+                            ['Saldo según libro al corte', calculo.saldo_libro, ''],
+                            ['(−) Depósitos en tránsito (en el libro, no en el banco)', calculo.depositos_transito, '−'],
+                            ['(+) Cheques y egresos no cobrados (en el libro, no en el banco)', calculo.cheques_no_cobrados, '+'],
+                            ['(+) Notas de crédito del banco no registradas', calculo.notas_credito, '+'],
+                            ['(−) Notas de débito del banco no registradas', calculo.notas_debito, '−'],
+                        ].map(([etq, val, sig]) => (
+                            <tr key={etq as string} className="border-b" style={{ borderColor: 'var(--border)' }}>
+                                <td className="py-1.5">{etq}</td>
+                                <td className="py-1.5 text-right font-mono">{sig}{fmt(Number(val))}</td>
+                            </tr>
+                        ))}
+                        <tr className="border-b font-semibold" style={{ borderColor: 'var(--border)' }}>
+                            <td className="py-1.5">= Saldo esperado según banco</td>
+                            <td className="py-1.5 text-right font-mono">{fmt(calculo.saldo_esperado)}</td>
+                        </tr>
+                        <tr className="border-b" style={{ borderColor: 'var(--border)' }}>
+                            <td className="py-1.5">Saldo del estado de cuenta</td>
+                            <td className="py-1.5 text-right font-mono">{fmt(calculo.saldo_banco)}</td>
+                        </tr>
+                        <tr className="font-bold">
+                            <td className="py-1.5">Diferencia</td>
+                            <td className={cn('py-1.5 text-right font-mono', tieneDif ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400')}>
+                                {fmt(calculo.diferencia)}
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+                {conciliacion.observacion && (
+                    <p className="text-xs mt-3" style={{ color: 'var(--text-muted)' }}>
+                        <strong>Observación:</strong> {conciliacion.observacion}
+                    </p>
+                )}
             </div>
 
             {/* ── Botón cruce ──────────────────────────────────────────────── */}

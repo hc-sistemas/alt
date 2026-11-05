@@ -10,6 +10,7 @@ import { Plus, Search, Pencil, Trash2, FileText, FileSpreadsheet } from 'lucide-
 import type { Proveedor, PaginatedData, PageProps } from '@/types'
 import { confirmarEliminar } from '@/lib/swal'
 import { toastExito, toastError } from '@/lib/toast'
+import { usePermiso } from '@/Hooks/usePermiso'
 
 interface Props extends PageProps {
     proveedores: PaginatedData<Proveedor>
@@ -24,6 +25,7 @@ const LABEL_TIPO_ID: Record<string, string> = {
 
 export default function ProveedoresIndex() {
     const { proveedores, filters } = usePage<Props>().props
+    const { puede } = usePermiso('compras')
     const [search, setSearch] = useState(filters.search ?? '')
     const [tipo, setTipo] = useState(filters.tipo ?? 'todos')
     const [estado, setEstado] = useState(filters.estado ?? '')
@@ -84,14 +86,14 @@ export default function ProveedoresIndex() {
                 title="Proveedores"
                 description="Gestión de proveedores nacionales e internacionales"
                 breadcrumbs={[{ label: 'Personas' }, { label: 'Proveedores' }]}
-                actions={
+                actions={puede('crear') ? (
                     <Link href={route('personas.proveedores.create')}>
                         <Button>
                             <Plus className="w-4 h-4" />
                             Nuevo
                         </Button>
                     </Link>
-                }
+                ) : undefined}
             />
 
             <div className="p-6">
@@ -260,15 +262,19 @@ export default function ProveedoresIndex() {
                                     </td>
                                     <td className="w-16 px-2 py-2">
                                         <div className="flex items-center justify-center gap-0.5">
-                                            <Link href={route('personas.proveedores.edit', proveedor.id)}>
-                                                <Button variant="ghost" size="icon" title="Editar">
-                                                    <Pencil className="w-3.5 h-3.5" />
+                                            {puede('editar') && (
+                                                <Link href={route('personas.proveedores.edit', proveedor.id)}>
+                                                    <Button variant="ghost" size="icon" title="Editar">
+                                                        <Pencil className="w-3.5 h-3.5" />
+                                                    </Button>
+                                                </Link>
+                                            )}
+                                            {puede('eliminar') && (
+                                                <Button variant="ghost" size="icon" title="Eliminar"
+                                                    onClick={() => eliminar(proveedor)}>
+                                                    <Trash2 className="w-3.5 h-3.5 text-red-400" />
                                                 </Button>
-                                            </Link>
-                                            <Button variant="ghost" size="icon" title="Eliminar"
-                                                onClick={() => eliminar(proveedor)}>
-                                                <Trash2 className="w-3.5 h-3.5 text-red-400" />
-                                            </Button>
+                                            )}
                                         </div>
                                     </td>
                                 </tr>

@@ -15,6 +15,7 @@ interface PerfilConPermisos extends Perfil {
 interface EmpresaOpcion {
     id: number
     nombre_comercial: string
+    nombre_selector?: string
 }
 
 interface Props extends PageProps {
@@ -32,6 +33,108 @@ const acciones: { key: keyof Permiso; label: string }[] = [
     { key: 'anular', label: 'Anular' },
 ]
 
+interface LimitesPanelProps {
+    perfil: PerfilConPermisos
+    puedeEditar: boolean
+}
+
+function LimitesDescuentoPanel({ perfil, puedeEditar }: LimitesPanelProps) {
+    const actual = perfil.limite_descuento?.[0]
+    const [sinAprobacion, setSinAprobacion] = useState(String(actual?.porcentaje_maximo ?? 0))
+    const [puedeAprobar, setPuedeAprobar] = useState(actual?.puede_aprobar ?? false)
+    const [soloCeroOMaximo, setSoloCeroOMaximo] = useState(actual?.solo_cero_o_maximo ?? false)
+    const [conAprobacion, setConAprobacion] = useState(String(actual?.porcentaje_aprobacion_max ?? 0))
+    const [guardando, setGuardando] = useState(false)
+
+    function guardar() {
+        setGuardando(true)
+        router.post(route('configuracion.permisos.limite'), {
+            perfil_id: perfil.id,
+            porcentaje_maximo: Number(sinAprobacion) || 0,
+            puede_aprobar: puedeAprobar,
+            solo_cero_o_maximo: soloCeroOMaximo,
+            porcentaje_aprobacion_max: Number(conAprobacion) || 0,
+        }, {
+            preserveScroll: true,
+            onFinish: () => setGuardando(false),
+        })
+    }
+
+    return (
+        <div className={cn('mt-6', 'p-5', 'border', 'rounded-xl')}
+            style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
+            <h3 className={cn('mb-4', 'font-semibold')} style={{ color: 'var(--text-main)' }}>
+                Límites de descuento — {perfil.nombre.replace('_', ' ')}
+            </h3>
+            <div className={cn('gap-4', 'grid', 'grid-cols-1', 'sm:grid-cols-4')}>
+                <div className="space-y-1.5">
+                    <label className={cn('font-medium', 'text-xs')} style={{ color: 'var(--text-muted)' }}>
+                        % máximo sin aprobación
+                    </label>
+                    <Input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={sinAprobacion}
+                        onChange={e => setSinAprobacion(e.target.value)}
+                        disabled={!puedeEditar}
+                        className="w-24"
+                    />
+                </div>
+                <div className="space-y-1.5">
+                    <label className={cn('font-medium', 'text-xs')} style={{ color: 'var(--text-muted)' }}>
+                        ¿Puede aprobar descuentos?
+                    </label>
+                    <input
+                        type="checkbox"
+                        checked={puedeAprobar}
+                        onChange={e => setPuedeAprobar(e.target.checked)}
+                        disabled={!puedeEditar}
+                        className={cn('rounded', 'w-4', 'h-4', 'accent-amber-500')}
+                    />
+                </div>
+                <div className="space-y-1.5">
+                    <label className={cn('font-medium', 'text-xs')} style={{ color: 'var(--text-muted)' }}>
+                        Solo 0 o el máximo (sin valores intermedios)
+                    </label>
+                    <input
+                        type="checkbox"
+                        checked={soloCeroOMaximo}
+                        onChange={e => setSoloCeroOMaximo(e.target.checked)}
+                        disabled={!puedeEditar}
+                        className={cn('rounded', 'w-4', 'h-4', 'accent-amber-500')}
+                    />
+                </div>
+                <div className="space-y-1.5">
+                    <label className={cn('font-medium', 'text-xs')} style={{ color: 'var(--text-muted)' }}>
+                        {puedeAprobar ? '% máximo que puede aprobar' : '% máximo con aprobación de un supervisor'}
+                    </label>
+                    <Input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={conAprobacion}
+                        onChange={e => setConAprobacion(e.target.value)}
+                        disabled={!puedeEditar}
+                        className="w-24"
+                    />
+                </div>
+            </div>
+            {puedeEditar && (
+                <button
+                    type="button"
+                    onClick={guardar}
+                    disabled={guardando}
+                    className={cn('mt-4', 'px-4', 'py-2', 'rounded-lg', 'font-medium', 'text-black', 'text-sm', 'disabled:opacity-50')}
+                    style={{ background: 'var(--primary)' }}
+                >
+                    {guardando ? 'Guardando…' : 'Guardar límites'}
+                </button>
+            )}
+        </div>
+    )
+}
+
 export default function PermisosIndex() {
     const { perfiles, modulos, empresas, empresaId } = usePage<Props>().props
     const { puede } = usePermiso('configuracion')
@@ -39,6 +142,8 @@ export default function PermisosIndex() {
     const [guardando, setGuardando] = useState<string | null>(null)
 
     const perfil = perfiles.find(p => p.id === perfilActivo)
+    // Super Admin y Admin son los dueños del sistema: pueden todo y no dependen de esta matriz
+    const esAdministrador = perfil?.nombre === 'super_admin' || perfil?.nombre === 'admin'
     const permisoMap = new Map(perfil?.permisos.map(p => [p.modulo_id, p]) ?? [])
 
     function cambiarEmpresa(id: number) {
@@ -83,7 +188,7 @@ export default function PermisosIndex() {
                                 }`}
                             style={empresaId === e.id ? { background: '#F59E0B' } : { color: 'var(--text-muted)', border: '1px solid var(--border)' }}
                         >
-                            {e.nombre_comercial}
+                            {e.nombre_selector ?? e.nombre_comercial}
                         </button>
                     ))}
                 </div>
@@ -105,6 +210,12 @@ export default function PermisosIndex() {
                         </button>
                     ))}
                 </div>
+
+                {esAdministrador && (
+                    <p className={cn('mb-3', 'text-sm')} style={{ color: 'var(--text-muted)' }}>
+                        Este perfil puede hacer todo en el sistema: no se restringe desde esta matriz.
+                    </p>
+                )}
 
                 {/* Tabla de permisos */}
                 <div className={cn('border', 'rounded-xl', 'overflow-x-auto')}
@@ -129,18 +240,19 @@ export default function PermisosIndex() {
                                     <tr key={modulo.id}
                                         className={cn('hover:bg-slate-50', 'dark:hover:bg-slate-800/30', 'border-t', 'transition-colors')}
                                         style={{ borderColor: 'var(--border)' }}>
-                                        <td className={cn('px-4', 'py-3', 'font-medium')} style={{ color: 'var(--text-main)' }}>
-                                            {modulo.nombre}
+                                        <td className={cn('px-4', 'py-3', 'font-medium')}
+                                            style={{ color: modulo.es_hijo ? 'var(--text-muted)' : 'var(--text-main)', paddingLeft: modulo.es_hijo ? 36 : undefined }}>
+                                            {modulo.es_hijo ? '↳ ' : ''}{modulo.nombre}
                                         </td>
                                         {acciones.map(a => {
                                             const key = `${modulo.id}-${a.key}`
-                                            const valor = permiso?.[a.key as keyof Permiso] as boolean ?? false
+                                            const valor = esAdministrador ? true : (permiso?.[a.key as keyof Permiso] as boolean ?? false)
                                             return (
                                                 <td key={a.key} className={cn('px-4', 'py-3', 'text-center')}>
                                                     <input
                                                         type="checkbox"
                                                         checked={valor}
-                                                        disabled={guardando === key || !puede('editar')}
+                                                        disabled={esAdministrador || guardando === key || !puede('editar')}
                                                         onChange={e => actualizarPermiso(modulo.id, a.key, e.target.checked)}
                                                         className={cn('rounded', 'w-4', 'h-4', 'accent-amber-500', 'cursor-pointer')}
                                                     />
@@ -156,48 +268,11 @@ export default function PermisosIndex() {
 
                 {/* Límites de descuento */}
                 {perfil && (
-                    <div className={cn('mt-6', 'p-5', 'border', 'rounded-xl')}
-                        style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
-                        <h3 className={cn('mb-4', 'font-semibold')} style={{ color: 'var(--text-main)' }}>
-                            Límites de descuento — {perfil.nombre.replace('_', ' ')}
-                        </h3>
-                        <div className={cn('gap-4', 'grid', 'grid-cols-1', 'sm:grid-cols-3')}>
-                            <div className="space-y-1.5">
-                                <label className={cn('font-medium', 'text-xs')} style={{ color: 'var(--text-muted)' }}>
-                                    % máximo sin aprobación
-                                </label>
-                                <Input
-                                    type="number"
-                                    min={0}
-                                    max={100}
-                                    defaultValue={perfil.limite_descuento?.[0]?.porcentaje_maximo ?? 0}
-                                    className="w-24"
-                                />
-                            </div>
-                            <div className="space-y-1.5">
-                                <label className={cn('font-medium', 'text-xs')} style={{ color: 'var(--text-muted)' }}>
-                                    ¿Puede aprobar descuentos?
-                                </label>
-                                <input
-                                    type="checkbox"
-                                    defaultChecked={perfil.limite_descuento?.[0]?.puede_aprobar ?? false}
-                                    className={cn('rounded', 'w-4', 'h-4', 'accent-amber-500')}
-                                />
-                            </div>
-                            <div className="space-y-1.5">
-                                <label className={cn('font-medium', 'text-xs')} style={{ color: 'var(--text-muted)' }}>
-                                    % máximo que puede aprobar
-                                </label>
-                                <Input
-                                    type="number"
-                                    min={0}
-                                    max={100}
-                                    defaultValue={perfil.limite_descuento?.[0]?.porcentaje_aprobacion_max ?? 0}
-                                    className="w-24"
-                                />
-                            </div>
-                        </div>
-                    </div>
+                    <LimitesDescuentoPanel
+                        key={perfil.id}
+                        perfil={perfil}
+                        puedeEditar={puede('editar')}
+                    />
                 )}
             </div>
         </AppLayout>

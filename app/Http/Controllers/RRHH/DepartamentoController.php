@@ -87,8 +87,9 @@ class DepartamentoController extends Controller
     {
         $data = $request->validate([
             'nombre'      => 'required|string|max:100',
-            'descripcion' => 'nullable|string|max:300',
-        ]);
+            // Obligatoria: el rol de pagos muestra el nombre del departamento (02-09 §2.3)
+            'descripcion' => 'required|string|min:3|max:300',
+        ], ['descripcion.required' => 'La descripción del departamento es obligatoria.']);
 
         $data['nombre'] = trim(preg_replace('/\s+/', ' ', $data['nombre']));
 

@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class TrasladoBodega extends Model
 {
+    use \App\Models\Concerns\PerteneceAEmpresaActiva;
     protected $table = 'traslados_bodega';
     public $timestamps = false;
     const CREATED_AT = 'created_at';

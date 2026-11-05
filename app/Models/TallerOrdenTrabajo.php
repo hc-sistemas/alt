@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class TallerOrdenTrabajo extends Model
 {
+    use \App\Models\Concerns\PerteneceAEmpresaActiva;
     protected $table = 'taller_ordenes_trabajo';
 
     protected $fillable = [
@@ -25,6 +26,9 @@ class TallerOrdenTrabajo extends Model
         'costo_repuestos',
         'costo_total',
         'es_garantia',
+        'turno',
+        'costo_garantia',
+        'garantia_cerrada_at',
         'factura_id',
         'asiento_id',
         'estado',

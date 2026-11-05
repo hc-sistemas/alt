@@ -70,13 +70,18 @@ interface ProductoImportado {
 interface GastoImportado {
     concepto: string
     num_documento: string
+    base?: number
+    iva?: number
     monto: number
+    /** false en el IVA de importación: es crédito tributario, no costo */
+    es_costo?: boolean
 }
 
 interface DetalleData {
     productos: ProductoImportado[]
     gastos: GastoImportado[]
-    totales: { fob: number; gastos: number; total: number }
+    fob_cuadre?: { suma_productos: number; diferencia: number; cuadra: boolean }
+    totales: { fob: number; gastos: number; total: number; costo_base?: number; iva_credito?: number }
 }
 
 // ─── Previsualización de Liquidación (auditoría 2026-07-29, Parte 3.1) ────────
@@ -956,7 +961,9 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
                                         <tr className="border-b" style={{ borderColor: 'var(--border)' }}>
                                             <th className="pb-2 px-2 text-left font-semibold uppercase text-[10px] tracking-wider" style={{ color: 'var(--text-muted)' }}>Concepto</th>
                                             <th className="pb-2 px-2 text-left font-semibold uppercase text-[10px] tracking-wider" style={{ color: 'var(--text-muted)' }}>Documento</th>
-                                            <th className="pb-2 px-2 text-right font-semibold uppercase text-[10px] tracking-wider" style={{ color: 'var(--text-muted)' }}>Monto</th>
+                                            <th className="pb-2 px-2 text-right font-semibold uppercase text-[10px] tracking-wider" style={{ color: 'var(--text-muted)' }}>Base</th>
+                                            <th className="pb-2 px-2 text-right font-semibold uppercase text-[10px] tracking-wider" style={{ color: 'var(--text-muted)' }}>IVA</th>
+                                            <th className="pb-2 px-2 text-right font-semibold uppercase text-[10px] tracking-wider" style={{ color: 'var(--text-muted)' }}>Total</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -964,6 +971,12 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
                                             <tr key={i} className="border-b" style={{ borderColor: 'var(--border)' }}>
                                                 <td className="py-2.5 px-2" style={{ color: 'var(--text-main)' }}>{g.concepto}</td>
                                                 <td className="py-2.5 px-2 font-mono text-[10px]" style={{ color: 'var(--text-muted)' }}>{g.num_documento}</td>
+                                                <td className="py-2.5 px-2 text-right tabular-nums" style={{ color: 'var(--text-main)' }}>
+                                                    {g.es_costo === false ? '—' : `$${Number(g.base ?? g.monto).toFixed(2)}`}
+                                                </td>
+                                                <td className="py-2.5 px-2 text-right tabular-nums" style={{ color: 'var(--text-muted)' }}>
+                                                    {Number(g.iva ?? 0) > 0 ? `$${Number(g.iva).toFixed(2)}` : '—'}
+                                                </td>
                                                 <td className="py-2.5 px-2 text-right tabular-nums font-medium" style={{ color: 'var(--text-main)' }}>
                                                     ${g.monto.toFixed(2)}
                                                 </td>
@@ -973,8 +986,14 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
                                     <tfoot>
                                         <tr className="border-t" style={{ borderColor: 'var(--border)' }}>
                                             <td colSpan={2} className="pt-2.5 px-2 text-right font-semibold uppercase text-[10px] tracking-wider"
-                                                style={{ color: 'var(--text-muted)' }}>TOTAL COSTOS EXTRA</td>
+                                                style={{ color: 'var(--text-muted)' }}>TOTALES (costo = base · IVA = crédito tributario)</td>
                                             <td className="pt-2.5 px-2 text-right font-bold tabular-nums" style={{ color: 'var(--primary)' }}>
+                                                ${detalle.gastos.filter(g => g.es_costo !== false).reduce((s, g) => s + Number(g.base ?? g.monto), 0).toFixed(2)}
+                                            </td>
+                                            <td className="pt-2.5 px-2 text-right font-bold tabular-nums" style={{ color: 'var(--text-muted)' }}>
+                                                ${detalle.gastos.reduce((s, g) => s + Number(g.iva ?? 0), 0).toFixed(2)}
+                                            </td>
+                                            <td className="pt-2.5 px-2 text-right font-bold tabular-nums" style={{ color: 'var(--text-main)' }}>
                                                 ${detalle.gastos.reduce((s, g) => s + g.monto, 0).toFixed(2)}
                                             </td>
                                         </tr>
@@ -1003,18 +1022,24 @@ function DetalleModal({ importacion, initialTab, proveedores, onClose }: {
                                         </span>
                                     </div>
                                     <div className="flex justify-between">
-                                        <span style={{ color: 'var(--text-muted)' }}>Costos extra</span>
+                                        <span style={{ color: 'var(--text-muted)' }}>Costos extra (base, sin IVA)</span>
                                         <span className="font-medium tabular-nums" style={{ color: 'var(--text-main)' }}>
-                                            ${detalle.gastos.reduce((s, g) => s + g.monto, 0).toFixed(2)}
+                                            ${detalle.gastos.filter(g => g.es_costo !== false).reduce((s, g) => s + Number(g.base ?? g.monto), 0).toFixed(2)}
                                         </span>
                                     </div>
                                     <div className="flex justify-between font-bold border-t pt-1.5"
                                         style={{ borderColor: 'rgba(245,158,11,0.3)', color: 'var(--primary)' }}>
-                                        <span>Costo total estimado</span>
+                                        <span>Costo total que pasa a inventario</span>
                                         <span className="tabular-nums">
-                                            ${(Number(importacion.costo_fob) + detalle.gastos.reduce((s, g) => s + g.monto, 0)).toFixed(2)}
+                                            ${(Number(importacion.costo_fob) + detalle.gastos.filter(g => g.es_costo !== false).reduce((s, g) => s + Number(g.base ?? g.monto), 0)).toFixed(2)}
                                         </span>
                                     </div>
+                                    {detalle.fob_cuadre && !detalle.fob_cuadre.cuadra && (
+                                        <p className="text-xs font-semibold text-red-500 border-t pt-1.5" style={{ borderColor: 'rgba(245,158,11,0.3)' }}>
+                                            ⚠ El FOB no cuadra con la suma de los productos (${detalle.fob_cuadre.suma_productos.toFixed(2)}):
+                                            diferencia de ${Math.abs(detalle.fob_cuadre.diferencia).toFixed(2)}. No podrá liquidar hasta que cuadre.
+                                        </p>
+                                    )}
                                 </div>
                             )}
                         </div>

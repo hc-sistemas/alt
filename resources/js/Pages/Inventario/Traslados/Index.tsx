@@ -32,7 +32,7 @@ const ESTADO_LABELS: Record<string, string> = {
 
 export default function TrasladosIndex() {
     const { traslados, bodegas, filters } = usePage<Props>().props
-    const { puede } = usePermiso('inventario')
+    const { puede } = usePermiso('inventario_movimientos')
 
     const [search, setSearch]       = useState(filters.search ?? '')
     const [estado, setEstado]       = useState(filters.estado ?? '')

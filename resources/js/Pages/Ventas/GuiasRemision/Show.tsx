@@ -8,7 +8,9 @@ import type { PageProps } from '@/types'
 
 interface GuiaItemFull {
     id: number
+    producto_id: number | null
     descripcion: string
+    numero_serie?: string | null
     cantidad: number
 }
 
@@ -17,6 +19,8 @@ interface GuiaFull {
     numero_completo: string
     fecha_emision: string
     estado_sri: 'pendiente' | 'autorizada' | 'rechazada' | 'anulada'
+    clave_acceso: string | null
+    autorizacion: string | null
     fecha_inicio_transporte: string
     fecha_fin_transporte: string | null
     origen: string | null
@@ -68,6 +72,17 @@ export default function Show() {
 
                 <div className="flex items-center gap-3">
                     <Badge variant={cfg.variant}>{cfg.label}</Badge>
+                    <Button variant="outline" onClick={() => window.open(route('ventas.guias-remision.pdf', guia.id), '_blank')}>
+                        Imprimir guía (PDF)
+                    </Button>
+                </div>
+
+                {/* Clave de acceso y autorización del SRI */}
+                <div className="rounded-xl p-5 border" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+                    <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--text-muted)' }}>Comprobante electrónico</p>
+                    <InfoRow label="Clave de acceso (49 dígitos)" value={<span className="font-mono break-all">{guia.clave_acceso ?? 'Se asigna al enviar la guía al SRI'}</span>} />
+                    <div className="mt-3"><InfoRow label="Número de autorización" value={<span className="font-mono break-all">{guia.autorizacion ?? 'Pendiente de autorización'}</span>} /></div>
+                    <p className="text-xs mt-3" style={{ color: 'var(--text-muted)' }}>El código QR del SRI se mostrará cuando la guía esté autorizada (decisión DEC-039 pendiente).</p>
                 </div>
 
                 {/* Datos del transporte */}

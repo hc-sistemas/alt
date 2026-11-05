@@ -8,13 +8,14 @@ use Illuminate\Database\Eloquent\Builder;
 
 class MovimientoBancario extends Model
 {
+    use \App\Models\Concerns\PerteneceAEmpresaActiva;
     protected $table    = 'movimientos_bancarios';
     protected $fillable = [
         'empresa_id', 'banco_caja_id', 'tipo', 'sub_tipo', 'fecha', 'monto',
         'persona_tipo', 'persona_id', 'beneficiario', 'num_documento',
         'num_cheque', 'fecha_cheque', 'descripcion', 'documento_tipo',
         'documento_id', 'cuenta_contrapartida_id', 'centro_costo_id', 'asiento_id',
-        'conciliado', 'es_postfechado', 'anulado', 'created_by',
+        'conciliado', 'fecha_conciliacion', 'comentario', 'es_postfechado', 'anulado', 'created_by',
     ];
 
     protected function casts(): array
@@ -22,6 +23,7 @@ class MovimientoBancario extends Model
         return [
             'fecha'          => 'date',
             'fecha_cheque'   => 'date',
+            'fecha_conciliacion' => 'date',
             'monto'          => 'decimal:4',
             'conciliado'     => 'boolean',
             'es_postfechado' => 'boolean',

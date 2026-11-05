@@ -74,8 +74,9 @@ class IngresoController extends Controller
                     ->orWhereHas('ordenesTrabajo', fn($q) => $q->where('numero', 'ilike', $term));
             });
         }
+        // Una sola lista de estados (02-10 §2.11): se filtra por el estado de la orden de trabajo
         if ($request->filled('estado')) {
-            $query->where('estado', $request->estado);
+            $query->whereHas('ordenesTrabajo', fn($q) => $q->where('estado', $request->estado));
         }
         if ($request->filled('desde')) {
             $query->whereDate('fecha', '>=', $request->desde);
@@ -110,7 +111,7 @@ class IngresoController extends Controller
 
     public function create(): Response
     {
-        return Inertia::render('Taller/Ingresos/Form', $this->datosFormulario() + ['ingreso' => null]);
+        return Inertia::render('Taller/Ingresos/Form', $this->datosFormulario() + ['ingreso' => null, 'fotos_extra' => []]);
     }
 
     public function edit(TallerIngreso $ingreso): Response|RedirectResponse
@@ -123,7 +124,10 @@ class IngresoController extends Controller
                 ->with('flash', ['tipo' => 'error', 'mensaje' => 'El ingreso ya fue facturado y no se puede editar.']);
         }
 
-        return Inertia::render('Taller/Ingresos/Form', $this->datosFormulario() + ['ingreso' => $ingreso]);
+        return Inertia::render('Taller/Ingresos/Form', $this->datosFormulario() + [
+            'ingreso'     => $ingreso,
+            'fotos_extra' => DB::table('taller_ingreso_fotos')->where('ingreso_id', $ingreso->id)->orderBy('orden')->pluck('orden')->values(),
+        ]);
     }
 
     public function buscarEquipo(Request $request): JsonResponse
@@ -146,9 +150,9 @@ class IngresoController extends Controller
         return [
             'cliente_id'                     => ['required', 'integer', Rule::exists('clientes', 'id')->where('empresa_id', $empresaId)],
             'equipo.equipo_id'               => 'nullable|integer|exists:taller_equipos,id',
-            'equipo.tipo_id'                 => 'nullable|integer|exists:taller_tipos_equipo,id',
-            'equipo.marca'                   => 'nullable|string|max:100',
-            'equipo.modelo'                  => 'nullable|string|max:100',
+            'equipo.tipo_id'                 => 'required|integer|exists:taller_tipos_equipo,id',
+            'equipo.marca'                   => 'required|string|max:100',
+            'equipo.modelo'                  => 'required|string|max:100',
             'equipo.numero_serie'            => 'nullable|string|max:100',
             'equipo.color'                   => 'nullable|string|max:50',
             'equipo.medida'                  => 'nullable|string|max:50',
@@ -160,6 +164,11 @@ class IngresoController extends Controller
             'descripcion_trabajo'            => 'nullable|string',
             'imagen_data'                    => ['nullable', 'string', 'max:8000000', 'regex:#^data:image/(jpeg|png|webp);base64,#'],
             'quitar_imagen'                  => 'nullable|boolean',
+            // Fotos 2 a 4 del equipo (la 1 es imagen_data); el documento de ingreso imprime hasta 4
+            'fotos_extra'                    => 'nullable|array|max:3',
+            'fotos_extra.*.orden'            => 'required|integer|in:2,3,4',
+            'fotos_extra.*.data'             => ['nullable', 'string', 'max:8000000', 'regex:#^data:image/(jpeg|png|webp);base64,#'],
+            'fotos_extra.*.quitar'           => 'nullable|boolean',
             'componentes'                    => 'nullable|array|max:50',
             'componentes.*.nombre'           => 'required|string|max:150',
             'componentes.*.funciona'         => 'required|boolean',
@@ -167,6 +176,46 @@ class IngresoController extends Controller
             'componentes.*.descripcion'      => 'nullable|string',
             'componentes.*.costo'            => 'nullable|numeric|min:0',
         ];
+    }
+
+    /** Mensajes en español para los campos obligatorios del equipo. */
+    private function mensajes(): array
+    {
+        return [
+            'diagnostico_inicial.required' => 'El diagnóstico inicial (problema reportado) es obligatorio.',
+            'equipo.tipo_id.required'      => 'El tipo de equipo es obligatorio.',
+            'equipo.marca.required'        => 'La marca del equipo es obligatoria.',
+            'equipo.modelo.required'       => 'El modelo del equipo es obligatorio.',
+            'cliente_id.required'          => 'Debe seleccionar un cliente.',
+        ];
+    }
+
+    /** Fotos 2 a 4: se guardan en taller_ingreso_fotos; el orden 1 sigue siendo ingresos.imagen. */
+    private function sincronizarFotosExtra(TallerIngreso $ingreso, array $fotos): void
+    {
+        foreach ($fotos as $f) {
+            $orden    = (int) $f['orden'];
+            $existente = DB::table('taller_ingreso_fotos')->where('ingreso_id', $ingreso->id)->where('orden', $orden)->first();
+
+            if (!empty($f['data'])) {
+                $ruta = $this->guardarImagen($f['data'], $ingreso->id);
+                if (!$ruta) {
+                    continue;
+                }
+                if ($existente) {
+                    $this->borrarImagen($existente->ruta);
+                    DB::table('taller_ingreso_fotos')->where('id', $existente->id)->update(['ruta' => $ruta, 'updated_at' => now()]);
+                } else {
+                    DB::table('taller_ingreso_fotos')->insert([
+                        'ingreso_id' => $ingreso->id, 'ruta' => $ruta, 'orden' => $orden,
+                        'created_at' => now(), 'updated_at' => now(),
+                    ]);
+                }
+            } elseif (!empty($f['quitar']) && $existente) {
+                $this->borrarImagen($existente->ruta);
+                DB::table('taller_ingreso_fotos')->where('id', $existente->id)->delete();
+            }
+        }
     }
 
     /** Guarda la foto (data URL ya validada) en disco privado y devuelve su ruta relativa. */
@@ -179,7 +228,7 @@ class IngresoController extends Controller
         }
 
         $ext  = str_contains($cabecera, 'png') ? 'png' : (str_contains($cabecera, 'webp') ? 'webp' : 'jpg');
-        $ruta = "taller/ingresos/{$ingresoId}-" . now()->format('YmdHis') . ".{$ext}";
+        $ruta = "taller/ingresos/{$ingresoId}-" . now()->format('YmdHis') . '-' . substr(md5($base64), 0, 6) . ".{$ext}";
         Storage::disk('local')->put($ruta, $binario);
 
         return $ruta;
@@ -250,7 +299,7 @@ class IngresoController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $empresaId = session('empresa_activa_id');
-        $data = $request->validate($this->reglas($empresaId));
+        $data = $request->validate($this->reglas($empresaId), $this->mensajes());
 
         $ingreso = DB::transaction(function () use ($data, $empresaId) {
             $equipo = $this->resolverEquipo($data['equipo'] ?? []);
@@ -272,9 +321,15 @@ class IngresoController extends Controller
             }
 
             $this->sincronizarComponentes($ingreso, $data['componentes'] ?? []);
+            $this->sincronizarFotosExtra($ingreso, $data['fotos_extra'] ?? []);
+
+            // Turno por orden de llegada (02-10 §2.4): correlativo del día para la empresa
+            $turno = 1 + (int) TallerOrdenTrabajo::where('empresa_id', $empresaId)
+                ->whereDate('fecha_inicio', now()->toDateString())->max('turno');
 
             TallerOrdenTrabajo::create([
                 'empresa_id'          => $empresaId,
+                'turno'               => $turno,
                 'ingreso_id'          => $ingreso->id,
                 'tecnico_id'          => $this->tecnicoValido($data['tecnico_id'] ?? null),
                 'numero'              => sprintf('OT-%s-%06d', now()->year, $ingreso->id),
@@ -290,7 +345,10 @@ class IngresoController extends Controller
 
         $this->auditoria->documento('crear', 'taller', 'ingresos', $ingreso->id, "Ingreso de taller #{$ingreso->id} creado");
 
-        return redirect()->route('taller.ingresos.show', $ingreso->id)
+        // Al guardar se abre el documento de ingreso para imprimirlo (02-10 §2.3)
+        return redirect()->route('taller.ordenes.show', [
+                'orden' => $ingreso->ordenesTrabajo()->value('id'), 'imprimir' => 1,
+            ])
             ->with('success', 'Ingreso registrado correctamente.');
     }
 
@@ -304,7 +362,7 @@ class IngresoController extends Controller
             return back()->withErrors(['error' => 'El ingreso ya fue facturado y no se puede editar.']);
         }
 
-        $data = $request->validate($this->reglas($empresaId));
+        $data = $request->validate($this->reglas($empresaId), $this->mensajes());
 
         DB::transaction(function () use ($ingreso, $data) {
             $equipo = $this->resolverEquipo($data['equipo'] ?? []);
@@ -329,6 +387,7 @@ class IngresoController extends Controller
 
             $ingreso->update($cambios);
             $this->sincronizarComponentes($ingreso, $data['componentes'] ?? []);
+            $this->sincronizarFotosExtra($ingreso, $data['fotos_extra'] ?? []);
 
             $ot = $ingreso->ordenesTrabajo->sortByDesc('id')->first();
             if ($ot) {
@@ -359,6 +418,10 @@ class IngresoController extends Controller
 
         DB::transaction(function () use ($ingreso) {
             $this->borrarImagen($ingreso->imagen);
+            foreach (DB::table('taller_ingreso_fotos')->where('ingreso_id', $ingreso->id)->get() as $f) {
+                $this->borrarImagen($f->ruta);
+            }
+            DB::table('taller_ingreso_fotos')->where('ingreso_id', $ingreso->id)->delete();
             $ingreso->ordenesTrabajo()->delete();
             $ingreso->componentes()->delete();
             $ingreso->delete();
@@ -398,6 +461,10 @@ class IngresoController extends Controller
         $this->autorizarEmpresa($ingreso);
 
         $ruta = $ingreso->imagen;
+        $n = (int) request('foto', 1);
+        if ($n >= 2 && $n <= 4) {
+            $ruta = DB::table('taller_ingreso_fotos')->where('ingreso_id', $ingreso->id)->where('orden', $n)->value('ruta');
+        }
         abort_if(!$ruta || preg_match('#^https?://#i', $ruta) || !Storage::disk('local')->exists($ruta), 404);
 
         return Storage::disk('local')->response($ruta);
@@ -422,11 +489,35 @@ class IngresoController extends Controller
             $imagenDataUri = 'data:' . $mime . ';base64,' . base64_encode(Storage::disk('local')->get($ingreso->imagen));
         }
 
+        // Hasta 4 fotos en miniatura
+        $fotos = $imagenDataUri ? [$imagenDataUri] : [];
+        foreach (DB::table('taller_ingreso_fotos')->where('ingreso_id', $ingreso->id)->orderBy('orden')->get() as $f) {
+            if (count($fotos) >= 4) {
+                break;
+            }
+            if (!preg_match('#^https?://#i', $f->ruta) && Storage::disk('local')->exists($f->ruta)) {
+                $fotos[] = 'data:' . (Storage::disk('local')->mimeType($f->ruta) ?: 'image/jpeg') . ';base64,'
+                    . base64_encode(Storage::disk('local')->get($f->ruta));
+            }
+        }
+
+        // El taller factura y se identifica con el RUC de Altamira UIO (empresa del centro de costo FIX)
+        $empresaTaller = Empresa::find(
+            DB::table('centros_costo')->where('es_taller', true)->where('estado', true)->orderBy('id')->value('empresa_id')
+        ) ?? Empresa::find($ingreso->empresa_id);
+
+        $condiciones = DB::table('configuraciones')->where('empresa_id', $ingreso->empresa_id)
+            ->where('clave', 'taller_condiciones_servicio')->value('valor')
+            ?? DB::table('configuraciones')->where('clave', 'taller_condiciones_servicio')->value('valor');
+
         $pdf = Pdf::loadView('pdf.taller.orden-trabajo', [
             'ingreso'       => $ingreso,
             'ot'            => $ot,
+            'empresa'       => $empresaTaller,
+            'recibidoPor'   => \App\Models\Usuario::find($ingreso->usuario_id)?->nombre,
+            'condiciones'   => $condiciones,
             'logoPath'      => public_path('images/logo-altamira.png'),
-            'imagenDataUri' => $imagenDataUri,
+            'fotos'         => $fotos,
         ])->setPaper('a4', 'portrait');
 
         $nombreArchivo = 'orden-trabajo-' . ($ot?->id ?? $ingreso->id) . '.pdf';

@@ -108,8 +108,8 @@ class DevolucionCompraController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $request->validate([
-            'proveedor_id'              => 'required|exists:proveedores,id',
-            'compra_id'                 => 'required|exists:compras,id',
+            'proveedor_id'              => 'required|exists_empresa:proveedores',
+            'compra_id'                 => 'required|exists_empresa:compras',
             'num_documento'             => 'nullable|string|max:30',
             'fecha'                     => 'required|date',
             'motivo'                    => 'required|string|min:5|max:300',
@@ -173,7 +173,7 @@ class DevolucionCompraController extends Controller
             }
         }
 
-        DB::transaction(function () use ($request, $empresaId, $subtotal, $iva, $total, $cuentaPagar) {
+        DB::transaction(function () use ($request, $empresaId, $subtotal, $iva, $total, $cuentaPagar, $compra) {
             $dev = DevolucionCompra::create([
                 'empresa_id'    => $empresaId,
                 'compra_id'     => $request->compra_id,
@@ -241,6 +241,31 @@ class DevolucionCompraController extends Controller
 
             // Asiento contable automático (Nota Crédito Proveedor)
             try {
+                // El crédito va a la cuenta de inventario de la subcategoría de cada producto devuelto (PC-CAT); una línea
+                // sin producto reversa la cuenta del gasto de la compra original.
+                $cuentasProd = $this->asientoService->cuentasProductos(collect($request->detalles)->pluck('producto_id')->all(), (int) $empresaId);
+                $ctaGastoOriginal = $compra->detalles()->whereNull('producto_id')->whereNotNull('cuenta_id')->value('cuenta_id');
+                $creditos = [];
+                foreach ($request->detalles as $d) {
+                    $linea = round((float) $d['cantidad'] * (float) $d['precio_unitario'], 2);
+                    $cta = !empty($d['producto_id']) ? ($cuentasProd[(int) $d['producto_id']]['inventario'] ?? null) : null;
+                    $cta = $cta ?: $ctaGastoOriginal;
+                    if (!$cta) {
+                        throw new \DomainException('Una línea de la devolución no tiene cuenta contable (producto sin subcategoría y compra sin cuenta de gasto).');
+                    }
+                    $creditos[$cta] = round(($creditos[$cta] ?? 0) + $linea, 2);
+                }
+                $dif = round($subtotal - array_sum($creditos), 2);
+                if ($creditos && $dif != 0.0 && abs($dif) <= 0.05) {
+                    arsort($creditos);
+                    $creditos[array_key_first($creditos)] = round($creditos[array_key_first($creditos)] + $dif, 2);
+                }
+                $partidasCredito = [];
+                foreach ($creditos as $cta => $monto) {
+                    $partidasCredito[] = ['cuenta_id' => (int) $cta, 'debe' => 0, 'haber' => $monto,
+                        'descripcion' => "Devolución prov. {$request->num_documento}"];
+                }
+
                 $asiento = $this->asientoService->crear(
                     empresaId:     (int) $empresaId,
                     concepto:      "Devolución compra {$dev->num_documento} — {$dev->motivo}",
@@ -248,9 +273,8 @@ class DevolucionCompraController extends Controller
                         // Por pagar proveedor disminuye (Debe)
                         ['cuenta_id' => $this->cuentaCxP((int)$empresaId), 'debe' => $total, 'haber' => 0,
                          'descripcion' => "Devolución prov. {$request->num_documento}"],
-                        // Inventario o gasto disminuye (Haber)
-                        ['cuenta_id' => $this->cuentaCompras((int)$empresaId), 'debe' => 0, 'haber' => $subtotal,
-                         'descripcion' => "Devolución prov. {$request->num_documento}"],
+                        // Inventario o gasto disminuye (Haber), por cuenta de cada producto
+                        ...$partidasCredito,
                         // IVA por pagar reduce (si hay IVA)
                         ...($iva > 0 ? [['cuenta_id' => $this->cuentaIvaCobrar((int)$empresaId), 'debe' => 0, 'haber' => $iva,
                                          'descripcion' => "IVA devolución {$request->num_documento}"]] : []),
@@ -344,10 +368,8 @@ class DevolucionCompraController extends Controller
 
     private function cuentaParam(string $codigo, int $empresaId): ?int
     {
-        return DB::table('parametros_contables')
-            ->where('empresa_id', $empresaId)
-            ->where('codigo', $codigo)
-            ->value('cuenta_id');
+        // Excepción de la empresa si existe; si no, la configuración general.
+        return \App\Models\ParametroContable::getCuentaId($codigo, $empresaId);
     }
 
     private function cuentaPorCodigos(array $codigos, int $empresaId): ?int

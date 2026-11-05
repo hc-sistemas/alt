@@ -24,13 +24,10 @@ const ESTADO_LABELS: Record<string, string> = {
 
 export default function TrasladoShow() {
     const { traslado, auth } = usePage<Props>().props
-    const { puede } = usePermiso('inventario')
+    const { puede } = usePermiso('inventario_movimientos')
     const isPendiente = traslado.estado === 'pendiente'
 
-    const perfilesPermitidos = ['super_admin', 'admin', 'bodeguero']
-    const puedeOperar = perfilesPermitidos.includes(
-        (auth.user?.perfil ?? '').toLowerCase()
-    )
+    const puedeOperar = puede('editar') || puede('anular') // lo decide la matriz (submódulo Movimientos)
 
     const [modalAnular, setModalAnular] = useState(false)
     const [motivoAnular, setMotivoAnular] = useState('')

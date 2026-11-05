@@ -54,7 +54,7 @@ class UsuarioController extends Controller
     {
         return Inertia::render('Configuracion/Usuarios/Form', [
             'perfiles' => $this->perfilesAsignables(),
-            'empresas' => Empresa::where('estado', true)->orderBy('nombre_comercial')->get(['id', 'nombre_comercial', 'ruc']),
+            'empresas' => Empresa::where('estado', true)->orderBy('id')->get(['id', 'nombre_comercial', 'razon_social', 'etiqueta', 'ruc']),
             'centros_costo' => CentroCosto::where('estado', true)->with('empresa')->orderBy('nombre')->get(['id', 'nombre', 'empresa_id']),
             'colaboradores_disponibles' => $this->colaboradoresDisponibles(),
         ]);
@@ -187,7 +187,7 @@ class UsuarioController extends Controller
         return Inertia::render('Configuracion/Usuarios/Form', [
             'usuario' => $usuario->load(['perfil', 'empresas', 'centroCosto']),
             'perfiles' => $this->perfilesAsignables(),
-            'empresas' => Empresa::where('estado', true)->orderBy('nombre_comercial')->get(['id', 'nombre_comercial', 'ruc']),
+            'empresas' => Empresa::where('estado', true)->orderBy('id')->get(['id', 'nombre_comercial', 'razon_social', 'etiqueta', 'ruc']),
             'centros_costo' => CentroCosto::where('estado', true)->with('empresa')->orderBy('nombre')->get(['id', 'nombre', 'empresa_id']),
         ]);
     }

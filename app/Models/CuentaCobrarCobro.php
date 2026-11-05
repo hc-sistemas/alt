@@ -13,7 +13,7 @@ class CuentaCobrarCobro extends Model
 
     protected $fillable = [
         'cuenta_cobrar_id', 'usuario_id', 'fecha',
-        'valor', 'forma_pago', 'observacion', 'created_at',
+        'valor', 'forma_pago', 'observacion', 'created_at', 'retencion_iva', 'retencion_ir', 'num_retencion',
     ];
 
     protected function casts(): array

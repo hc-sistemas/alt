@@ -44,7 +44,7 @@ class HandleInertiaRequests extends Middleware
             'permisos' => function () use ($user, $empresaActivaId) {
                 if (!$user) return [];
 
-                if ($user->perfil?->nombre === 'super_admin') return '*';
+                if ($user->esAdministrador()) return '*';
 
                 return DB::table('permisos')
                     ->join('modulos', 'modulos.id', '=', 'permisos.modulo_id')
@@ -64,11 +64,13 @@ class HandleInertiaRequests extends Middleware
                     ->toArray();
             },
             'empresa_activa' => $empresaActivaId ? \App\Models\Empresa::find($empresaActivaId)?->only([
-                'id', 'nombre_comercial', 'ruc', 'logo',
+                'id', 'nombre_comercial', 'etiqueta', 'nombre_selector', 'ruc', 'logo',
             ]) : null,
             'empresas_usuario' => $user ? $user->empresas->map(fn($e) => [
                 'id' => $e->id,
                 'nombre_comercial' => $e->nombre_comercial,
+                'etiqueta' => $e->etiqueta,
+                'nombre_selector' => $e->nombre_selector,
                 'ruc' => $e->ruc,
                 'logo' => $e->logo,
             ]) : [],
@@ -76,6 +78,8 @@ class HandleInertiaRequests extends Middleware
                 'success' => $request->session()->get('success'),
                 'error'   => $request->session()->get('error'),
                 'warning' => $request->session()->get('warning'),
+                // Egreso que deja un banco en negativo: la pantalla pide confirmación y reenvía (SaldoBancario)
+                'saldo_negativo' => $request->session()->get('saldo_negativo'),
             ],
             'ziggy' => fn () => [
                 ...(new \Tighten\Ziggy\Ziggy)->toArray(),

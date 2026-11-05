@@ -87,7 +87,7 @@ class GuiaRemisionController extends Controller
             // activa (CHECKLIST_ERRORES_COMPLICACIONES.md, "NC/Retención/Guía
             // sin revalidar estado"). La guía puede seguir emitiéndose sin
             // factura (transporte de mercadería que no es una venta).
-            'factura_id'              => 'nullable|integer|exists:facturas,id',
+            'factura_id'              => 'nullable|integer|exists_empresa:facturas',
             'transportista_id'        => 'required|integer|exists:transportistas,id',
             'direccion_partida'       => 'required|string|max:300',
             'direccion_destino'       => 'required|string|max:300',
@@ -147,6 +147,17 @@ class GuiaRemisionController extends Controller
 
         return redirect()->route('ventas.guias-remision.show', $guia->id)
             ->with('flash', ['tipo' => 'exito', 'mensaje' => "Guía de remisión {$guia->numero} creada correctamente."]);
+    }
+
+    /** Impresión de la guía (02-04 §2.9): clave de acceso, comprobante, transportista y placa, fechas, factura sustento y detalle físico. */
+    public function pdf(GuiaRemision $guiaRemision)
+    {
+        $guiaRemision->load(['factura', 'transportista', 'detalles', 'empresa']);
+        $codigos = \App\Models\Producto::whereIn('id', $guiaRemision->detalles->pluck('producto_id')->filter())->pluck('codigo', 'id');
+
+        return \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.guia-remision', ['guia' => $guiaRemision, 'codigos' => $codigos])
+            ->setPaper('a4', 'portrait')
+            ->stream('guia-' . $guiaRemision->numero_completo . '.pdf');
     }
 
     public function show(GuiaRemision $guiaRemision)

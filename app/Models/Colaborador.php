@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\DB;
 
 class Colaborador extends Model
 {
+    use \App\Models\Concerns\PerteneceAEmpresaActiva;
     protected $table = 'colaboradores';
 
     protected $fillable = [
@@ -20,6 +21,7 @@ class Colaborador extends Model
         'cargo', 'departamento', 'departamento_id', 'comision_porcentaje',
         'sueldo_base', 'decimo_tercero', 'decimo_cuarto', 'fondos_reserva',
         'banco', 'tipo_cuenta', 'numero_cuenta',
+        'tipo_relacion', 'numero_iess',
         'usuario_id', 'estado',
     ];
 

@@ -200,8 +200,8 @@ export default function RecepcionShow() {
                 {
                     preserveScroll: true,
                     onSuccess: (page) => {
-                        const pageFlash = (page.props as Props['flash'] & { escaneo?: { detalle_id: number; cantidad_verificada: number; detalle_completo: boolean } }).escaneo
-                        const errorFlash = (page.props as Props).flash?.error
+                        const pageFlash = (page.props as unknown as { escaneo?: { detalle_id: number; cantidad_verificada: number; detalle_completo: boolean } }).escaneo
+                        const errorFlash = (page.props as unknown as { flash?: { success?: string; error?: string } }).flash?.error
 
                         if (errorFlash) {
                             mostrarErrorEscaneo(errorFlash)
@@ -247,8 +247,8 @@ export default function RecepcionShow() {
             {
                 preserveScroll: true,
                 onSuccess: (page) => {
-                    const successFlash = (page.props as Props).flash?.success
-                    const errorFlash = (page.props as Props).flash?.error
+                    const successFlash = (page.props as unknown as { flash?: { success?: string; error?: string } }).flash?.success
+                    const errorFlash = (page.props as unknown as { flash?: { success?: string; error?: string } }).flash?.error
                     if (errorFlash) {
                         toastError(errorFlash)
                     } else {

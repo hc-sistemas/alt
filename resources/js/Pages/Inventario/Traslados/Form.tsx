@@ -32,7 +32,7 @@ const emptyItem = (): ItemForm => ({
 
 export default function TrasladoForm() {
     const { bodegas } = usePage<Props>().props
-    const { puede } = usePermiso('inventario')
+    const { puede } = usePermiso('inventario_movimientos')
 
     const { data, setData, errors } = useForm({
         bodega_origen_id:  '',

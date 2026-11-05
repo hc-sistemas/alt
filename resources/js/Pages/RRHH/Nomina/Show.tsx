@@ -1,3 +1,4 @@
+import { advertenciaSaldo, confirmarSaldoNegativo } from '@/lib/saldoNegativo'
 import { useState } from 'react'
 import { Head, router, usePage } from '@inertiajs/react'
 import AppLayout from '@/Layouts/AppLayout'
@@ -24,8 +25,9 @@ function badgeEstado(estado: Nomina['estado']) {
         borrador:  'bg-gray-100 text-gray-600 border-gray-300',
         procesado: 'bg-blue-50 text-blue-700 border-blue-200',
         pagado:    'bg-green-50 text-green-700 border-green-200',
+        anulado:   'bg-red-50 text-red-700 border-red-200',
     } as const
-    const labels = { borrador: 'Borrador', procesado: 'Procesado', pagado: 'Pagado' }
+    const labels = { borrador: 'Borrador', procesado: 'Procesada', pagado: 'Pagada', anulado: 'Anulada' }
     return (
         <span className={cn('inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border', map[estado])}>
             {labels[estado]}
@@ -216,12 +218,24 @@ function PagarModal({ nominaId, bancos, onClose }: PagarModalProps) {
     })
     const [loading, setLoading] = useState(false)
 
+    function enviar(confirmado: boolean) {
+        setLoading(true)
+        let cerrar = true
+        router.post(route('rrhh.nomina.pagar', nominaId), { ...form, confirmar_saldo_negativo: confirmado }, {
+            onSuccess: async (page) => {
+                const adv = advertenciaSaldo(page)
+                if (adv) {
+                    cerrar = false
+                    if (await confirmarSaldoNegativo(adv)) enviar(true)
+                }
+            },
+            onFinish: () => { setLoading(false); if (cerrar) onClose() },
+        })
+    }
+
     function submit(e: React.FormEvent) {
         e.preventDefault()
-        setLoading(true)
-        router.post(route('rrhh.nomina.pagar', nominaId), form, {
-            onFinish: () => { setLoading(false); onClose() },
-        })
+        enviar(false)
     }
 
     return (
@@ -294,12 +308,11 @@ interface Props extends PageProps {
 // más estricto que el permiso genérico "rrhh,editar" (ver misma
 // restricción validada en el backend, NominaController::update() —
 // esto es solo para no ni mostrar el botón, el backend es la autoridad real).
-const PERFILES_EDICION_MANUAL = ['super_admin', 'contador']
 
 export default function NominaShow() {
     const { nomina, flash, auth, bancos } = usePage<Props>().props
     const { puede } = usePermiso('rrhh')
-    const puedeEditarManual = !!auth?.user?.perfil && PERFILES_EDICION_MANUAL.includes(auth.user.perfil)
+    const puedeEditarManual = usePermiso('rrhh_nomina_edicion_manual').puede('editar') // lo decide la matriz
 
     const [editando, setEditando] = useState<NominaDetalle | null>(null)
     const [showPagar, setShowPagar] = useState(false)
@@ -422,6 +435,22 @@ export default function NominaShow() {
                             >
                                 <CheckCircle className="w-4 h-4" />
                                 {procesando ? 'Procesando…' : 'Procesar Nómina'}
+                            </button>
+                        )}
+
+                        {nomina.estado === 'procesado' && puede('anular') && (
+                            <button
+                                className="btn-secondary flex items-center gap-1.5"
+                                onClick={() => {
+                                    const motivo = window.prompt('Motivo de la anulación (mínimo 10 caracteres). Se genera el reverso del asiento.')
+                                    if (motivo && motivo.trim().length >= 10) {
+                                        router.post(route('rrhh.nomina.anular', nomina.id), { motivo: motivo.trim(), _method: 'patch' }, { preserveScroll: true })
+                                    } else if (motivo !== null) {
+                                        alert('El motivo debe tener al menos 10 caracteres.')
+                                    }
+                                }}
+                            >
+                                Anular nómina
                             </button>
                         )}
 

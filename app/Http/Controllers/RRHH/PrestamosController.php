@@ -62,6 +62,7 @@ class PrestamosController extends Controller
             'colaboradores' => $colaboradores,
             'filtros'       => $request->only(['colaborador_id', 'tipo', 'estado', 'anio', 'buscar']),
             'anios'         => range(now()->year, now()->year - 3),
+            'bancos'        => \App\Models\BancoCaja::where('empresa_id', $empresaId)->activos()->orderBy('nombre')->get(['id', 'nombre', 'tipo']),
         ]);
     }
 
@@ -70,13 +71,18 @@ class PrestamosController extends Controller
         $empresaId = session('empresa_activa_id');
 
         $data = $request->validate([
-            'colaborador_id' => 'required|integer|exists:colaboradores,id',
+            'colaborador_id' => 'required|integer|exists_empresa:colaboradores',
             'tipo'           => 'required|in:anticipo,prestamo',
             'monto_total'    => 'required|numeric|min:1|max:99999',
             'cuota'          => 'nullable|numeric|min:0',
             'fecha'          => 'required|date',
             'descripcion'    => 'nullable|string|max:300',
+            'banco_caja_id'  => 'required|integer|exists_empresa:bancos_cajas',
+        ], [
+            'banco_caja_id.required' => 'Seleccione el banco o caja desde el que se entrega el dinero.',
         ]);
+        $banco = \App\Models\BancoCaja::where('empresa_id', $empresaId)->findOrFail($data['banco_caja_id']);
+        unset($data['banco_caja_id']);
 
         // Verificar que el colaborador pertenece a la empresa activa
         $col = Colaborador::where('id', $data['colaborador_id'])
@@ -85,7 +91,7 @@ class PrestamosController extends Controller
         $data['cuota'] = $data['tipo'] === 'anticipo' ? 0 : ($data['cuota'] ?? 0);
 
         try {
-            DB::transaction(function () use ($data, $empresaId) {
+            DB::transaction(function () use ($data, $empresaId, $banco) {
                 $prestamo = PrestamoEmpleado::create(array_merge($data, [
                     'saldo'      => $data['monto_total'],
                     'estado'     => 'activo',
@@ -95,7 +101,7 @@ class PrestamosController extends Controller
 
                 // Asiento contable: DEBE 1.1.3.04 / HABER 1.1.1.03
                 $prestamo->load('colaborador');
-                $this->asientoService->prestamoEmpleado($prestamo, $empresaId);
+                $this->asientoService->prestamoEmpleado($prestamo, $empresaId, $banco->cuenta_id ? (int) $banco->cuenta_id : null);
             });
         } catch (\Throwable $e) {
             return back()->with('error', 'Error al registrar: ' . $e->getMessage());

@@ -8,10 +8,11 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class DatafastLote extends Model
 {
+    use \App\Models\Concerns\PerteneceAEmpresaActiva;
     public $timestamps  = false;
     protected $table    = 'datafast_lotes';
     protected $fillable = [
-        'empresa_id', 'banco_caja_id', 'numero_lote',
+        'empresa_id', 'banco_caja_id', 'procesador_id', 'tipo_tarjeta', 'numero_lote',
         'fecha', 'total_vouchers', 'asiento_id', 'estado', 'created_by', 'created_at',
     ];
 

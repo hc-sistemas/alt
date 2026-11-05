@@ -8,6 +8,7 @@ import { Input } from '@/Components/ui/input'
 import { Badge } from '@/Components/ui/badge'
 import { Plus, Search, Pencil, Trash2, FileText, FileSpreadsheet } from 'lucide-react'
 import { formatMoneda } from '@/lib/utils'
+import { usePermiso } from '@/Hooks/usePermiso'
 import type { Cliente, PaginatedData, PageProps } from '@/types'
 import { confirmarEliminar } from '@/lib/swal'
 import { toastExito, toastError } from '@/lib/toast'
@@ -26,6 +27,7 @@ const TIPO_BADGE: Record<string, string> = {
 
 export default function ClientesIndex() {
     const { clientes, filters } = usePage<Props>().props
+    const { puede } = usePermiso('ventas')
     const [search, setSearch] = useState(filters.search ?? '')
     const [estado, setEstado] = useState(filters.estado ?? '')
     const [pdfModal, setPdfModal] = useState(false)
@@ -76,14 +78,14 @@ export default function ClientesIndex() {
                 title="Clientes"
                 description="Gestión de clientes del sistema"
                 breadcrumbs={[{ label: 'Personas' }, { label: 'Clientes' }]}
-                actions={
+                actions={puede('crear') ? (
                     <Link href={route('personas.clientes.create')}>
                         <Button>
                             <Plus className="w-4 h-4" />
                             Nuevo
                         </Button>
                     </Link>
-                }
+                ) : undefined}
             />
 
             <div className="p-6">
@@ -247,15 +249,19 @@ export default function ClientesIndex() {
                                     </td>
                                     <td className="w-16 px-2 py-2">
                                         <div className="flex items-center justify-center gap-0.5">
-                                            <Link href={route('personas.clientes.edit', cliente.id)}>
-                                                <Button variant="ghost" size="icon" title="Editar">
-                                                    <Pencil className="w-3.5 h-3.5" />
+                                            {puede('editar') && (
+                                                <Link href={route('personas.clientes.edit', cliente.id)}>
+                                                    <Button variant="ghost" size="icon" title="Editar">
+                                                        <Pencil className="w-3.5 h-3.5" />
+                                                    </Button>
+                                                </Link>
+                                            )}
+                                            {puede('eliminar') && (
+                                                <Button variant="ghost" size="icon" title="Eliminar"
+                                                    onClick={() => eliminar(cliente)}>
+                                                    <Trash2 className="w-3.5 h-3.5 text-red-400" />
                                                 </Button>
-                                            </Link>
-                                            <Button variant="ghost" size="icon" title="Eliminar"
-                                                onClick={() => eliminar(cliente)}>
-                                                <Trash2 className="w-3.5 h-3.5 text-red-400" />
-                                            </Button>
+                                            )}
                                         </div>
                                     </td>
                                 </tr>

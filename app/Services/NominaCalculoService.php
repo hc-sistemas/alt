@@ -20,11 +20,33 @@ class NominaCalculoService
     // LiquidacionesController); actualizar aquí cada año.
     public const SBU = 460.0;
 
+    /**
+     * Información para la empresa del rol de pagos (02-09 §2.7): aporte patronal 11,15 % y provisiones mensuales. Las mismas
+     * fórmulas que usa el asiento de la nómina (AsientoService::nominaProcesada), para que el rol y la contabilidad coincidan.
+     *
+     * @return array{patronal: float, decimo_tercero: float, decimo_cuarto: float, vacaciones: float, fondos_reserva: float}
+     */
+    public static function informacionEmpresa($detalle, $col, $fechaNomina): array
+    {
+        $sueldo = (float) $detalle->sueldo_base;
+        $fondos = $col && ($col->fondos_reserva ?? 'acumula') === 'acumula' && $col->fecha_ingreso
+            && $col->fecha_ingreso->copy()->addMonths(12)->lte($fechaNomina) ? round($sueldo / 12, 2) : 0.0;
+
+        return [
+            'patronal'       => round((float) $detalle->total_ingresos * 0.1115, 2),
+            'decimo_tercero' => ($col->decimo_tercero ?? 'acumula') === 'acumula' ? round($sueldo / 12, 2) : 0.0,
+            'decimo_cuarto'  => ($col->decimo_cuarto ?? 'acumula') === 'acumula' ? round(self::SBU / 12, 2) : 0.0,
+            'vacaciones'     => round($sueldo * 15 / 360, 2),
+            'fondos_reserva' => $fondos,
+        ];
+    }
+
     // Un colaborador con sueldo 0 (ficha auto-creada desde un usuario, pendiente de
     // completar) no entra a nómina hasta que se le registre el sueldo.
     public function entraANomina(Colaborador $col): bool
     {
-        return (float) $col->sueldo_base > 0;
+        // Quien factura por servicios se registra como proveedor y no va en nómina
+        return (float) $col->sueldo_base > 0 && ($col->tipo_relacion ?? 'dependencia') !== 'servicios';
     }
 
     // Al registrar un colaborador nuevo debe aparecer automáticamente en cualquier

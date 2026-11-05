@@ -9,6 +9,7 @@ use App\Models\BancoCaja;
 
 class AnticipoProveedor extends Model
 {
+    use \App\Models\Concerns\PerteneceAEmpresaActiva;
     public $timestamps = false;
 
     protected $table = 'anticipos_proveedores';

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { router, usePage, useForm, Head } from '@inertiajs/react'
 import { toast, ToastContainer } from 'react-toastify'
 import Swal from 'sweetalert2'
@@ -24,8 +24,21 @@ interface CierreRow {
     tiene_diferencia: boolean
     dias_abierta: number
     sospechosa: boolean
-    /** Lo que las ventas del día de este centro de costo debieron cobrar (solo cajas abiertas) */
-    esperado?: { efectivo: number; tarjeta: number; cheque: number; transferencia: number; total: number } | null
+    /** Efectivo del día (solo cajas abiertas): facturas cobradas, facturado, cobrado y saldo esperado */
+    resumen?: Resumen | null
+    saldo_esperado?: number
+    facturas_efectivo?: number
+    observaciones?: string | null
+}
+
+interface Resumen {
+    facturas: number; facturado: number; cobrado: number; otros: number; inicial: number; esperado: number
+}
+
+interface Denominacion { clave: string; valor: number; tipo: 'Moneda' | 'Billete' }
+
+interface AperturaInfo {
+    primer_dia: boolean; saldo_inicial: number | null; anterior_abierto: boolean; fecha_anterior: string | null
 }
 
 interface Props extends PageProps {
@@ -37,7 +50,10 @@ interface Props extends PageProps {
         banco_caja: { nombre: string } | null
         monto_inicial: number
         hora_apertura: string | null
+        resumen: Resumen
     } | null
+    aperturas: Record<string, AperturaInfo>
+    denominaciones: Denominacion[]
     filtros: {
         banco_caja_id?: string; estado?: string; centro_costo_id?: string
         fecha_desde?: string; fecha_hasta?: string; buscar?: string
@@ -66,24 +82,82 @@ const swalBase = {
 
 const fmt = (n: number) => '$' + Number(n).toLocaleString('es-EC', { minimumFractionDigits: 2 })
 
-// ─── Modal Abrir Caja ─────────────────────────────────────────────────────────
+// ─── Tabla de denominaciones (igual en apertura y cierre) ─────────────────────
 
-function AbrirModal({ cajas, centros, onClose }: {
-    cajas: BancoCaja[]; centros: Props['centros']; onClose: () => void
+function ConteoTabla({ denominaciones, valores, onChange }: {
+    denominaciones: Denominacion[]
+    valores: Record<string, string>
+    onChange: (clave: string, v: string) => void
 }) {
-    const { data, setData, post, processing, errors } = useForm({
-        banco_caja_id: '', monto_inicial: '0', centro_costo_id: '',
+    const subtotal = (d: Denominacion) => Math.round((parseInt(valores[d.clave] || '0', 10) || 0) * d.valor * 100) / 100
+    const total = (tipo: 'Moneda' | 'Billete') =>
+        denominaciones.filter(d => d.tipo === tipo).reduce((s, d) => s + subtotal(d), 0)
+    const monedas = total('Moneda'), billetes = total('Billete')
+
+    return (
+        <div className="grid grid-cols-2 gap-3">
+            {(['Moneda', 'Billete'] as const).map(tipo => (
+                <div key={tipo} className="rounded-xl border p-3" style={{ borderColor: 'var(--border)' }}>
+                    <p className="text-[11px] font-bold uppercase tracking-wider mb-2" style={{ color: 'var(--text-muted)' }}>
+                        {tipo === 'Moneda' ? 'Monedas' : 'Billetes'}
+                    </p>
+                    <div className="space-y-1.5">
+                        {denominaciones.filter(d => d.tipo === tipo).map(d => (
+                            <div key={d.clave} className="flex items-center gap-2 text-xs">
+                                <span className="w-14 font-mono" style={{ color: 'var(--text-main)' }}>{fmt(d.valor)}</span>
+                                <span style={{ color: 'var(--text-muted)' }}>×</span>
+                                <input type="number" min="0" step="1" inputMode="numeric"
+                                    value={valores[d.clave] ?? ''} placeholder="0"
+                                    onChange={e => onChange(d.clave, e.target.value)}
+                                    className="input-field !py-1 !px-2 w-16 text-right" />
+                                <span className="ml-auto font-mono" style={{ color: 'var(--text-muted)' }}>{fmt(subtotal(d))}</span>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="flex justify-between text-xs font-semibold border-t mt-2 pt-2" style={{ borderColor: 'var(--border)', color: 'var(--text-main)' }}>
+                        <span>Total {tipo === 'Moneda' ? 'monedas' : 'billetes'}</span>
+                        <span className="font-mono">{fmt(tipo === 'Moneda' ? monedas : billetes)}</span>
+                    </div>
+                </div>
+            ))}
+            <div className="col-span-2 flex justify-between items-center rounded-xl px-4 py-2.5"
+                style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid var(--border)' }}>
+                <span className="text-sm font-semibold" style={{ color: 'var(--text-main)' }}>Total efectivo físico</span>
+                <span className="text-lg font-bold font-mono" style={{ color: 'var(--text-main)' }}>{fmt(monedas + billetes)}</span>
+            </div>
+        </div>
+    )
+}
+
+const conteoNumerico = (v: Record<string, string>) =>
+    Object.fromEntries(Object.entries(v).map(([k, x]) => [k, parseInt(x || '0', 10) || 0]))
+
+// ─── Modal Abrir Caja ─────────────────────────────────────────────────────────
+// Primer día: conteo por denominación. Desde el segundo: saldo inicial automático (cierre anterior).
+
+function AbrirModal({ cajas, centros, aperturas, denominaciones, onClose }: {
+    cajas: BancoCaja[]; centros: Props['centros']; aperturas: Props['aperturas']
+    denominaciones: Denominacion[]; onClose: () => void
+}) {
+    const { data, setData, post, processing, errors, transform } = useForm({
+        banco_caja_id: cajas.length === 1 ? String(cajas[0].id) : '',
+        centro_costo_id: '',
+        conteo: {} as Record<string, string>,
     })
+    transform(d => ({ ...d, conteo: conteoNumerico(d.conteo) }))
+
+    const info = data.banco_caja_id ? aperturas[data.banco_caja_id] : undefined
+
     function submit(e: React.FormEvent) {
         e.preventDefault()
         post(route('bancos.cajas.abrir'), {
-            onSuccess: () => { notify.ok('Caja abierta correctamente'); onClose() },
-            onError: () => notify.error('Error al abrir caja'),
+            onSuccess: () => onClose(),
+            onError: () => notify.error('No se pudo abrir la caja'),
         })
     }
     return (
         <div className="modal-overlay" onClick={onClose}>
-            <div className="modal-card max-w-sm" onClick={e => e.stopPropagation()}>
+            <div className="modal-card max-w-xl" onClick={e => e.stopPropagation()}>
                 <div className="modal-header">
                     <h2>Abrir Caja</h2>
                     <button className="modal-close" onClick={onClose}><X className="w-4 h-4" /></button>
@@ -99,24 +173,46 @@ function AbrirModal({ cajas, centros, onClose }: {
                         </select>
                         {errors.banco_caja_id && <p className="text-red-400 text-xs">{errors.banco_caja_id}</p>}
                     </div>
-                    <div className="space-y-1.5">
-                        <Label>Monto inicial ($) <span className="text-red-400">*</span></Label>
-                        <Input type="number" step="0.01" min="0" value={data.monto_inicial}
-                            onChange={e => setData('monto_inicial', e.target.value)} />
-                    </div>
+
+                    {info?.anterior_abierto && (
+                        <p className="text-xs px-3 py-2 rounded-md font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400">
+                            ⚠ El día {info.fecha_anterior} de esta caja sigue abierto. Ciérrelo antes de abrir hoy.
+                        </p>
+                    )}
+
+                    {info && !info.anterior_abierto && info.primer_dia && (
+                        <div className="space-y-2">
+                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                Es el primer día de esta caja: cuente el efectivo por denominación. Ese conteo es el saldo inicial.
+                            </p>
+                            <ConteoTabla denominaciones={denominaciones} valores={data.conteo}
+                                onChange={(k, v) => setData('conteo', { ...data.conteo, [k]: v })} />
+                        </div>
+                    )}
+
+                    {info && !info.anterior_abierto && !info.primer_dia && (
+                        <div className="flex justify-between items-center rounded-xl px-4 py-3"
+                            style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid var(--border)' }}>
+                            <span className="text-sm" style={{ color: 'var(--text-main)' }}>
+                                Saldo inicial automático <span className="text-xs" style={{ color: 'var(--text-muted)' }}>(cierre del día anterior)</span>
+                            </span>
+                            <span className="text-lg font-bold font-mono" style={{ color: 'var(--text-main)' }}>{fmt(info.saldo_inicial ?? 0)}</span>
+                        </div>
+                    )}
+
                     {centros.length > 0 && (
                         <div className="space-y-1.5">
                             <Label>Centro de costo</Label>
                             <select value={data.centro_costo_id} onChange={e => setData('centro_costo_id', e.target.value)}
                                 className="input-field select-field">
-                                <option value="">— Ninguno —</option>
+                                <option value="">— El de la caja —</option>
                                 {centros.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
                             </select>
                         </div>
                     )}
                 </div>
                 <div className="modal-footer">
-                    <button type="submit" disabled={processing} className="btn-primary">
+                    <button type="submit" disabled={processing || !info || info.anterior_abierto} className="btn-primary">
                         <CheckCircle className="w-4 h-4" /> Abrir Caja
                     </button>
                     <button type="button" onClick={onClose} className="btn-secondary">
@@ -130,116 +226,101 @@ function AbrirModal({ cajas, centros, onClose }: {
 }
 
 // ─── Modal Cerrar Caja ────────────────────────────────────────────────────────
+// Resumen del día (solo efectivo), conteo físico por denominación y diferencia.
 
-function CerrarModal({ cierre, onClose }: { cierre: CierreRow; onClose: () => void }) {
-    const { data, setData, patch, processing, errors } = useForm({
-        // Se precargan con lo que registraron las ventas del día; el cajero ajusta si contó otra cosa
-        total_efectivo:      String(cierre.esperado?.efectivo ?? 0),
-        total_tarjeta:       String(cierre.esperado?.tarjeta ?? 0),
-        total_cheque:        String(cierre.esperado?.cheque ?? 0),
-        total_transferencia: String(cierre.esperado?.transferencia ?? 0),
+function CerrarModal({ cierre, denominaciones, onClose }: {
+    cierre: CierreRow; denominaciones: Denominacion[]; onClose: () => void
+}) {
+    const { data, setData, patch, processing, errors, transform } = useForm({
+        conteo: {} as Record<string, string>,
         observaciones: '',
     })
+    transform(d => ({ ...d, conteo: conteoNumerico(d.conteo) }))
 
-    const totalFacturado = cierre.esperado && cierre.esperado.total > 0.01 ? cierre.esperado.total : cierre.total_cobrado
-
-    const totalCobrado = useMemo(() =>
-        [data.total_efectivo, data.total_tarjeta, data.total_cheque, data.total_transferencia]
-            .reduce((s, v) => s + Number(v || 0), 0),
-    [data.total_efectivo, data.total_tarjeta, data.total_cheque, data.total_transferencia])
-
-    const diferencia = totalCobrado - totalFacturado
+    const r = cierre.resumen
+    const esperado = r?.esperado ?? 0
+    const fisico = denominaciones.reduce(
+        (s, d) => s + Math.round((parseInt(data.conteo[d.clave] || '0', 10) || 0) * d.valor * 100) / 100, 0)
+    const diferencia = Math.round((fisico - esperado) * 100) / 100
+    const hayDif = Math.abs(diferencia) > 0.01
 
     function submit(e: React.FormEvent) {
         e.preventDefault()
-        if (Math.abs(diferencia) > 0.01) {
-            Swal.fire({
-                ...swalBase,
-                title: 'Diferencia detectada',
-                html: `<div style="text-align:center">
-                    <div style="font-size:2.5rem;margin-bottom:12px">⚠️</div>
-                    <p>Hay una diferencia de <strong style="color:#ef4444">${fmt(Math.abs(diferencia))}</strong>.<br/>¿Confirmar cierre de todas formas?</p>
-                </div>`,
-                icon: 'warning',
-                confirmButtonColor: '#f59e0b',
-                cancelButtonColor: '#6b7280',
-                confirmButtonText: 'Sí, cerrar',
-                cancelButtonText: 'Revisar',
-            }).then(r => {
-                if (r.isConfirmed) ejecutarCierre()
-            })
-        } else {
-            ejecutarCierre()
+        if (hayDif && data.observaciones.trim().length < 5) {
+            notify.error('Hay una diferencia: escriba la observación para poder cerrar.')
+            return
         }
-    }
-
-    function ejecutarCierre() {
         patch(route('bancos.cajas.cerrar', cierre.id), {
-            onSuccess: () => { notify.ok('Caja cerrada correctamente'); onClose() },
-            onError: () => notify.error('Error al cerrar caja'),
+            onSuccess: () => onClose(),
+            onError: () => notify.error('No se pudo cerrar la caja'),
         })
     }
 
+    const fila = (etq: string, val: string, fuerte = false) => (
+        <div className={cn('flex justify-between text-sm', fuerte && 'border-t pt-2 font-semibold')} style={{ borderColor: 'var(--border)' }}>
+            <span style={{ color: fuerte ? 'var(--text-main)' : 'var(--text-muted)' }}>{etq}</span>
+            <span className="font-medium font-mono" style={{ color: 'var(--text-main)' }}>{val}</span>
+        </div>
+    )
+
     return (
         <div className="modal-overlay" onClick={onClose}>
-            <div className="modal-card max-w-md" onClick={e => e.stopPropagation()}>
+            <div className="modal-card max-w-xl" onClick={e => e.stopPropagation()}>
                 <div className="modal-header">
                     <h2>Cerrar Caja — {cierre.caja}</h2>
                     <button className="modal-close" onClick={onClose}><X className="w-4 h-4" /></button>
                 </div>
                 <form onSubmit={submit}>
                 <div className="modal-body" style={{ gap: '1rem' }}>
-                    <div className="grid grid-cols-2 gap-3">
-                        {([
-                            ['total_efectivo', 'Efectivo'],
-                            ['total_tarjeta', 'Tarjeta'],
-                            ['total_cheque', 'Cheque'],
-                            ['total_transferencia', 'Transferencia'],
-                        ] as [keyof typeof data, string][]).map(([field, label]) => (
-                            <div key={field} className="space-y-1.5">
-                                <Label>{label} ($)</Label>
-                                <Input type="number" step="0.01" min="0" value={data[field] as string}
-                                    onChange={e => setData(field, e.target.value)} />
-                            </div>
-                        ))}
+                    <div className="rounded-xl p-4 space-y-2" style={{ border: '1px solid var(--border)' }}>
+                        <p className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+                            Efectivo del día
+                        </p>
+                        {fila('Facturas cobradas en efectivo', String(r?.facturas ?? 0))}
+                        {fila('Total facturado en efectivo', fmt(r?.facturado ?? 0))}
+                        {fila('Total cobrado en efectivo', fmt(r?.cobrado ?? 0))}
+                        {fila('Saldo inicial', fmt(r?.inicial ?? cierre.monto_inicial))}
+                        {fila('Otros movimientos de efectivo (pagos, gastos, aportes, depósitos)', fmt(r?.otros ?? 0))}
+                        {fila('Saldo esperado', fmt(esperado), true)}
                     </div>
 
-                    {/* Resumen */}
-                    <div className="rounded-xl p-4 space-y-2"
-                        style={{ background: 'rgba(245,158,11,0.05)', border: '1px solid var(--border)' }}>
+                    <div className="space-y-2">
+                        <Label>Conteo físico</Label>
+                        <ConteoTabla denominaciones={denominaciones} valores={data.conteo}
+                            onChange={(k, v) => setData('conteo', { ...data.conteo, [k]: v })} />
+                    </div>
+
+                    <div className="rounded-xl p-4 space-y-1"
+                        style={{
+                            background: hayDif ? 'rgba(239,68,68,0.06)' : 'rgba(16,185,129,0.06)',
+                            border: `1px solid ${hayDif ? 'rgba(239,68,68,0.3)' : 'rgba(16,185,129,0.3)'}`,
+                        }}>
                         <div className="flex justify-between text-sm">
-                            <span style={{ color: 'var(--text-muted)' }}>Total facturado</span>
-                            <span className="font-medium" style={{ color: 'var(--text-main)' }}>{fmt(totalFacturado)}</span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                            <span style={{ color: 'var(--text-muted)' }}>Total cobrado</span>
-                            <span className="font-medium" style={{ color: 'var(--text-main)' }}>{fmt(totalCobrado)}</span>
-                        </div>
-                        <div className="flex justify-between text-sm border-t pt-2" style={{ borderColor: 'var(--border)' }}>
-                            <span className="font-semibold" style={{ color: 'var(--text-main)' }}>Diferencia</span>
-                            <span className={cn('font-bold text-base', Math.abs(diferencia) > 0.01 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400')}>
+                            <span className="font-semibold" style={{ color: 'var(--text-main)' }}>Diferencia (conteo − esperado)</span>
+                            <span className={cn('font-bold text-base font-mono', hayDif ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400')}>
                                 {fmt(diferencia)}
                             </span>
                         </div>
-                        {Math.abs(diferencia) > 0.01 && (
+                        {hayDif && (
                             <p className="text-xs text-red-500 flex items-center gap-1">
-                                <AlertTriangle className="w-3.5 h-3.5" /> Existe una diferencia en caja
+                                <AlertTriangle className="w-3.5 h-3.5" />
+                                {diferencia > 0 ? 'Sobrante' : 'Faltante'}: se registrará un asiento automático al cerrar.
                             </p>
                         )}
                     </div>
 
                     <div className="space-y-1.5">
-                        <Label>Observaciones</Label>
+                        <Label>Observaciones {hayDif && <span className="text-red-400">* obligatoria</span>}</Label>
                         <textarea value={data.observaciones} onChange={e => setData('observaciones', e.target.value)}
-                            rows={2} placeholder="Novedades del día…"
+                            rows={2} placeholder={hayDif ? 'Explique la diferencia…' : 'Novedades del día…'}
                             className="input-field textarea-field" />
+                        {errors.observaciones && <p className="text-red-400 text-xs">{errors.observaciones}</p>}
                     </div>
-
                 </div>
                 <div className="modal-footer">
-                    <button type="submit" disabled={processing}
-                        className={cn('btn-primary', Math.abs(diferencia) > 0.01 ? 'bg-orange-500' : '')}
-                        style={Math.abs(diferencia) <= 0.01 ? {} : { background: '#F97316', color: '#fff', boxShadow: 'none' }}>
+                    <button type="submit" disabled={processing || fisico <= 0 && esperado > 0}
+                        className="btn-primary"
+                        style={hayDif ? { background: '#F97316', color: '#fff', boxShadow: 'none' } : {}}>
                         <Lock className="w-4 h-4" /> Cerrar Caja
                     </button>
                     <button type="button" onClick={onClose} className="btn-secondary">
@@ -255,7 +336,7 @@ function CerrarModal({ cierre, onClose }: { cierre: CierreRow; onClose: () => vo
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function CajasIndex() {
-    const { cierres, cajas, centros, cajaAbierta, filtros, flash } = usePage<Props>().props
+    const { cierres, cajas, centros, cajaAbierta, aperturas, denominaciones, filtros, flash } = usePage<Props>().props
     const { puede } = usePermiso('bancos')
     const [showAbrir, setShowAbrir] = useState(false)
     const [cerrarCierre, setCerrarCierre] = useState<CierreRow | null>(null)
@@ -338,9 +419,10 @@ export default function CajasIndex() {
                                     diferencia: 0, estado: 'abierto',
                                     hora_apertura: null, hora_cierre: null,
                                     usuario_apertura: null, usuario_cierre: null,
-                                    tiene_diferencia: false, total_facturado: 0,
+                                    tiene_diferencia: false,
                                     dias_abierta: 0, sospechosa: false,
-                                } as any)}
+                                    resumen: cajaAbierta.resumen,
+                                })}
                                 className="flex items-center gap-1.5 px-4 py-2 rounded-xl font-semibold text-sm text-black whitespace-nowrap transition-all hover:opacity-90 hover:-translate-y-0.5 shrink-0 bg-green-600">
                                 <Lock className="w-4 h-4" /> Cerrar Caja
                             </button>
@@ -508,8 +590,8 @@ export default function CajasIndex() {
             </div>
             )}
 
-            {showAbrir && <AbrirModal cajas={cajas} centros={centros} onClose={() => setShowAbrir(false)} />}
-            {cerrarCierre && <CerrarModal cierre={cerrarCierre} onClose={() => setCerrarCierre(null)} />}
+            {showAbrir && <AbrirModal cajas={cajas} centros={centros} aperturas={aperturas} denominaciones={denominaciones} onClose={() => setShowAbrir(false)} />}
+            {cerrarCierre && <CerrarModal cierre={cerrarCierre} denominaciones={denominaciones} onClose={() => setCerrarCierre(null)} />}
 
             <ToastContainer position="top-right" autoClose={3500} hideProgressBar={false}
                 newestOnTop closeOnClick pauseOnHover draggable theme="colored"

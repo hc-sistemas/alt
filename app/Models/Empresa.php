@@ -17,7 +17,7 @@ class Empresa extends Model
 
     // Columnas reales del schema altamira (nombres de legacy)
     protected $fillable = [
-        'razon_social', 'nombre_comercial', 'ruc',
+        'razon_social', 'nombre_comercial', 'etiqueta', 'ruc',
         'direccion_matriz', 'direccion_establecimiento',
         'email_notificaciones', 'telefono', 'logo', 'slogan',
         'ambiente_sri', 'cod_establecimiento', 'cod_punto_emision',
@@ -27,6 +27,20 @@ class Empresa extends Model
     ];
 
     protected $hidden = ['firma_electronica_path', 'firma_electronica_pass'];
+
+    /**
+     * Nombre para selectores y listas internas: «Altamira Light & Sound · UIO».
+     * Los documentos oficiales (factura, PDF, XML del SRI) NO lo usan: ahí
+     * va el nombre comercial, la razón social y el RUC.
+     */
+    protected $appends = ['nombre_selector'];
+
+    public function getNombreSelectorAttribute(): string
+    {
+        $nombre = $this->nombre_comercial ?: $this->razon_social;
+
+        return $this->etiqueta ? "{$nombre} · {$this->etiqueta}" : (string) $nombre;
+    }
 
     protected function casts(): array
     {

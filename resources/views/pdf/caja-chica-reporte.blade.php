@@ -96,13 +96,14 @@
     <thead>
         <tr>
             <th style="width:8%">Fecha</th>
-            <th style="width:15%">Caja</th>
-            <th style="width:8%">Apertura</th>
-            <th style="width:8%">Cierre</th>
+            <th style="width:11%">Caja</th>
+            <th style="width:7%">Apertura</th>
+            <th style="width:7%">Cierre</th>
             <th class="right" style="width:11%">Monto Ini.</th>
-            <th class="right" style="width:11%">Facturado</th>
-            <th class="right" style="width:11%">Cobrado</th>
+            <th class="right" style="width:10%">Facturado</th>
+            <th class="right" style="width:10%">Cobrado</th>
             <th class="right" style="width:10%">Efectivo</th>
+            <th class="right" style="width:9%">Depósitos</th>
             <th class="right" style="width:10%">Diferencia</th>
             <th style="width:8%">Estado</th>
         </tr>
@@ -126,6 +127,7 @@
             <td class="right">${{ number_format($c->total_facturado, 2) }}</td>
             <td class="right">${{ number_format($c->total_cobrado, 2) }}</td>
             <td class="right">${{ number_format($c->total_efectivo, 2) }}</td>
+            <td class="right">${{ number_format($c->total_depositos ?? 0, 2) }}</td>
             <td class="right" style="{{ abs($c->diferencia) > 0.01 ? 'color:#555770' : '' }}">
                 {{ abs($c->diferencia) > 0.01
                     ? '$'.number_format(abs($c->diferencia), 2)
@@ -144,6 +146,7 @@
             <td class="right">${{ number_format($cierres->sum('total_facturado'), 2) }}</td>
             <td class="right">${{ number_format($cierres->sum('total_cobrado'), 2) }}</td>
             <td class="right">${{ number_format($cierres->sum('total_efectivo'), 2) }}</td>
+            <td class="right">${{ number_format($cierres->sum('total_depositos'), 2) }}</td>
             <td class="right">${{ number_format($cierres->sum('diferencia'), 2) }}</td>
             <td></td>
         </tr>

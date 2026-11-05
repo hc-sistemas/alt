@@ -197,6 +197,7 @@ class ProformaController extends Controller
             'limites_descuento' => [
                 'descuento_maximo_pct' => $limite?->porcentaje_maximo ?? 0,
                 'puede_aprobar'        => $limite?->puede_aprobar ?? false,
+                'solo_cero_o_maximo'   => LimiteDescuento::esPerfilDescuentoFijo($perfilNombre),
             ],
         ]);
     }
@@ -206,7 +207,7 @@ class ProformaController extends Controller
         $empresaId = session('empresa_activa_id');
 
         $request->validate([
-            'cliente_id'              => 'required|integer|exists:clientes,id',
+            'cliente_id'              => 'required|integer|exists_empresa:clientes',
             'detalles'                => 'required|array|min:1',
             'detalles.*.producto_id'  => 'required|integer',
             'detalles.*.cantidad'     => 'required|integer|min:1',
@@ -255,7 +256,7 @@ class ProformaController extends Controller
             // Tope del perfil del vendedor — sí se puede superar con
             // aprobación especial de un supervisor, mientras no exceda el
             // tope de producto verificado arriba.
-            if ($descPct > $limiteMax) {
+            if (LimiteDescuento::exigeAprobacion($descPct, $limiteMax, $perfilNombre, (float) $maximo)) {
                 $aprobacionId = $det['aprobacion_id'] ?? null;
                 if (!$aprobacionId) {
                     return back()->withErrors([

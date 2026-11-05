@@ -626,7 +626,7 @@
                     <thead><tr><th>Parámetro</th><th>Descripción</th></tr></thead>
                     <tbody>
                         <tr><td>cta_caja_general</td><td>Caja para cobros en efectivo</td></tr>
-                        <tr><td>cta_bancos_locales</td><td>Banco para transferencias</td></tr>
+                        
                         <tr><td>cta_vouchers</td><td>Dinero electrónico / Datafast</td></tr>
                         <tr><td>cta_clientes_locales</td><td>CxC a crédito</td></tr>
                         <tr><td>cta_ventas_locales</td><td>Ingresos por ventas</td></tr>

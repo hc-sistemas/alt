@@ -46,7 +46,7 @@ class BodegaController extends Controller
         $data = $request->validate([
             'nombre'          => ['required', 'string', 'max:150'],
             'tipo'            => ['required', 'string', 'in:' . implode(',', Bodega::TIPOS)],
-            'centro_costo_id' => ['nullable', 'integer', 'exists:centros_costo,id'],
+            'centro_costo_id' => ['nullable', 'integer', 'exists_empresa:centros_costo'],
             'es_virtual'      => ['boolean'],
             'estado'          => ['boolean'],
         ]);
@@ -75,7 +75,7 @@ class BodegaController extends Controller
         $data = $request->validate([
             'nombre'          => ['required', 'string', 'max:150'],
             'tipo'            => ['required', 'string', 'in:' . implode(',', Bodega::TIPOS)],
-            'centro_costo_id' => ['nullable', 'integer', 'exists:centros_costo,id'],
+            'centro_costo_id' => ['nullable', 'integer', 'exists_empresa:centros_costo'],
             'es_virtual'      => ['boolean'],
             'estado'          => ['boolean'],
         ]);

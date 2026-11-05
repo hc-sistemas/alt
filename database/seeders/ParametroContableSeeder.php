@@ -22,7 +22,6 @@ class ParametroContableSeeder extends Seeder
     // asignada desde hace tiempo.
     private array $mapeo = [
         'cta_caja_general'         => ['codigo_cuenta' => '1.1.1.01', 'descripcion' => 'Caja General (cobros en efectivo)'],
-        'cta_bancos_locales'       => ['codigo_cuenta' => '1.1.1.03', 'descripcion' => 'Bancos Locales (cobros por transferencia)'],
         'cta_clientes_locales'     => ['codigo_cuenta' => '1.1.3.01', 'descripcion' => 'Clientes Locales (ventas a crédito)'],
         'cta_ventas_locales'       => ['codigo_cuenta' => '4.1.1.01', 'descripcion' => 'Venta de Mercaderías — Mercado Local'],
         'cta_iva_ventas'           => ['codigo_cuenta' => '2.1.3.04', 'descripcion' => 'IVA en Ventas por Liquidar al SRI'],

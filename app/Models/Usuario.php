@@ -43,6 +43,33 @@ class Usuario extends Authenticatable
         return $this->belongsTo(Perfil::class);
     }
 
+    /** Super Admin y Admin son los dueños del sistema: no están restringidos por la matriz de permisos. */
+    public function esAdministrador(): bool
+    {
+        return in_array($this->perfil?->nombre, ['super_admin', 'admin'], true);
+    }
+
+    /**
+     * ¿Puede hacer esta acción en este módulo en la empresa activa? Los administradores siempre; el resto
+     * según lo guardado en Configuración → Permisos (misma consulta que el middleware `permiso`).
+     */
+    public function puede(string $moduloClave, string $accion = 'ver', ?int $empresaId = null): bool
+    {
+        if ($this->esAdministrador()) {
+            return true;
+        }
+        if (!in_array($accion, ['ver', 'crear', 'editar', 'eliminar', 'anular'], true)) {
+            return false;
+        }
+
+        return (bool) \Illuminate\Support\Facades\DB::table('permisos')
+            ->join('modulos', 'modulos.id', '=', 'permisos.modulo_id')
+            ->where('permisos.perfil_id', $this->perfil_id)
+            ->where('permisos.empresa_id', $empresaId ?? session('empresa_activa_id'))
+            ->where('modulos.clave', $moduloClave)
+            ->value("permisos.{$accion}");
+    }
+
     public function centroCosto(): BelongsTo
     {
         return $this->belongsTo(CentroCosto::class);

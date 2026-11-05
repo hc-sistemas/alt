@@ -124,13 +124,15 @@
             <th style="width:14%">Referencia</th>
             <th class="right" style="width:11%">Ingresos</th>
             <th class="right" style="width:11%">Egresos</th>
-            <th class="right" style="width:14%">Saldo</th>
+            <th class="right" style="width:12%">Saldo</th>
+            <th style="width:6%;text-align:center">Conc.</th>
         </tr>
     </thead>
     <tbody>
         <tr>
             <td colspan="6" style="color:#555770;font-style:italic">Saldo anterior al período</td>
             <td class="right" style="font-weight:bold">${{ number_format($saldoInicial, 2) }}</td>
+            <td></td>
         </tr>
         @foreach($movimientos as $m)
         <tr>
@@ -160,6 +162,7 @@
                 @endif
             </td>
             <td class="right" style="font-weight:bold">${{ number_format($m->saldo_acumulado, 2) }}</td>
+            <td style="text-align:center;font-size:8px">{{ $m->conciliado ? 'Sí' : 'No' }}</td>
         </tr>
         @endforeach
         <tr class="fila-total">
@@ -167,6 +170,7 @@
             <td class="right">${{ number_format($totalIngresos, 2) }}</td>
             <td class="right">${{ number_format($totalEgresos, 2) }}</td>
             <td class="right">${{ number_format($saldoFinal, 2) }}</td>
+            <td></td>
         </tr>
     </tbody>
 </table>

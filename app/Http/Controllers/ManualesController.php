@@ -61,7 +61,7 @@ class ManualesController extends Controller
             ],
             'taller' => [
                 'titulo'      => 'Taller',
-                'descripcion' => 'Ingreso de equipos, órdenes de trabajo, diagnóstico, repuestos y liquidación (Altamira Fix).',
+                'descripcion' => 'Ingreso de equipos, órdenes de trabajo, diagnóstico, repuestos y liquidación (Altamira FIX).',
                 'tipo'        => 'dinamico',
                 'route'       => 'manuales.taller-pdf',
             ],

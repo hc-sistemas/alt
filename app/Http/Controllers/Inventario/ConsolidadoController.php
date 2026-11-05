@@ -32,13 +32,13 @@ class ConsolidadoController extends Controller
             ->join('empresas as e', 'e.id', '=', 'b.empresa_id')
             ->where('b.estado', true)
             ->orderBy('b.empresa_id')->orderBy('b.id')
-            ->get(['b.id', 'b.empresa_id', 'b.nombre', 'e.nombre_comercial as empresa_nombre', 'e.razon_social']);
+            ->get(['b.id', 'b.empresa_id', 'b.nombre', 'b.tipo', DB::raw("concat(e.nombre_comercial, coalesce(' · ' || e.etiqueta, '')) as empresa_nombre"), 'e.razon_social']);
     }
 
     private function autorizarMatriz(): void
     {
         $ruc = Empresa::find(session('empresa_activa_id'))?->ruc;
-        abort_unless($ruc === self::RUC_MATRIZ, 403, 'El inventario consolidado solo está disponible en Altamira Matriz.');
+        abort_unless($ruc === self::RUC_MATRIZ, 403, 'El inventario consolidado solo está disponible en Altamira UIO.');
     }
 
     private function consulta(Request $request)
@@ -65,8 +65,30 @@ class ConsolidadoController extends Controller
             ->get(['producto_id', 'bodega_id', 'stock_actual'])
             ->groupBy('producto_id');
 
+        // Unidades de importaciones que aún no se liquidan y que bodega todavía no recibió: están en camino y se muestran en
+        // la bodega de importaciones de su empresa (lo recibido ya está en el saldo, no se cuenta dos veces).
+        $bodegaImportacion = $bodegas->where('tipo', 'importacion')->pluck('id', 'empresa_id');
+        $transito = DB::table('compra_detalles as d')
+            ->join('compras as c', 'c.id', '=', 'd.compra_id')
+            ->join('importaciones as i', 'i.id', '=', 'c.importacion_id')
+            ->leftJoin('recepcion_detalles as rd', 'rd.compra_detalle_id', '=', 'd.id')
+            ->whereIn('d.producto_id', $filas->pluck('id'))
+            ->where('i.estado', '!=', 'liquidada')->where('c.estado', '!=', 'anulada')
+            ->groupBy('d.id', 'd.producto_id', 'd.cantidad', 'c.empresa_id')
+            ->selectRaw('d.producto_id, c.empresa_id, GREATEST(d.cantidad - COALESCE(SUM(rd.cantidad_recibida), 0), 0) as pendiente')
+            ->get()
+            ->groupBy('producto_id');
+
         foreach ($filas as $f) {
-            $porBodega = $saldos->get($f->id, collect())->pluck('stock_actual', 'bodega_id');
+            $porBodega = $saldos->get($f->id, collect())->pluck('stock_actual', 'bodega_id')->map(fn ($v) => (float) $v)->all();
+            $f->transito = [];
+            foreach ($transito->get($f->id, collect()) as $t) {
+                $bid = $bodegaImportacion[$t->empresa_id] ?? null;
+                if ($bid && (float) $t->pendiente > 0) {
+                    $porBodega[$bid] = ($porBodega[$bid] ?? 0) + (float) $t->pendiente;
+                    $f->transito[$bid] = ($f->transito[$bid] ?? 0) + (float) $t->pendiente;
+                }
+            }
             $f->stock = [];
             $f->total_empresa = [];
             $f->total = 0.0;

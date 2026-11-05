@@ -79,8 +79,10 @@ class OrdenTrabajoController extends Controller
         $turnos = $colaIds->flip()->map(fn ($i) => $i + 1);
 
         $ordenes = $query->paginate(15)->withQueryString();
+        // 'turno' es el número asignado por orden de llegada (queda en la orden); 'posicion_cola' es el lugar
+        // actual en la fila de las que siguen pendientes.
         $ordenes->through(function (TallerOrdenTrabajo $o) use ($turnos) {
-            $o->setAttribute('turno', $turnos->get($o->id));
+            $o->setAttribute('posicion_cola', $turnos->get($o->id));
             return $o;
         });
 
@@ -103,7 +105,7 @@ class OrdenTrabajoController extends Controller
         ]);
     }
 
-    public function show(TallerOrdenTrabajo $orden): Response
+    public function show(Request $request, TallerOrdenTrabajo $orden): Response
     {
         abort_if((int) $orden->empresa_id !== (int) session('empresa_activa_id'), 403);
 
@@ -115,36 +117,86 @@ class OrdenTrabajoController extends Controller
             'orden'     => $orden,
             'tecnicos'  => $this->listaTecnicos(),
             'productos' => $this->productosConStockTaller(),
+            // Tras guardar un ingreso se abre el documento para imprimirlo (02-10 §2.3)
+            'imprimir'  => $request->boolean('imprimir'),
         ]);
     }
 
+    /** Nombre de la categoría de la que salen los repuestos (PC-CAT-16). */
+    public const CATEGORIA_REPUESTOS = 'Repuestos e Insumos de Taller';
+
+    /** ¿El producto pertenece a la categoría de repuestos de taller (o a una de sus subcategorías)? */
+    public static function esRepuestoDeTaller(Producto $producto): bool
+    {
+        $raiz = DB::table('categorias_producto')->where('nombre', self::CATEGORIA_REPUESTOS)->value('id');
+        if (!$raiz || !$producto->categoria_id) {
+            return false;
+        }
+        $ids = [(int) $raiz];
+        $hijos = DB::table('categorias_producto')->where('categoria_padre_id', $raiz)->pluck('id')->all();
+
+        return in_array((int) $producto->categoria_id, array_merge($ids, array_map('intval', $hijos)), true);
+    }
+
     /**
-     * Solo productos con stock físico (stock_actual > 0) en Bodega Taller —
-     * el buscador de repuestos no debe ofrecer productos sin existencias ahí.
-     * Si la bodega no está configurada, no se rompe la vista de la orden:
-     * el buscador simplemente queda sin opciones.
+     * Buscador de repuestos (02-10 §2.6): los productos de la categoría «Repuestos e Insumos de Taller» con
+     * su stock en la bodega de Taller. Se listan también los que están en cero (se ve el stock) y el
+     * formulario bloquea cuando la cantidad pedida supera lo disponible.
+     * Si la bodega no está configurada, no se rompe la vista de la orden: el buscador queda sin opciones.
      */
     private function productosConStockTaller(): Collection
     {
-        $query = Producto::where('estado', true)
-            ->select('id', 'codigo', 'nombre', 'costo', 'pvp')
-            ->orderBy('nombre');
-
         try {
             $bodegaTallerId = $this->bodegaTallerId();
         } catch (\RuntimeException) {
             return new Collection();
         }
 
-        $query->whereExists(function ($sub) use ($bodegaTallerId) {
-            $sub->select(DB::raw(1))
-                ->from('inventario_saldos')
-                ->whereColumn('inventario_saldos.producto_id', 'productos.id')
-                ->where('inventario_saldos.bodega_id', $bodegaTallerId)
-                ->where('inventario_saldos.stock_actual', '>', 0);
-        });
+        $raiz = DB::table('categorias_producto')->where('nombre', self::CATEGORIA_REPUESTOS)->value('id');
+        if (!$raiz) {
+            return new Collection();
+        }
+        $categorias = array_merge([(int) $raiz], DB::table('categorias_producto')->where('categoria_padre_id', $raiz)->pluck('id')->map(fn ($i) => (int) $i)->all());
 
-        return $query->get();
+        return Producto::where('productos.estado', true)
+            ->whereIn('productos.categoria_id', $categorias)
+            ->leftJoin('inventario_saldos as s', function ($j) use ($bodegaTallerId) {
+                $j->on('s.producto_id', '=', 'productos.id')->where('s.bodega_id', '=', $bodegaTallerId);
+            })
+            ->select('productos.id', 'productos.codigo', 'productos.nombre', 'productos.costo', 'productos.pvp',
+                DB::raw('COALESCE(s.stock_actual, 0) - COALESCE(s.cantidad_reservada, 0) as stock'))
+            ->orderBy('productos.nombre')
+            ->get();
+    }
+
+    /** Costo de garantías por producto (02-10 §2.8): repuestos usados en órdenes cerradas como garantía. */
+    public function garantias(Request $request): Response
+    {
+        $empresaId = session('empresa_activa_id');
+
+        $filas = DB::table('taller_ot_repuestos as r')
+            ->join('taller_ordenes_trabajo as o', 'o.id', '=', 'r.orden_id')
+            ->join('productos as p', 'p.id', '=', 'r.producto_id')
+            // Costo real de la salida (kárdex, costo promedio al momento de la salida)
+            ->leftJoin('inventario_movimientos as m', function ($j) {
+                $j->on('m.doc_id', '=', 'r.id')->where('m.doc_tipo', '=', 'TALLER_OT')->where('m.tipo', '=', 'salida');
+            })
+            ->where('o.empresa_id', $empresaId)
+            ->where('o.es_garantia', true)
+            ->whereNotNull('o.garantia_cerrada_at')
+            ->where('r.estado', 'usado')
+            ->when($request->filled('desde'), fn ($q) => $q->whereDate('o.fecha_fin_real', '>=', $request->desde))
+            ->when($request->filled('hasta'), fn ($q) => $q->whereDate('o.fecha_fin_real', '<=', $request->hasta))
+            ->groupBy('p.id', 'p.codigo', 'p.nombre')
+            ->selectRaw('p.id, p.codigo, p.nombre, SUM(r.cantidad) as unidades, COUNT(DISTINCT o.id) as ordenes, COALESCE(SUM(m.costo_total), SUM(r.cantidad * r.costo_unitario)) as costo')
+            ->orderByDesc('costo')
+            ->get();
+
+        return Inertia::render('Taller/Garantias/Index', [
+            'filas'   => $filas,
+            'total'   => round((float) $filas->sum('costo'), 2),
+            'filtros' => $request->only(['desde', 'hasta']),
+        ]);
     }
 
     public function cambiarEstado(Request $request, TallerOrdenTrabajo $orden): RedirectResponse

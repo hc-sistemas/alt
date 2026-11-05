@@ -1,3 +1,4 @@
+import { advertenciaSaldo, confirmarSaldoNegativo } from '@/lib/saldoNegativo'
 import { useState, useEffect } from 'react'
 import { router, usePage, Head } from '@inertiajs/react'
 import { toast, ToastContainer } from 'react-toastify'
@@ -86,17 +87,18 @@ function ModalNuevo({ proveedores, importaciones, bancos, onClose }: {
 
     const bancoBanco = bancos.find(b => b.id.toString() === form.banco_id)
 
-    function submit(e: React.FormEvent) {
-        e.preventDefault()
+    function enviar(confirmado: boolean) {
         setProcessing(true)
-        router.post(route('compras.anticipos.store'), form, {
+        router.post(route('compras.anticipos.store'), { ...form, confirmar_saldo_negativo: confirmado }, {
             // El candado de tipo de proveedor (y otros rechazos de negocio,
             // ej. saldo insuficiente) usan back()->with('error', ...), que
             // Inertia trata como un redirect exitoso (onSuccess), no como
             // error de validación (onError) — mismo patrón ya corregido en
             // Devoluciones de Compra: hay que revisar flash.error dentro
             // de onSuccess en vez de asumir éxito.
-            onSuccess: (page) => {
+            onSuccess: async (page) => {
+                const adv = advertenciaSaldo(page)
+                if (adv) { if (await confirmarSaldoNegativo(adv)) enviar(true); return }
                 const flash = (page.props as { flash?: { error?: string } }).flash
                 if (flash?.error) {
                     notify.error(flash.error)
@@ -108,6 +110,11 @@ function ModalNuevo({ proveedores, importaciones, bancos, onClose }: {
             onError:   (errs) => { notify.error(Object.values(errs).flat().join(' | ')); setProcessing(false) },
             onFinish:  () => setProcessing(false),
         })
+    }
+
+    function submit(e: React.FormEvent) {
+        e.preventDefault()
+        enviar(false)
     }
 
     return (

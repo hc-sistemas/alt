@@ -44,7 +44,7 @@ class EmpresaSeeder extends Seeder
 
         CentroCosto::firstOrCreate(
             ['codigo' => 'MATRIZ'],
-            ['empresa_id' => $matriz->id, 'nombre' => 'Altamira Matriz', 'tipo' => 'empresa', 'estado' => true]
+            ['empresa_id' => $matriz->id, 'nombre' => 'Altamira UIO', 'tipo' => 'empresa', 'estado' => true]
         );
 
         CentroCosto::firstOrCreate(
@@ -54,7 +54,7 @@ class EmpresaSeeder extends Seeder
 
         CentroCosto::firstOrCreate(
             ['codigo' => 'FIX'],
-            ['empresa_id' => $matriz->id, 'nombre' => 'Altamira Fix', 'tipo' => 'centro_costo_interno', 'es_taller' => true, 'estado' => true]
+            ['empresa_id' => $matriz->id, 'nombre' => 'Altamira FIX', 'tipo' => 'centro_costo_interno', 'es_taller' => true, 'estado' => true]
         );
     }
 }

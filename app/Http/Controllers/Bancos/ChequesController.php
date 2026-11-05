@@ -51,8 +51,6 @@ class ChequesController extends Controller
                     'numero'        => $c->numero,
                     'banco_nombre'  => $c->bancoCaja?->nombre,
                     'banco_caja_id' => $c->banco_caja_id,
-                    'banco'         => $c->banco,
-                    'cuenta'        => $c->cuenta,
                     'monto'         => $c->monto,
                     'fecha_emision' => $c->fecha_emision?->format('d/m/Y'),
                     'fecha_cobro'   => $c->fecha_cobro?->format('d/m/Y'),
@@ -60,6 +58,7 @@ class ChequesController extends Controller
                     'estado'        => $c->estado,
                     'observacion'   => $c->observacion,
                     'movimiento_id' => $c->movimiento_id,
+                    'postfechado'   => $c->estado === 'emitido' && $c->fecha_cobro && $c->fecha_cobro->gt($c->fecha_emision),
                 ]);
         }
 
@@ -104,16 +103,14 @@ class ChequesController extends Controller
         $empresaId = session('empresa_activa_id');
 
         $request->validate([
-            'banco_caja_id'           => 'required|exists:bancos_cajas,id',
+            'banco_caja_id'           => 'required|exists_empresa:bancos_cajas',
             'numero'                  => 'required|string|max:20',
-            'monto'                   => 'required|numeric|min:0.01',
+            'monto'                   => 'required|numeric|decimal:0,2|min:0.01',
             'fecha_emision'           => 'required|date',
             'beneficiario'            => 'required_without:cuenta_pagar_id|nullable|string|max:200',
-            'banco'                   => 'nullable|string|max:100',
-            'cuenta'                  => 'nullable|string|max:30',
             'fecha_cobro'             => 'nullable|date|after_or_equal:fecha_emision',
             'observacion'             => 'nullable|string|max:300',
-            'cuenta_pagar_id'         => 'nullable|exists:cuentas_pagar,id',
+            'cuenta_pagar_id'         => 'nullable|exists_empresa:cuentas_pagar',
             'cuenta_contrapartida_id' => 'required_without:cuenta_pagar_id|nullable|exists:plan_cuentas,id',
         ], [
             'numero.required'                  => 'El número de cheque es obligatorio.',
@@ -151,26 +148,23 @@ class ChequesController extends Controller
 
         // La contabilidad debe estar lista antes de emitir el cheque
         try {
-            $codigos = $cxp
-                ? ['cta_proveedores_locales', 'cta_bancos_locales']
-                : ($banco->cuenta_id ? [] : ['cta_bancos_locales']);
-            $this->asientoService->validarConfiguracion((int) $empresaId, $codigos, $request->fecha_emision);
+            $this->asientoService->validarConfiguracion((int) $empresaId, $cxp ? ['cta_proveedores_locales'] : [], $request->fecha_emision);
+            $this->asientoService->cuentaBancoElegida($banco->cuenta_id ? (int) $banco->cuenta_id : null, "emitir el cheque desde «{$banco->nombre}» (sin cuenta contable asignada)");
         } catch (\DomainException $e) {
             return back()->with('error', $e->getMessage())->withInput();
         }
 
         $beneficiario = $request->beneficiario ?: ($cxp?->proveedor?->razon_social ?? '');
+        // Post fechado: la fecha de cobro es posterior a la de emisión (02-06 §2.5)
+        $postfechado = $request->filled('fecha_cobro') && $request->fecha_cobro > $request->fecha_emision;
+
+        if ($advertencia = \App\Support\SaldoBancario::advertir($banco, (float) $request->monto, $request)) {
+            return $advertencia->withInput();
+        }
 
         try {
-            DB::transaction(function () use ($request, $empresaId, $banco, $cxp, $beneficiario) {
+            DB::transaction(function () use ($request, $empresaId, $banco, $cxp, $beneficiario, $postfechado) {
                 $monto = (float) $request->monto;
-
-                if ((float) $banco->saldo_actual < $monto) {
-                    throw new \Exception(
-                        "Saldo insuficiente en {$banco->nombre}. " .
-                        'Disponible: $' . number_format((float) $banco->saldo_actual, 2)
-                    );
-                }
 
                 // Movimiento bancario de egreso
                 $movimiento = MovimientoBancario::create([
@@ -191,6 +185,7 @@ class ChequesController extends Controller
                     'documento_id'    => $cxp?->id,
                     'centro_costo_id' => $cxp?->compra?->centro_costo_id,
                     'cuenta_contrapartida_id' => $cxp ? null : $request->cuenta_contrapartida_id,
+                    'es_postfechado'  => $postfechado,
                     'anulado'         => false,
                     'conciliado'      => false,
                     'created_by'      => Auth::id(),
@@ -203,8 +198,6 @@ class ChequesController extends Controller
                     'banco_caja_id' => $banco->id,
                     'movimiento_id' => $movimiento->id,
                     'numero'        => $request->numero,
-                    'banco'         => $request->banco,
-                    'cuenta'        => $request->cuenta,
                     'monto'         => $monto,
                     'fecha_emision' => $request->fecha_emision,
                     'fecha_cobro'   => $request->fecha_cobro,
@@ -230,10 +223,10 @@ class ChequesController extends Controller
                         $monto,
                         $cxp->compra?->centro_costo_id,
                         $request->fecha_emision,
+                        (int) $banco->cuenta_id,
                     );
                 } else {
-                    $ctaBanco = $banco->cuenta_id
-                        ?? ParametroContable::getCuentaId('cta_bancos_locales', $empresaId);
+                    $ctaBanco = (int) $banco->cuenta_id;
                     $asiento = $this->asientoService->crear(
                         empresaId:     $empresaId,
                         concepto:      "Cheque N° {$request->numero} — {$beneficiario}",
@@ -268,10 +261,11 @@ class ChequesController extends Controller
     public function cambiarEstado(Request $request, Cheque $cheque): RedirectResponse
     {
         $request->validate([
-            'estado'      => 'required|in:cobrado,protestado,anulado',
+            // «Cobrado» no se marca a mano: ocurre solo al conciliar el cheque con el estado de cuenta (02-06 §2.5)
+            'estado'      => 'required|in:protestado,anulado',
             'fecha_cobro' => 'nullable|date',
-            'observacion' => 'nullable|string|max:300',
-        ]);
+            'observacion' => 'required|string|min:3|max:300',
+        ], ['observacion.required' => 'Escriba el motivo (protesto o anulación).']);
 
         if ($cheque->estado !== 'emitido') {
             return back()->with('error',
@@ -361,7 +355,6 @@ class ChequesController extends Controller
         });
 
         $mensajes = [
-            'cobrado'    => "Cheque N° {$cheque->numero} marcado como cobrado.",
             'protestado' => "Cheque N° {$cheque->numero} protestado. Saldo bancario revertido.",
             'anulado'    => "Cheque N° {$cheque->numero} anulado. Saldo bancario revertido.",
         ];

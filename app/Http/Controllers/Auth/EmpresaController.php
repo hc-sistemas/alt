@@ -18,6 +18,8 @@ class EmpresaController extends Controller
             'empresas' => $user->empresas->map(fn($e) => [
                 'id' => $e->id,
                 'nombre_comercial' => $e->nombre_comercial,
+                'etiqueta' => $e->etiqueta,
+                'nombre_selector' => $e->nombre_selector,
                 'ruc' => $e->ruc,
                 'logo' => $e->logo,
             ]),

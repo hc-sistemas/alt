@@ -219,12 +219,17 @@ function DetalleRow({ detalle, idx, cuentas, onChange, onRemove, onAbrirModal, t
 
             {/* ── Descripción ── */}
             <div className="px-2 py-2">
-                <input
-                    className="w-full px-2 border rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500"
-                    style={inputStyle}
+                {/* Fila expandible: se alarga al enfocar para ver el nombre completo del producto */}
+                <textarea
+                    rows={1}
+                    className="w-full px-2 py-1 border rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 resize-y"
+                    style={{ ...inputStyle, minHeight: 28, overflow: 'hidden' }}
                     value={detalle.descripcion}
                     onChange={e => onChange(idx, 'descripcion', e.target.value)}
+                    onFocus={e => { e.currentTarget.style.overflow = 'auto'; e.currentTarget.style.height = Math.min(e.currentTarget.scrollHeight, 160) + 'px' }}
+                    onBlur={e => { e.currentTarget.style.overflow = 'hidden'; e.currentTarget.style.height = '' }}
                     placeholder="Descripción del bien/servicio"
+                    title={detalle.descripcion || undefined}
                 />
             </div>
 
@@ -471,6 +476,7 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
         [data.detalles, data.gasto_no_deducible]
     )
 
+    const [busquedaProveedor, setBusquedaProveedor] = useState('')
     const proveedorSel = proveedores.find(p => Number(p.id) === Number(data.proveedor_id))
 
     useEffect(() => {
@@ -505,7 +511,7 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
             detalles: prev.detalles.map(d => ({
                 ...d,
                 porcentaje_iva: tipo === 'EXT' ? 0
-                    : (Number(d.porcentaje_iva) === 0 ? 15 : d.porcentaje_iva),
+                    : (Number(d.porcentaje_iva) === 0 ? 15 : ivaVigente(d.porcentaje_iva)),
             })),
         }))
     }
@@ -550,7 +556,7 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
                     codigo:          p.codigo,
                     descripcion:     p.nombre,
                     precio_unitario: String(p.costo),
-                    porcentaje_iva:  prev.tipo_documento === 'EXT' ? 0 : Number(p.porcentaje_iva),
+                    porcentaje_iva:  prev.tipo_documento === 'EXT' ? 0 : ivaVigente(p.porcentaje_iva),
                     unidad:          p.unidad || 'unidad',
                 }
             }),
@@ -592,6 +598,10 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
         setBusquedaProducto('')
         setModalProductos(true)
     }
+
+    // IVA vigente: la ficha de casi todos los productos conserva el 12% anterior, que ya no rige.
+    // Se usa 15% (es el IVA de la compra, no el de la ficha). Los demás valores (0 y 5) se respetan.
+    const ivaVigente = (v: number | string): number => (Number(v) === 12 ? 15 : Number(v))
 
     const seleccionarProducto = (p: ProductoRow) => {
         handleSelectProducto(idxDetalleActivo, p)
@@ -710,6 +720,13 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
                                             </span>
                                         )}
                                     </Label>
+                                    <input
+                                        type="search"
+                                        value={busquedaProveedor}
+                                        onChange={e => setBusquedaProveedor(e.target.value)}
+                                        placeholder="Buscar proveedor por nombre o RUC…"
+                                        className="input-field mb-1.5"
+                                    />
                                     <select value={data.proveedor_id}
                                         onChange={e => setData('proveedor_id', e.target.value)}
                                         className="input-field select-field">
@@ -717,6 +734,8 @@ function NuevaCompraModal({ proveedores, centros, cuentas, bodegas, productos, i
                                         {(data.tipo_documento === 'EXT'
                                             ? proveedores.filter(p => p.tipo === 'internacional')
                                             : proveedores
+                                        ).filter(p => Number(p.id) === Number(data.proveedor_id) || !busquedaProveedor.trim() ||
+                                            `${p.razon_social} ${p.nombre_comercial ?? ''} ${p.identificacion}`.toLowerCase().includes(busquedaProveedor.trim().toLowerCase())
                                         ).map(p => (
                                             <option key={p.id} value={p.id}>
                                                 {p.razon_social} ({p.identificacion})
@@ -1982,7 +2001,8 @@ export default function ComprasIndex() {
         if ((c as any).recepcion_bodega) {
             router.visit(route('inventario.recepciones.show', (c as any).recepcion_bodega.id) + '?redirect_to=' + encodeURIComponent(route('compras.facturas.index')))
         } else {
-            notify.error('Esta compra no tiene una recepción de bodega asociada')
+            // Factura pendiente sin productos (no pasa por bodega): se confirma directo y llega a Cuentas por Pagar
+            router.post(route('compras.facturas.activar', c.id), {}, { preserveScroll: true })
         }
     }
 
@@ -2453,7 +2473,7 @@ export default function ComprasIndex() {
                                         {puede('editar') && (
                                             <button
                                                 onClick={() => confirmarRecepcion(c)}
-                                                title="Confirmar recepción manual"
+                                                title={(c as any).recepcion_bodega ? 'Confirmar recepción manual' : 'Confirmar factura (llega a Cuentas por Pagar)'}
                                                 className="h-7 w-7 flex items-center justify-center rounded hover:bg-green-500/20 text-green-600 dark:text-green-400 transition-colors">
                                                 <CheckCircle className="w-4 h-4" />
                                             </button>

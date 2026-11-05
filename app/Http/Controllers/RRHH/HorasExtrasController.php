@@ -68,6 +68,9 @@ class HorasExtrasController extends Controller
 
     public function aprobar(Request $request, HorasExtrasAprobacion $horaExtra): RedirectResponse
     {
+        // Aislamiento por empresa: la solicitud debe ser de un colaborador de la empresa activa
+        abort_if((int) $horaExtra->colaborador?->empresa_id !== (int) session('empresa_activa_id'), 404);
+
         if ($horaExtra->estado !== 'pendiente') {
             return back()->with('error', 'Esta solicitud ya fue procesada.');
         }
@@ -120,6 +123,9 @@ class HorasExtrasController extends Controller
 
     public function rechazar(Request $request, HorasExtrasAprobacion $horaExtra): RedirectResponse
     {
+        // Aislamiento por empresa: la solicitud debe ser de un colaborador de la empresa activa
+        abort_if((int) $horaExtra->colaborador?->empresa_id !== (int) session('empresa_activa_id'), 404);
+
         if ($horaExtra->estado !== 'pendiente') {
             return back()->with('error', 'Esta solicitud ya fue procesada.');
         }

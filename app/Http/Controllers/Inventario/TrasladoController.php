@@ -109,8 +109,8 @@ class TrasladoController extends Controller
         $empresaId = session('empresa_activa_id');
 
         $data = $request->validate([
-            'bodega_origen_id'             => ['required', 'integer', 'exists:bodegas,id', 'different:bodega_destino_id'],
-            'bodega_destino_id'            => ['required', 'integer', 'exists:bodegas,id'],
+            'bodega_origen_id'             => ['required', 'integer', 'exists_empresa:bodegas', 'different:bodega_destino_id'],
+            'bodega_destino_id'            => ['required', 'integer', 'exists_empresa:bodegas'],
             'detalles'                     => ['required', 'array', 'min:1'],
             'detalles.*.producto_id'       => ['required', 'integer', 'exists:productos,id'],
             'detalles.*.cantidad_enviada'  => ['required', 'integer', 'min:1'],
@@ -202,12 +202,6 @@ class TrasladoController extends Controller
             abort(403);
         }
 
-        $perfilNombre = strtolower(Auth::user()->perfil?->nombre ?? '');
-        $perfilesPermitidos = ['super_admin', 'admin', 'bodeguero'];
-        if (!in_array($perfilNombre, $perfilesPermitidos)) {
-            abort(403, 'No tienes permiso para realizar esta acción.');
-        }
-
         if (!$traslado->isPendiente()) {
             abort(422, 'Traslado no está pendiente.');
         }
@@ -287,12 +281,6 @@ class TrasladoController extends Controller
 
         if ($traslado->empresa_id !== $empresaId) {
             abort(403);
-        }
-
-        $perfilNombre = strtolower(Auth::user()->perfil?->nombre ?? '');
-        $perfilesPermitidos = ['super_admin', 'admin', 'bodeguero'];
-        if (!in_array($perfilNombre, $perfilesPermitidos)) {
-            abort(403, 'No tienes permiso para realizar esta acción.');
         }
 
         if (!$traslado->isPendiente()) {

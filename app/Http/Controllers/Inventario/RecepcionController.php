@@ -119,8 +119,8 @@ class RecepcionController extends Controller
         $empresaId = session('empresa_activa_id');
 
         $request->validate([
-            'compra_id'                    => 'required|integer|exists:compras,id',
-            'bodega_id'                    => 'required|integer|exists:bodegas,id',
+            'compra_id'                    => 'required|integer|exists_empresa:compras',
+            'bodega_id'                    => 'required|integer|exists_empresa:bodegas',
             'detalles'                     => 'required|array|min:1',
             'detalles.*.compra_detalle_id' => 'required|integer|exists:compra_detalles,id',
             'detalles.*.producto_id'       => 'required|integer|exists:productos,id',
@@ -302,6 +302,9 @@ class RecepcionController extends Controller
                     \App\Services\AsientoService::codigosCompra($tipoAsiento, (float) $compraRec->retencion_ir > 0, (float) $compraRec->retencion_iva > 0),
                     $compraRec->fecha_emision?->toDateString(),
                 );
+                if (!$compraRec->gasto_no_deducible) {
+                    $this->asientoService->cuentasProductos($compraRec->detalles->pluck('producto_id')->all(), (int) $empresaId);
+                }
             } catch (\DomainException $e) {
                 return back()->with('error', $e->getMessage());
             }
@@ -380,7 +383,7 @@ class RecepcionController extends Controller
                     }
 
                     // CxP solo si no existe ya para esta compra
-                    if ($compra->dias_credito > 0 && !$compra->cuentaPagar()->exists()) {
+                    if (!$compra->cuentaPagar()->exists()) {
                         CuentaPagar::create([
                             'empresa_id'        => $empresaId,
                             'proveedor_id'      => $compra->proveedor_id,
@@ -403,6 +406,7 @@ class RecepcionController extends Controller
                             iva:        $compra->total_iva,
                             tipo:       $compra->gasto_no_deducible ? 'gasto' : 'inventario',
                             fecha:      $compra->fecha_emision?->toDateString(),
+                            lineas:     $compra->detalles->map(fn ($d) => ['producto_id' => $d->producto_id, 'cuenta_id' => $d->cuenta_id, 'subtotal' => (float) $d->subtotal])->all(),
                         );
                         $compra->update(['asiento_id' => $asiento->id, 'asiento_error' => null]);
                     } catch (\Throwable $e) {

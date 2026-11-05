@@ -10,6 +10,7 @@ import { Plus, Pencil, Trash2, X, Save, Search, FileText, FileSpreadsheet } from
 import type { Transportista, PageProps } from '@/types'
 import { confirmarEliminar } from '@/lib/swal'
 import { toastExito, toastError } from '@/lib/toast'
+import { usePermiso } from '@/Hooks/usePermiso'
 
 interface Props extends PageProps {
     transportistas: Transportista[]
@@ -27,6 +28,7 @@ const emptyForm = {
 
 export default function TransportistasIndex() {
     const { transportistas } = usePage<Props>().props
+    const { puede } = usePermiso('ventas')
     const [search, setSearch] = useState('')
     const [pdfModal, setPdfModal] = useState(false)
 
@@ -119,12 +121,12 @@ export default function TransportistasIndex() {
                 title="Transportistas"
                 description="Empresas y personas que transportan mercadería"
                 breadcrumbs={[{ label: 'Personas' }, { label: 'Transportistas' }]}
-                actions={
+                actions={puede('crear') ? (
                     <Button onClick={abrirCrear}>
                         <Plus className="w-4 h-4" />
                         Nuevo
                     </Button>
-                }
+                ) : undefined}
             />
 
             <div className="p-6">
@@ -195,10 +197,12 @@ export default function TransportistasIndex() {
                                             ) : (
                                                 <>
                                                     <p className="text-sm">No hay transportistas registrados.</p>
-                                                    <button onClick={abrirCrear}
-                                                        className="text-amber-500 hover:underline text-sm mt-1 inline-block">
-                                                        Agregar el primero
-                                                    </button>
+                                                    {puede('crear') && (
+                                                        <button onClick={abrirCrear}
+                                                            className="text-amber-500 hover:underline text-sm mt-1 inline-block">
+                                                            Agregar el primero
+                                                        </button>
+                                                    )}
                                                 </>
                                             )}
                                         </td>
@@ -238,13 +242,17 @@ export default function TransportistasIndex() {
                                         </td>
                                         <td className="px-4 py-3">
                                             <div className="flex items-center justify-end gap-1">
-                                                <Button variant="ghost" size="icon" title="Editar" onClick={() => abrirEditar(t)}>
-                                                    <Pencil className="w-4 h-4" />
-                                                </Button>
-                                                <Button variant="ghost" size="icon" title="Eliminar"
-                                                    onClick={() => eliminar(t)}>
-                                                    <Trash2 className="w-4 h-4 text-red-400" />
-                                                </Button>
+                                                {puede('editar') && (
+                                                    <Button variant="ghost" size="icon" title="Editar" onClick={() => abrirEditar(t)}>
+                                                        <Pencil className="w-4 h-4" />
+                                                    </Button>
+                                                )}
+                                                {puede('eliminar') && (
+                                                    <Button variant="ghost" size="icon" title="Eliminar"
+                                                        onClick={() => eliminar(t)}>
+                                                        <Trash2 className="w-4 h-4 text-red-400" />
+                                                    </Button>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>

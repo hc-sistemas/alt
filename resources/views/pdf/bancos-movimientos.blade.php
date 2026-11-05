@@ -97,7 +97,8 @@
             <th style="width:18%">Banco/Caja</th>
             <th style="width:27%">Descripción</th>
             <th style="width:16%">Beneficiario</th>
-            <th style="width:10%">Forma</th>
+            <th style="width:8%">Forma</th>
+            <th style="width:10%">Origen</th>
             <th class="right" style="width:10%">Monto</th>
             <th style="width:10%">Estado</th>
         </tr>
@@ -105,6 +106,9 @@
     <tbody>
         @php
             $subTipoLabel = ['transferencia' => 'Transferencia', 'cheque' => 'Cheque', 'efectivo' => 'Efectivo', 'deposito' => 'Depósito'];
+            $origenLabel = ['FACTURA_VENTA' => 'Factura de venta', 'ANULACION_FACTURA' => 'Anulación factura', 'COBRO_CXC' => 'Cobro CxC',
+                            'CXP' => 'Pago proveedor', 'NOMINA' => 'Nómina', 'DATAFAST' => 'Tarjetas', 'TRANSFERENCIA' => 'Transferencia entre cuentas',
+                            'CONCILIACION' => 'Conciliación', 'AJUSTE_CRUCE' => 'Ajuste de cruce'];
         @endphp
         @foreach($movimientos as $m)
         <tr @class(['fila-anulada' => $m->anulado])>
@@ -115,6 +119,7 @@
                 {{ \Illuminate\Support\Str::limit($m->beneficiario ?? '—', 22) }}
             </td>
             <td style="font-size:8px">{{ $subTipoLabel[$m->sub_tipo] ?? ($m->sub_tipo ?? '—') }}</td>
+            <td style="font-size:8px">{{ $origenLabel[$m->documento_tipo] ?? ($m->documento_tipo ?? 'Manual') }}</td>
             <td class="right" style="font-weight:bold;color:{{ $m->tipo === 'ingreso' ? '#15803D' : '#B91C1C' }}">
                 {{ $m->tipo === 'egreso' ? '-' : '+' }}${{ number_format($m->monto, 2) }}
             </td>
@@ -130,7 +135,7 @@
         </tr>
         @endforeach
         <tr class="fila-total">
-            <td colspan="5">TOTALES (ingresos / egresos, sin anulados)</td>
+            <td colspan="6">TOTALES (ingresos / egresos, sin anulados)</td>
             <td class="right">
                 ${{ number_format($totalIngresos, 2) }} /
                 ${{ number_format($totalEgresos, 2) }}

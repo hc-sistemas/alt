@@ -1,3 +1,4 @@
+import { advertenciaSaldo, confirmarSaldoNegativo } from '@/lib/saldoNegativo'
 import { useState, useEffect } from 'react'
 import { router, usePage, useForm, Head } from '@inertiajs/react'
 import { toast, ToastContainer } from 'react-toastify'
@@ -20,8 +21,6 @@ interface Cheque {
     numero: string
     banco_nombre: string | null
     banco_caja_id: number
-    banco: string | null
-    cuenta: string | null
     monto: number
     fecha_emision: string | null
     fecha_cobro: string | null
@@ -29,6 +28,7 @@ interface Cheque {
     estado: 'emitido' | 'cobrado' | 'protestado' | 'anulado'
     observacion: string | null
     movimiento_id: number | null
+    postfechado?: boolean
 }
 
 interface CxPOpt { id: number; proveedor: string | null; num_documento: string | null; saldo: number; fecha_vencimiento: string | null }
@@ -79,10 +79,10 @@ function NuevoModal({ bancos, cuentasPagar, cuentas, onClose }: {
     onClose: () => void
 }) {
     const [modo, setModo] = useState<'cxp' | 'otro'>('cxp')
-    const { data, setData, post, processing, errors } = useForm({
+    const { data, setData, post, processing, errors, transform } = useForm({
         banco_caja_id: '', numero: '', beneficiario: '', monto: '',
         fecha_emision: new Date().toISOString().split('T')[0],
-        banco: '', cuenta: '', fecha_cobro: '', observacion: '',
+        fecha_cobro: '', observacion: '',
         cuenta_pagar_id: '', cuenta_contrapartida_id: '',
     })
 
@@ -101,12 +101,21 @@ function NuevoModal({ bancos, cuentasPagar, cuentas, onClose }: {
         }))
     }
 
-    function submit(e: React.FormEvent) {
-        e.preventDefault()
+    function enviar(confirmado: boolean) {
+        transform(d => ({ ...d, confirmar_saldo_negativo: confirmado }))
         post(route('bancos.cheques.store'), {
-            onSuccess: () => { onClose(); notify.success('Cheque registrado') },
+            onSuccess: async (page) => {
+                const adv = advertenciaSaldo(page)
+                if (adv) { if (await confirmarSaldoNegativo(adv)) enviar(true); return }
+                onClose(); notify.success('Cheque registrado')
+            },
             onError: () => notify.error('Revisa los campos'),
         })
+    }
+
+    function submit(e: React.FormEvent) {
+        e.preventDefault()
+        enviar(false)
     }
 
     return (
@@ -250,24 +259,6 @@ function NuevoModal({ bancos, cuentasPagar, cuentas, onClose }: {
                                 className="input-field mt-1" />
                         </div>
 
-                        {/* Banco emisor */}
-                        <div>
-                            <label className="input-label">Banco emisor</label>
-                            <input type="text" value={data.banco}
-                                onChange={e => setData('banco', e.target.value)}
-                                placeholder="Ej: Banco Pichincha"
-                                className="input-field mt-1" />
-                        </div>
-
-                        {/* N° Cuenta */}
-                        <div>
-                            <label className="input-label">N° Cuenta</label>
-                            <input type="text" value={data.cuenta}
-                                onChange={e => setData('cuenta', e.target.value)}
-                                placeholder="Ej: 2201234567"
-                                className="input-field mt-1" />
-                        </div>
-
                         {/* Observación */}
                         <div className="col-span-2">
                             <label className="input-label">Observación</label>
@@ -296,28 +287,25 @@ function NuevoModal({ bancos, cuentasPagar, cuentas, onClose }: {
 
 function CambioEstadoModal({ cheque, estadoNuevo, onClose }: {
     cheque: Cheque
-    estadoNuevo: 'cobrado' | 'protestado'
+    estadoNuevo: 'protestado' | 'anulado'
     onClose: () => void
 }) {
-    const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0])
     const [obs, setObs] = useState('')
     const [processing, setProcessing] = useState(false)
+    const etiqueta = estadoNuevo === 'anulado' ? 'Anular cheque' : 'Marcar protestado'
 
     function confirmarCambioEstado() {
-        if (estadoNuevo === 'protestado' && !obs.trim()) {
-            notify.error('El motivo de protesta es obligatorio')
+        if (!obs.trim()) {
+            notify.error(estadoNuevo === 'anulado' ? 'El motivo de la anulación es obligatorio' : 'El motivo de protesta es obligatorio')
             return
         }
         setProcessing(true)
         router.patch(route('bancos.cheques.estado', cheque.id), {
             estado: estadoNuevo,
-            ...(estadoNuevo === 'cobrado' ? { fecha_cobro: fecha } : {}),
             observacion: obs,
         }, {
             onSuccess: () => {
-                estadoNuevo === 'cobrado'
-                    ? notify.success(`Cheque N° ${cheque.numero} cobrado`)
-                    : notify.warning(`Cheque N° ${cheque.numero} protestado`)
+                notify.warning(`Cheque N° ${cheque.numero} ${estadoNuevo === 'anulado' ? 'anulado' : 'protestado'}`)
                 onClose()
             },
             onError: () => { notify.error('Error al actualizar'); setProcessing(false) },
@@ -331,66 +319,49 @@ function CambioEstadoModal({ cheque, estadoNuevo, onClose }: {
 
                 <div className="modal-header">
                     <h2 className="flex items-center gap-2">
-                        {estadoNuevo === 'cobrado'
-                            ? <><CheckCircle className="w-5 h-5 text-green-500" /> Confirmar cobro</>
-                            : <><XCircle className="w-5 h-5 text-red-500" /> Marcar protestado</>
-                        }
+                        <XCircle className="w-5 h-5 text-red-500" /> {etiqueta}
                     </h2>
                     <button className="modal-close" onClick={onClose}><X className="w-4 h-4" /></button>
                 </div>
 
                 {/* Resumen cheque */}
                 <div className="mx-6 mt-4 rounded-lg p-3 space-y-1.5"
-                    style={{
-                        background: estadoNuevo === 'cobrado' ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)',
-                        border: `1px solid ${estadoNuevo === 'cobrado' ? 'rgba(16,185,129,0.25)' : 'rgba(239,68,68,0.25)'}`,
-                    }}>
+                    style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)' }}>
+                    <div className="flex justify-between text-sm">
+                        <span style={{ color: 'var(--text-muted)' }}>Cheque N°</span>
+                        <span className="font-semibold" style={{ color: 'var(--text-main)' }}>{cheque.numero}</span>
+                    </div>
                     <div className="flex justify-between text-sm">
                         <span style={{ color: 'var(--text-muted)' }}>Beneficiario</span>
                         <span className="font-semibold" style={{ color: 'var(--text-main)' }}>{cheque.beneficiario}</span>
                     </div>
                     <div className="flex justify-between text-sm font-bold border-t pt-1.5"
-                        style={{
-                            borderColor: estadoNuevo === 'cobrado' ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)',
-                            color: estadoNuevo === 'cobrado' ? '#059669' : '#dc2626',
-                        }}>
+                        style={{ borderColor: 'rgba(239,68,68,0.3)', color: '#dc2626' }}>
                         <span>Monto</span>
                         <span>{fmt(cheque.monto)}</span>
                     </div>
                 </div>
 
                 <div className="modal-body">
-                    {estadoNuevo === 'cobrado' && (
-                        <div className="space-y-1.5">
-                            <label className="input-label">Fecha de cobro <span className="text-red-400">*</span></label>
-                            <input type="date" value={fecha} onChange={e => setFecha(e.target.value)}
-                                className="input-field" />
-                        </div>
-                    )}
+                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                        Se genera el reverso del asiento y del movimiento, el saldo vuelve al banco y, si pagaba una cuenta por pagar, la deuda se restituye.
+                        El número del cheque queda registrado como {estadoNuevo === 'anulado' ? 'anulado' : 'protestado'} y no se puede reutilizar.
+                    </p>
                     <div className="space-y-1.5">
                         <label className="input-label">
-                            {estadoNuevo === 'cobrado' ? 'Observación' : 'Motivo de protesta'}
-                            {estadoNuevo === 'protestado' && <span className="text-red-400"> *</span>}
+                            {estadoNuevo === 'anulado' ? 'Motivo de la anulación' : 'Motivo de protesta'}
+                            <span className="text-red-400"> *</span>
                         </label>
-                        <textarea value={obs} onChange={e => setObs(e.target.value)}
-                            rows={estadoNuevo === 'protestado' ? 3 : 2}
-                            className="input-field textarea-field"
-                            placeholder={estadoNuevo === 'cobrado' ? 'Opcional...' : 'Describe el motivo del protesto...'} />
+                        <textarea value={obs} onChange={e => setObs(e.target.value)} rows={3}
+                            className="input-field textarea-field" placeholder="Describe el motivo..." />
                     </div>
                 </div>
 
                 <div className="modal-footer" style={{ justifyContent: 'space-between' }}>
                     <button onClick={confirmarCambioEstado} disabled={processing}
                         className="btn-primary flex items-center gap-2"
-                        style={{
-                            background: estadoNuevo === 'cobrado' ? '#059669' : '#dc2626',
-                            color: '#fff',
-                            boxShadow: 'none',
-                        }}>
-                        {estadoNuevo === 'cobrado'
-                            ? <><CheckCircle size={15} /> Confirmar cobro</>
-                            : <><XCircle size={15} /> Marcar protestado</>
-                        }
+                        style={{ background: '#dc2626', color: '#fff', boxShadow: 'none' }}>
+                        <XCircle size={15} /> {etiqueta}
                     </button>
                     <button onClick={onClose} className="btn-secondary">Cancelar</button>
                 </div>
@@ -406,7 +377,7 @@ export default function ChequesIndex() {
     const { puede } = usePermiso('bancos')
 
     const [showModal, setShowModal] = useState(false)
-    const [estadoModal, setEstadoModal] = useState<{ cheque: Cheque; estado: 'cobrado' | 'protestado' } | null>(null)
+    const [estadoModal, setEstadoModal] = useState<{ cheque: Cheque; estado: 'protestado' | 'anulado' } | null>(null)
 
     const [filtro, setFiltro] = useState(filtros)
 
@@ -438,7 +409,7 @@ export default function ChequesIndex() {
         })
     }
 
-    function abrirCambioEstado(cheque: Cheque, nuevoEstado: 'cobrado' | 'protestado') {
+    function abrirCambioEstado(cheque: Cheque, nuevoEstado: 'protestado' | 'anulado') {
         setEstadoModal({ cheque, estado: nuevoEstado })
     }
 
@@ -556,11 +527,6 @@ export default function ChequesIndex() {
                                     <p className="text-xs font-medium" style={{ color: 'var(--text-main)' }}>
                                         {cheque.banco_nombre ?? '—'}
                                     </p>
-                                    {cheque.banco && (
-                                        <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                                            {cheque.banco}
-                                        </p>
-                                    )}
                                 </div>
                                 <div>
                                     <p className="text-xs" style={{ color: 'var(--text-main)' }}>
@@ -585,19 +551,13 @@ export default function ChequesIndex() {
                                 </div>
                                 <div>
                                     <EstadoBadge estado={cheque.estado} />
+                                    {cheque.postfechado && (
+                                        <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300">Post fechado</span>
+                                    )}
                                 </div>
                                 <div className="flex items-center gap-1">
                                     {cheque.estado === 'emitido' && puede('editar') && (
                                         <>
-                                            <button
-                                                onClick={() => abrirCambioEstado(cheque, 'cobrado')}
-                                                title="Marcar como cobrado"
-                                                className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold transition-colors"
-                                                style={{ background: '#D1FAE5', color: '#065F46' }}
-                                                onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.background = '#A7F3D0'}
-                                                onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.background = '#D1FAE5'}>
-                                                <CheckCircle className="w-3 h-3" /> Cobrar
-                                            </button>
                                             <button
                                                 onClick={() => abrirCambioEstado(cheque, 'protestado')}
                                                 title="Marcar como protestado"
@@ -606,6 +566,13 @@ export default function ChequesIndex() {
                                                 onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.background = '#FECACA'}
                                                 onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.background = '#FEE2E2'}>
                                                 <XCircle className="w-3 h-3" /> Protestar
+                                            </button>
+                                            <button
+                                                onClick={() => abrirCambioEstado(cheque, 'anulado')}
+                                                title="Anular cheque (genera reverso)"
+                                                className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold transition-colors"
+                                                style={{ background: '#E5E7EB', color: '#374151' }}>
+                                                <XCircle className="w-3 h-3" /> Anular
                                             </button>
                                         </>
                                     )}

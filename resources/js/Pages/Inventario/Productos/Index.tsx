@@ -10,11 +10,14 @@ import { toastExito, toastError } from '@/lib/toast'
 import { usePermiso } from '@/Hooks/usePermiso'
 import type { Producto, PaginatedData, PageProps } from '@/types'
 
+/** El servidor agrega la categoría y subcategoría ya separadas y si el producto tiene cuentas contables (PC-CAT). */
+type ProductoLista = Producto & { categoria_nombre?: string | null; subcategoria_nombre?: string | null; clasificado?: boolean }
+
 interface Props extends PageProps {
     productos: PaginatedData<Producto> | null
     filters: { search?: string; marca_id?: string; categoria_id?: string; tipo?: string; estado?: string }
-    marcas: { id: number; nombre: string }[]
     categorias: { id: number; nombre: string; categoria_padre_id: number | null }[]
+    pendientes_total: number
 }
 
 const TIPO_COLORES: Record<string, string> = {
@@ -27,21 +30,21 @@ const TIPO_COLORES: Record<string, string> = {
 const TIPO_LABELS: Record<string, string> = { producto: 'Producto', servicio: 'Servicio', repuesto: 'Repuesto', insumo: 'Insumo' }
 
 export default function ProductosIndex() {
-    const { productos, filters, marcas, categorias } = usePage<Props>().props
+    const { productos, filters, categorias, pendientes_total } = usePage<Props>().props
     const { puede } = usePermiso('inventario')
 
     const [search, setSearch]       = useState(filters.search ?? '')
-    const [marcaId, setMarcaId]     = useState(filters.marca_id ?? '')
     const [catId, setCatId]         = useState(filters.categoria_id ?? '')
     const [tipo, setTipo]           = useState(filters.tipo ?? '')
     const [estado, setEstado]       = useState(filters.estado ?? '')
+    // Ver el nombre completo del producto (sin recortar), 02-02 §3.1 / CAM-053
+    const [nombresCompletos, setNombresCompletos] = useState(false)
 
     const haBuscado = productos !== null
 
     function buscar() {
         router.get(route('inventario.productos.index'), {
             search: search || undefined,
-            marca_id: marcaId || undefined,
             categoria_id: catId || undefined,
             tipo: tipo || undefined,
             estado: estado || undefined,
@@ -49,25 +52,14 @@ export default function ProductosIndex() {
         }, { preserveState: false })
     }
 
-    async function exportarExcel() {
-        if (!productos) return
-        const XLSX = await import('xlsx')
-        const filas = productos.data.map(p => ({
-            'Código':          p.codigo,
-            'Nombre':          p.nombre,
-            'Marca comercial': p.marca?.nombre ?? '—',
-            'Marca':           p.marca_fabricante ?? '—',
-            'Categoría':       p.categoria?.nombre ?? '—',
-            'Tipo':       p.tipo,
-            'PVP':        Number(p.pvp),
-            'PVD':        Number(p.pvd),
-            'Costo':      Number(p.costo),
-            'Estado':     p.estado ? 'Activo' : 'Inactivo',
-        }))
-        const ws = XLSX.utils.json_to_sheet(filas)
-        const wb = XLSX.utils.book_new()
-        XLSX.utils.book_append_sheet(wb, ws, 'Productos')
-        XLSX.writeFile(wb, 'productos.xlsx')
+    // El Excel lo arma el servidor con TODO lo que coincide con los filtros, no solo la página que se ve
+    function exportarExcel() {
+        const params = new URLSearchParams()
+        if (search) params.set('search', search)
+        if (catId) params.set('categoria_id', catId)
+        if (tipo) params.set('tipo', tipo)
+        if (estado) params.set('estado', estado)
+        window.location.href = route('inventario.productos.excel') + (params.toString() ? '?' + params.toString() : '')
     }
 
     async function eliminar(producto: Producto) {
@@ -122,20 +114,6 @@ export default function ProductosIndex() {
             <div className="p-6">
                 {/* Barra de filtros */}
                 <div className="flex items-center gap-3 mb-4 flex-nowrap overflow-x-auto">
-                    <select value={marcaId} onChange={e => setMarcaId(e.target.value)}
-                        className="input-field shrink-0"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
-                        <option value="">Todas las marcas</option>
-                        {marcas.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}
-                    </select>
-
-                    <select value={catId} onChange={e => setCatId(e.target.value)}
-                        className="input-field shrink-0"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
-                        <option value="">Todas las categorías</option>
-                        {categorias.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-                    </select>
-
                     <select value={tipo} onChange={e => setTipo(e.target.value)}
                         className="input-field shrink-0"
                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
@@ -146,6 +124,24 @@ export default function ProductosIndex() {
                         <option value="insumo">Insumo</option>
                     </select>
 
+                    <select value={catId} onChange={e => setCatId(e.target.value)}
+                        className="input-field shrink-0"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
+                        <option value="">Todas las categorías</option>
+                        <option value="pendientes">⚠ Sin subcategoría ({pendientes_total})</option>
+                        {categorias.filter(c => !c.categoria_padre_id).map(raiz => {
+                            const hijas = categorias.filter(c => c.categoria_padre_id === raiz.id)
+                            return hijas.length === 0 ? (
+                                <option key={raiz.id} value={raiz.id}>{raiz.nombre}</option>
+                            ) : (
+                                <optgroup key={raiz.id} label={raiz.nombre}>
+                                    <option value={raiz.id}>Todas ({raiz.nombre})</option>
+                                    {hijas.map(h => <option key={h.id} value={h.id}>{h.nombre}</option>)}
+                                </optgroup>
+                            )
+                        })}
+                    </select>
+
                     <select value={estado} onChange={e => setEstado(e.target.value)}
                         className="input-field shrink-0"
                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)', width: 'auto', display: 'inline-block' }}>
@@ -154,7 +150,7 @@ export default function ProductosIndex() {
                         <option value="inactivo">Inactivos</option>
                     </select>
 
-                    <div className="flex shrink-0 ml-auto" role="group">
+                    <div className="flex shrink-0" role="group">
                         <div className="relative">
                             <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
                             <Input
@@ -182,6 +178,12 @@ export default function ProductosIndex() {
                         title="Excel">
                         <FileSpreadsheet className="w-4 h-4" />
                     </button>
+
+                    <label className="flex items-center gap-1.5 text-xs shrink-0 cursor-pointer select-none" style={{ color: 'var(--text-muted)' }}
+                        title="Muestra el nombre completo de cada producto, sin recortarlo">
+                        <input type="checkbox" checked={nombresCompletos} onChange={e => setNombresCompletos(e.target.checked)} />
+                        Nombres completos
+                    </label>
                 </div>
 
                 {/* Estado inicial: aún no se ha buscado */}
@@ -200,7 +202,7 @@ export default function ProductosIndex() {
                     <table className="w-full text-xs">
                         <thead>
                             <tr style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
-                                {['#', 'Código', 'Nombre', 'Marca comercial', 'Marca', 'Categoría', 'PVP', 'PVD', 'Tipo', 'Estado', ''].map(h => (
+                                {['#', 'Código', 'Nombre', 'Marca comercial', 'Marca', 'Categoría', 'Subcategoría', 'PVP', 'PVD', 'Tipo', 'Estado', ''].map(h => (
                                     <th key={h} className="text-left px-3 py-3 font-medium text-xs uppercase tracking-wider whitespace-nowrap"
                                         style={{ color: 'var(--text-muted)' }}>{h}</th>
                                 ))}
@@ -228,9 +230,9 @@ export default function ProductosIndex() {
                                     <td className="px-3 py-2.5 font-mono font-medium" style={{ color: 'var(--text-muted)' }}>
                                         {producto.codigo}
                                     </td>
-                                    <td className="px-3 py-2.5 max-w-50">
+                                    <td className={nombresCompletos ? 'px-3 py-2.5 min-w-64' : 'px-3 py-2.5 max-w-50'}>
                                         <div className="flex items-center gap-1.5 flex-wrap">
-                                            <span className="font-medium truncate" style={{ color: 'var(--text-main)' }}>
+                                            <span className={nombresCompletos ? 'font-medium break-words' : 'font-medium truncate'} style={{ color: 'var(--text-main)' }}>
                                                 {producto.nombre}
                                             </span>
                                             {producto.requiere_serie && (
@@ -247,7 +249,20 @@ export default function ProductosIndex() {
                                         {producto.marca_fabricante ?? '—'}
                                     </td>
                                     <td className="px-3 py-2.5" style={{ color: 'var(--text-muted)' }}>
-                                        {producto.categoria?.nombre ?? '—'}
+                                        {(producto as ProductoLista).categoria_nombre ?? '—'}
+                                    </td>
+                                    <td className="px-3 py-2.5" style={{ color: 'var(--text-muted)' }}>
+                                        {(producto as ProductoLista).subcategoria_nombre ? (
+                                            <span style={{ color: 'var(--text-main)' }}>{(producto as ProductoLista).subcategoria_nombre}</span>
+                                        ) : (producto as ProductoLista).clasificado ? (
+                                            '—'
+                                        ) : (
+                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+                                                style={{ background: 'rgba(245,158,11,0.15)', color: '#D97706' }}
+                                                title="Sin subcategoría con cuentas contables: no se puede facturar ni comprar">
+                                                Falta subcategoría
+                                            </span>
+                                        )}
                                     </td>
                                     <td className="px-3 py-2.5 text-right font-mono" style={{ color: 'var(--text-main)' }}>
                                         {Number(producto.pvp).toFixed(2)}

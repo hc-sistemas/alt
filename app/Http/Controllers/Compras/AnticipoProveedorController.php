@@ -148,11 +148,11 @@ class AnticipoProveedorController extends Controller
         $empresaId = session('empresa_activa_id');
 
         $request->validate([
-            'proveedor_id'     => 'required|exists:proveedores,id',
-            'importacion_id'   => 'nullable|exists:importaciones,id',
+            'proveedor_id'     => 'required|exists_empresa:proveedores',
+            'importacion_id'   => 'nullable|exists_empresa:importaciones',
             'fecha'            => 'required|date',
-            'monto'            => 'required|numeric|min:0.01',
-            'banco_id'         => 'required|exists:bancos_cajas,id',
+            'monto'            => 'required|numeric|decimal:0,2|min:0.01',
+            'banco_id'         => 'required|exists_empresa:bancos_cajas',
             'num_transferencia'=> 'nullable|string|max:50',
         ], [
             'monto.min'            => 'El monto debe ser mayor a $0.',
@@ -174,11 +174,8 @@ class AnticipoProveedorController extends Controller
 
         $banco = BancoCaja::findOrFail($request->banco_id);
 
-        if ($banco->saldo_actual < $request->monto) {
-            return back()->with('error',
-                "Saldo insuficiente en {$banco->nombre}. " .
-                'Disponible: $' . number_format((float) $banco->saldo_actual, 2)
-            );
+        if ($advertencia = \App\Support\SaldoBancario::advertir($banco, (float) $request->monto, $request)) {
+            return $advertencia;
         }
 
         try {
@@ -249,7 +246,7 @@ class AnticipoProveedorController extends Controller
         }
 
         $request->validate([
-            'compra_id' => 'required|exists:compras,id',
+            'compra_id' => 'required|exists_empresa:compras',
             'monto'     => 'required|numeric|min:0.01',
         ], [
             'compra_id.required' => 'Selecciona la factura a cruzar.',

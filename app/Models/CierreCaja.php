@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Builder;
 
 class CierreCaja extends Model
 {
+    use \App\Models\Concerns\PerteneceAEmpresaActiva;
     public $timestamps  = false;
     protected $table    = 'cierres_caja';
     protected $fillable = [
@@ -16,7 +17,7 @@ class CierreCaja extends Model
         'total_facturado', 'total_cobrado', 'total_efectivo', 'total_tarjeta',
         'total_cheque', 'total_transferencia', 'total_notas_credito',
         'diferencia', 'observaciones', 'estado', 'hora_apertura', 'hora_cierre',
-        'created_at',
+        'created_at', 'conteo_apertura', 'conteo_cierre', 'saldo_esperado', 'facturas_efectivo',
     ];
 
     protected function casts(): array
@@ -31,6 +32,9 @@ class CierreCaja extends Model
             'total_efectivo'  => 'decimal:4',
             'total_tarjeta'   => 'decimal:4',
             'diferencia'      => 'decimal:4',
+            'conteo_apertura' => 'array',
+            'conteo_cierre'   => 'array',
+            'saldo_esperado'  => 'decimal:4',
         ];
     }
 

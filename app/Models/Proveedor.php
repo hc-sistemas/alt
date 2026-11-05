@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Proveedor extends Model
 {
+    use \App\Models\Concerns\PerteneceAEmpresaActiva;
 
     protected $table = 'proveedores';
 

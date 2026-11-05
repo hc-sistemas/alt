@@ -63,7 +63,7 @@ const ESTADO_CONFIG = {
 export default function Index() {
     const { proformas, filtros, auth } = usePage<Props>().props
     const { puede } = usePermiso('ventas')
-    const esSuperAdmin = auth.user?.perfil === 'super_admin'
+    const esSuperAdmin = usePermiso('ventas').puede('eliminar') // lo decide la matriz
     const [pdf, setPdf] = useState<{ id: number; numero: string } | null>(null)
 
     const [filtro, setFiltro] = useState<Filtros>({

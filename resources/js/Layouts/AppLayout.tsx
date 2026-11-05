@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { usePage } from '@inertiajs/react'
 import Sidebar from '@/Components/shared/Sidebar'
 import Topbar from '@/Components/shared/Topbar'
+import BancosTabs from '@/Components/shared/BancosTabs'
 import { useThemeStore } from '@/Stores/themeStore'
 import { ToastContainer } from 'react-toastify'
 import 'react-toastify/dist/ReactToastify.css'
@@ -59,6 +60,7 @@ export default function AppLayout({ children, title, suppressFlash }: Props) {
 
                 {/* Page content */}
                 <main className="flex-1 overflow-y-auto">
+                    <BancosTabs />
                     {children}
                 </main>
             </div>

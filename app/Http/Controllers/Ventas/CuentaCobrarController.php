@@ -134,37 +134,56 @@ class CuentaCobrarController extends Controller
     public function registrarCobro(Request $request, CuentaCobrar $cuentaCobrar)
     {
         $request->validate([
-            'valor'       => 'required|numeric|min:0.01',
+            'valor'       => 'required|numeric|decimal:0,2|min:0.01',
             'forma_pago'  => 'required|string',
-            'banco_caja_id' => 'required|exists:bancos_cajas,id',
+            // El cheque queda en cartera y no entra a ningún banco hasta depositarlo (PC-VEN-13)
+            'banco_caja_id' => [\Illuminate\Validation\Rule::requiredIf($request->forma_pago !== 'cheque'), 'nullable', 'exists_empresa:bancos_cajas'],
+            'retencion_iva' => 'nullable|numeric|decimal:0,2|min:0',
+            'retencion_ir'  => 'nullable|numeric|decimal:0,2|min:0',
+            'num_retencion' => 'nullable|string|max:30',
+            'fecha_cheque'  => 'nullable|date',
+            'banco_emisor'  => 'nullable|string|max:100',
             'observacion' => 'nullable|string|max:300',
+            'referencia'  => [\Illuminate\Validation\Rule::requiredIf($request->forma_pago !== 'efectivo'), 'nullable', 'string', 'max:50'],
         ], [
             'banco_caja_id.required' => 'Selecciona el banco o caja donde se recibe el cobro.',
+            'referencia.required'    => 'Ingrese la referencia (N° de transferencia, cheque o depósito).',
         ]);
 
-        $monto = (float)$request->valor;
+        $monto  = (float)$request->valor;
+        $retIva = round((float) ($request->retencion_iva ?? 0), 2);
+        $retIr  = round((float) ($request->retencion_ir ?? 0), 2);
+        $esCheque = $request->forma_pago === 'cheque';
 
-        if ($monto > $cuentaCobrar->saldo) {
-            return back()->withErrors(['valor' => 'El valor no puede superar el saldo pendiente.']);
+        // La retención del cliente también cancela la deuda: cobrado + retenciones no puede superar el saldo (PC-VEN-12)
+        if (round($monto + $retIva + $retIr, 2) > round((float) $cuentaCobrar->saldo, 2) + 0.001) {
+            return back()->withErrors(['valor' => 'El cobro más las retenciones no pueden superar el saldo pendiente ($' . number_format((float) $cuentaCobrar->saldo, 2) . ').']);
+        }
+        if (($retIva > 0 || $retIr > 0) && trim((string) $request->num_retencion) === '') {
+            return back()->withErrors(['num_retencion' => 'Ingrese el número del comprobante de retención.']);
         }
 
-        $banco = \App\Models\BancoCaja::where('empresa_id', $cuentaCobrar->empresa_id)->findOrFail($request->banco_caja_id);
+        $banco = $esCheque ? null : \App\Models\BancoCaja::where('empresa_id', $cuentaCobrar->empresa_id)->findOrFail($request->banco_caja_id);
 
         // La contabilidad debe estar lista antes de registrar el cobro (período abierto + cuentas)
         try {
             $this->asiento->validarConfiguracion(
                 (int) $cuentaCobrar->empresa_id,
-                ['cta_clientes_locales', $request->forma_pago === 'efectivo' ? 'cta_caja_general' : 'cta_bancos_locales'],
+                array_values(array_filter(['cta_clientes_locales', 'cta_caja_general', $esCheque ? 'cta_cheques_cartera' : null,
+                    $retIva > 0 ? 'cta_retencion_iva_cobrada' : null, $retIr > 0 ? 'cta_retencion_ir_cobrada' : null])),
                 now()->toDateString(),
             );
+            if ($banco && $request->forma_pago !== 'efectivo') {
+                $this->asiento->cuentaBancoElegida($banco->cuenta_id ? (int) $banco->cuenta_id : null, "cobrar en «{$banco->nombre}» (sin cuenta contable asignada)");
+            }
         } catch (\DomainException $e) {
             return back()->with('error', $e->getMessage());
         }
 
         $movimientoId = null;
 
-        DB::transaction(function () use ($request, $cuentaCobrar, $monto, $banco, &$movimientoId) {
-            $nuevoSaldo  = $cuentaCobrar->saldo - $monto;
+        DB::transaction(function () use ($request, $cuentaCobrar, $monto, $banco, $retIva, $retIr, $esCheque, &$movimientoId) {
+            $nuevoSaldo  = $cuentaCobrar->saldo - $monto - $retIva - $retIr;
             $nuevoEstado = $nuevoSaldo <= 0 ? 'cobrada' : 'parcial';
 
             $cuentaCobrar->update([
@@ -180,7 +199,22 @@ class CuentaCobrarController extends Controller
                 'forma_pago'       => $request->forma_pago,
                 'observacion'      => $request->observacion,
                 'created_at'       => now(),
+                'retencion_iva'    => $retIva,
+                'retencion_ir'     => $retIr,
+                'num_retencion'    => $request->num_retencion,
             ]);
+
+            // Cheque recibido: queda en cartera, sin movimiento bancario hasta que se deposite (PC-VEN-13/14)
+            if ($esCheque) {
+                \App\Models\ChequeRecibido::create([
+                    'empresa_id' => $cuentaCobrar->empresa_id, 'cliente_id' => $cuentaCobrar->cliente_id,
+                    'factura_id' => $cuentaCobrar->factura_id, 'cuenta_cobrar_id' => $cuentaCobrar->id,
+                    'numero' => $request->referencia, 'banco_emisor' => $request->banco_emisor, 'monto' => $monto,
+                    'fecha_recepcion' => now()->toDateString(), 'fecha_cheque' => $request->fecha_cheque ?: now()->toDateString(),
+                    'estado' => 'en_cartera', 'created_by' => Auth::id(),
+                ]);
+                return;
+            }
 
             // Ingreso en Bancos: el dinero cobrado entra a la cuenta elegida
             $mov = \App\Models\MovimientoBancario::create([
@@ -198,7 +232,7 @@ class CuentaCobrarController extends Controller
                 'persona_tipo'   => 'cliente',
                 'persona_id'     => $cuentaCobrar->cliente_id,
                 'beneficiario'   => $cuentaCobrar->cliente?->razon_social,
-                'num_documento'  => $cuentaCobrar->factura?->numero_completo,
+                'num_documento'  => $request->referencia ?: $cuentaCobrar->factura?->numero_completo,
                 'descripcion'    => 'Cobro CxC ' . ($cuentaCobrar->factura?->numero_completo ?? "#{$cuentaCobrar->id}"),
                 'documento_tipo' => 'COBRO_CXC',
                 'documento_id'   => $cobro->id,
@@ -218,6 +252,9 @@ class CuentaCobrarController extends Controller
                 referencia:  $referencia,
                 monto:       $monto,
                 formaPago:   $request->forma_pago,
+                ctaBancoId:  $banco?->cuenta_id ? (int) $banco->cuenta_id : null,
+                retencionIva: $retIva,
+                retencionIr:  $retIr,
             );
             $cuentaCobrar->update(['asiento_cobro_id' => $asiento->id]);
             if ($movimientoId) {
@@ -270,10 +307,6 @@ class CuentaCobrarController extends Controller
             ->join('usuarios', 'usuarios.perfil_id', '=', 'perfiles.id')
             ->where('usuarios.id', $usuario->id)
             ->value('perfiles.nombre');
-
-        if ($perfilNombre !== 'super_admin') {
-            return back()->withErrors(['error' => 'Solo el SuperAdmin puede castigar deudas.']);
-        }
 
         $diasVencido = $this->diasVencido($cuentaCobrar);
 

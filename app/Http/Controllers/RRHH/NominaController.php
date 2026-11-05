@@ -175,7 +175,7 @@ class NominaController extends Controller
 
         $msg = 'Nómina generada en borrador correctamente.';
         if ($omitidos > 0) {
-            $msg .= " Se omitieron {$omitidos} colaborador(es) activo(s) sin sueldo base (ficha pendiente de completar).";
+            $msg .= " Se omitieron {$omitidos} colaborador(es) activo(s) que no entran a nómina (sin sueldo base o de servicios profesionales).";
         }
 
         return redirect()->route('rrhh.nomina.index')->with('success', $msg);
@@ -215,17 +215,10 @@ class NominaController extends Controller
     // tener, por ejemplo, un perfil de RRHH sin ser Contador ni Súper Admin —
     // los perfiles de acceso de RRHH se asignan en Configuración → Usuarios). Se valida el rol real
     // aquí, no solo ocultando el botón en el frontend.
-    private const PERFILES_EDICION_MANUAL = ['super_admin', 'contador'];
 
     public function update(Request $request, int $id, int $did): RedirectResponse
     {
         $empresaId = session('empresa_activa_id');
-
-        if (!in_array(Auth::user()?->perfil?->nombre, self::PERFILES_EDICION_MANUAL, true)) {
-            throw ValidationException::withMessages([
-                'error' => 'Solo un Contador o Súper Administrador puede editar manualmente un rol de pago.',
-            ]);
-        }
 
         $nomina  = Nomina::where('empresa_id', $empresaId)->findOrFail($id);
         $detalle = NominaDetalle::where('nomina_id', $nomina->id)->findOrFail($did);
@@ -302,6 +295,29 @@ class NominaController extends Controller
             return back()->with('error', 'La nómina no tiene detalles.');
         }
 
+        // No se procesa una nómina sin empresa (RUC)
+        $empresa = \App\Models\Empresa::find($nomina->empresa_id);
+        if (!$empresa || trim((string) $empresa->ruc) === '') {
+            return back()->with('error', 'No se puede procesar: la empresa de esta nómina no tiene RUC.');
+        }
+
+        // El neto no puede ser negativo: se avisa y no se procesa
+        $negativos = $nomina->detalles->filter(fn ($d) => round((float) $d->neto_pagar, 2) < 0)
+            ->map(fn ($d) => trim(($d->colaborador?->apellidos ?? '') . ' ' . ($d->colaborador?->nombres ?? '')))->values();
+        if ($negativos->isNotEmpty()) {
+            return back()->with('error', 'No se puede procesar: el neto a pagar es negativo para ' . $negativos->implode(', ')
+                . '. Corrija los descuentos antes de procesar.');
+        }
+
+        // Transferencia sin banco y cuenta: no se guarda ni se procesa
+        $sinBanco = $nomina->detalles->filter(fn ($d) => $d->tipo_pago === 'transferencia'
+                && (trim((string) $d->banco) === '' || trim((string) $d->num_cuenta) === ''))
+            ->map(fn ($d) => trim(($d->colaborador?->apellidos ?? '') . ' ' . ($d->colaborador?->nombres ?? '')))->values();
+        if ($sinBanco->isNotEmpty()) {
+            return back()->with('error', 'No se puede procesar: falta el banco o el número de cuenta de ' . $sinBanco->implode(', ')
+                . ' (pago por transferencia).');
+        }
+
         try {
             DB::transaction(function () use ($nomina) {
                 $asiento = $this->asientoService->nomina($nomina);
@@ -320,10 +336,15 @@ class NominaController extends Controller
                 // mientras prestamos_empleados.saldo sigue mostrando el valor viejo hasta
                 // que se registre el pago, una inconsistencia real entre el libro contable
                 // y la ficha del préstamo.
+                $instantanea = [];
+                $recordar = function ($pr) use (&$instantanea) {
+                    $instantanea[$pr->id] ??= ['id' => $pr->id, 'saldo' => (float) $pr->saldo, 'estado' => $pr->estado];
+                };
                 foreach ($nomina->detalles as $det) {
                     if ((float)$det->descuento_prestamos > 0) {
                         $prestamos = PrestamoEmpleado::where('colaborador_id', $det->colaborador_id)
                             ->where('tipo', 'prestamo')->activos()->get();
+                        $prestamos->each($recordar);
 
                         $pendiente = (float)$det->descuento_prestamos;
                         foreach ($prestamos as $pr) {
@@ -340,16 +361,70 @@ class NominaController extends Controller
 
                     if ((float)$det->descuento_anticipos > 0) {
                         PrestamoEmpleado::where('colaborador_id', $det->colaborador_id)
+                            ->where('tipo', 'anticipo')->where('estado', 'activo')->get()->each($recordar);
+                        PrestamoEmpleado::where('colaborador_id', $det->colaborador_id)
                             ->where('tipo', 'anticipo')->where('estado', 'activo')
                             ->update(['saldo' => 0, 'estado' => 'pagado']);
                     }
                 }
+                // Con esto una anulación puede dejar los préstamos y anticipos como estaban antes de procesar
+                $nomina->update(['snapshot_prestamos' => json_encode(array_values($instantanea))]);
             });
         } catch (\Throwable $e) {
             return back()->with('error', 'Error al procesar: ' . $e->getMessage());
         }
 
         return back()->with('success', 'Nómina procesada y asiento contable generado.');
+    }
+
+    // ── Anular una nómina procesada (con reverso del asiento) ────────────────
+
+    /**
+     * Una nómina procesada no se modifica: se anula con reverso (02-09 §2.5). Genera el asiento inverso del de proceso, devuelve
+     * los préstamos y anticipos a como estaban y deja el motivo. Una nómina ya pagada no se anula desde aquí: primero hay que
+     * deshacer su pago.
+     */
+    public function anular(Request $request, int $id): RedirectResponse
+    {
+        $request->validate(['motivo' => 'required|string|min:10|max:300'], ['motivo.required' => 'Escriba el motivo de la anulación.']);
+
+        $empresaId = session('empresa_activa_id');
+        $nomina = Nomina::where('empresa_id', $empresaId)->with('detalles')->findOrFail($id);
+
+        if ($nomina->estado === 'pagado') {
+            return back()->with('error', 'La nómina ya está pagada: primero debe deshacerse el pago (el dinero ya salió del banco o la caja).');
+        }
+        if ($nomina->estado !== 'procesado') {
+            return back()->with('error', 'Solo se puede anular una nómina procesada. Una en borrador se elimina.');
+        }
+
+        $conPrestamos = $nomina->detalles->contains(fn ($d) => (float) $d->descuento_prestamos > 0 || (float) $d->descuento_anticipos > 0);
+        if ($conPrestamos && $nomina->snapshot_prestamos === null) {
+            return back()->with('error', 'Esta nómina descontó préstamos y no guardó su estado anterior: no se puede restituir automáticamente. Consulte al contador.');
+        }
+
+        try {
+            DB::transaction(function () use ($nomina, $request) {
+                $asiento = $nomina->asiento_id ? \App\Models\AsientoContable::find($nomina->asiento_id) : null;
+                if ($asiento && !$asiento->estaAnulado()) {
+                    $this->asientoService->anular($asiento, "Anulación de nómina {$nomina->periodo_label}: {$request->motivo}");
+                }
+
+                foreach ((array) json_decode((string) $nomina->snapshot_prestamos, true) as $p) {
+                    PrestamoEmpleado::where('id', $p['id'])->update(['saldo' => $p['saldo'], 'estado' => $p['estado']]);
+                }
+
+                $nomina->update([
+                    'estado' => 'anulado', 'motivo_anulacion' => $request->motivo,
+                    'anulada_por' => Auth::id(), 'fecha_anulacion' => now(),
+                ]);
+                $nomina->detalles()->update(['estado' => 'anulado']);
+            });
+        } catch (\Throwable $e) {
+            return back()->with('error', 'No se pudo anular la nómina: ' . $e->getMessage());
+        }
+
+        return back()->with('success', 'Nómina anulada: se generó el reverso del asiento y se restituyeron los préstamos.');
     }
 
     // ── Registrar pago (procesado → pagado) ──────────────────────────────────
@@ -367,7 +442,7 @@ class NominaController extends Controller
             'fecha_pago'         => 'required|date',
             'tipo_comprobante'   => 'required|in:transferencia_masiva,individual',
             'num_comprobante'    => 'required|string|max:100',
-            'banco_caja_id'      => 'required|exists:bancos_cajas,id',
+            'banco_caja_id'      => 'required|exists_empresa:bancos_cajas',
         ], [
             'banco_caja_id.required' => 'Selecciona el banco o caja desde el que se paga la nómina.',
         ]);
@@ -375,7 +450,7 @@ class NominaController extends Controller
         try {
             $this->asientoService->validarConfiguracion(
                 (int) $empresaId,
-                ['cta_nomina_por_pagar', 'cta_bancos_locales'],
+                ['cta_nomina_por_pagar'],
                 $data['fecha_pago'],
             );
         } catch (\DomainException $e) {
@@ -385,16 +460,14 @@ class NominaController extends Controller
         // El pago sale de un banco/caja: debe existir y tener saldo (mismo monto que el asiento: neto de la nómina)
         $banco = \App\Models\BancoCaja::where('empresa_id', $empresaId)->findOrFail($data['banco_caja_id']);
         $monto = round((float) $nomina->total_neto, 2);
-        if ((float) $banco->saldo_actual < $monto) {
-            return back()->with('error',
-                "Saldo insuficiente en {$banco->nombre}. Disponible: \$" . number_format((float) $banco->saldo_actual, 2) .
-                '. Requerido: $' . number_format($monto, 2) . '.');
+        if ($advertencia = \App\Support\SaldoBancario::advertir($banco, $monto, $request)) {
+            return $advertencia;
         }
 
         try {
             DB::transaction(function () use ($nomina, $data, $banco, $monto, $empresaId) {
                 $asiento = $this->asientoService->pagoNomina(
-                    $nomina, $data['fecha_pago'], $data['num_comprobante']
+                    $nomina, $data['fecha_pago'], $data['num_comprobante'], $banco->cuenta_id ? (int) $banco->cuenta_id : null
                 );
 
                 // Egreso en Bancos por el neto total, enlazado al asiento del pago

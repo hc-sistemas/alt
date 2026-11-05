@@ -56,7 +56,7 @@ export default function SeleccionarEmpresa({ empresas }: Props) {
                             </div>
                             <div className="flex-1 min-w-0">
                                 <p className="font-medium text-sm truncate" style={{ color: 'var(--text-main)' }}>
-                                    {empresa.nombre_comercial}
+                                    {empresa.nombre_selector ?? empresa.nombre_comercial}
                                 </p>
                                 <p className="text-xs" style={{ color: 'var(--text-muted)' }}>RUC: {empresa.ruc}</p>
                             </div>

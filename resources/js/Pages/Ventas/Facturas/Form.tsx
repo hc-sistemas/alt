@@ -65,6 +65,13 @@ interface FormaPagoLinea {
     fecha_vencimiento: string | null
     banco: string | null
     num_cheque: string | null
+    fecha_cheque: string | null      // fecha del cheque (posterior a hoy = post fechado)
+    banco_caja_id: number | null     // cuenta bancaria elegida (transferencia)
+    referencia: string | null        // comprobante de la transferencia
+    procesador_id: number | null     // tarjeta
+    tipo_tarjeta: string | null
+    lote: string | null
+    autorizacion: string | null
 }
 
 interface Props extends PageProps {
@@ -72,9 +79,11 @@ interface Props extends PageProps {
     productos: ProductoVenta[]
     vendedores: Pick<Usuario, 'id' | 'nombre' | 'email'>[]
     formas_pago: string[]
+    bancos: { id: number; nombre: string }[]
+    procesadores: { id: number; nombre: string }[]
     empresa_activa: Empresa
     siguiente_numero: string
-    limites_descuento: { descuento_maximo_pct: number; puede_aprobar: boolean }
+    limites_descuento: { descuento_maximo_pct: number; puede_aprobar: boolean; solo_cero_o_maximo: boolean }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -114,7 +123,9 @@ function pagoVacio(formas: string[]): FormaPagoLinea {
     return {
         forma_pago: formas[0] ?? 'efectivo',
         valor: 0, dias_credito: 0,
-        fecha_vencimiento: null, banco: null, num_cheque: null,
+        fecha_vencimiento: null, banco: null, num_cheque: null, fecha_cheque: null,
+        banco_caja_id: null, referencia: null,
+        procesador_id: null, tipo_tarjeta: null, lote: null, autorizacion: null,
     }
 }
 
@@ -172,6 +183,8 @@ export default function Form() {
         productos,
         vendedores,
         formas_pago,
+        bancos,
+        procesadores,
         siguiente_numero,
         limites_descuento,
         auth,
@@ -223,6 +236,7 @@ export default function Form() {
 
     // — Misc
     const [observaciones, setObservaciones] = useState('')
+    const [esEvento, setEsEvento] = useState(false)
     const [guardando, setGuardando] = useState(false)
     const [erroresPago, setErroresPago] = useState<Record<number, string>>({})
 
@@ -418,6 +432,14 @@ export default function Form() {
             toastError(MSG_SIN_DESCUENTO_TARJETA)
             return
         }
+        // DEC-035: vendedor y bodeguero dan 0 o el máximo (8%), no valores
+        // intermedios, salvo con descuento especial autorizado.
+        const tope = Math.min(limites_descuento.descuento_maximo_pct, linea.descuento_max_producto)
+        if (!descuentoEspecialActivo && limites_descuento.solo_cero_o_maximo && valor > 0 && valor < tope) {
+            updateDetalle(idx, { descuento_pct: 0, _desc_error: '' })
+            toastError(`Sin aprobación el descuento es 0% o ${tope}%.`)
+            return
+        }
         // El tope de producto solo aplica sin autorización especial — con
         // descuento especial activo (PIN de supervisor) el vendedor puede
         // superarlo, hasta el límite de perfil aprobado vía limites_descuento.
@@ -604,6 +626,7 @@ export default function Form() {
             cliente_id: clienteSeleccionado!.id,
             vendedor_id: vendedorId,
             observaciones,
+            es_evento: esEvento,
             tiene_descuento_especial: descuentoEspecialActivo,
             aprobacion_especial_id: aprobacionGlobalId,
             aprobacion_credito_id: aprobacionCreditoId,
@@ -625,6 +648,13 @@ export default function Form() {
                 plazo: p.dias_credito ? String(p.dias_credito) : null,
                 banco: p.banco,
                 num_cheque: p.num_cheque,
+                fecha_cheque: p.fecha_cheque,
+                banco_caja_id: p.banco_caja_id,
+                referencia: p.referencia,
+                procesador_id: p.procesador_id,
+                tipo_tarjeta: p.tipo_tarjeta,
+                lote: p.lote,
+                autorizacion: p.autorizacion,
             })),
         }, {
             onError: errors => {
@@ -770,21 +800,111 @@ export default function Form() {
                                     </select>
                                 </div>
 
-                                {/* N_DOC */}
-                                <div>
-                                    {idx === 0 && (
-                                        <p className="text-xs mb-0.5" style={{ color: 'var(--text-muted)' }}>
-                                            {p.forma_pago === 'cheque' ? 'N° CHEQUE' : 'N_DOC'}
-                                        </p>
-                                    )}
-                                    <input
-                                        className="h-7 w-32 rounded-md border px-2 text-sm focus:outline-none"
-                                        style={{ background: 'var(--bg-main)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
-                                        placeholder="Número..."
-                                        value={p.num_cheque ?? ''}
-                                        onChange={e => updatePago(idx, { num_cheque: e.target.value || null })}
-                                    />
-                                </div>
+                                {/* Transferencia: cuenta bancaria (obligatoria) y comprobante */}
+                                {p.forma_pago === 'transferencia' && (
+                                    <>
+                                        <div>
+                                            {idx === 0 && <p className="text-xs mb-0.5" style={{ color: 'var(--text-muted)' }}>BANCO *</p>}
+                                            <select
+                                                className="h-7 w-44 rounded-md border px-2 text-sm"
+                                                style={{ background: 'var(--bg-main)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
+                                                value={p.banco_caja_id ?? ''}
+                                                onChange={e => updatePago(idx, { banco_caja_id: e.target.value ? Number(e.target.value) : null })}
+                                            >
+                                                <option value="">— Seleccione banco —</option>
+                                                {bancos.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            {idx === 0 && <p className="text-xs mb-0.5" style={{ color: 'var(--text-muted)' }}>COMPROBANTE</p>}
+                                            <input
+                                                className="h-7 w-32 rounded-md border px-2 text-sm focus:outline-none"
+                                                style={{ background: 'var(--bg-main)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
+                                                placeholder="N° comprobante *"
+                                                value={p.referencia ?? ''}
+                                                onChange={e => updatePago(idx, { referencia: e.target.value || null })}
+                                            />
+                                        </div>
+                                    </>
+                                )}
+
+                                {/* Cheque: número */}
+                                {p.forma_pago === 'cheque' && (
+                                    <div>
+                                        {idx === 0 && <p className="text-xs mb-0.5" style={{ color: 'var(--text-muted)' }}>N° CHEQUE *</p>}
+                                        <input
+                                            className="h-7 w-32 rounded-md border px-2 text-sm focus:outline-none"
+                                            style={{ background: 'var(--bg-main)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
+                                            placeholder="Número..."
+                                            value={p.num_cheque ?? ''}
+                                            onChange={e => updatePago(idx, { num_cheque: e.target.value || null })}
+                                        />
+                                    </div>
+                                )}
+
+                                {/* Cheque: fecha (post fechado si es posterior a hoy); queda en cartera hasta depositarlo */}
+                                {p.forma_pago === 'cheque' && (
+                                    <div>
+                                        {idx === 0 && <p className="text-xs mb-0.5" style={{ color: 'var(--text-muted)' }}>FECHA DEL CHEQUE</p>}
+                                        <input
+                                            type="date"
+                                            className="h-7 w-36 rounded-md border px-2 text-sm focus:outline-none"
+                                            style={{ background: 'var(--bg-main)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
+                                            value={p.fecha_cheque ?? ''}
+                                            onChange={e => updatePago(idx, { fecha_cheque: e.target.value || null })}
+                                        />
+                                    </div>
+                                )}
+
+                                {/* Tarjeta: procesador, tipo, lote y autorización (quedan por liquidar) */}
+                                {p.forma_pago === 'tarjeta' && (
+                                    <>
+                                        <div>
+                                            {idx === 0 && <p className="text-xs mb-0.5" style={{ color: 'var(--text-muted)' }}>PROCESADOR</p>}
+                                            <select
+                                                className="h-7 w-32 rounded-md border px-2 text-sm"
+                                                style={{ background: 'var(--bg-main)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
+                                                value={p.procesador_id ?? ''}
+                                                onChange={e => updatePago(idx, { procesador_id: e.target.value ? Number(e.target.value) : null })}
+                                            >
+                                                <option value="">—</option>
+                                                {procesadores.map(x => <option key={x.id} value={x.id}>{x.nombre}</option>)}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            {idx === 0 && <p className="text-xs mb-0.5" style={{ color: 'var(--text-muted)' }}>TIPO</p>}
+                                            <select
+                                                className="h-7 w-24 rounded-md border px-2 text-sm"
+                                                style={{ background: 'var(--bg-main)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
+                                                value={p.tipo_tarjeta ?? ''}
+                                                onChange={e => updatePago(idx, { tipo_tarjeta: e.target.value || null })}
+                                            >
+                                                <option value="">—</option>
+                                                <option value="credito">Crédito</option>
+                                                <option value="debito">Débito</option>
+                                                <option value="diferido">Diferido</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            {idx === 0 && <p className="text-xs mb-0.5" style={{ color: 'var(--text-muted)' }}>LOTE</p>}
+                                            <input
+                                                className="h-7 w-20 rounded-md border px-2 text-sm focus:outline-none"
+                                                style={{ background: 'var(--bg-main)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
+                                                value={p.lote ?? ''}
+                                                onChange={e => updatePago(idx, { lote: e.target.value || null })}
+                                            />
+                                        </div>
+                                        <div>
+                                            {idx === 0 && <p className="text-xs mb-0.5" style={{ color: 'var(--text-muted)' }}>AUTORIZACIÓN</p>}
+                                            <input
+                                                className="h-7 w-28 rounded-md border px-2 text-sm focus:outline-none"
+                                                style={{ background: 'var(--bg-main)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
+                                                value={p.autorizacion ?? ''}
+                                                onChange={e => updatePago(idx, { autorizacion: e.target.value || null })}
+                                            />
+                                        </div>
+                                    </>
+                                )}
 
                                 {/* Cantidad */}
                                 <div>
@@ -1181,6 +1301,10 @@ export default function Form() {
                             value={observaciones}
                             onChange={e => setObservaciones(e.target.value)}
                         />
+                        <label className="mt-2 flex items-center gap-2 text-xs" style={{ color: 'var(--text-main)' }}>
+                            <input type="checkbox" checked={esEvento} onChange={e => setEsEvento(e.target.checked)} />
+                            Factura de evento (el ingreso se registra en «otros ingresos»)
+                        </label>
                     </div>
 
                     {/* Totales — 40% */}

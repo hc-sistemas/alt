@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class GuiaRemision extends Model
 {
+    use \App\Models\Concerns\PerteneceAEmpresaActiva;
     const UPDATED_AT = null;
 
     protected $table = 'guias_remision';

@@ -9,19 +9,12 @@ import PdfPreviewModal from '@/Components/shared/PdfPreviewModal'
 import { formatFecha } from '@/lib/utils'
 import { Plus, Search, Eye, FileText, Wrench, Pencil } from 'lucide-react'
 import { usePermiso } from '@/Hooks/usePermiso'
+import { ESTADOS_ORDEN, estadoOrden } from '@/lib/tallerEstados'
 import type { PageProps, PaginatedData, TallerIngreso } from '@/types'
 
 interface Props extends PageProps {
     ingresos: PaginatedData<TallerIngreso>
     filtros: { search?: string; estado?: string; desde?: string; hasta?: string }
-}
-
-const ESTADO_CONFIG: Record<number, { label: string; variant: 'info' | 'warning' | 'default' | 'success' | 'secondary' }> = {
-    0: { label: 'Ingresado',      variant: 'secondary' },
-    1: { label: 'En diagnóstico', variant: 'warning' },
-    2: { label: 'En proceso',     variant: 'info' },
-    3: { label: 'Listo',          variant: 'success' },
-    4: { label: 'Entregado',      variant: 'secondary' },
 }
 
 export default function IngresosIndex() {
@@ -67,11 +60,9 @@ export default function IngresosIndex() {
                         className="h-9 rounded-md border bg-transparent px-3 py-1 text-sm"
                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
                         <option value="">Todos los estados</option>
-                        <option value="0">Ingresado</option>
-                        <option value="1">En diagnóstico</option>
-                        <option value="2">En proceso</option>
-                        <option value="3">Listo</option>
-                        <option value="4">Entregado</option>
+                        {Object.entries(ESTADOS_ORDEN).map(([valor, cfg]) => (
+                            <option key={valor} value={valor}>{cfg.label}</option>
+                        ))}
                     </select>
 
                     <Input type="date" value={desde} onChange={e => setDesde(e.target.value)}
@@ -124,8 +115,9 @@ export default function IngresosIndex() {
                                     </td>
                                 </tr>
                             ) : ingresos.data.map(ingreso => {
-                                const cfg = ESTADO_CONFIG[ingreso.estado] ?? ESTADO_CONFIG[0]
                                 const ot = ingreso.ordenes_trabajo?.[0]
+                                // Mismo estado que en Órdenes de Trabajo: el de la orden
+                                const cfg = estadoOrden(ot?.estado)
                                 return (
                                     <tr key={ingreso.id}
                                         className="border-t hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"

@@ -1,3 +1,4 @@
+import { advertenciaSaldo, confirmarSaldoNegativo } from '@/lib/saldoNegativo'
 import { useState, useEffect } from 'react'
 import { router, usePage, useForm, Head } from '@inertiajs/react'
 import { toast, ToastContainer } from 'react-toastify'
@@ -102,7 +103,7 @@ function MovimientoModal({ bancos, cuentas, proveedores, clientes, onClose }: {
     const [showCuentas, setShowCuentas] = useState(false)
     const [personaTipo, setPersonaTipo] = useState<'manual' | 'cliente' | 'proveedor'>('manual')
 
-    const { data, setData, post, processing, errors } = useForm({
+    const { data, setData, post, processing, errors, transform } = useForm({
         banco_caja_id:           '',
         tipo:                    'ingreso',
         sub_tipo:                'efectivo',
@@ -112,12 +113,17 @@ function MovimientoModal({ bancos, cuentas, proveedores, clientes, onClose }: {
         persona_id:              '' as string,
         beneficiario:            '',
         num_documento:           '',
+        comentario:              '',
         num_cheque:              '',
         fecha_cheque:            '',
         descripcion:             '',
         cuenta_contrapartida_id: '',
         es_postfechado:          false,
     })
+
+    // La caja es solo efectivo (02-05 §2.1): al elegir una caja, la única forma de pago es efectivo
+    const esCajaSel = ['caja', 'caja_chica'].includes(bancos.find(b => String(b.id) === String(data.banco_caja_id))?.tipo ?? '')
+    useEffect(() => { if (esCajaSel && data.sub_tipo !== 'efectivo') setData('sub_tipo', 'efectivo') }, [esCajaSel, data.sub_tipo])
 
     const personasOpts = personaTipo === 'cliente' ? clientes : personaTipo === 'proveedor' ? proveedores : []
 
@@ -130,12 +136,21 @@ function MovimientoModal({ bancos, cuentas, proveedores, clientes, onClose }: {
     ).slice(0, 30)
     const cuentaSel = cuentas.find(c => c.id === Number(data.cuenta_contrapartida_id))
 
-    function submit(e: React.FormEvent) {
-        e.preventDefault()
+    function enviar(confirmado: boolean) {
+        transform(d => ({ ...d, confirmar_saldo_negativo: confirmado }))
         post(route('bancos.movimientos.store'), {
-            onSuccess: () => { notify.ok('Movimiento registrado correctamente'); onClose() },
+            onSuccess: async (page) => {
+                const adv = advertenciaSaldo(page)
+                if (adv) { if (await confirmarSaldoNegativo(adv)) enviar(true); return }
+                notify.ok('Movimiento registrado correctamente'); onClose()
+            },
             onError: (errs) => notify.error(Object.values(errs).join(' | ')),
         })
+    }
+
+    function submit(e: React.FormEvent) {
+        e.preventDefault()
+        enviar(false)
     }
 
     return (
@@ -189,7 +204,9 @@ function MovimientoModal({ bancos, cuentas, proveedores, clientes, onClose }: {
                         <div className="space-y-1.5">
                             <Label>Forma de pago <span className="text-red-400">*</span></Label>
                             <div className="grid grid-cols-2 gap-1">
-                                {(['efectivo', 'transferencia', 'cheque', 'deposito'] as const).map(t => (
+                                {(['efectivo', 'transferencia', 'cheque', 'deposito'] as const)
+                                    .filter(t => !esCajaSel || t === 'efectivo')
+                                    .map(t => (
                                     <button key={t} type="button" onClick={() => setData('sub_tipo', t)}
                                         className={cn(
                                             'py-1.5 px-1 rounded-lg text-xs font-medium border transition-colors',
@@ -219,9 +236,10 @@ function MovimientoModal({ bancos, cuentas, proveedores, clientes, onClose }: {
                             {errors.monto && <p className="text-red-400 text-xs">{errors.monto}</p>}
                         </div>
                         <div className="space-y-1.5">
-                            <Label>N° Documento</Label>
+                            <Label>Referencia {data.sub_tipo !== 'efectivo' && <span className="text-red-400">*</span>}</Label>
                             <Input value={data.num_documento} onChange={e => setData('num_documento', e.target.value)}
-                                placeholder="Ref…" />
+                                placeholder="N° de transferencia, cheque o depósito" />
+                            {errors.num_documento && <p className="text-red-400 text-xs">{errors.num_documento}</p>}
                         </div>
                     </div>
 
@@ -315,6 +333,12 @@ function MovimientoModal({ bancos, cuentas, proveedores, clientes, onClose }: {
                         )}
                     </div>
 
+                    {/* Comentario */}
+                    <div className="space-y-1.5">
+                        <Label>Comentario</Label>
+                        <Input value={data.comentario} onChange={e => setData('comentario', e.target.value)} placeholder="Opcional" />
+                    </div>
+
                     {/* Descripción */}
                     <div className="space-y-1.5">
                         <Label>Descripción <span className="text-red-400">*</span></Label>
@@ -353,7 +377,7 @@ function MovimientoModal({ bancos, cuentas, proveedores, clientes, onClose }: {
 // ─── Modal Transferencia entre cuentas ──────────────────────────────────────────
 
 function TransferenciaModal({ bancos, onClose }: { bancos: Props['bancos']; onClose: () => void }) {
-    const { data, setData, post, processing, errors } = useForm({
+    const { data, setData, post, processing, errors, transform } = useForm({
         banco_origen_id:  '',
         banco_destino_id: '',
         fecha:            fechaHoy(),
@@ -364,12 +388,21 @@ function TransferenciaModal({ bancos, onClose }: { bancos: Props['bancos']; onCl
 
     const origen = bancos.find(b => b.id === Number(data.banco_origen_id))
 
-    function submit(e: React.FormEvent) {
-        e.preventDefault()
+    function enviar(confirmado: boolean) {
+        transform(d => ({ ...d, confirmar_saldo_negativo: confirmado }))
         post(route('bancos.movimientos.transferir'), {
-            onSuccess: () => { notify.ok('Transferencia registrada correctamente'); onClose() },
+            onSuccess: async (page) => {
+                const adv = advertenciaSaldo(page)
+                if (adv) { if (await confirmarSaldoNegativo(adv)) enviar(true); return }
+                notify.ok('Transferencia registrada correctamente'); onClose()
+            },
             onError: (errs) => notify.error(Object.values(errs).join(' | ')),
         })
+    }
+
+    function submit(e: React.FormEvent) {
+        e.preventDefault()
+        enviar(false)
     }
 
     const selectStyle = { borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }
@@ -753,12 +786,14 @@ export default function MovimientosIndex() {
                     <div className="grid grid-cols-12 gap-2 px-4 py-2.5 border-b text-[11px] font-semibold uppercase tracking-wider"
                         style={{ borderColor: 'var(--border)', background: 'rgba(245,158,11,0.05)', color: 'var(--text-muted)' }}>
                         <span className="col-span-1">Fecha</span>
-                        <span className="col-span-2">Banco/Caja</span>
-                        <span className="col-span-3">Descripción</span>
-                        <span className="col-span-2">Beneficiario</span>
-                        <span className="col-span-1">Forma</span>
-                        <span className="col-span-1 text-right">Monto</span>
-                        <span className="col-span-1 text-center">Estado</span>
+                        <span className="col-span-2">Concepto</span>
+                        <span className="col-span-1">Referencia</span>
+                        <span className="col-span-1 text-right">Debe</span>
+                        <span className="col-span-1 text-right">Haber</span>
+                        <span className="col-span-1 text-right">Saldo</span>
+                        <span className="col-span-1 text-center">Conciliado</span>
+                        <span className="col-span-1">F. concil.</span>
+                        <span className="col-span-2">Comentario</span>
                         <span className="col-span-1 text-right">Acción</span>
                     </div>
 
@@ -783,37 +818,39 @@ export default function MovimientosIndex() {
                                 <p className="text-xs font-mono" style={{ color: 'var(--text-main)' }}>{formatFecha(m.fecha)}</p>
                             </div>
                             <div className="col-span-2 min-w-0">
-                                <p className="text-xs truncate font-medium" style={{ color: 'var(--text-main)' }}>
-                                    {(m as any).banco_caja?.nombre ?? '—'}
+                                <p className="text-xs truncate" style={{ color: 'var(--text-main)' }} title={m.descripcion ?? ''}>{m.descripcion ?? '—'}</p>
+                                <p className="text-[10px] truncate" style={{ color: 'var(--text-muted)' }}>
+                                    {m.banco_caja?.nombre ?? '—'}{m.beneficiario ? ` · ${m.beneficiario}` : ''}
                                 </p>
                             </div>
-                            <div className="col-span-3 min-w-0">
-                                <p className="text-xs truncate" style={{ color: 'var(--text-main)' }}>{m.descripcion ?? '—'}</p>
-                                {m.num_documento && <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{m.num_documento}</p>}
-                            </div>
-                            <div className="col-span-2 min-w-0">
-                                <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{m.beneficiario ?? '—'}</p>
-                            </div>
-                            <div className="col-span-1">
-                                <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-700 dark:bg-slate-700/40 dark:text-slate-300">
-                                    {subTipoLabel[m.sub_tipo ?? ''] ?? m.sub_tipo ?? '—'}
-                                </span>
+                            <div className="col-span-1 min-w-0">
+                                <p className="text-xs truncate font-mono" style={{ color: 'var(--text-muted)' }} title={m.num_documento ?? ''}>{m.num_documento ?? '—'}</p>
                             </div>
                             <div className="col-span-1 text-right">
-                                <span className={cn(
-                                    'text-sm font-bold',
-                                    m.tipo === 'ingreso' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-                                )}>
-                                    {m.tipo === 'egreso' ? '-' : '+'}{fmt(m.monto)}
+                                <span className="text-xs font-semibold text-green-600 dark:text-green-400">{m.tipo === 'ingreso' ? fmt(m.monto) : ''}</span>
+                            </div>
+                            <div className="col-span-1 text-right">
+                                <span className="text-xs font-semibold text-red-600 dark:text-red-400">{m.tipo === 'egreso' ? fmt(m.monto) : ''}</span>
+                            </div>
+                            <div className="col-span-1 text-right">
+                                <span className="text-xs font-bold" style={{ color: 'var(--text-main)' }}
+                                    title={m.saldo_libro == null ? 'Elija un banco o caja para ver el saldo' : undefined}>
+                                    {m.saldo_libro == null ? '—' : fmt(m.saldo_libro)}
                                 </span>
                             </div>
                             <div className="col-span-1 flex justify-center">
                                 {m.anulado
                                     ? <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">Anulado</span>
                                     : m.conciliado
-                                        ? <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">Conciliado</span>
-                                        : <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-600">Pendiente</span>
+                                        ? <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">Sí</span>
+                                        : <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-600">No</span>
                                 }
+                            </div>
+                            <div className="col-span-1">
+                                <p className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>{m.fecha_conciliacion ? formatFecha(m.fecha_conciliacion) : '—'}</p>
+                            </div>
+                            <div className="col-span-2 min-w-0">
+                                <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }} title={m.comentario ?? ''}>{m.comentario ?? '—'}</p>
                             </div>
                             <div className="col-span-1 flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
                                 {!m.anulado && !m.conciliado && puede('anular') && (

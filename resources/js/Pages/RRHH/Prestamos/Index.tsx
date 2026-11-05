@@ -22,7 +22,7 @@ interface Props extends PageProps {
     colaboradores: ColabItem[]
     filtros: { colaborador_id?: string; tipo?: string; estado?: string; anio?: string; buscar?: string }
     anios: number[]
-    flash?: { success?: string; error?: string }
+    bancos: { id: number; nombre: string; tipo: string }[]
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -41,7 +41,7 @@ function badgeTipo(tipo: string): React.CSSProperties {
 
 // ── componente principal ───────────────────────────────────────────────────────
 
-export default function PrestamosIndex({ prestamos, colaboradores, filtros, anios, flash }: Props) {
+export default function PrestamosIndex({ prestamos, colaboradores, filtros, anios, bancos, flash }: Props) {
     const { auth } = usePage<Props>().props
     const { puede } = usePermiso('rrhh')
 
@@ -61,6 +61,7 @@ export default function PrestamosIndex({ prestamos, colaboradores, filtros, anio
     const [form, setForm] = useState({
         colaborador_id: '',
         tipo: 'prestamo' as 'prestamo' | 'anticipo',
+        banco_caja_id: '',
         monto_total: '',
         cuota: '',
         fecha: new Date().toISOString().slice(0, 10),
@@ -107,7 +108,7 @@ export default function PrestamosIndex({ prestamos, colaboradores, filtros, anio
     }
 
     function resetForm() {
-        setForm({ colaborador_id: '', tipo: 'prestamo', monto_total: '', cuota: '', fecha: new Date().toISOString().slice(0, 10), descripcion: '' })
+        setForm({ colaborador_id: '', tipo: 'prestamo', banco_caja_id: '', monto_total: '', cuota: '', fecha: new Date().toISOString().slice(0, 10), descripcion: '' })
     }
 
     function confirmarPagar(id: number) {
@@ -365,6 +366,19 @@ export default function PrestamosIndex({ prestamos, colaboradores, filtros, anio
                                     {colaboradores.map(c => (
                                         <option key={c.id} value={c.id}>{c.apellidos} {c.nombres} ({c.cedula_ruc})</option>
                                     ))}
+                                </select>
+                            </div>
+
+                            {/* Banco o caja de donde sale el dinero (no hay banco por defecto) */}
+                            <div>
+                                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>BANCO / CAJA DE DONDE SALE EL DINERO *</label>
+                                <select
+                                    value={form.banco_caja_id}
+                                    onChange={e => setForm({ ...form, banco_caja_id: e.target.value })}
+                                    required style={{ ...inputStyle, width: '100%' }}
+                                >
+                                    <option value="">Seleccionar banco o caja...</option>
+                                    {bancos.map(b => (<option key={b.id} value={b.id}>{b.nombre}</option>))}
                                 </select>
                             </div>
 

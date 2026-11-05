@@ -14,6 +14,7 @@ interface FilaConsolidado {
     marca_nombre: string
     unidad: string | null
     stock: Record<number, number>
+    transito?: Record<number, number>
     total_empresa: Record<number, number>
     total: number
 }
@@ -171,9 +172,13 @@ function FragmentoFila({ fila, empresaId, bodegas }: { fila: FilaConsolidado; em
         <>
             {bodegas.map(b => {
                 const v = fila.stock[b.id] ?? 0
+                const camino = fila.transito?.[b.id] ?? 0
                 return (
                     <td key={b.id} className="px-3 py-2 text-right font-mono"
-                        style={{ color: v === 0 ? 'var(--text-muted)' : 'var(--text-main)' }}>{fmt(v)}</td>
+                        style={{ color: v === 0 ? 'var(--text-muted)' : 'var(--text-main)' }}
+                        title={camino > 0 ? `${fmt(camino)} unidades de importaciones pendientes, aún no recibidas en bodega` : undefined}>
+                        {fmt(v)}{camino > 0 && <span className="ml-1 text-[10px]" style={{ color: 'var(--primary)' }}>(en camino {fmt(camino)})</span>}
+                    </td>
                 )
             })}
             <td className="px-3 py-2 text-right font-mono font-medium" style={{ color: 'var(--text-main)' }}>

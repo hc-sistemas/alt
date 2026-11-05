@@ -13,9 +13,10 @@ import type { Producto, PageProps } from '@/types'
 interface Props extends PageProps {
     producto: Producto | null
     marcas: { id: number; nombre: string }[]
-    categorias: { id: number; nombre: string; categoria_padre_id: number | null }[]
+    categorias: { id: number; nombre: string; categoria_padre_id: number | null; requiere_serie?: boolean }[]
     bodegas: { id: number; nombre: string; tipo: string }[]
     cuentas: { id: number; codigo: string; nombre: string }[]
+    cuentasCategoria: Record<number, { codigo: string; inventario: string | null; venta: string | null; costo: string | null }>
 }
 
 type Tab = 'general' | 'precios' | 'inventario' | 'contabilidad'
@@ -31,11 +32,11 @@ const TAB_FIELDS: Record<Tab, string[]> = {
     general: ['codigo', 'nombre', 'tipo', 'unidad', 'descripcion', 'marca_fabricante'],
     precios: ['pvp', 'pvd', 'costo', 'porcentaje_iva', 'porcentaje_ice'],
     inventario: ['stock_minimo', 'stock_maximo', 'peso'],
-    contabilidad: ['cuenta_inventario', 'cuenta_costo_ventas', 'cuenta_ventas'],
+    contabilidad: [],
 }
 
 export default function ProductoForm() {
-    const { producto, marcas, categorias, cuentas } = usePage<Props>().props
+    const { producto, marcas, categorias, cuentasCategoria } = usePage<Props>().props
     const { puede } = usePermiso('inventario')
     const esEdicion = !!producto
 
@@ -59,9 +60,6 @@ export default function ProductoForm() {
         stock_minimo: producto ? Math.round(Number(producto.stock_minimo)).toString() : '0',
         stock_maximo: producto?.stock_maximo ? Math.round(Number(producto.stock_maximo)).toString() : '',
         peso: producto?.peso?.toString() ?? '0',
-        cuenta_inventario: producto?.cuenta_inventario ?? '1.01.04.05',
-        cuenta_costo_ventas: producto?.cuenta_costo_ventas ?? '5.01.05',
-        cuenta_ventas: producto?.cuenta_ventas ?? '4.01.06',
         estado: producto?.estado ?? true,
     })
 
@@ -85,9 +83,6 @@ export default function ProductoForm() {
             categoria_id: data.categoria_id || null,
             stock_minimo: Math.round(Number(data.stock_minimo)),
             stock_maximo: data.stock_maximo ? Math.round(Number(data.stock_maximo)) : null,
-            cuenta_inventario: data.cuenta_inventario || null,
-            cuenta_costo_ventas: data.cuenta_costo_ventas || null,
-            cuenta_ventas: data.cuenta_ventas || null,
         }
 
         if (esEdicion) {
@@ -225,12 +220,27 @@ export default function ProductoForm() {
                                     <Label>Categoría</Label>
                                     <select
                                         value={data.categoria_id}
-                                        onChange={e => setData('categoria_id', e.target.value)}
+                                        onChange={e => {
+                                            setData('categoria_id', e.target.value)
+                                            // DJ, computadoras y pantallas LED exigen número de serie (02-02 §2.4)
+                                            if (categorias.find(c => String(c.id) === e.target.value)?.requiere_serie) setData('requiere_serie', true)
+                                        }}
                                         className="flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
                                         style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}
                                     >
-                                        <option value="">Sin categoría</option>
-                                        {categorias.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                                        <option value="">— Seleccione categoría —</option>
+                                        {categorias.filter(c => c.categoria_padre_id === null).map(raiz => {
+                                            const hijas = categorias.filter(c => c.categoria_padre_id === raiz.id)
+                                            return hijas.length > 0
+                                                // Con subcategorías, se elige la subcategoría (ella define las cuentas contables)
+                                                ? <optgroup key={raiz.id} label={raiz.nombre}>
+                                                    {data.categoria_id === String(raiz.id) && (
+                                                        <option value={raiz.id}>{raiz.nombre} (falta elegir subcategoría)</option>
+                                                    )}
+                                                    {hijas.map(h => <option key={h.id} value={h.id}>{h.nombre}</option>)}
+                                                  </optgroup>
+                                                : <option key={raiz.id} value={raiz.id}>{raiz.nombre}</option>
+                                        })}
                                     </select>
                                 </div>
                             </div>
@@ -386,60 +396,39 @@ export default function ProductoForm() {
                         </>
                     )}
 
-                    {/* ── Pestaña: Contabilidad ── */}
+                    {/* ── Pestaña: Contabilidad (solo lectura: sale de la subcategoría) ── */}
                     {activeTab === 'contabilidad' && (
                         <div className="grid grid-cols-1 gap-4">
-                            <div className="space-y-1.5">
-                                <Label>Cuenta de Inventario</Label>
-                                <select
-                                    value={data.cuenta_inventario ?? ''}
-                                    onChange={e => setData('cuenta_inventario', e.target.value)}
-                                    className="flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
-                                    style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}
-                                >
-                                    <option value="">— Sin cuenta asignada —</option>
-                                    {cuentas.map(c => (
-                                        <option key={c.id} value={c.codigo}>
-                                            {c.codigo} — {c.nombre}
-                                        </option>
-                                    ))}
-                                </select>
-                                {errors.cuenta_inventario && <p className="text-xs text-red-400">{errors.cuenta_inventario}</p>}
-                            </div>
-                            <div className="space-y-1.5">
-                                <Label>Cuenta Costo de Ventas</Label>
-                                <select
-                                    value={data.cuenta_costo_ventas ?? ''}
-                                    onChange={e => setData('cuenta_costo_ventas', e.target.value)}
-                                    className="flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
-                                    style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}
-                                >
-                                    <option value="">— Sin cuenta asignada —</option>
-                                    {cuentas.map(c => (
-                                        <option key={c.id} value={c.codigo}>
-                                            {c.codigo} — {c.nombre}
-                                        </option>
-                                    ))}
-                                </select>
-                                {errors.cuenta_costo_ventas && <p className="text-xs text-red-400">{errors.cuenta_costo_ventas}</p>}
-                            </div>
-                            <div className="space-y-1.5">
-                                <Label>Cuenta de Ventas</Label>
-                                <select
-                                    value={data.cuenta_ventas ?? ''}
-                                    onChange={e => setData('cuenta_ventas', e.target.value)}
-                                    className="flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
-                                    style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}
-                                >
-                                    <option value="">— Sin cuenta asignada —</option>
-                                    {cuentas.map(c => (
-                                        <option key={c.id} value={c.codigo}>
-                                            {c.codigo} — {c.nombre}
-                                        </option>
-                                    ))}
-                                </select>
-                                {errors.cuenta_ventas && <p className="text-xs text-red-400">{errors.cuenta_ventas}</p>}
-                            </div>
+                            {(() => {
+                                const c = data.categoria_id ? cuentasCategoria[Number(data.categoria_id)] : undefined
+                                return c ? (
+                                    <>
+                                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                                            Estas son las cuentas que el sistema usa para este producto, según su subcategoría ({c.codigo}).
+                                            Se aplican solas al facturar, comprar y ajustar inventario; no se eligen aquí.
+                                        </p>
+                                        {[
+                                            ['Cuenta de Inventario', c.inventario],
+                                            ['Cuenta de Ventas', c.venta ?? 'No se vende (regalos)'],
+                                            ['Cuenta Costo de Ventas', c.costo],
+                                        ].map(([titulo, valor]) => (
+                                            <div key={titulo} className="space-y-1.5">
+                                                <Label>{titulo}</Label>
+                                                <div className="flex h-9 w-full items-center rounded-md border px-3 text-sm"
+                                                    style={{ borderColor: 'var(--border)', color: 'var(--text-main)', background: 'var(--bg-card)' }}>
+                                                    {valor}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </>
+                                ) : (
+                                    <div className="rounded-md border p-4 text-sm"
+                                        style={{ borderColor: '#F59E0B', color: 'var(--text-main)', background: 'rgba(245,158,11,0.08)' }}>
+                                        Este producto todavía no tiene subcategoría con cuentas contables, por eso <strong>no se puede facturar ni comprar</strong>.
+                                        Elija la categoría y la subcategoría en la pestaña General.
+                                    </div>
+                                )
+                            })()}
                         </div>
                     )}
                 </div>

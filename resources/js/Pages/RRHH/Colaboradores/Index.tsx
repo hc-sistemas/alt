@@ -133,6 +133,8 @@ function ColaboradorModal({ colaborador, puestos, horarios, usuarios, departamen
         fecha_ingreso:       colaborador?.fecha_ingreso       ?? '',
         fecha_salida:        colaborador?.fecha_salida        ?? '',
         tipo_contrato:       colaborador?.tipo_contrato       ?? '',
+        tipo_relacion:       (colaborador as { tipo_relacion?: string } | undefined)?.tipo_relacion ?? 'dependencia',
+        numero_iess:         (colaborador as { numero_iess?: string | null } | undefined)?.numero_iess ?? '',
         cargo:               colaborador?.cargo               ?? '',
         departamento_id:     String(colaborador?.departamento_id ?? ''),
         comision_porcentaje: String(colaborador?.comision_porcentaje ?? 0),
@@ -443,7 +445,16 @@ function ColaboradorModal({ colaborador, puestos, horarios, usuarios, departamen
                                     )}
                                 </div>
                                 <div>
-                                    <Label className="input-label">Tipo de Contrato</Label>
+                                    <Label className="input-label">Tipo de relación *</Label>
+                                    <select className="input-field" value={data.tipo_relacion} onChange={e => setData('tipo_relacion', e.target.value)}>
+                                        <option value="dependencia">Relación de dependencia (va en nómina)</option>
+                                        <option value="servicios">Servicios profesionales (se registra como proveedor)</option>
+                                    </select>
+                                    {errors.tipo_relacion && <p className="mt-1 text-xs text-red-500">{errors.tipo_relacion}</p>}
+                                </div>
+                                {data.tipo_relacion === 'dependencia' && field('N° afiliación IESS *', 'numero_iess', { maxLength: 20 })}
+                                <div>
+                                    <Label className="input-label">Tipo de Contrato *</Label>
                                     <select className="input-field" value={data.tipo_contrato} onChange={e => setData('tipo_contrato', e.target.value)}>
                                         <option value="">— Seleccionar —</option>
                                         <option value="indefinido">Indefinido</option>

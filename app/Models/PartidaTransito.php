@@ -11,7 +11,7 @@ class PartidaTransito extends Model
     protected $table    = 'partidas_transito';
     protected $fillable = [
         'conciliacion_id', 'tipo', 'fecha', 'descripcion',
-        'monto', 'movimiento_id', 'conciliada', 'asiento_generado_id',
+        'monto', 'sentido', 'movimiento_id', 'conciliada', 'asiento_generado_id',
     ];
 
     protected function casts(): array

@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -111,8 +111,13 @@
 {{-- ── Header ─────────────────────────────────────────────────────────── --}}
 <div class="header">
     <div class="h-left">
+        @php $logoRuta = !empty($empresa->logo) ? storage_path('app/public/' . ltrim($empresa->logo, '/')) : null; @endphp
+        @if($logoRuta && file_exists($logoRuta))
+            <img src="{{ $logoRuta }}" style="height:34px; float:left; margin-right:10px;" alt="">
+        @endif
         <div class="empresa-nombre">{{ strtoupper($empresa->nombre_comercial ?? $empresa->razon_social ?? 'ALTAMIRA LIGHT & SOUND') }}</div>
-        <div class="empresa-sub">RUC: {{ $empresa->ruc ?? '' }} &nbsp;|&nbsp; {{ $empresa->direccion ?? 'Ecuador' }}</div>
+        <div class="empresa-sub">Empleador: {{ $empresa->razon_social ?? '' }} &nbsp;|&nbsp; RUC: {{ $empresa->ruc ?? '' }}</div>
+        <div class="empresa-sub">{{ $empresa->direccion_establecimiento ?? $empresa->direccion_matriz ?? 'Ecuador' }}</div>
     </div>
     <div class="h-right">
         <div class="doc-titulo">Rol de Pagos</div>
@@ -136,6 +141,14 @@
             <span class="colab-value">{{ $col->cedula_ruc }}</span>
         </div>
         <div class="colab-cell">
+            <span class="colab-label">Ingreso:&nbsp;</span>
+            <span class="colab-value">{{ $col->fecha_ingreso ? $col->fecha_ingreso->format('d/m/Y') : '—' }}</span>
+        </div>
+        <div class="colab-cell">
+            <span class="colab-label">Departamento:&nbsp;</span>
+            <span class="colab-value">{{ $col->departamento ?? '—' }}</span>
+        </div>
+        <div class="colab-cell">
             <span class="colab-label">Banco:&nbsp;</span>
             <span class="colab-value">{{ $col->banco ?? '—' }}</span>
         </div>
@@ -150,39 +163,45 @@
 <div class="seccion-titulo">Ingresos</div>
 <table class="rubros">
     <tr>
-        <th style="width:65%">Concepto</th>
-        <th style="width:35%;text-align:right">Valor (USD)</th>
+        <th style="width:45%">Concepto</th>
+        <th style="width:30%">Base de cálculo</th>
+        <th style="width:25%;text-align:right">Valor (USD)</th>
     </tr>
     <tr>
         <td>Sueldo Base</td>
+        <td style="color:#555770">Sueldo mensual pactado</td>
         <td class="monto">{{ number_format($detalle->sueldo_base, 2) }}</td>
     </tr>
     @if((float)$detalle->horas_extras_50 > 0)
     <tr>
         <td>Horas Extras Suplementarias (50%)</td>
+        <td style="color:#555770">Sueldo ÷ 240 × 1,5 × horas</td>
         <td class="monto">{{ number_format($detalle->horas_extras_50, 2) }}</td>
     </tr>
     @endif
     @if((float)$detalle->horas_extras_100 > 0)
     <tr>
         <td>Horas Extras Extraordinarias (100%)</td>
+        <td style="color:#555770">Sueldo ÷ 240 × 2 × horas</td>
         <td class="monto">{{ number_format($detalle->horas_extras_100, 2) }}</td>
     </tr>
     @endif
     @if((float)$detalle->comisiones > 0)
     <tr>
         <td>Comisiones</td>
+        <td style="color:#555770">Según ventas del período</td>
         <td class="monto">{{ number_format($detalle->comisiones, 2) }}</td>
     </tr>
     @endif
     @if((float)$detalle->otros_ingresos > 0)
     <tr>
         <td>Otros Ingresos (Décimos / Fondos de Reserva)</td>
+        <td style="color:#555770">Mensualizados: 1/12 del sueldo</td>
         <td class="monto">{{ number_format($detalle->otros_ingresos, 2) }}</td>
     </tr>
     @endif
     <tr class="subtotal">
-        <td>TOTAL INGRESOS</td>
+        <td colspan="2">TOTAL INGRESOS</td>
         <td class="monto">{{ number_format($detalle->total_ingresos, 2) }}</td>
     </tr>
 </table>
@@ -191,41 +210,59 @@
 <div class="seccion-titulo">Egresos</div>
 <table class="rubros">
     <tr>
-        <th style="width:65%">Concepto</th>
-        <th style="width:35%;text-align:right">Valor (USD)</th>
+        <th style="width:45%">Concepto</th>
+        <th style="width:30%">Base de cálculo</th>
+        <th style="width:25%;text-align:right">Valor (USD)</th>
     </tr>
     <tr>
         <td>Aporte Personal IESS (9.45%)</td>
+        <td style="color:#555770">9,45 % de {{ number_format($detalle->total_ingresos, 2) }}</td>
         <td class="monto">{{ number_format($detalle->aporte_personal_iess, 2) }}</td>
     </tr>
     @if((float)$detalle->descuento_atrasos > 0)
     <tr>
         <td>Descuento por Atrasos</td>
+        <td style="color:#555770">Minutos de atraso del mes</td>
         <td class="monto">{{ number_format($detalle->descuento_atrasos, 2) }}</td>
     </tr>
     @endif
     @if((float)$detalle->descuento_prestamos > 0)
     <tr>
         <td>Cuota Préstamo</td>
+        <td style="color:#555770">Cuota mensual (sin superar el saldo)</td>
         <td class="monto">{{ number_format($detalle->descuento_prestamos, 2) }}</td>
     </tr>
     @endif
     @if((float)$detalle->descuento_anticipos > 0)
     <tr>
         <td>Recuperación de Anticipos</td>
+        <td style="color:#555770">Saldo del anticipo</td>
         <td class="monto">{{ number_format($detalle->descuento_anticipos, 2) }}</td>
     </tr>
     @endif
     @if((float)$detalle->otros_egresos > 0)
     <tr>
         <td>Otros Descuentos</td>
+        <td style="color:#555770">—</td>
         <td class="monto">{{ number_format($detalle->otros_egresos, 2) }}</td>
     </tr>
     @endif
     <tr class="subtotal">
-        <td>TOTAL EGRESOS</td>
+        <td colspan="2">TOTAL EGRESOS</td>
         <td class="monto">{{ number_format($detalle->total_egresos, 2) }}</td>
     </tr>
+</table>
+
+{{-- ── Información para la empresa (no se descuenta al colaborador) ──────── --}}
+@php $info = \App\Services\NominaCalculoService::informacionEmpresa($detalle, $col, $nomina->fecha_emision ?? now()); @endphp
+<div class="seccion-titulo">Información para la empresa</div>
+<table class="rubros">
+    <tr><th style="width:45%">Concepto</th><th style="width:30%">Base de cálculo</th><th style="width:25%;text-align:right">Valor (USD)</th></tr>
+    <tr><td>Aporte patronal IESS (11,15 %)</td><td style="color:#555770">11,15 % de {{ number_format($detalle->total_ingresos, 2) }}</td><td class="monto">{{ number_format($info['patronal'], 2) }}</td></tr>
+    @if($info['decimo_tercero'] > 0)<tr><td>Provisión décimo tercer sueldo</td><td style="color:#555770">1/12 del sueldo</td><td class="monto">{{ number_format($info['decimo_tercero'], 2) }}</td></tr>@endif
+    @if($info['decimo_cuarto'] > 0)<tr><td>Provisión décimo cuarto sueldo</td><td style="color:#555770">1/12 del salario básico</td><td class="monto">{{ number_format($info['decimo_cuarto'], 2) }}</td></tr>@endif
+    <tr><td>Provisión vacaciones</td><td style="color:#555770">15 días por año</td><td class="monto">{{ number_format($info['vacaciones'], 2) }}</td></tr>
+    @if($info['fondos_reserva'] > 0)<tr><td>Fondos de reserva</td><td style="color:#555770">1/12 con más de 12 meses</td><td class="monto">{{ number_format($info['fondos_reserva'], 2) }}</td></tr>@endif
 </table>
 
 {{-- ── Resumen ──────────────────────────────────────────────────────────── --}}
@@ -242,6 +279,9 @@
         <div class="res-label">Neto a Pagar</div>
         <div class="res-valor">$ {{ number_format($detalle->neto_pagar, 2) }}</div>
     </div>
+</div>
+<div style="margin-top:6px; font-size:9px; color:#1A1A2E;">
+    <strong>Son:</strong> {{ \App\Support\NumeroALetras::dolares((float) $detalle->neto_pagar) }}
 </div>
 
 {{-- ── Firmas ───────────────────────────────────────────────────────────── --}}

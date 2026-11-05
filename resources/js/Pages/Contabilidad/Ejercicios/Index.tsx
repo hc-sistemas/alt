@@ -59,13 +59,43 @@ export default function EjerciciosIndex() {
         })
     }
 
+    interface ControlCierre { clave: string; titulo: string; nivel: 'bloqueo' | 'justificable' | 'manual'; ok: boolean; detalle: string }
+
     const confirmarCierre = async (ejercicio: EjercicioContable) => {
         injectSwalStyles()
+
+        // Lista de controles del cierre mensual (02-08 §2.9): se muestra antes de pedir la confirmación
+        let controles: ControlCierre[] = []
+        let anticipado = false
+        try {
+            const resp = await fetch(route('contabilidad.ejercicios.controles', ejercicio.id), { headers: { Accept: 'application/json' } })
+            if (resp.ok) {
+                const j = await resp.json() as { controles: ControlCierre[]; anticipado: boolean }
+                controles = j.controles
+                anticipado = j.anticipado
+            }
+        } catch { /* sin lista: el servidor valida igual */ }
+
+        const hayBloqueo = controles.some(c => c.nivel === 'bloqueo' && !c.ok)
+        const hayJustificable = controles.some(c => c.nivel === 'justificable' && !c.ok)
+        const manuales = controles.filter(c => c.nivel === 'manual')
+        const marca = (c: ControlCierre) => c.nivel === 'manual' ? '☐' : c.ok ? '✅' : c.nivel === 'bloqueo' ? '⛔' : '⚠️'
+        const listaControles = controles.length === 0 ? '' : `
+            <div style="margin-bottom:14px;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;font-size:0.8rem;line-height:1.5">
+                <p style="font-weight:700;margin:0 0 6px 0">Controles del cierre</p>
+                ${controles.map(c => `<div>${marca(c)} <strong>${c.titulo}</strong><br><span style="color:#6b7280;margin-left:20px">${c.detalle}</span></div>`).join('')}
+            </div>
+            ${hayBloqueo ? '<p style="color:#b91c1c;font-size:0.8rem;margin:0 0 10px 0">⛔ Hay controles que bloquean el cierre: resuélvalos primero.</p>' : ''}
+            ${hayJustificable ? `<label style="display:block;font-size:0.8rem;margin-bottom:8px"><input type="checkbox" id="chk-justificado" /> Justifico los controles pendientes (⚠️) en el motivo del cierre</label>` : ''}
+            ${manuales.map(m => `<label style="display:block;font-size:0.8rem;margin-bottom:6px"><input type="checkbox" class="chk-manual" data-clave="${m.clave}" /> Confirmo: ${m.titulo}</label>`).join('')}
+            ${anticipado ? '<label style="display:block;font-size:0.8rem;margin-bottom:8px"><input type="checkbox" id="chk-anticipado" /> Confirmo cerrar antes del último día del mes</label>' : ''}`
+
         const { value: result } = await Swal.fire({
             ...swalBase,
             title: `Cerrar ${ejercicio.periodo_label}`,
             html: `
                 <div style="text-align:left">
+                    ${listaControles}
                     <div style="background:#fef3c7;border:1px solid #fcd34d;
                                 border-radius:10px;padding:14px;margin-bottom:16px">
                         <p style="font-weight:700;color:#92400e;margin:0 0 6px 0;
@@ -141,7 +171,27 @@ conciliación bancaria completada..."
                     Swal.showValidationMessage('El motivo debe tener al menos 10 caracteres')
                     return false
                 }
-                return { fecha, motivo }
+                if (hayBloqueo) {
+                    Swal.showValidationMessage('Resuelva primero los controles que bloquean el cierre (⛔)')
+                    return false
+                }
+                const justificado = (document.getElementById('chk-justificado') as HTMLInputElement | null)?.checked ?? false
+                if (hayJustificable && !justificado) {
+                    Swal.showValidationMessage('Marque que justifica los controles pendientes (⚠️)')
+                    return false
+                }
+                const confirmaciones: Record<string, boolean> = {}
+                document.querySelectorAll<HTMLInputElement>('.chk-manual').forEach(el => { confirmaciones[el.dataset.clave ?? ''] = el.checked })
+                if (Object.values(confirmaciones).some(v => !v)) {
+                    Swal.showValidationMessage('Confirme la revisión de IVA, cuentas sin clasificar y anticipos')
+                    return false
+                }
+                const anticipadoOk = (document.getElementById('chk-anticipado') as HTMLInputElement | null)?.checked ?? false
+                if (anticipado && !anticipadoOk) {
+                    Swal.showValidationMessage('Confirme que cierra antes del último día del mes')
+                    return false
+                }
+                return { fecha, motivo, justificado, confirmaciones, anticipado: anticipadoOk }
             },
         })
 
@@ -151,6 +201,9 @@ conciliación bancaria completada..."
                 {
                     motivo:       result.motivo,
                     fecha_cierre: result.fecha,
+                    justificado:  result.justificado,
+                    confirmaciones: result.confirmaciones,
+                    anticipado:   result.anticipado,
                 },
                 {
                     onSuccess: () => notify.success(

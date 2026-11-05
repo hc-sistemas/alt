@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Cheque extends Model
 {
+    use \App\Models\Concerns\PerteneceAEmpresaActiva;
     public $timestamps  = false;
     protected $table    = 'cheques';
     protected $fillable = [
@@ -23,6 +24,27 @@ class Cheque extends Model
             'monto'         => 'decimal:4',
             'created_at'    => 'datetime',
         ];
+    }
+
+    /**
+     * Un cheque pasa a «cobrado» solo cuando su movimiento se concilia con el estado de cuenta (02-06 §2.5), y vuelve a
+     * «emitido» si esa conciliación se anula. La fecha de cobro prevista se conserva; si no había, queda la de hoy.
+     *
+     * @param iterable<int> $movimientoIds
+     */
+    public static function sincronizarConciliacion(iterable $movimientoIds, bool $conciliado): void
+    {
+        $ids = collect($movimientoIds)->filter()->values()->all();
+        if (!$ids) {
+            return;
+        }
+
+        if ($conciliado) {
+            static::whereIn('movimiento_id', $ids)->where('estado', 'emitido')
+                ->update(['estado' => 'cobrado', 'fecha_cobro' => \DB::raw('COALESCE(fecha_cobro, CURRENT_DATE)')]);
+        } else {
+            static::whereIn('movimiento_id', $ids)->where('estado', 'cobrado')->update(['estado' => 'emitido']);
+        }
     }
 
     public function empresa(): BelongsTo

@@ -16,7 +16,15 @@ use Inertia\Response;
 
 class EjercicioContableController extends Controller
 {
-    public function __construct(private AsientoService $asientos) {}
+    public function __construct(private AsientoService $asientos, private \App\Services\CierreMensualService $cierre) {}
+
+    /** Lista de controles del cierre mensual para mostrarla antes de cerrar (02-08 §2.9). */
+    public function controles(EjercicioContable $ejercicio): \Illuminate\Http\JsonResponse
+    {
+        abort_unless((int) $ejercicio->empresa_id === (int) session('empresa_activa_id'), 404);
+
+        return response()->json(['controles' => $this->cierre->controles($ejercicio), 'anticipado' => $this->cierre->esAnticipado($ejercicio)]);
+    }
 
     public function index(): Response
     {
@@ -99,6 +107,15 @@ class EjercicioContableController extends Controller
             'created_at'    => now(),
         ]);
 
+        // Se avisa si se abre un período con el anterior todavía abierto (02-08 §2.9)
+        $anterior = \Carbon\Carbon::create((int) $request->anio, (int) $request->mes, 1)->subMonth();
+        $anteriorAbierto = EjercicioContable::where('empresa_id', $empresaId)->where('anio', $anterior->year)
+            ->where('mes', $anterior->month)->where('estado', 'abierto')->exists();
+        if ($anteriorAbierto) {
+            return back()->with('warning',
+                "Período {$meses[$request->mes]} {$request->anio} abierto, pero {$meses[$anterior->month]} {$anterior->year} sigue abierto: ciérrelo cuando termine sus conciliaciones.");
+        }
+
         return back()->with('success',
             "Período {$meses[$request->mes]} {$request->anio} abierto correctamente.");
     }
@@ -123,15 +140,32 @@ class EjercicioContableController extends Controller
             return back()->with('error', 'Este período ya está cerrado.');
         }
 
-        $sinCuadrar = $ejercicio->asientos()
-            ->whereRaw('ABS(total_debe - total_haber) > 0.0001')
-            ->where('estado', 1)
-            ->count();
-
-        if ($sinCuadrar > 0) {
-            return back()->with('error',
-                "No se puede cerrar: hay {$sinCuadrar} asiento(s) sin cuadrar en este período.");
+        // Controles del cierre mensual (02-08 §2.9): los bloqueos detienen el cierre; lo justificable exige que el contador
+        // lo justifique; lo que el sistema no puede comprobar (IVA, sin clasificar, anticipos) se confirma a mano.
+        $controles = $this->cierre->controles($ejercicio);
+        $bloqueos  = array_values(array_filter($controles, fn ($c) => $c['nivel'] === 'bloqueo' && !$c['ok']));
+        if ($bloqueos) {
+            return back()->with('error', 'No se puede cerrar: ' . implode(' · ', array_map(fn ($c) => $c['titulo'] . ' — ' . $c['detalle'], $bloqueos)) . '.');
         }
+
+        $pendientes = array_values(array_filter($controles, fn ($c) => $c['nivel'] === 'justificable' && !$c['ok']));
+        if ($pendientes && !$request->boolean('justificado')) {
+            return back()->with('error', 'Hay controles pendientes que deben justificarse para cerrar: '
+                . implode(' · ', array_map(fn ($c) => $c['titulo'] . ' — ' . $c['detalle'], $pendientes)) . '.');
+        }
+
+        $manuales = array_filter($controles, fn ($c) => $c['nivel'] === 'manual');
+        $sinConfirmar = array_filter($manuales, fn ($c) => !$request->boolean('confirmaciones.' . $c['clave']));
+        if ($sinConfirmar) {
+            return back()->with('error', 'Confirme que revisó: ' . implode(', ', array_map(fn ($c) => $c['titulo'], $sinConfirmar)) . '.');
+        }
+
+        // Cerrar antes del último día del mes pide confirmación expresa (el motivo ya es obligatorio)
+        if ($this->cierre->esAnticipado($ejercicio) && !$request->boolean('anticipado')) {
+            return back()->with('error', 'El mes aún no termina: confirme que desea cerrarlo antes de su último día.');
+        }
+
+        $avisos = array_map(fn ($c) => $c['titulo'] . ': ' . $c['detalle'], $pendientes);
 
         $ejercicio->update([
             'estado'       => 'cerrado',
@@ -147,13 +181,16 @@ class EjercicioContableController extends Controller
             'registro_id'    => $ejercicio->id,
             'campo'          => 'estado',
             'valor_anterior' => 'abierto',
-            'valor_nuevo'    => "cerrado — {$request->motivo}",
+            'valor_nuevo'    => "cerrado — {$request->motivo}" . ($avisos ? ' | Justificado: ' . implode('; ', $avisos) : ''),
             'ip_address'     => $request->ip(),
         ]);
 
-        return back()->with('success',
-            "Período {$ejercicio->periodo_label} cerrado. " .
-            "No se pueden crear ni modificar asientos en este período.");
+        $mensaje = "Período {$ejercicio->periodo_label} cerrado. No se pueden crear ni modificar asientos en este período.";
+        if ($avisos) {
+            return back()->with('warning', $mensaje . ' Quedó justificado: ' . implode('; ', $avisos) . '.');
+        }
+
+        return back()->with('success', $mensaje);
     }
 
     /**
@@ -186,12 +223,6 @@ class EjercicioContableController extends Controller
     {
         if ((int) $ejercicio->empresa_id !== (int) session('empresa_activa_id')) {
             abort(404);
-        }
-
-        $perfil = Auth::user()->perfil->nombre ?? '';
-        if (!in_array($perfil, ['super_admin', 'contador'], true)) {
-            return back()->with('error',
-                'Solo el Super Administrador o el Contador pueden reabrir un período contable.');
         }
 
         $request->validate([
@@ -234,12 +265,6 @@ class EjercicioContableController extends Controller
 
     public function cierreFiscalAnual(Request $request): RedirectResponse
     {
-        $perfil = Auth::user()->perfil->nombre ?? '';
-        if ($perfil !== 'super_admin') {
-            return back()->with('error',
-                'Solo el Super Administrador puede ejecutar el Cierre Fiscal Anual.');
-        }
-
         $request->validate([
             'anio'   => 'required|integer|min:2000|max:2100',
             'motivo' => 'required|string|min:10|max:300',

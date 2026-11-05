@@ -2,6 +2,10 @@ export interface Empresa {
     id: number
     razon_social: string
     nombre_comercial: string
+    /** Etiqueta corta para distinguir empresas en selectores (UIO / Import). */
+    etiqueta?: string | null
+    /** «Nombre comercial · etiqueta», para selectores y listas internas. */
+    nombre_selector?: string
     ruc: string
     logo?: string
     slogan?: string
@@ -61,6 +65,7 @@ export interface Modulo {
     icono?: string
     orden: number
     padre_id?: number
+    es_hijo?: boolean
     hijos?: Modulo[]
 }
 
@@ -82,6 +87,7 @@ export interface LimiteDescuento {
     porcentaje_maximo: number
     puede_aprobar: boolean
     porcentaje_aprobacion_max: number
+    solo_cero_o_maximo: boolean
 }
 
 export interface Notificacion {
@@ -131,7 +137,7 @@ export interface PageProps {
     permisos: '*' | Record<string, PermisoAcciones>
     empresa_activa?: Partial<Empresa> | null
     empresas_usuario: Partial<Empresa>[]
-    flash: { success?: string; error?: string; warning?: string }
+    flash: { success?: string; error?: string; warning?: string; saldo_negativo?: string | null }
     ziggy?: Record<string, unknown>
     notificaciones_no_leidas: number
     [key: string]: unknown
@@ -707,6 +713,9 @@ export interface MovimientoBancario {
     centro_costo_id: number | null
     asiento_id: number | null
     conciliado: boolean
+    fecha_conciliacion?: string | null
+    comentario?: string | null
+    saldo_libro?: number | null
     es_postfechado: boolean
     anulado: boolean
     created_at: string
@@ -957,7 +966,7 @@ export interface NominaDetalle {
     tipo_pago: 'transferencia' | 'cheque' | 'efectivo' | null
     num_cuenta: string | null
     banco: string | null
-    estado: 'borrador' | 'procesado' | 'pagado'
+    estado: 'borrador' | 'procesado' | 'pagado' | 'anulado'
     modificado_manualmente: boolean
     created_at: string
     colaborador?: Colaborador
@@ -971,7 +980,7 @@ export interface Nomina {
     mes: number
     quincena: number | null
     fecha_emision: string
-    estado: 'borrador' | 'procesado' | 'pagado'
+    estado: 'borrador' | 'procesado' | 'pagado' | 'anulado'
     total_ingresos: number
     total_egresos: number
     total_neto: number
@@ -1087,6 +1096,9 @@ export interface TallerOrdenTrabajo {
     factura_id: number | null
     estado: string
     turno?: number | null
+    posicion_cola?: number | null
+    costo_garantia?: number | null
+    garantia_cerrada_at?: string | null
     observaciones: string | null
     ingreso?: TallerIngreso
     tecnico?: { id: number; nombre: string } | null

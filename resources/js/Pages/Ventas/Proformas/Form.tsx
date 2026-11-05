@@ -62,7 +62,7 @@ interface Props extends PageProps {
     vendedores: Pick<Usuario, 'id' | 'nombre' | 'email'>[]
     empresa_activa: Empresa
     siguiente_numero: string
-    limites_descuento: { descuento_maximo_pct: number; puede_aprobar: boolean }
+    limites_descuento: { descuento_maximo_pct: number; puede_aprobar: boolean; solo_cero_o_maximo: boolean }
 }
 
 const redondear = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100
@@ -256,6 +256,14 @@ export default function Form() {
         // Tope del perfil del vendedor — sí se puede superar con PIN de un
         // supervisor, mientras no exceda el tope de producto verificado arriba.
         const limitePerfil = limites_descuento.descuento_maximo_pct
+        // DEC-035: vendedor y bodeguero dan 0 o el máximo (8%), no valores
+        // intermedios, salvo con aprobación ya otorgada en la línea.
+        const tope = Math.min(limitePerfil, linea.descuento_max_producto)
+        if (limites_descuento.solo_cero_o_maximo && !linea.aprobacion_id && valor > 0 && valor < tope) {
+            updateDetalle(idx, { descuento_pct: 0, descuento_especial: false, aprobacion_id: null, _desc_error: '' })
+            toastError(`Sin aprobación el descuento es 0% o ${tope}%.`)
+            return
+        }
         if (valor > limitePerfil) {
             if (linea.aprobacion_id) {
                 updateDetalle(idx, { descuento_pct: valor, _desc_error: '' })

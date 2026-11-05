@@ -21,10 +21,8 @@ use Inertia\Response;
 class ConfiguracionCobrosController extends Controller
 {
     private const DESCRIPCIONES = [
-        'cobro_banco_transferencia' => 'Banco donde entran las transferencias de ventas',
         'cobro_banco_tarjeta'       => 'Banco donde entran las ventas con tarjeta (modo banco)',
         'cobro_banco_cheque'        => 'Banco donde se depositan los cheques de ventas',
-        'cobro_caja_efectivo'       => 'Caja por defecto para ventas en efectivo (si el centro de costo no tiene caja)',
         'cobro_tarjeta_modo'        => 'Ventas con tarjeta: banco directo o lote Datafast',
     ];
 
@@ -36,7 +34,13 @@ class ConfiguracionCobrosController extends Controller
 
         $cuentas = BancoCaja::where('empresa_id', $empresaId)->activos()
             ->orderBy('tipo')->orderBy('nombre')
-            ->get(['id', 'nombre', 'tipo']);
+            ->with('cuenta:id,codigo,nombre')
+            ->get(['id', 'nombre', 'tipo', 'cuenta_id'])
+            // La cuenta contable se muestra antes de guardar (02-06 §2.6)
+            ->map(fn ($c) => [
+                'id' => $c->id, 'nombre' => $c->nombre, 'tipo' => $c->tipo,
+                'cuenta_contable' => $c->cuenta ? "{$c->cuenta->codigo} — {$c->cuenta->nombre}" : null,
+            ]);
 
         $cajasPorCentro = BancoCaja::where('empresa_id', $empresaId)->activos()->cajas()
             ->whereNotNull('centro_costo_id')
@@ -55,7 +59,30 @@ class ConfiguracionCobrosController extends Controller
             'config'  => $this->cobros->config((int) $empresaId),
             'cuentas' => $cuentas,
             'centros' => $centros,
+            'usos'    => $this->usosPorDestino((int) $empresaId),
         ]);
+    }
+
+    /**
+     * Facturas ya registradas en cada banco o caja, por forma de pago (02-06 §2.6: «mostrar qué facturas usan cada
+     * configuración»). Un cambio de configuración solo afecta a las facturas nuevas: las emitidas conservan su destino.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function usosPorDestino(int $empresaId): array
+    {
+        $filas = DB::table('movimientos_bancarios as m')
+            ->join('bancos_cajas as b', 'b.id', '=', 'm.banco_caja_id')
+            ->where('m.empresa_id', $empresaId)->where('m.documento_tipo', 'FACTURA_VENTA')->where('m.anulado', false)
+            ->groupBy('b.id', 'b.nombre', 'm.sub_tipo')
+            ->orderBy('b.nombre')->orderBy('m.sub_tipo')
+            ->selectRaw('b.nombre as destino, m.sub_tipo as forma, count(distinct m.documento_id) as facturas, sum(m.monto) as total, min(m.fecha) as desde, max(m.fecha) as hasta')
+            ->get();
+
+        return $filas->map(fn ($f) => [
+            'destino' => $f->destino, 'forma' => $f->forma, 'facturas' => (int) $f->facturas,
+            'total' => round((float) $f->total, 2), 'desde' => $f->desde, 'hasta' => $f->hasta,
+        ])->all();
     }
 
     public function update(Request $request): RedirectResponse
@@ -64,11 +91,15 @@ class ConfiguracionCobrosController extends Controller
         $existeCuenta = Rule::exists('bancos_cajas', 'id')->where('empresa_id', $empresaId);
 
         $request->validate([
-            'cobro_banco_transferencia' => ['nullable', $existeCuenta],
-            'cobro_banco_tarjeta'       => ['nullable', $existeCuenta],
-            'cobro_banco_cheque'        => ['nullable', $existeCuenta],
-            'cobro_caja_efectivo'       => ['nullable', $existeCuenta],
-            'cobro_tarjeta_modo'        => ['nullable', 'in:banco,datafast'],
+            // Transferencia y cheque siempre se registran en Bancos (02-06 §2.7, CAM-101):
+            // ya no existe la opción «No registrar en Bancos».
+            'cobro_banco_cheque'        => ['required', $existeCuenta],
+            'cobro_tarjeta_modo'        => ['required', 'in:banco,datafast'],
+            'cobro_banco_tarjeta'       => [Rule::requiredIf($request->input('cobro_tarjeta_modo') === 'banco'), 'nullable', $existeCuenta],
+        ], [
+            'cobro_banco_cheque.required'        => 'Seleccione el banco donde se depositan los cheques.',
+            'cobro_tarjeta_modo.required'        => 'Indique cómo se cobra con tarjeta.',
+            'cobro_banco_tarjeta.required'       => 'Seleccione el banco donde entran las ventas con tarjeta.',
         ]);
 
         DB::transaction(function () use ($request, $empresaId) {

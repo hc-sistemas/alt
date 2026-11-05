@@ -11,11 +11,11 @@ class CategoriaProducto extends Model
     protected $table = 'categorias_producto';
     public $timestamps = false;
 
-    protected $fillable = ['nombre', 'categoria_padre_id', 'estado'];
+    protected $fillable = ['nombre', 'categoria_padre_id', 'estado', 'requiere_serie'];
 
     protected function casts(): array
     {
-        return ['estado' => 'boolean'];
+        return ['estado' => 'boolean', 'requiere_serie' => 'boolean'];
     }
 
     public function padre(): BelongsTo

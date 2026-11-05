@@ -23,7 +23,15 @@ interface Props extends PageProps {
     tiposEquipo: TallerTipoEquipo[]
     tecnicos: Tecnico[]
     ingreso: TallerIngreso | null
+    fotos_extra: number[]
 }
+
+/** Fotos 2 a 4 del equipo (el documento de ingreso imprime hasta 4). */
+interface FotoExtra {
+    data: string | null
+    quitar: boolean
+}
+const SLOTS_EXTRA = [2, 3, 4] as const
 
 type EstadoBusquedaEquipo = 'idle' | 'searching' | 'found' | 'new'
 
@@ -65,7 +73,7 @@ function equipoAForm(e: TallerEquipo) {
 }
 
 export default function IngresoForm() {
-    const { clientes, tiposEquipo: tiposIniciales, tecnicos, ingreso, errors } = usePage<Props>().props
+    const { clientes, tiposEquipo: tiposIniciales, tecnicos, ingreso, fotos_extra, errors } = usePage<Props>().props
     const { puede } = usePermiso('taller')
     const editando = ingreso !== null
     const ot = ingreso?.ordenes_trabajo?.[ingreso.ordenes_trabajo.length - 1]
@@ -96,6 +104,9 @@ export default function IngresoForm() {
         : null
     const [imagenData, setImagenData] = useState<string | null>(null)
     const [quitarImagen, setQuitarImagen] = useState(false)
+    const [extras, setExtras] = useState<Record<number, FotoExtra>>({})
+    const extraExistente = (slot: number): string | null =>
+        ingreso && (fotos_extra ?? []).includes(slot) ? route('taller.ingresos.imagen', { ingreso: ingreso.id, foto: slot }) : null
 
     // — Revisión de componentes
     const [componentes, setComponentes] = useState<ComponenteForm[]>(
@@ -234,6 +245,11 @@ export default function IngresoForm() {
             descripcion_trabajo: descripcionTrabajo || null,
             imagen_data: imagenData,
             quitar_imagen: quitarImagen && !imagenData,
+            fotos_extra: Object.entries(extras).map(([orden, f]) => ({
+                orden: Number(orden),
+                data: f.data,
+                quitar: f.quitar && !f.data,
+            })),
             componentes: componentes.map(c => ({
                 nombre: c.nombre.trim(),
                 funciona: c.funciona,
@@ -497,6 +513,25 @@ export default function IngresoForm() {
                                     setQuitarImagen(data === null)
                                 }}
                             />
+                        </div>
+                    </div>
+                    <div>
+                        <Label style={{ color: 'var(--text-main)' }}>Fotos adicionales (hasta 3 más; el documento imprime 4)</Label>
+                        <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            {SLOTS_EXTRA.map(slot => {
+                                const f = extras[slot]
+                                const vista = f?.data ?? (f?.quitar ? null : extraExistente(slot))
+                                return (
+                                    <CapturaImagen
+                                        key={slot}
+                                        valor={vista}
+                                        onChange={data => setExtras(prev => ({
+                                            ...prev,
+                                            [slot]: { data, quitar: data === null },
+                                        }))}
+                                    />
+                                )
+                            })}
                         </div>
                     </div>
                 </div>

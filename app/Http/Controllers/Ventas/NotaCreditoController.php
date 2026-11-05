@@ -80,7 +80,7 @@ class NotaCreditoController extends Controller
     public function create(Request $request)
     {
         $request->validate([
-            'factura_id' => 'required|integer|exists:facturas,id',
+            'factura_id' => 'required|integer|exists_empresa:facturas',
         ]);
 
         $factura = Factura::with(['detalles.producto', 'cliente', 'empresa'])
@@ -99,7 +99,7 @@ class NotaCreditoController extends Controller
         $empresaId = session('empresa_activa_id');
 
         $request->validate([
-            'factura_id'             => 'required|integer|exists:facturas,id',
+            'factura_id'             => 'required|integer|exists_empresa:facturas',
             'motivo'                 => 'required|string|max:300',
             'detalles'               => 'required|array|min:1',
             'detalles.*.detalle_id'  => 'required|integer',
@@ -156,8 +156,9 @@ class NotaCreditoController extends Controller
         // Costo (al costo real de salida) de la mercadería que vuelve por esta
         // NC — se usa para reversar el costo de ventas en el asiento.
         $costoDevuelto = 0.0;
+        $costosPorProducto = []; // producto_id => costo devuelto (para reversar en las cuentas de su subcategoría)
 
-        $notaCredito = DB::transaction(function () use ($request, $empresaId, $factura, $subtotal, $totalIva, $total, &$costoDevuelto) {
+        $notaCredito = DB::transaction(function () use ($request, $empresaId, $factura, $subtotal, $totalIva, $total, &$costoDevuelto, &$costosPorProducto) {
             $numero  = $this->secuencial->siguiente($empresaId, 'NC');
             $partes  = explode('-', $numero);
 
@@ -231,6 +232,7 @@ class NotaCreditoController extends Controller
                     }
 
                     $costoDevuelto += round($cantidad * $costoUnitario, 2);
+                    $costosPorProducto[(int) $original->producto_id] = round(($costosPorProducto[(int) $original->producto_id] ?? 0) + $cantidad * $costoUnitario, 2);
 
                     try {
                         $this->inventario->ingresarStock(
@@ -270,10 +272,11 @@ class NotaCreditoController extends Controller
             // fue a crédito se rebaja la CxC del cliente; si fue de contado sale
             // dinero de caja/banco. Antes siempre acreditaba Clientes, aunque la
             // venta hubiera sido en efectivo.
-            $formaOriginal = (string) (DB::table('factura_pagos')
+            $pagoOriginal = DB::table('factura_pagos')
                 ->where('factura_id', $factura->id)
                 ->orderByDesc('valor')
-                ->value('forma_pago') ?? 'credito');
+                ->first(['forma_pago', 'banco_caja_id']);
+            $formaOriginal = (string) ($pagoOriginal->forma_pago ?? 'credito');
 
             $asientoNC = $this->asiento->notaCreditoEmitida(
                 empresaId:     $empresaId,
@@ -284,6 +287,8 @@ class NotaCreditoController extends Controller
                 formaPago:     $formaOriginal,
                 costoVenta:    $costoDevuelto,
                 fecha:         $notaCredito->fecha_emision?->toDateString(),
+                costosPorProducto: $costosPorProducto,
+                bancoCajaId:   $pagoOriginal->banco_caja_id ?? null,
             );
             $notaCredito->update(['asiento_id' => $asientoNC->id]);
         } catch (\Throwable $e) {

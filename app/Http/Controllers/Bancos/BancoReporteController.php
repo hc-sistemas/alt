@@ -44,7 +44,7 @@ class BancoReporteController extends Controller
         $empresaId = session('empresa_activa_id');
 
         $request->validate([
-            'banco_caja_id' => 'required|exists:bancos_cajas,id',
+            'banco_caja_id' => 'required|exists_empresa:bancos_cajas',
             'fecha_desde'   => 'required|date',
             'fecha_hasta'   => 'required|date|after_or_equal:fecha_desde',
         ]);
@@ -116,6 +116,12 @@ class BancoReporteController extends Controller
         if ($request->filled('tipo')) {
             $query->where('tipo', $request->tipo);
         }
+        // Documento de origen (factura de venta, cobro CxC, pago a proveedor, nómina, tarjetas…)
+        if ($request->filled('documento_tipo')) {
+            $request->input('documento_tipo') === 'MANUAL'
+                ? $query->whereNull('documento_tipo')
+                : $query->where('documento_tipo', $request->documento_tipo);
+        }
         if ($request->filled('fecha_desde')) {
             $query->where('fecha', '>=', $request->fecha_desde);
         }
@@ -153,6 +159,19 @@ class BancoReporteController extends Controller
         }
 
         $cierres    = $query->orderByDesc('fecha')->get();
+
+        // Depósitos del día: el efectivo que sale de la caja hacia un banco (transferencia entre cuentas, 02-06 §2.7)
+        $depositos = MovimientoBancario::where('empresa_id', $empresaId)
+            ->where('documento_tipo', 'TRANSFERENCIA')->where('tipo', 'egreso')->where('anulado', false)
+            ->whereIn('banco_caja_id', $cierres->pluck('banco_caja_id')->unique())
+            ->whereBetween('fecha', [$cierres->min('fecha') ?? now()->toDateString(), $cierres->max('fecha') ?? now()->toDateString()])
+            ->get(['banco_caja_id', 'fecha', 'monto'])
+            ->groupBy(fn ($m) => $m->banco_caja_id . '|' . \Carbon\Carbon::parse($m->fecha)->toDateString());
+        $cierres->each(fn ($c) => $c->setAttribute(
+            'total_depositos',
+            (float) ($depositos[$c->banco_caja_id . '|' . \Carbon\Carbon::parse($c->fecha)->toDateString()] ?? collect())->sum('monto')
+        ));
+
         $empresa    = Empresa::find($empresaId);
         $cajaNombre = $request->filled('banco_caja_id')
             ? BancoCaja::find($request->banco_caja_id)?->nombre

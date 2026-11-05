@@ -71,7 +71,7 @@ interface Props extends PageProps {
     empresa_activa: Empresa
     siguiente_numero: string
     prefactura?: PrefacturaEditable
-    limites_descuento: { descuento_maximo_pct: number; puede_aprobar: boolean } | null
+    limites_descuento: { descuento_maximo_pct: number; puede_aprobar: boolean; solo_cero_o_maximo: boolean } | null
 }
 
 const redondear = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100
@@ -289,6 +289,14 @@ export default function Form() {
     const handleDescuentoChange = (idx: number, valor: number) => {
         const linea = detalles[idx]
         const pct = isNaN(valor) ? 0 : valor
+        // DEC-035: vendedor y bodeguero dan 0 o el máximo (8%), no valores
+        // intermedios, salvo con descuento especial autorizado.
+        const tope = Math.min(limites_descuento?.descuento_maximo_pct ?? 0, linea.descuento_max_producto)
+        if (!descuentoEspecialActivo && limites_descuento?.solo_cero_o_maximo && pct > 0 && pct < tope) {
+            updateDetalle(idx, { descuento_pct: 0, _desc_error: '' })
+            toastError(`Sin aprobación el descuento es 0% o ${tope}%.`)
+            return
+        }
         if (!descuentoEspecialActivo && pct > linea.descuento_max_producto && linea.descuento_max_producto < 100) {
             updateDetalle(idx, {
                 descuento_pct: linea.descuento_max_producto,

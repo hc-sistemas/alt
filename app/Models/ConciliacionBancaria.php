@@ -8,11 +8,12 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class ConciliacionBancaria extends Model
 {
+    use \App\Models\Concerns\PerteneceAEmpresaActiva;
     public $timestamps  = false;
     protected $table    = 'conciliaciones_bancarias';
     protected $fillable = [
         'empresa_id', 'banco_caja_id', 'fecha_corte', 'saldo_banco',
-        'saldo_sistema', 'diferencia', 'descripcion',
+        'saldo_sistema', 'diferencia', 'descripcion', 'observacion',
         'archivo_csv', 'estado', 'created_by', 'created_at',
     ];
 

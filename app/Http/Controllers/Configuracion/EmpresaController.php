@@ -79,6 +79,7 @@ class EmpresaController extends Controller
         $data = $request->validate([
             'razon_social' => ['required', 'string', 'max:300'],
             'nombre_comercial' => ['required', 'string', 'max:300'],
+            'etiqueta' => ['nullable', 'string', 'max:30'],
             'ruc' => ['required', 'string', 'size:13'],
             'direccion_matriz' => ['nullable', 'string', 'max:500'],
             'email_notificaciones' => ['nullable', 'email'],

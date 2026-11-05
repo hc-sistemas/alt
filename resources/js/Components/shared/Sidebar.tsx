@@ -66,12 +66,13 @@ export const navItems: NavItem[] = [
             { nombre: 'Productos', href: '/inventario/productos' },
             { nombre: 'Kárdex', href: '/inventario/kardex' },
             { nombre: 'Inventario General', href: '/inventario/kardex/saldos' },
-            { nombre: 'Inventario Consolidado', href: '/inventario/consolidado', perfiles: ['super_admin', 'admin'], soloRuc: '1711293454001' },
-            { nombre: 'Movimientos', href: '/inventario/traslados', perfiles: ['admin', 'contador', 'bodeguero'] },
+            { nombre: 'Inventario Consolidado', href: '/inventario/consolidado', permiso: 'inventario_consolidado', soloRuc: '1711293454001' },
+            { nombre: 'Movimientos', href: '/inventario/traslados', permiso: 'inventario_movimientos' },
             { nombre: 'Activos Fijos', href: '/inventario/activos' },
             { nombre: 'Lista de Precios', href: '/inventario/listas' },
             { nombre: 'Recepciones', href: '/inventario/recepciones' },
-            { nombre: 'Equipos Listos (Taller)', href: '/inventario/equipos-taller', perfiles: ['admin', 'contador', 'bodeguero'] },
+            { nombre: 'Números de serie', href: '/inventario/series' },
+            { nombre: 'Equipos Listos (Taller)', href: '/inventario/equipos-taller', permiso: 'inventario_equipos_taller' },
         ],
         subgrupos: [
             {
@@ -90,7 +91,6 @@ export const navItems: NavItem[] = [
             { nombre: 'Facturas de Compra', href: '/compras/facturas' },
             { nombre: 'Proveedores', href: '/compras/proveedores' },
             { nombre: 'Cuentas por Pagar', href: '/compras/cuentas-pagar' },
-            { nombre: 'Anticipos Proveedores', href: '/compras/anticipos' },
             { nombre: 'Devoluciones',          href: '/compras/devoluciones' },
             { nombre: 'Importaciones',         href: '/compras/importaciones' },
         ]
@@ -102,6 +102,7 @@ export const navItems: NavItem[] = [
             { nombre: 'Proformas', href: '/ventas/proformas' },
             { nombre: 'Prefacturas', href: '/ventas/prefacturas' },
             { nombre: 'CxC', href: '/ventas/cxc' },
+            { nombre: 'Cheques recibidos', href: '/ventas/cheques-recibidos' },
             { nombre: 'Notas de Crédito', href: '/ventas/notas-credito' },
             { nombre: 'Retenciones', href: '/ventas/retenciones' },
             { nombre: 'Guías de Remisión', href: '/ventas/guias-remision' },
@@ -110,14 +111,10 @@ export const navItems: NavItem[] = [
     {
         nombre: 'Bancos', clave: 'bancos', icon: Landmark,
         hijos: [
-            { nombre: 'Bancos y Cajas', href: '/bancos/catalogo' },
-            { nombre: 'Movimientos', href: '/bancos/movimientos' },
+            // Una sola entrada para Bancos: Cuentas, Movimientos, Conciliación y Tarjetas
+            // son pestañas dentro del módulo (BancosTabs). Cajas es del módulo Caja.
+            { nombre: 'Bancos', href: '/bancos/catalogo' },
             { nombre: 'Cajas', href: '/bancos/cajas' },
-            { nombre: 'Datafast', href: '/bancos/datafast' },
-            { nombre: 'Conciliación Bancaria', href: '/bancos/conciliaciones' },
-            { nombre: 'Cheques', href: '/bancos/cheques' },
-            { nombre: 'Reportes', href: '/bancos/reportes' },
-            { nombre: 'Configuración de cobros', href: '/bancos/configuracion-cobros' },
         ]
     },
     {
@@ -127,6 +124,7 @@ export const navItems: NavItem[] = [
             { nombre: 'Asientos', href: '/contabilidad/asientos' },
             { nombre: 'Plan de Cuentas', href: '/contabilidad/plan-cuentas' },
             { nombre: 'Parámetros Contables', href: '/contabilidad/parametros' },
+            { nombre: 'Eventos Contables', href: '/contabilidad/parametros/eventos' },
             { nombre: 'Reportes Contables', href: '/contabilidad/reportes' },
         ]
     },
@@ -151,6 +149,8 @@ export const navItems: NavItem[] = [
             { nombre: 'Ingresos', href: '/taller/ingresos' },
             { nombre: 'Órdenes de Trabajo', href: '/taller/ordenes' },
             { nombre: 'Tipos de Equipo', href: '/taller/tipos-equipo' },
+            { nombre: 'Garantías', href: '/taller/garantias' },
+            { nombre: 'Configuración', href: '/taller/configuracion' },
         ]
     },
     {
@@ -170,10 +170,20 @@ export const navItems: NavItem[] = [
     { nombre: 'Manuales', clave: 'manuales', icon: Library, href: '/manuales' },
 ]
 
+// Las pestañas de Bancos (/bancos/movimientos, /bancos/datafast…) cuelgan de la
+// entrada «Bancos» del menú; Cajas conserva la suya.
+function rutaMenuBancos(path: string): string {
+    const limpio = path.split('?')[0]
+    // Anticipos a proveedores se unió a Cuentas por Pagar (02-03 §2.8): no tiene entrada propia
+    if (limpio === '/compras/anticipos' || limpio.startsWith('/compras/anticipos/')) return '/compras/cuentas-pagar'
+    return limpio.startsWith('/bancos/') && !limpio.startsWith('/bancos/cajas') ? '/bancos/catalogo' : path
+}
+
 // Solo la sección (y subgrupo) que contiene la ruta activa queda abierta —
 // el resto colapsa automáticamente (comportamiento acordeón).
-function getActiveOpen(currentUrl: string): string[] {
+function getActiveOpen(rawUrl: string): string[] {
     const open: string[] = []
+    const currentUrl = rutaMenuBancos(rawUrl)
     for (const item of navItems) {
         if (!item.hijos && !item.subgrupos) continue
         const hasActiveHijo = item.hijos?.some(h => currentUrl.startsWith(h.href)) ?? false
@@ -211,7 +221,6 @@ export default function Sidebar({ collapsed, onCollapse, mobileOpen, onMobileClo
         if (hijo.soloRuc && props.empresa_activa?.ruc !== hijo.soloRuc) return false
         if (permisos === '*') return true
         if (hijo.permiso && permisos[hijo.permiso]?.ver !== true) return false
-        if (hijo.perfiles && !hijo.perfiles.includes(props.auth.user?.perfil ?? '')) return false
         return true
     }
 
@@ -249,7 +258,7 @@ export default function Sidebar({ collapsed, onCollapse, mobileOpen, onMobileClo
     // Solo el enlace con la coincidencia más específica queda activo: evita que
     // "/inventario/kardex" se marque también estando en "/inventario/kardex/saldos".
     const hrefActivo = useMemo(() => {
-        const path = url.split('?')[0]
+        const path = rutaMenuBancos(url.split('?')[0])
         // Ajuste de inventario se abre desde Inventario General, no desde Kárdex.
         if (path === '/inventario/kardex/ajuste' || path.startsWith('/inventario/kardex/ajuste/')) {
             return '/inventario/kardex/saldos'
