@@ -42,3 +42,10 @@ database/backup_*.sql
 # Datos sensibles de trabajo: el repositorio es público, estos archivos NO se suben (pasarlos al servidor por scp)
 /docs/*.sql
 /docs/INVENTARIO*.xlsx
+
+# Excel del cliente con costos, precios y existencias (repositorio público): se pasan al servidor por scp
+/docs/Oct2026/Corregidos/
+/docs/Oct2026/Decisiones_pendientes_contador.xlsx
+/docs/Oct2026/Informe_productos_bloqueados.xlsx
+/docs/Oct2026/Inventario*.xlsx
+/docs/Oct2026/Solicitudes_para_habilitar_productos.xlsx

@@ -47,4 +47,22 @@ class CompraDetalle extends Model
     {
         return $this->belongsTo(PlanCuenta::class, 'cuenta_id');
     }
+
+    /**
+     * Costo unitario que entra al kárdex: subtotal de la línea (cantidad × precio − descuento) entre la cantidad, el mismo
+     * valor que contabiliza el asiento de la compra. Con el precio bruto, un descuento dejaba el inventario del kárdex por
+     * encima del mayor contable.
+     */
+    public static function costoUnitarioNeto(self $detalle): float
+    {
+        $cantidad = (float) $detalle->cantidad;
+        if ($cantidad <= 0) {
+            return (float) $detalle->precio_unitario;
+        }
+        $subtotal = $detalle->subtotal !== null
+            ? (float) $detalle->subtotal
+            : $cantidad * (float) $detalle->precio_unitario - (float) $detalle->descuento;
+
+        return round(max($subtotal, 0) / $cantidad, 4);
+    }
 }

@@ -90,8 +90,8 @@ export default function MarcasIndex() {
                     'X-Inertia': 'true',
                 },
             })
-            if (res.status === 422) {
-                const json = await res.json()
+            if (!res.ok) {
+                const json = await res.json().catch(() => ({ message: 'No se pudo completar la operación (error ' + res.status + ')' }))
                 setErrorEliminar(json.message)
                 toastError(json.message)
                 return

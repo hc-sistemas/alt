@@ -129,11 +129,17 @@ export default function TrasladoForm() {
 
     async function submit() {
         if (mismaBodega || submitting) return
+        // Las filas vacías (sin producto ni cantidad) se ignoran; antes viajaban al servidor y el traslado se rechazaba.
+        const filas = items.filter(item => item.producto_id || item.cantidad_enviada)
+        if (filas.length === 0) {
+            toastError('Agregue al menos un producto al traslado')
+            return
+        }
         setSubmitting(true)
 
         const payload = {
             ...data,
-            detalles: items.map(item => ({
+            detalles: filas.map(item => ({
                 producto_id:      item.producto_id,
                 cantidad_enviada: item.cantidad_enviada,
             })),
@@ -151,8 +157,8 @@ export default function TrasladoForm() {
                 body: JSON.stringify(payload),
             })
 
-            if (res.status === 422) {
-                const json = await res.json()
+            if (!res.ok) {
+                const json = await res.json().catch(() => ({} as { message?: string }))
                 toastError(json.message ?? 'Error de validación')
                 setSubmitting(false)
                 return

@@ -65,17 +65,17 @@ class ConsolidadoController extends Controller
             ->get(['producto_id', 'bodega_id', 'stock_actual'])
             ->groupBy('producto_id');
 
-        // Unidades de importaciones que aún no se liquidan y que bodega todavía no recibió: están en camino y se muestran en
-        // la bodega de importaciones de su empresa (lo recibido ya está en el saldo, no se cuenta dos veces).
+        // Unidades de importaciones que aún no se liquidan y cuya factura sigue PENDIENTE (bodega no confirmó la recepción):
+        // están en camino y se muestran en la bodega de importaciones de su empresa. El stock solo entra cuando la recepción
+        // se confirma completa y la factura pasa a activa, así que una factura activa ya está en el saldo: antes también se
+        // sumaba como «en camino» y esas unidades se contaban dos veces.
         $bodegaImportacion = $bodegas->where('tipo', 'importacion')->pluck('id', 'empresa_id');
         $transito = DB::table('compra_detalles as d')
             ->join('compras as c', 'c.id', '=', 'd.compra_id')
             ->join('importaciones as i', 'i.id', '=', 'c.importacion_id')
-            ->leftJoin('recepcion_detalles as rd', 'rd.compra_detalle_id', '=', 'd.id')
             ->whereIn('d.producto_id', $filas->pluck('id'))
-            ->where('i.estado', '!=', 'liquidada')->where('c.estado', '!=', 'anulada')
-            ->groupBy('d.id', 'd.producto_id', 'd.cantidad', 'c.empresa_id')
-            ->selectRaw('d.producto_id, c.empresa_id, GREATEST(d.cantidad - COALESCE(SUM(rd.cantidad_recibida), 0), 0) as pendiente')
+            ->where('i.estado', '!=', 'liquidada')->where('c.estado', 'pendiente')
+            ->selectRaw('d.producto_id, c.empresa_id, d.cantidad as pendiente')
             ->get()
             ->groupBy('producto_id');
 

@@ -276,12 +276,11 @@ class ActivoFijoController extends Controller
                 'valor_libro_al_periodo'             => $nuevoValorLibro,
             ]);
 
-            $nuevoEstado = $nuevoValorLibro <= (float) $activoFijo->valor_residual ? 'dado_de_baja' : 'activo';
-
+            // Totalmente depreciado no es «dado de baja»: el bien sigue en uso y en el balance (costo − depreciación
+            // acumulada). La baja es una acción aparte; depreciar() ya no admite más cuotas cuando llega al residual.
             $activoFijo->update([
                 'depreciacion_acumulada' => $nuevaAcumulada,
                 'valor_en_libros'        => $nuevoValorLibro,
-                'estado'                 => $nuevoEstado,
             ]);
         });
 

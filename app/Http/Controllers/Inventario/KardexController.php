@@ -150,6 +150,7 @@ class KardexController extends Controller
 
         return match ($tipoMovimiento) {
             'entrada' => match (true) {
+                str_contains($doc, 'saldo_inicial') => 'SALDO INICIAL',
                 str_contains($doc, 'compra'), str_contains($doc, 'factura'), $doc === '' => 'INGRESO DE COMPRA',
                 str_contains($doc, 'ajuste') => 'INGRESO DE AJUSTE',
                 str_contains($doc, 'importacion') => 'INGRESO DE IMPORTACIÓN',
@@ -346,56 +347,45 @@ class KardexController extends Controller
             }
         }
 
-        // Faltantes y mermas (ajuste negativo) van a su cuenta propia 5.01.09, no a costo de venta
-        // (PC-INV-01). La contabilidad debe estar lista antes de mover inventario (período abierto y parámetro).
-        $empresaId  = (int) session('empresa_activa_id');
-        $hayFaltante = collect($data['detalles'])->contains(fn ($d) => $d['tipo_ajuste'] === 'negativo');
-        if ($hayFaltante) {
-            try {
-                app(\App\Services\AsientoService::class)->validarConfiguracion($empresaId, ['cta_ajuste_inventario'], now()->toDateString());
-            } catch (\DomainException $e) {
-                return back()->withErrors(['error' => $e->getMessage()])->withInput();
-            }
+        // Faltantes y mermas (ajuste negativo) van a su cuenta propia 5.01.09, no a costo de venta (PC-INV-01); el sobrante
+        // (ajuste positivo con costo) es la misma cuenta en sentido contrario. La contabilidad debe estar lista antes de mover
+        // inventario (período abierto, parámetro y subcategoría con cuentas: modo estricto, un producto sin clasificar no se ajusta).
+        $empresaId = (int) session('empresa_activa_id');
+        $asientos  = app(\App\Services\AsientoService::class);
+        try {
+            $asientos->validarConfiguracion($empresaId, ['cta_ajuste_inventario'], now()->toDateString());
+            $asientos->cuentasProductos($productoIds, $empresaId);
+        } catch (\DomainException $e) {
+            return back()->withErrors(['error' => $e->getMessage()])->withInput();
         }
 
         try {
-            DB::transaction(function () use ($data, $productos, $empresaId) {
-                $partidasFaltante = [];
-                $cuentas = app(\App\Services\CuentasProductoService::class);
-                $asientos = app(\App\Services\AsientoService::class);
+            DB::transaction(function () use ($data, $productos, $empresaId, $asientos) {
+                $faltantes = [];
+                $sobrantes = [];
+                $referencia = 'AJ-INV-' . now()->format('YmdHis');
 
                 foreach ($data['detalles'] as $det) {
                     $producto = $productos->get($det['producto_id']);
+                    $pid = (int) $det['producto_id'];
+                    $bid = (int) $data['bodega_id'];
 
                     try {
                         if ($det['tipo_ajuste'] === 'positivo') {
-                            $this->inventario->ingresarStock(
-                                (int) $det['producto_id'],
-                                (int) $data['bodega_id'],
-                                (float) $det['cantidad'],
-                                (float) ($det['costo_unitario'] ?? 0),
-                                'ajuste',
-                                0
-                            );
+                            $costo = (float) ($det['costo_unitario'] ?? 0);
+                            $this->inventario->ingresarStock($pid, $bid, (float) $det['cantidad'], $costo, 'ajuste', 0, $referencia, $data['motivo']);
+                            $sobrantes[] = ['producto_id' => $pid, 'valor' => round((float) $det['cantidad'] * $costo, 2)];
                         } else {
+                            // No se puede dar de baja lo que está reservado para un traslado, una prefactura o una orden de taller.
+                            $disponible = $this->inventario->getSaldoDisponible($pid, $bid);
+                            if ((float) $det['cantidad'] > $disponible) {
+                                throw new \RuntimeException("disponible {$disponible} (descontando lo reservado), solicitado {$det['cantidad']}.");
+                            }
                             // Costo de lo que se da de baja: cantidad × costo promedio vigente
                             $costoProm = (float) DB::table('inventario_saldos')
-                                ->where('producto_id', $det['producto_id'])->where('bodega_id', $data['bodega_id'])
-                                ->value('costo_promedio');
-                            $this->inventario->egresarStock(
-                                (int) $det['producto_id'],
-                                (int) $data['bodega_id'],
-                                (float) $det['cantidad'],
-                                'ajuste',
-                                0
-                            );
-                            $valor = round((float) $det['cantidad'] * $costoProm, 2);
-                            if ($valor > 0) {
-                                // Cuenta de inventario de la subcategoría del producto (estricto: sin subcategoría no se contabiliza)
-                                $ctaInv = $asientos->cuentasProductos([(int) $det['producto_id']], (int) $empresaId)[(int) $det['producto_id']]['inventario']
-                                    ?? throw new \DomainException("El producto {$producto->codigo} es un servicio: no mueve inventario.");
-                                $partidasFaltante[] = ['cuenta_id' => $ctaInv, 'valor' => $valor, 'producto' => $producto->codigo];
-                            }
+                                ->where('producto_id', $pid)->where('bodega_id', $bid)->value('costo_promedio');
+                            $this->inventario->egresarStock($pid, $bid, (float) $det['cantidad'], 'ajuste', 0, $referencia, $data['motivo']);
+                            $faltantes[] = ['producto_id' => $pid, 'valor' => round((float) $det['cantidad'] * $costoProm, 2)];
                         }
                     } catch (\RuntimeException $e) {
                         throw new \RuntimeException("{$producto->codigo}: {$e->getMessage()}");
@@ -411,31 +401,22 @@ class KardexController extends Controller
                     );
                 }
 
-                // Un solo asiento por el total de faltantes: Debe 5.01.09 / Haber inventario de cada producto
-                if ($partidasFaltante) {
-                    $total = round(array_sum(array_column($partidasFaltante, 'valor')), 2);
-                    $cc = \App\Models\CentroCosto::where('empresa_id', $empresaId)->where('tipo', 'empresa')->value('id');
-                    $partidas = [['cuenta_id' => $asientos->cuentaId('cta_ajuste_inventario', $empresaId), 'debe' => $total, 'haber' => 0,
-                        'centro_costo_id' => $cc, 'descripcion' => "Faltantes y mermas: {$data['motivo']}"]];
-                    foreach ($partidasFaltante as $pf) {
-                        $partidas[] = ['cuenta_id' => $pf['cuenta_id'], 'debe' => 0, 'haber' => $pf['valor'], 'descripcion' => "Baja de {$pf['producto']}"];
-                    }
-                    $asientos->crear(
-                        empresaId: $empresaId,
-                        concepto: "Faltantes y mermas de inventario: {$data['motivo']}",
-                        partidas: $partidas,
-                        documentoTipo: 'AJUSTE_INV',
-                        documentoId: null,
-                        documentoRef: 'AJ-INV-' . now()->format('YmdHis'),
-                        esAutomatico: true,
-                    );
-                }
+                // Un asiento por sentido: faltantes (Debe 5.01.09 / Haber inventario) y sobrantes (al revés)
+                $asientos->ajusteInventario($empresaId, 'faltante', $faltantes, "Faltantes y mermas de inventario: {$data['motivo']}",
+                    'AJUSTE_INV', null, $referencia);
+                $asientos->ajusteInventario($empresaId, 'sobrante', $sobrantes, "Sobrantes de inventario: {$data['motivo']}",
+                    'AJUSTE_INV', null, $referencia . (count($faltantes) ? '-S' : ''));
             });
         } catch (\Throwable $e) {
             return back()->withErrors(['error' => $e->getMessage()])->withInput();
         }
 
-        $redirectTo = $data['redirect_to'] ?? route('inventario.kardex.saldos');
+        // Solo rutas internas: un redirect_to arbitrario permitía mandar al usuario a otro sitio (open redirect).
+        $redirectTo = $data['redirect_to'] ?? '';
+        if (!str_starts_with($redirectTo, '/') || str_starts_with($redirectTo, '//')) {
+            $base = rtrim($request->getSchemeAndHttpHost(), '/') . '/';
+            $redirectTo = str_starts_with($redirectTo, $base) ? $redirectTo : route('inventario.kardex.saldos');
+        }
 
         return redirect($redirectTo)
             ->with('success', 'Ajuste de inventario registrado correctamente.');

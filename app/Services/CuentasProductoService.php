@@ -17,7 +17,7 @@ use Illuminate\Support\Facades\DB;
  */
 class CuentasProductoService
 {
-    /** @return array{codigo:string, inventario:int, venta:?int, costo:int}|null */
+    /** @return array{codigo:string, inventario:?int, venta:?int, costo:?int}|null */
     public function paraCategoria(?int $categoriaId): ?array
     {
         if (!$categoriaId) {
@@ -31,9 +31,9 @@ class CuentasProductoService
 
         return [
             'codigo'     => $fila->codigo,
-            'inventario' => (int) $fila->cuenta_inventario_id,
+            'inventario' => $fila->cuenta_inventario_id ? (int) $fila->cuenta_inventario_id : null, // null: servicios, sin inventario
             'venta'      => $fila->cuenta_venta_id ? (int) $fila->cuenta_venta_id : null, // null: regalos, no se venden
-            'costo'      => (int) $fila->cuenta_costo_id,
+            'costo'      => $fila->cuenta_costo_id ? (int) $fila->cuenta_costo_id : null,
         ];
     }
 

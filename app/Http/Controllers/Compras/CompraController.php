@@ -423,14 +423,14 @@ class CompraController extends Controller
                         productoId:    (int) $d->producto_id,
                         bodegaId:      (int) $bodegaEfectiva,
                         cantidad:      (float) $d->cantidad,
-                        costoUnitario: (float) $d->precio_unitario,
+                        costoUnitario: CompraDetalle::costoUnitarioNeto($d),
                         docTipo:       'COMPRA',
                         docId:         $compra->id,
                         docNumero:     $compra->num_documento,
                         observacion:   "Compra confirmada: {$compra->num_documento}",
                     );
                     Producto::where('id', $d->producto_id)
-                        ->update(['costo' => $d->precio_unitario, 'updated_at' => now()]);
+                        ->update(['costo' => CompraDetalle::costoUnitarioNeto($d), 'updated_at' => now()]);
                 } catch (\Exception $e) {
                     \Log::warning("Inventario: error producto {$d->producto_id}: {$e->getMessage()}");
                 }

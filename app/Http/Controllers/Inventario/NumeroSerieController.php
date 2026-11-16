@@ -102,6 +102,15 @@ class NumeroSerieController extends Controller
             return back()->with('error', 'Ya están registrados: ' . $existentes->implode(', ') . '.')->withInput();
         }
 
+        // Cada SN es una unidad física: no puede haber más series disponibles en la bodega que unidades en stock.
+        $stock = (float) DB::table('inventario_saldos')->where('producto_id', $producto->id)->where('bodega_id', $request->bodega_id)->value('stock_actual');
+        $yaRegistradas = ProductoSerie::where('producto_id', $producto->id)->where('bodega_id', $request->bodega_id)
+            ->whereIn('estado', ['disponible', 'reservado'])->count();
+        if ($yaRegistradas + $lista->count() > $stock) {
+            return back()->with('error', "La bodega tiene {$stock} unidad(es) de {$producto->codigo} y ya hay {$yaRegistradas} serie(s) registrada(s): "
+                . 'no se pueden registrar ' . $lista->count() . ' más.')->withInput();
+        }
+
         DB::transaction(function () use ($lista, $producto, $request) {
             foreach ($lista as $sn) {
                 ProductoSerie::create([

@@ -343,7 +343,7 @@ class AsientoService
         // ── Ingresos ────────────────────────────────────────
         'cta_ventas_exterior'           => '4.01.09',
         'cta_ingresos_servicios'        => '4.01.08',
-        'cta_otros_ingresos'            => '4.03.02',
+        'cta_otros_ingresos'            => '4.04',
         'cta_devoluciones_ventas'       => '4.02.01',
         'cta_descuentos_ventas'         => '4.02.02',
         // ── Costo de ventas ────────────────────────────────────────
@@ -495,8 +495,11 @@ class AsientoService
         foreach ($ids as $id) {
             $p = $productos[$id] ?? null;
             if ($p && $p->tipo === 'servicio') {
+                // El servicio vende en la cuenta de su subcategoría (Servicio técnico 4.01.08, Eventos 4.04, siempre por
+                // producto); sin subcategoría usa el parámetro de ingresos por servicios.
+                $cuentaServicio = $svc->paraProducto($id)['venta'] ?? null;
                 $resultado[$id] = ['inventario' => null, 'costo' => null, 'servicio' => true,
-                    'venta' => $empresaId ? $this->cuentaId('cta_ingresos_servicios', $empresaId) : null];
+                    'venta' => $cuentaServicio ?: ($empresaId ? $this->cuentaId('cta_ingresos_servicios', $empresaId) : null)];
                 continue;
             }
             $c = $svc->paraProducto($id);
@@ -1461,36 +1464,59 @@ class AsientoService
         );
     }
 
+    /**
+     * Asiento de un faltante o sobrante de inventario (PC-INV-01), una línea por producto con la cuenta de inventario de su
+     * subcategoría (modo estricto) y la contrapartida en 5.01.09 «faltantes y mermas» (`cta_ajuste_inventario`).
+     *   faltante: Debe 5.01.09 / Haber inventario   —   sobrante: Debe inventario / Haber 5.01.09
+     * Lo usan el ajuste de inventario y la merma al recibir un traslado entre bodegas.
+     *
+     * @param array<int,array{producto_id:int,valor:float}> $lineas  valor = cantidad × costo promedio
+     */
     public function ajusteInventario(
         int     $empresaId,
-        int     $documentoId,
+        string  $tipo,
+        array   $lineas,
+        string  $concepto,
+        string  $documentoTipo,
+        ?int    $documentoId,
         string  $referencia,
-        float   $monto,
-        string  $tipo  = 'faltante',
         ?string $fecha = null,
-    ): AsientoContable {
-        $partidas = $tipo === 'faltante' ? [
-            ['cuenta_id' => $this->cuentaId('cta_ajuste_inventario',    $empresaId),
-             'debe' => $monto, 'haber' => 0,
-             'descripcion' => "Ajuste faltante {$referencia}"],
-            ['cuenta_id' => $this->cuentaId('cta_inventario_mercaderia', $empresaId),
-             'debe' => 0, 'haber' => $monto,
-             'descripcion' => "Rebaja inventario {$referencia}"],
-        ] : [
-            ['cuenta_id' => $this->cuentaId('cta_inventario_mercaderia', $empresaId),
-             'debe' => $monto, 'haber' => 0,
-             'descripcion' => "Sobrante inventario {$referencia}"],
-            ['cuenta_id' => $this->cuentaId('cta_ajuste_inventario',    $empresaId),
-             'debe' => 0, 'haber' => $monto,
-             'descripcion' => "Ajuste sobrante {$referencia}"],
-        ];
+    ): ?AsientoContable {
+        $lineas = array_values(array_filter($lineas, fn ($l) => round((float) $l['valor'], 2) > 0));
+        if (!$lineas) {
+            return null;
+        }
+
+        $cuentas = $this->cuentasProductos(array_column($lineas, 'producto_id'), $empresaId);
+        $codigos = DB::table('productos')->whereIn('id', array_column($lineas, 'producto_id'))->pluck('codigo', 'id');
+        $ctaAjuste = $this->cuentaId('cta_ajuste_inventario', $empresaId);
+        $cc = \App\Models\CentroCosto::where('empresa_id', $empresaId)->where('tipo', 'empresa')->value('id');
+        $esFaltante = $tipo === 'faltante';
+
+        $partidas = [];
+        $total = 0.0;
+        foreach ($lineas as $l) {
+            $pid = (int) $l['producto_id'];
+            $ctaInv = $cuentas[$pid]['inventario']
+                ?? throw new \DomainException('El producto ' . ($codigos[$pid] ?? "#{$pid}") . ' es un servicio: no mueve inventario.');
+            $valor = round((float) $l['valor'], 2);
+            $total += $valor;
+            $partidas[] = ['cuenta_id' => $ctaInv, 'debe' => $esFaltante ? 0 : $valor, 'haber' => $esFaltante ? $valor : 0,
+                'descripcion' => ($esFaltante ? 'Baja de ' : 'Sobrante de ') . ($codigos[$pid] ?? "#{$pid}")];
+        }
+        $total = round($total, 2);
+        array_unshift($partidas, ['cuenta_id' => $ctaAjuste, 'debe' => $esFaltante ? $total : 0, 'haber' => $esFaltante ? 0 : $total,
+            'centro_costo_id' => $cc, 'descripcion' => $concepto]);
 
         return $this->crear(
-            empresaId: $empresaId,
-            concepto: "Ajuste inventario {$tipo} — {$referencia}",
-            partidas: $partidas, documentoTipo: 'INV',
-            documentoId: $documentoId, documentoRef: $referencia, esAutomatico: true,
-            fecha: $fecha,
+            empresaId:     $empresaId,
+            concepto:      $concepto,
+            partidas:      $partidas,
+            documentoTipo: $documentoTipo,
+            documentoId:   $documentoId,
+            documentoRef:  $referencia,
+            esAutomatico:  true,
+            fecha:         $fecha,
         );
     }
 

@@ -316,6 +316,12 @@ class ProductoController extends Controller
         }
         $data = $this->aplicarSerieDeCategoria($data);
 
+        // Un servicio no mueve inventario: si se convierte con stock, esas unidades quedarían fuera de toda contabilización.
+        if ($data['tipo'] === 'servicio' && $producto->tipo !== 'servicio'
+            && InventarioSaldo::where('producto_id', $producto->id)->where('stock_actual', '>', 0)->exists()) {
+            throw ValidationException::withMessages(['tipo' => 'El producto tiene stock en bodega: no puede convertirse en servicio. Dé de baja el stock primero.']);
+        }
+
         $data['stock_minimo'] = $data['stock_minimo'] ?? 0;
         $data['stock_maximo'] = $data['stock_maximo'] ?? 0;
 
@@ -360,6 +366,14 @@ class ProductoController extends Controller
             ], 422);
         }
 
+        // Con movimientos de kárdex el producto no se borra (rompería el historial, los documentos y los reportes):
+        // se desactiva. Antes el borrado fallaba con un error 500 por las llaves foráneas o dejaba el kárdex huérfano.
+        if (DB::table('inventario_movimientos')->where('producto_id', $producto->id)->exists()) {
+            return response()->json([
+                'message' => 'No se puede eliminar: el producto tiene movimientos de inventario. Desactívelo (estado inactivo) en su lugar.',
+            ], 422);
+        }
+
         if ($producto->series()->where('estado', '!=', 'vendido')->exists()) {
             $count = $producto->series()->where('estado', '!=', 'vendido')->count();
             return response()->json([
@@ -369,7 +383,13 @@ class ProductoController extends Controller
 
         $codigo = $producto->codigo;
         $id     = $producto->id;
-        $producto->delete();
+        try {
+            $producto->delete();
+        } catch (\Illuminate\Database\QueryException) {
+            return response()->json([
+                'message' => 'No se puede eliminar: el producto está usado en documentos (facturas, compras, proformas…). Desactívelo en su lugar.',
+            ], 422);
+        }
 
         $this->auditoria->documento('eliminar', 'inventario', 'productos', $id,
             "Producto {$codigo} eliminado");

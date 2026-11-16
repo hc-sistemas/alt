@@ -55,7 +55,7 @@ export default function TrasladoDetalleModal({ trasladoId, onClose, onChanged }:
                 setTraslado(json.traslado)
                 setDetalles((json.traslado.detalles ?? []).map((item: { id: number; cantidad_enviada: string }) => ({
                     id: item.id,
-                    cantidad_recibida: Number(item.cantidad_enviada).toFixed(4),
+                    cantidad_recibida: String(Math.round(Number(item.cantidad_enviada))),
                 })))
                 setObservacion('')
             })
@@ -86,8 +86,8 @@ export default function TrasladoDetalleModal({ trasladoId, onClose, onChanged }:
                 },
                 body: JSON.stringify({ detalles, observacion }),
             })
-            if (res.status === 422) {
-                const json = await res.json()
+            if (!res.ok) {
+                const json = await res.json().catch(() => ({} as { message?: string }))
                 toastError(json.message ?? 'Error al confirmar')
                 return
             }
@@ -116,8 +116,8 @@ export default function TrasladoDetalleModal({ trasladoId, onClose, onChanged }:
                 },
                 body: JSON.stringify({ motivo: motivoAnular }),
             })
-            if (res.status === 422) {
-                const json = await res.json()
+            if (!res.ok) {
+                const json = await res.json().catch(() => ({} as { message?: string }))
                 toastError(json.message ?? 'Error al rechazar')
                 return
             }
@@ -226,23 +226,23 @@ export default function TrasladoDetalleModal({ trasladoId, onClose, onChanged }:
                                                     {item.producto?.codigo ?? '—'}
                                                 </td>
                                                 <td className="px-3 py-1.5 text-right font-mono" style={{ color: 'var(--text-main)' }}>
-                                                    {enviado.toFixed(4)}
+                                                    {enviado.toFixed(0)}
                                                 </td>
                                                 {traslado.estado === 'aceptado' && (
                                                     <>
                                                         <td className="px-3 py-1.5 text-right font-mono" style={{ color: 'var(--text-main)' }}>
-                                                            {recibido?.toFixed(4) ?? '—'}
+                                                            {recibido?.toFixed(0) ?? '—'}
                                                         </td>
                                                         <td className="px-3 py-1.5 text-right font-mono"
                                                             style={{ color: diferencia === null ? 'var(--text-muted)' : diferencia < 0 ? '#EF4444' : diferencia > 0 ? '#10B981' : 'var(--text-muted)' }}>
-                                                            {diferencia !== null ? (diferencia >= 0 ? '+' : '') + diferencia.toFixed(4) : '—'}
+                                                            {diferencia !== null ? (diferencia >= 0 ? '+' : '') + diferencia.toFixed(0) : '—'}
                                                         </td>
                                                     </>
                                                 )}
                                                 {isPendiente && (
                                                     <td className="px-3 py-1.5 text-right w-36">
                                                         <input
-                                                            type="number" min={0} step="0.0001"
+                                                            type="number" min={0} step="1"
                                                             value={detalles[i]?.cantidad_recibida ?? ''}
                                                             onChange={e => {
                                                                 const updated = [...detalles]

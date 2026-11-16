@@ -420,6 +420,7 @@ Route::middleware('auth')->group(function () {
 
             Route::get('activos', [ActivoFijoController::class, 'index'])->name('activos.index');
             Route::get('activos/create', [ActivoFijoController::class, 'create'])->name('activos.create');
+            Route::get('activos/reporte/lista', [ActivoFijoController::class, 'reporteLista'])->name('activos.reporte.lista');
             Route::get('activos/{activoFijo}', [ActivoFijoController::class, 'show'])->name('activos.show');
             Route::get('activos/{activoFijo}/edit', [ActivoFijoController::class, 'edit'])->name('activos.edit');
 

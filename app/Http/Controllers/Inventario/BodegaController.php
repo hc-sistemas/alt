@@ -89,6 +89,13 @@ class BodegaController extends Controller
             }
         }
 
+        // Una bodega inactiva desaparece de los selectores (traslados, ajustes, facturas): con stock, esas unidades
+        // quedarían inmovilizadas. Primero hay que trasladarlas.
+        if (array_key_exists('estado', $data) && !$data['estado'] && $bodega->estado
+            && \DB::table('inventario_saldos')->where('bodega_id', $bodega->id)->where('stock_actual', '>', 0)->exists()) {
+            return back()->with('error', 'La bodega tiene stock: trasládelo a otra bodega antes de desactivarla.');
+        }
+
         $bodega->update($data);
 
         $this->auditoria->documento('editar', 'inventario', 'bodegas', $bodega->id,
@@ -100,7 +107,8 @@ class BodegaController extends Controller
     public function destroy(Bodega $bodega): RedirectResponse|JsonResponse
     {
         if (Schema::hasTable('inventario_saldos')) {
-            $total = \DB::table('inventario_saldos')->where('bodega_id', $bodega->id)->count();
+            $total = \DB::table('inventario_saldos')->where('bodega_id', $bodega->id)->count()
+                + \DB::table('inventario_movimientos')->where('bodega_id', $bodega->id)->count();
             if ($total > 0) {
                 return response()->json([
                     'message' => 'No se puede eliminar: tiene movimientos registrados',
@@ -110,7 +118,11 @@ class BodegaController extends Controller
 
         $nombre = $bodega->nombre;
         $id     = $bodega->id;
-        $bodega->delete();
+        try {
+            $bodega->delete();
+        } catch (\Illuminate\Database\QueryException) {
+            return response()->json(['message' => 'No se puede eliminar: la bodega está usada en compras, traslados u otros documentos. Desactívela en su lugar.'], 422);
+        }
 
         $this->auditoria->documento('eliminar', 'inventario', 'bodegas', $id,
             "Bodega {$nombre} eliminada");

@@ -22,9 +22,12 @@ class InventarioService implements InventarioServiceInterface
         ?string $observacion = null,
     ): void {
         DB::transaction(function () use ($productoId, $bodegaId, $cantidad, $costoUnitario, $docTipo, $docId, $docNumero, $observacion) {
+            // Bloqueo de la fila: dos ingresos simultáneos del mismo producto/bodega calcularían el costo promedio
+            // sobre el mismo saldo y uno de los dos se perdería.
             $saldoActual = DB::table('inventario_saldos')
                 ->where('producto_id', $productoId)
                 ->where('bodega_id', $bodegaId)
+                ->lockForUpdate()
                 ->first();
 
             $cantActual    = $saldoActual ? (float) $saldoActual->stock_actual : 0;
@@ -138,6 +141,7 @@ class InventarioService implements InventarioServiceInterface
             $saldo = DB::table('inventario_saldos')
                 ->where('producto_id', $productoId)
                 ->where('bodega_id', $bodegaId)
+                ->lockForUpdate()
                 ->first();
 
             $stockActual   = $saldo ? (float) $saldo->stock_actual : 0;
@@ -181,10 +185,14 @@ class InventarioService implements InventarioServiceInterface
 
     public function liberarReserva(int $productoId, int $bodegaId, float $cantidad): void
     {
+        // Nunca por debajo de cero: una liberación repetida dejaba reservas negativas que inflaban el disponible.
         DB::table('inventario_saldos')
             ->where('producto_id', $productoId)
             ->where('bodega_id', $bodegaId)
-            ->decrement('cantidad_reservada', $cantidad, ['updated_at' => now()]);
+            ->update([
+                'cantidad_reservada' => DB::raw('GREATEST(COALESCE(cantidad_reservada, 0) - ' . (float) $cantidad . ', 0)'),
+                'updated_at'         => now(),
+            ]);
     }
 
     public function confirmarSalida(int $productoId, int $bodegaId, string $docTipo, int $docId): void

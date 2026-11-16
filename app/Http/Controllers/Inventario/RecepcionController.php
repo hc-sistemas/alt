@@ -230,17 +230,29 @@ class RecepcionController extends Controller
             return back()->with('error', 'Código no pertenece a esta compra.');
         }
 
-        $detalle = RecepcionDetalle::where('recepcion_id', $recepcion->id)
+        // Si el producto está en varias líneas de la compra, la unidad va a la primera línea que aún no se completa
+        // (antes siempre iba a la primera y la segunda línea nunca se podía completar).
+        $lineas = RecepcionDetalle::where('recepcion_id', $recepcion->id)
             ->where('producto_id', $etiqueta->producto_id)
-            ->first();
+            ->orderBy('id')
+            ->get();
 
-        if (!$detalle) {
+        if ($lineas->isEmpty()) {
             return back()->with('error', 'Producto no encontrado en esta recepción.');
         }
 
-        $escaneosDetalle = RecepcionEscaneo::where('recepcion_detalle_id', $detalle->id)->count();
+        $detalle = null;
+        $escaneosDetalle = 0;
+        foreach ($lineas as $linea) {
+            $escaneos = RecepcionEscaneo::where('recepcion_detalle_id', $linea->id)->count();
+            if ($escaneos < (int) $linea->cantidad_esperada) {
+                $detalle = $linea;
+                $escaneosDetalle = $escaneos;
+                break;
+            }
+        }
 
-        if ($escaneosDetalle >= (int) $detalle->cantidad_esperada) {
+        if (!$detalle) {
             return back()->with('error', 'Ya se recibieron todas las unidades de este producto.');
         }
 
@@ -310,7 +322,28 @@ class RecepcionController extends Controller
             }
         }
 
+        // Una recepción solo se confirma completa. Antes, al confirmar con unidades faltantes quedaba en estado «parcial»:
+        // ya no estaba pendiente (no se podía seguir escaneando ni volver a confirmar), no entraba stock y la factura
+        // quedaba pendiente para siempre. Los escaneos ya hechos se guardan; bodega sigue escaneando cuando llegue el resto.
+        $faltan = [];
+        foreach ($recepcion->detalles()->with('producto:id,codigo')->get() as $d) {
+            $escaneadas = RecepcionEscaneo::where('recepcion_detalle_id', $d->id)->count();
+            if ($escaneadas < (int) $d->cantidad_esperada) {
+                $faltan[] = ($d->producto?->codigo ?? "#{$d->producto_id}") . ' (' . $escaneadas . ' de ' . (int) $d->cantidad_esperada . ')';
+            }
+        }
+        if ($faltan) {
+            return back()->with('error', 'Aún faltan unidades por escanear: ' . implode(', ', array_slice($faltan, 0, 6))
+                . (count($faltan) > 6 ? ' y ' . (count($faltan) - 6) . ' producto(s) más' : '')
+                . '. Lo escaneado queda guardado; confirme cuando haya recibido todo.');
+        }
+
         DB::transaction(function () use ($recepcion, $empresaId) {
+            // Bloqueo: dos confirmaciones simultáneas ingresaban el stock dos veces.
+            $bloqueada = RecepcionBodega::whereKey($recepcion->id)->lockForUpdate()->first();
+            if (!$bloqueada->isPendiente()) {
+                return;
+            }
             $detalles = $recepcion->detalles;
             $todosCompletados  = true;
             $algunoParcial     = false;
@@ -336,8 +369,14 @@ class RecepcionController extends Controller
                     'estado'            => $estadoDetalle,
                 ]);
 
+                // Por línea de la compra (no por producto): con el mismo producto en dos líneas, la segunda pisaba a la
+                // primera y entraban menos unidades, con el precio de otra línea.
                 if ($detalle->producto_id && $cantEscaneos > 0) {
-                    $cantidadesRecibidas[$detalle->producto_id] = $cantEscaneos;
+                    $cantidadesRecibidas[] = [
+                        'producto_id'       => (int) $detalle->producto_id,
+                        'compra_detalle_id' => $detalle->compra_detalle_id,
+                        'cantidad'          => $cantEscaneos,
+                    ];
                 }
             }
 
@@ -361,25 +400,26 @@ class RecepcionController extends Controller
                     $compra->load('detalles');
 
                     // Ingresar stock por unidades físicamente recibidas
-                    foreach ($cantidadesRecibidas as $productoId => $cantRecibida) {
-                        $cd = $compra->detalles->firstWhere('producto_id', $productoId);
-                        $costo = $cd ? (float) $cd->precio_unitario : 0;
-                        try {
-                            $this->inventario->ingresarStock(
-                                productoId:    (int) $productoId,
-                                bodegaId:      (int) $recepcion->bodega_id,
-                                cantidad:      (float) $cantRecibida,
-                                costoUnitario: $costo,
-                                docTipo:       'COMPRA',
-                                docId:         $compra->id,
-                                docNumero:     $compra->num_documento,
-                                observacion:   "Recepción #{$recepcion->id}: {$compra->num_documento}",
-                            );
-                            Producto::where('id', $productoId)
-                                ->update(['costo' => $costo, 'updated_at' => now()]);
-                        } catch (\Exception $e) {
-                            \Log::warning("Stock recepción #{$recepcion->id} prod {$productoId}: {$e->getMessage()}");
-                        }
+                    foreach ($cantidadesRecibidas as $linea) {
+                        $productoId   = $linea['producto_id'];
+                        $cantRecibida = $linea['cantidad'];
+                        $cd = $compra->detalles->firstWhere('id', $linea['compra_detalle_id'])
+                            ?? $compra->detalles->firstWhere('producto_id', $productoId);
+                        $costo = $cd ? \App\Models\CompraDetalle::costoUnitarioNeto($cd) : 0;
+                        // Sin try/catch: si el stock no entra, la recepción completa se revierte (antes se registraba un
+                        // aviso en el log y la factura quedaba activa sin la mercadería en bodega).
+                        $this->inventario->ingresarStock(
+                            productoId:    (int) $productoId,
+                            bodegaId:      (int) $recepcion->bodega_id,
+                            cantidad:      (float) $cantRecibida,
+                            costoUnitario: $costo,
+                            docTipo:       'COMPRA',
+                            docId:         $compra->id,
+                            docNumero:     $compra->num_documento,
+                            observacion:   "Recepción #{$recepcion->id}: {$compra->num_documento}",
+                        );
+                        Producto::where('id', $productoId)
+                            ->update(['costo' => $costo, 'updated_at' => now()]);
                     }
 
                     // CxP solo si no existe ya para esta compra

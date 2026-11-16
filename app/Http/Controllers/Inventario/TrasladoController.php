@@ -116,7 +116,9 @@ class TrasladoController extends Controller
             'detalles.*.cantidad_enviada'  => ['required', 'integer', 'min:1'],
             'observacion'                  => ['nullable', 'string'],
         ], [
-            'bodega_origen_id.different' => 'La bodega origen y destino no pueden ser la misma.',
+            'bodega_origen_id.different'      => 'La bodega origen y destino no pueden ser la misma.',
+            'detalles.*.producto_id.required' => 'Hay filas sin producto: elija el producto o elimine la fila.',
+            'detalles.*.cantidad_enviada.*'   => 'Cada producto debe tener una cantidad entera mayor a cero.',
         ]);
 
         Bodega::where('id', $data['bodega_origen_id'])->where('empresa_id', $empresaId)->firstOrFail();
@@ -147,6 +149,11 @@ class TrasladoController extends Controller
                         throw new \Exception(
                             "Stock insuficiente para {$producto->nombre}: disponible {$disponible}, solicitado {$detalleData['cantidad_enviada']}"
                         );
+                    }
+
+                    $producto = Producto::find($detalleData['producto_id']);
+                    if ($producto?->tipo === 'servicio') {
+                        throw new \Exception("{$producto->codigo} es un servicio: no tiene stock que trasladar.");
                     }
 
                     $detalle = TrasladoDetalle::create([
@@ -196,78 +203,130 @@ class TrasladoController extends Controller
 
     public function confirmar(Request $request, TrasladoBodega $traslado): RedirectResponse|JsonResponse
     {
-        $empresaId = session('empresa_activa_id');
+        $empresaId = (int) session('empresa_activa_id');
 
-        if ($traslado->empresa_id !== $empresaId) {
+        if ((int) $traslado->empresa_id !== $empresaId) {
             abort(403);
         }
 
         if (!$traslado->isPendiente()) {
-            abort(422, 'Traslado no está pendiente.');
+            return response()->json(['message' => 'El traslado ya no está pendiente.'], 422);
         }
 
         $request->validate([
-            'detalles'                     => ['array'],
-            'detalles.*.id'                => ['exists:traslado_detalles,id'],
-            'detalles.*.cantidad_recibida' => ['numeric', 'min:0'],
-            'observacion'                  => ['nullable', 'string'],
+            'detalles'                     => ['nullable', 'array'],
+            'detalles.*.id'                => ['required', 'integer'],
+            'detalles.*.cantidad_recibida' => ['required', 'integer', 'min:0'],
+            'observacion'                  => ['nullable', 'string', 'max:1000'],
+        ], [
+            'detalles.*.cantidad_recibida.integer' => 'La cantidad recibida debe ser un número entero de unidades.',
         ]);
 
+        // Se recorre SIEMPRE el detalle del propio traslado: antes se iteraba lo que mandaba el navegador, así que un
+        // envío vacío aceptaba el traslado sin mover stock (la reserva quedaba colgada) y se podían enviar ids de
+        // detalle de OTRO traslado.
+        $traslado->load('detalles.producto');
+        $recibidas = collect($request->input('detalles', []))->keyBy(fn ($d) => (int) $d['id']);
+
+        foreach ($recibidas->keys() as $id) {
+            if (!$traslado->detalles->contains('id', $id)) {
+                return response()->json(['message' => 'El detalle enviado no pertenece a este traslado.'], 422);
+            }
+        }
+
+        $mermas = [];
+        foreach ($traslado->detalles as $detalle) {
+            $recibida = (int) ($recibidas[$detalle->id]['cantidad_recibida'] ?? $detalle->cantidad_enviada);
+            if ($recibida > (int) $detalle->cantidad_enviada) {
+                return response()->json(['message' => "{$detalle->producto?->codigo}: no se puede recibir más de lo enviado (" . (int) $detalle->cantidad_enviada . ")."], 422);
+            }
+            if ($recibida < (int) $detalle->cantidad_enviada) {
+                $mermas[] = (int) $detalle->producto_id;
+            }
+        }
+
+        // La diferencia entre lo enviado y lo recibido es un faltante: va a 5.01.09 (PC-INV-01), igual que un ajuste
+        // negativo. Antes desaparecía del kárdex sin asiento y el mayor de inventario quedaba descuadrado.
+        $asientos = app(\App\Services\AsientoService::class);
+        if ($mermas) {
+            try {
+                $asientos->validarConfiguracion($empresaId, ['cta_ajuste_inventario'], now()->toDateString());
+                $asientos->cuentasProductos($mermas, $empresaId);
+            } catch (\DomainException $e) {
+                return response()->json(['message' => 'Hay unidades faltantes y no se pueden contabilizar: ' . $e->getMessage()], 422);
+            }
+        }
+
         try {
-            DB::transaction(function () use ($request, $traslado) {
-                foreach ($request->detalles ?? [] as $detalleData) {
-                    $detalle = TrasladoDetalle::findOrFail($detalleData['id']);
+            DB::transaction(function () use ($request, $traslado, $recibidas, $empresaId, $asientos) {
+                // Bloqueo del traslado: dos confirmaciones simultáneas movían el stock dos veces.
+                $bloqueado = TrasladoBodega::whereKey($traslado->id)->lockForUpdate()->first();
+                if (!$bloqueado->isPendiente()) {
+                    throw new \RuntimeException('El traslado ya fue procesado por otro usuario.');
+                }
 
-                    $saldo = InventarioSaldo::where('producto_id', $detalle->producto_id)
+                $faltantes = [];
+                foreach ($traslado->detalles as $detalle) {
+                    $enviada  = (float) $detalle->cantidad_enviada;
+                    $recibida = (float) ($recibidas[$detalle->id]['cantidad_recibida'] ?? $enviada);
+
+                    // Libera la reserva hecha en store() antes de egresar lo reservado. Usa cantidad_enviada (lo
+                    // reservado), no cantidad_recibida (puede diferir por mermas).
+                    $this->inventario->liberarReserva((int) $detalle->producto_id, (int) $traslado->bodega_origen_id, $enviada);
+
+                    $costoPromedio = (float) InventarioSaldo::where('producto_id', $detalle->producto_id)
                         ->where('bodega_id', $traslado->bodega_origen_id)
-                        ->first();
-                    $costoPromedio = $saldo ? (float) $saldo->costo_promedio : 0.0;
-
-                    $cantidadRecibida = (float) ($detalleData['cantidad_recibida'] ?? $detalle->cantidad_enviada);
+                        ->value('costo_promedio');
 
                     $this->inventario->egresarStock(
                         (int) $detalle->producto_id,
                         (int) $traslado->bodega_origen_id,
-                        (float) $detalle->cantidad_enviada,
+                        $enviada,
                         'traslado',
-                        $traslado->id
+                        $traslado->id,
+                        $traslado->numero,
+                        "Traslado {$traslado->numero} hacia bodega destino"
                     );
 
-                    // Libera la reserva hecha en store() al crear el traslado — sin esto,
-                    // cantidad_reservada queda huerfana para siempre aunque el stock ya
-                    // se egreso fisicamente. Usa cantidad_enviada (lo reservado), no
-                    // cantidad_recibida (puede diferir por mermas).
-                    $this->inventario->liberarReserva(
-                        (int) $detalle->producto_id,
-                        (int) $traslado->bodega_origen_id,
-                        (float) $detalle->cantidad_enviada
-                    );
-
-                    if ($cantidadRecibida > 0) {
+                    if ($recibida > 0) {
                         $this->inventario->ingresarStock(
                             (int) $detalle->producto_id,
                             (int) $traslado->bodega_destino_id,
-                            $cantidadRecibida,
+                            $recibida,
                             $costoPromedio,
                             'traslado',
-                            $traslado->id
+                            $traslado->id,
+                            $traslado->numero,
+                            "Traslado {$traslado->numero} desde bodega origen"
                         );
                     }
 
-                    $detalle->update(['cantidad_recibida' => $cantidadRecibida]);
+                    if ($recibida < $enviada) {
+                        $faltantes[] = ['producto_id' => (int) $detalle->producto_id, 'valor' => round(($enviada - $recibida) * $costoPromedio, 2)];
+                    }
+
+                    $detalle->update(['cantidad_recibida' => $recibida]);
                 }
 
+                $asientos->ajusteInventario($empresaId, 'faltante', $faltantes,
+                    "Faltante al recibir el traslado {$traslado->numero}", 'TRASLADO', $traslado->id, $traslado->numero);
+
+                // La observación de recepción se agrega a la de envío (antes la reemplazaba y se perdía la original).
+                $obsRecepcion = trim((string) $request->observacion);
                 $traslado->update([
                     'estado'          => 'aceptado',
                     'recibido_por'    => Auth::id(),
                     'fecha_recepcion' => now()->toDateString(),
-                    'observacion'     => $request->observacion,
+                    'observacion'     => $obsRecepcion === ''
+                        ? $traslado->observacion
+                        : trim(($traslado->observacion ? $traslado->observacion . "\n" : '') . 'Recepción: ' . $obsRecepcion),
                 ]);
 
                 $this->auditoria->documento('confirmar', 'inventario', 'traslados_bodega', $traslado->id,
-                    "Traslado {$traslado->numero} aceptado por usuario " . Auth::id());
+                    "Traslado {$traslado->numero} aceptado por usuario " . Auth::id()
+                    . ($faltantes ? ' con ' . count($faltantes) . ' producto(s) con faltante' : ''));
             });
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
@@ -284,15 +343,19 @@ class TrasladoController extends Controller
         }
 
         if (!$traslado->isPendiente()) {
-            abort(422, 'Traslado no está pendiente.');
+            return response()->json(['message' => 'El traslado ya no está pendiente.'], 422);
         }
 
         $request->validate([
-            'motivo' => ['required', 'string'],
+            'motivo' => ['required', 'string', 'max:1000'],
         ]);
 
         try {
             DB::transaction(function () use ($request, $traslado) {
+                $bloqueado = TrasladoBodega::whereKey($traslado->id)->lockForUpdate()->first();
+                if (!$bloqueado->isPendiente()) {
+                    throw new \RuntimeException('El traslado ya fue procesado por otro usuario.');
+                }
                 $traslado->load('detalles');
 
                 foreach ($traslado->detalles as $detalle) {
@@ -304,8 +367,8 @@ class TrasladoController extends Controller
                 }
 
                 $traslado->update([
-                    'estado'     => 'rechazado',
-                    'observacion' => $request->motivo,
+                    'estado'      => 'rechazado',
+                    'observacion' => trim(($traslado->observacion ? $traslado->observacion . "\n" : '') . 'Rechazo: ' . $request->motivo),
                 ]);
 
                 $this->auditoria->documento('anular', 'inventario', 'traslados_bodega', $traslado->id,

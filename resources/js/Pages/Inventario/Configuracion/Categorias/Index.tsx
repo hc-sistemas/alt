@@ -93,8 +93,8 @@ export default function CategoriasIndex() {
                     'X-Inertia': 'true',
                 },
             })
-            if (res.status === 422) {
-                const json = await res.json()
+            if (!res.ok) {
+                const json = await res.json().catch(() => ({ message: 'No se pudo completar la operación (error ' + res.status + ')' }))
                 toastError(json.message)
                 return
             }

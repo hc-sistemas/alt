@@ -103,8 +103,11 @@ Las 24 pendientes, en orden (las de 2026_10_12 y 2026_10_13 ya existían en el r
 | `2026_11_04_140000_tarjetas_lote_ventas_intereses_iva_comision` | Tabla de ventas por lote de tarjetas, intereses del diferido e IVA configurable de la comisión por procesador |
 | `2026_11_04_150000_cheques_recibidos_retenciones_evento` | Cheques recibidos en cartera, retenciones en el cobro de CxC y marca de factura de evento |
 | `2026_11_04_160000_nominas_anulacion_con_reverso` | Columnas para anular nóminas con reverso y restituir préstamos |
+| `2026_11_16_100000_inventario_plan_v51_subcategorias_nuevas` | Plan V5.1 (7 cuentas nuevas, elimina 4.03.02 → 4.04) y subcategorías PC-CAT-21 a 28 (Micrófonos, Audífonos, Láseres, Máquinas de efectos, Amplificadores, Inventario sin clasificar, Servicio técnico, Eventos). Ver §10 |
 
 ## 4. Datos (simular primero, aplicar después)
+
+> **Actualización 16/11/2026:** el inventario inicial se carga ahora con la **carga limpia** (§10), que reemplaza a 4.1 (`inventario:cargar-excel`) y 4.3 (reclasificación): el Excel «Corregidos» ya trae categoría y subcategoría de cada producto. Quedan vigentes 4.2 (IVA) y el borrado de datos de prueba.
 
 ```bash
 # 4.1 Inventario desde el Excel final: altas, marcas, nombres y precios. NO toca stock ni categorías de existentes.
@@ -176,8 +179,51 @@ el log. Cualquier otro caso sigue deteniéndose con un mensaje claro: en ese cas
 ## 9. Pendiente de definir antes de abrir a los usuarios (no bloquean el despliegue)
 
 - Borrado de datos de prueba: `php artisan altamira:limpiar-datos-prueba` (simula por defecto; `--ejecutar` pide escribir la frase de confirmación). **Ejecutado solo en la BD local el 03/11/2026 (121 filas); en producción falta**, y debe correrse después de las migraciones y antes de abrir a los usuarios, con respaldo previo (`pg_dump`). No toca saldos de inventario ni la numeración de comprobantes (`secuenciales`): revisar que el siguiente número de factura sea el correcto.
-- Existencias del inventario (stock por bodega) y asiento de apertura (DEC-011): el Excel trae las columnas, no se cargaron.
+- Existencias del inventario y asiento de apertura: se cargan con la carga limpia (§10). Falta el asiento de los activos fijos ($6.040,96, archivo `Activos_Fijos_ERP_Altamira_UIO.xlsx` pendiente del cliente).
 - Reclasificación de los productos que ya existían a las subcategorías oficiales (`docs/Oct2026/reclasificacion_productos.csv`).
 - El código `LAS 2 CAJAS VACIAS` del Excel (REPUESTO MIC DINAMICO TH-29, DEZIBEL) hay que pedirlo al cliente.
 - Decisiones del cliente aún abiertas: DEC-011, 012, 017, 032, 033, 034, 038, 039, 041, 045, 047, 048, 049, 052, 053, 054.
 - Decidir si se carga a los colaboradores faltantes y el SBU (460 en el código frente a 482 en el ejemplo del documento).
+
+## 10. Habilitación del inventario — carga limpia al 31/10/2026 (decisión de Edwin del 12/11/2026)
+
+Documentos del cliente (carpeta `docs/Oct2026/Corregidos/`, **no van a git**, se pasan por `scp`): `Inventario_Altamira_ERP_Carga.xlsx`
+(1.676 filas: 1.664 productos + 12 servicios SER), `Informe_productos_bloqueados_RESUELTO.xlsx`, `Decisiones_pendientes_contador.xlsx`,
+`Plan de cuentas V5.1.xlsx`.
+
+**Qué hace `php artisan inventario:carga-limpia <excel> [--aplicar]`** (simula por defecto; una sola transacción; respaldo JSON previo
+en `storage/app/private/carga-limpia/`; CSV de detalle de cada corrida):
+
+1. Borra los 13 códigos dados de baja (sin ajuste ni asiento).
+2. Renumera 45 productos (columna «Código anterior»; conserva el id; el código viejo queda en la descripción).
+3. Actualiza los productos existentes (nombre, marca, descripción, referencia, unidad, tipo, precios, costo, **categoría y subcategoría**) y crea los nuevos (IVA 15 %); los SER se crean como tipo `servicio`, sin stock.
+4. Deja en cero todo el stock y kárdex del piloto (sin asientos).
+5. Carga el saldo inicial al 31/10/2026 en la bodega Principal (cantidad física × costo unitario).
+6. Registra **un** asiento de apertura: Debe → cuentas de inventario por subcategoría; Haber → 3.01.01 Capital Neto (`APERTURA_INVENTARIO`).
+7. Desactiva la categoría vacía «ACCESORIOS (por reclasificar)».
+
+**Resultado esperado** (comprobado en la base local el 16/11/2026): 13 bajas, 45 renumerados, 17 nuevos, 1.659 actualizados, 3 marcas nuevas,
+734 productos con saldo, **12.032 unidades y $175.015,00**; los 1.676 productos resuelven su cuenta en modo estricto; los servicios de
+Eventos acreditan 4.04 y los de Servicio técnico 4.01.08. Si en producción las cifras difieren, **parar y revisar**.
+
+**Guardas (el comando se niega a aplicar si…):** hay filas en facturas, compras, devoluciones, guías, notas de crédito, prefacturas, proformas,
+recepciones, traslados o repuestos de taller (borrar antes los datos de prueba con `altamira:limpiar-datos-prueba`); no hay período abierto
+en octubre 2026; ya existe el asiento de apertura (la carga ya se aplicó); el valor total no es $175.015,00 (`--valor-esperado`);
+una categoría/subcategoría del Excel no existe o no tiene cuentas.
+
+**Procedimiento recomendado** (guiado por `scripts/produccion_carga_inventario.sh <excel>`, que pide confirmación en cada paso):
+
+1. Código desplegado (§2) y Excel copiado al servidor (`scp`, fuera del repositorio).
+2. Respaldo `pg_dump -Fc` de la base `altamira` (solo esa; el Postgres del VPS es compartido).
+3. Ensayo previo: restaurar la copia en una base `altamira_ensayo` en tu PC y correr los mismos pasos allí (§1.0).
+4. `php artisan migrate --force` (incluye `2026_11_16_100000_...`).
+5. Abrir el período 2026-10 (y los siguientes) en Contabilidad → Ejercicios si no están abiertos.
+6. `altamira:limpiar-datos-prueba` (simula, luego `--ejecutar`) y `altamira:actualizar-iva-productos` (§4.2).
+7. `inventario:carga-limpia <excel>` (simula) → comparar con lo esperado → `--aplicar`.
+8. Verificar: Contabilidad → Asientos («Apertura de inventario al 31/10/2026», debe = haber = 175.015,00), Inventario → Consolidado, y una factura de prueba de un producto y de un servicio.
+
+**Reversa:** restaurar el respaldo `pg_dump`; el JSON de `carga-limpia/` guarda productos, saldos y kárdex previos.
+
+**Pendiente después de la carga:** asiento de los activos fijos ($6.040,96; falta `Activos_Fijos_ERP_Altamira_UIO.xlsx` con su detalle por cuenta)
+y las decisiones DEC aún abiertas del §9.
+
